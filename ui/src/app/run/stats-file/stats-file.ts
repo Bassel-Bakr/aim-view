@@ -143,12 +143,12 @@ export class StatsFile {
     void this.act(() => setup.run(), "KovaaK's stats folder is open");
   }
 
-  /** The stats folder chosen as files (where the browser's folder picker cannot open it). */
+  /** KovaaK's folders chosen as files (where the browser's folder picker cannot open them). */
   protected pickFolder(input: HTMLInputElement, setup: StatsSetup): void {
     const files = [...(input.files ?? [])];
     input.value = '';
     const read = setup.files;
-    if (files.length && read) void this.act(() => read(files), "KovaaK's stats folder is read");
+    if (files.length && read) void this.act(() => read(files), "KovaaK's folders are read");
   }
 
   /** Runs a step that changes no file by itself, showing what it did or why it failed. */

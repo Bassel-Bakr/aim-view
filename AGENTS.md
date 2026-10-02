@@ -104,10 +104,12 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
   model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
   (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there). The
-  user picks KovaaK's folders once (steamapps, or each folder), and the browser remembers them. The stats folder lets
-  each run find its stats file by name and time. The scenario folders (Saved\SaveGames\Scenarios and the workshop's)
-  give each scenario's kind, time limit and target count. Server mode: files added are sent to the server, and the
-  stats file panel lists KovaaK's stats files (`/api/stats`).
+  user gives KovaaK's folders in the stats file panel. Chrome's folder picker refuses folders under Program Files, so
+  there the user chooses them as files instead: FPSAimTrainer gives the stats and the user's scenarios,
+  workshop\content\824270 the workshop's. Files chosen that way are read for that visit; the scenario facts are kept
+  in the browser. A folder the picker can open is remembered. The stats folder lets each run find its stats file by
+  name and time. The scenario folders give each scenario's kind, time limit and target count, which the review needs.
+  Server mode: files added are sent to the server, and the stats file panel lists KovaaK's stats files (`/api/stats`).
 - The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
   (review.worker.ts): decode (Mediabunny and the browser's decoder: the same YUV as ffmpeg once the edit list's
   pre-roll, the frames before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV
@@ -117,8 +119,14 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
   gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number
   within 1e-9 (`cargo test --release --test review_parity`). After the track step the core uses plain floating point:
-  it copies Python's logic, not its last bits. Next: runs without a stats file (the HUD, the video alone), then
-  tracking runs (camera motion and the rest).
+  it copies Python's logic, not its last bits. Tracking runs with a stats file too: the worker also feeds the camera
+  watch (src/camera.rs: the camera's turn by phase correlation, and KovaaK's countdown bar), and the page's core gives
+  the summary (src/tracking.rs). Equal to Python's on 5 tracking runs (`--test tracking_parity`), the camera within
+  1e-8 degrees on the same frames (`--test camera_parity`). Two inputs differ from Python's on purpose: the camera
+  reads the frame's Y plane, where Python reads ffmpeg's `format=gray` (which goes through the colors: readings differ
+  by a median 0.001 degrees), and the countdown test does not depend on the HUD color (Python's looks for teal only).
+  Not in the browser yet: runs without a stats file (KovaaK's HUD, Aim Lab's, the video alone), and the user's marks
+  (run window, faint cut-off, areas).
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

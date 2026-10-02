@@ -94,6 +94,41 @@ async function sceFiles(dir: FileSystemDirectoryHandle, prefix: string): Promise
 /** A workshop item: its folder's name (its id) and the folder. */
 type WorkshopItem = [name: string, dir: FileSystemDirectoryHandle];
 
+/** Files chosen as a folder (a folder input), sorted by what their paths make them: stats files, and scenario files. */
+export interface ChosenFiles {
+  stats: File[];
+  scenarios: ScenarioSource[];
+}
+
+/**
+ * Sorts the files of a folder chosen as files: a .csv in a folder named stats is a stats file; a .sce in a folder named
+ * Scenarios is one of the user's scenarios, and one in an item's folder inside 824270 the workshop's. So the user can
+ * choose steamapps, FPSAimTrainer, or each folder.
+ */
+export function sortChosen(files: readonly File[]): ChosenFiles {
+  const out: ChosenFiles = { stats: [], scenarios: [] };
+  for (const f of files) {
+    const parts = (f.webkitRelativePath || f.name).split('/');
+    const at = (k: number) => (parts[parts.length - 1 - k] ?? '').toLowerCase();
+    if (/\.csv$/i.test(f.name) && at(1) === 'stats') out.stats.push(f);
+    else if (/\.sce$/i.test(f.name) && at(1) === 'scenarios')
+      out.scenarios.push({ path: `scenarios/${f.name}`, name: f.name, file: async () => f });
+    else if (/\.sce$/i.test(f.name) && at(2) === '824270')
+      out.scenarios.push({
+        path: `workshop/${parts[parts.length - 2]}/${f.name}`,
+        name: f.name,
+        file: async () => f,
+      });
+  }
+  const order = (a: ScenarioSource, b: ScenarioSource) => {
+    const [pa, pb] = [a.path.split('/'), b.path.split('/')];
+    if (pa[0] !== pb[0]) return pa[0] === 'scenarios' ? -1 : 1;
+    return windowsOrder(pa[1], pb[1]) || windowsOrder(pa[2] ?? '', pb[2] ?? '');
+  };
+  out.scenarios.sort(order);
+  return out;
+}
+
 /** The workshop's scenario files: each item's folder, in order, and its .sce files. */
 async function workshopFiles(dir: FileSystemDirectoryHandle): Promise<ScenarioSource[]> {
   const items: WorkshopItem[] = [];
@@ -116,7 +151,6 @@ export class KovaakFolders {
   private readonly stats = inject(StatsFolder);
   private readonly scenarios = inject(ScenarioFacts);
   private roots: FileSystemDirectoryHandle[] = [];
-  private readonly found = signal<FoundFolders>({});
   private readonly asking = signal<string[]>([]);
   private readonly refusal = signal<string | null>(null);
   private readonly busy = signal(false);
@@ -127,8 +161,8 @@ export class KovaakFolders {
   readonly state = computed<FoldersState>(() => ({
     found: [
       ...(this.stats.ready() ? (['stats'] as const) : []),
-      ...(this.found().scenarios ? (['scenarios'] as const) : []),
-      ...(this.found().workshop ? (['workshop'] as const) : []),
+      ...(this.scenarios.sources().has('scenarios') ? (['scenarios'] as const) : []),
+      ...(this.scenarios.sources().has('workshop') ? (['workshop'] as const) : []),
     ],
     ask: this.asking(),
     refused: this.refusal(),
@@ -183,9 +217,16 @@ export class KovaakFolders {
     await this.use();
   }
 
-  /** Stats files chosen as files (a folder input), where the folder picker cannot open the folder: this visit only. */
-  async openStatsFiles(files: readonly File[]): Promise<void> {
-    await this.stats.openFiles(files);
+  /**
+   * Folders chosen as files (a folder input), where the folder picker cannot open them (Chrome refuses folders under
+   * Program Files): the stats files for this visit only, the scenarios' facts kept.
+   */
+  async openFiles(files: readonly File[]): Promise<void> {
+    const chosen = sortChosen(files);
+    if (!chosen.stats.length && !chosen.scenarios.length)
+      throw new Error("No stats or scenario files of KovaaK's in the folder chosen");
+    if (chosen.stats.length) await this.stats.openFiles(chosen.stats);
+    if (chosen.scenarios.length) await this.scenarios.read(chosen.scenarios);
   }
 
   /** Finds the role folders in the picked folders, then reads them: the stats index, then the scenarios' facts. */
@@ -194,7 +235,6 @@ export class KovaakFolders {
     try {
       const found: FoundFolders = {};
       for (const root of this.roots) Object.assign(found, await findFolders(root));
-      this.found.set(found);
       if (found.stats) await this.stats.useFolder(found.stats);
       const sources = [
         ...(found.scenarios ? await sceFiles(found.scenarios, 'scenarios') : []),

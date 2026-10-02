@@ -24,13 +24,13 @@ const ROLE_NAMES = {
   workshop: "the workshop's scenarios",
 } as const;
 
-/** The stats folder chosen as files (where the browser's picker cannot open it), then the runs' stats found. */
-function readStatsFiles(
+/** KovaaK's folders chosen as files (where the browser's picker cannot open them), then the runs' stats found. */
+function readChosenFiles(
   folders: KovaakFolders,
   local: LocalFiles,
 ): (files: File[]) => Promise<void> {
   return async (files) => {
-    await folders.openStatsFiles(files);
+    await folders.openFiles(files);
     await local.findAllStats();
   };
 }
@@ -72,13 +72,13 @@ export class LocalStatsFiles implements StatsFiles {
       label: state.found.length ? "Open more of KovaaK's folders" : "Open KovaaK's folders",
       detail:
         (state.refused ? `${state.refused}. ` : '') +
-        `Missing: ${what}. Pick steamapps (in the Steam folder) to give everything at once, or each folder: ` +
-        String.raw`FPSAimTrainer\stats (each run finds its stats file by scenario and time), ` +
-        String.raw`FPSAimTrainer\Saved\SaveGames\Scenarios and workshop\content\824270 ` +
-        "(each scenario's kind, time limit and target count). The browser remembers them.",
+        `Missing: ${what}. The stats folder lets each run find its stats file by scenario and time; the ` +
+        "scenario folders give each scenario's kind, time limit and target count. Chrome's folder picker will not " +
+        'open folders under Program Files: there, choose them as files instead. FPSAimTrainer (in ' +
+        String.raw`steamapps\common) gives the stats and your scenarios, workshop\content\824270 the workshop's. ` +
+        'Folders chosen as files are read for this visit; the scenario facts are kept.',
       run: then(() => this.folders.open()),
-      files:
-        state.refused || !this.folders.picker ? readStatsFiles(this.folders, this.local) : null,
+      files: readChosenFiles(this.folders, this.local),
     };
   });
 
