@@ -8,7 +8,7 @@ export const flickListStyles = tv({
     hint: 'text-xs text-muted',
     scroll: 'min-h-0 flex-1 overflow-y-auto rounded-lg border border-border',
     table: 'w-full',
-    th: 'sticky top-0 bg-surface-1 px-3',
+    th: 'sticky top-0 z-1 bg-surface-1 px-3',
     row: 'relative cursor-pointer hover:bg-surface-2 data-selected:bg-accent-soft',
     td: 'px-3',
     // The button's hit area covers its row: a click anywhere in the row plays the flick

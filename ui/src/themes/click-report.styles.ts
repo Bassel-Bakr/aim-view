@@ -22,6 +22,7 @@ export const clickReportStyles = tv({
     fine: 'text-xs whitespace-nowrap text-(--issue-fine)',
     issueValue: 'text-secondary',
     issueWhy: 'text-xs text-muted',
+    link: 'mr-3 text-accent underline underline-offset-(--space-1)',
     tables: 'grid grid-cols-(--tables-columns) gap-x-13',
   },
 });

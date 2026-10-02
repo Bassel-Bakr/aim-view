@@ -27,6 +27,9 @@
         <th [class]="ui.th">Peak</th>
         <th [class]="ui.th">Click speed</th>
         <th [class]="ui.th">Shots</th>
+        <th [class]="ui.th" title="Time the pick of this target cost against the fastest pick">
+          Path cost
+        </th>
       </tr>
     </thead>
     <tbody>
@@ -55,6 +58,7 @@
           <td [class]="ui.td">{{ r.peak }}</td>
           <td [class]="ui.td">{{ r.clickSpeed }}</td>
           <td [class]="r.missed ? ui.missed : ui.td">{{ r.shots }}</td>
+          <td [class]="ui.td">{{ r.pathCost }}</td>
         </tr>
       }
     </tbody>

@@ -18,6 +18,11 @@
   --overlay-label-text: #fff;
   --overlay-line-width: 1;
   --overlay-line-width-strong: 2;
+  --overlay-fastest: var(--on-target);
+  --overlay-mine: var(--off-target);
+  --overlay-order-font: var(--font-weight-strong) 8px var(--font-family);
+  --overlay-path-width: 1.8;
+  --overlay-legend-bg: rgba(0, 0, 0, 0.5);
 }
 
 $max-width: var(--player-max-width);

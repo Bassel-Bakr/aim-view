@@ -270,13 +270,25 @@ export interface ReportBase {
   review_model: string | null;
 }
 
-/** A clicking run: one flick per kill. */
+/** The user's marks for where a run starts and ends, in seconds; null where the review finds it. */
+export interface RunMarks {
+  start: number | null;
+  end: number | null;
+  length: number | null;
+}
+
+/**
+ * A clicking run: one flick per kill. appeared: the frame each target first showed, by track id (joining a target's
+ * track when the tracker lost and found it again).
+ */
 export interface ClickReport extends ReportBase {
   mode: 'click';
   summary: ClickSummary;
   flicks: Flick[];
   issues: Issue[];
   paths: Record<string, PathPoint[]>;
+  appeared?: Record<string, number>;
+  run?: RunMarks | null;
 }
 
 /** A tracking run: time on the bot, measured frame by frame. */

@@ -9,6 +9,8 @@ import {
 } from '@angular/core';
 import { ClickReport, Flick } from '../../api';
 import { arrow, formatCount, formatEnded, formatMs, formatSpeed } from '../../format';
+import { PathAnalysis, pickText } from '../fastest-path/path-analysis';
+import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
 import { flickListStyles } from '@themes/flick-list.styles';
 import { slotClasses } from '@themes/slot-classes';
@@ -27,9 +29,11 @@ export interface FlickRow {
   clickSpeed: string;
   shots: string;
   missed: boolean;
+  /** What picking this target cost against the fastest pick. */
+  pathCost: string;
 }
 
-export function flickRows(r: ClickReport): FlickRow[] {
+export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[] {
   return r.flicks.map((m) => ({
     flick: m,
     n: m.n,
@@ -42,6 +46,7 @@ export function flickRows(r: ClickReport): FlickRow[] {
     clickSpeed: formatSpeed(m.click_speed),
     shots: formatCount(m.shots),
     missed: m.shots > 1,
+    pathCost: pickText(paths, m.n),
   }));
 }
 
@@ -57,10 +62,11 @@ export function flickRows(r: ClickReport): FlickRow[] {
 export class FlickList {
   readonly report = input.required<ClickReport>();
   protected readonly focus = inject(FlickFocus);
+  private readonly paths = inject(PathCost);
   private readonly scroll = viewChild<ElementRef<HTMLElement>>('scroll');
   protected readonly ui = slotClasses(flickListStyles());
   protected readonly toggle = slotClasses(toggleSwitch());
-  protected readonly rows = computed(() => flickRows(this.report()));
+  protected readonly rows = computed(() => flickRows(this.report(), this.paths.analysis()));
 
   constructor() {
     afterRenderEffect(() => {

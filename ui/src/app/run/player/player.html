@@ -75,5 +75,27 @@
     <span aria-hidden="true" [class]="toggle.knob"></span>
     Show the tracked target
   </button>
+  @if (clicking()) {
+    <button
+      type="button"
+      role="switch"
+      [class]="toggle.root"
+      [attr.aria-checked]="showFastest()"
+      (click)="toggleFastest()"
+    >
+      <span aria-hidden="true" [class]="toggle.knob"></span>
+      Show the fastest path
+    </button>
+    <button
+      type="button"
+      role="switch"
+      [class]="toggle.root"
+      [attr.aria-checked]="showMine()"
+      (click)="toggleMine()"
+    >
+      <span aria-hidden="true" [class]="toggle.knob"></span>
+      Show my path
+    </button>
+  }
   <span [class]="ui.hint">Space plays · ← → one frame · Shift ← → the next kill</span>
 </div>

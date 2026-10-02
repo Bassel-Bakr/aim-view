@@ -15,12 +15,15 @@ import { Report, Tracks } from '../../api';
 import { Playback, RATES } from '../playback';
 import { FlickFocus } from '../flick-focus';
 import { clock } from '../track';
-import { drawClick, drawTrack, OverlayStyle, readOverlayStyle } from './overlay';
+import { PathCost } from '../fastest-path/path-cost';
+import { drawClick, drawPaths, drawTrack, OverlayStyle, readOverlayStyle } from './overlay';
 import { button, segmented, toggleSwitch } from '@themes/controls.styles';
 import { playerStyles } from '@themes/player.styles';
 import { slotClasses } from '@themes/slot-classes';
 
 const OVERLAY_KEY = 'aimview-overlay';
+const FASTEST_KEY = 'aimview-fastest';
+const MINE_KEY = 'aimview-mine';
 const RATE_LABELS: Record<number, string> = { 1: '1×', 0.5: '½×', 0.25: '¼×', 0.125: '⅛×' };
 
 /**
@@ -72,6 +75,7 @@ export class Player {
   readonly tracks = input<Tracks | null>(null);
   protected readonly playback = inject(Playback);
   private readonly focus = inject(FlickFocus);
+  private readonly paths = inject(PathCost);
   private readonly destroyRef = inject(DestroyRef);
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('overlay');
@@ -86,6 +90,9 @@ export class Player {
   protected readonly rateLabels = RATE_LABELS;
   protected readonly aspect = signal<string | null>(null);
   protected readonly showOverlay = signal(localStorage.getItem(OVERLAY_KEY) !== '0');
+  protected readonly showFastest = signal(localStorage.getItem(FASTEST_KEY) === '1');
+  protected readonly showMine = signal(localStorage.getItem(MINE_KEY) !== '0');
+  protected readonly clicking = computed(() => this.report()?.mode === 'click');
   protected readonly marks = computed(() => markPositions(this.report(), this.playback.duration()));
   private style: OverlayStyle | null = null;
   private seeking = false;
@@ -96,6 +103,9 @@ export class Player {
       this.report();
       this.tracks();
       this.showOverlay();
+      this.showFastest();
+      this.showMine();
+      this.paths.analysis();
       untracked(() => this.draw(this.playback.time));
     });
   }
@@ -133,14 +143,20 @@ export class Player {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
     const r = this.report();
-    if (!r || !this.showOverlay()) return;
+    if (!r) return;
     this.style ??= readOverlayStyle(canvas);
     const frame = Math.round(t * r.fps);
     const scale = w / r.geometry.W;
-    if (r.mode === 'click') drawClick(c, r, frame, scale, this.style);
-    else {
-      const tracks = this.tracks();
-      if (tracks) drawTrack(c, r, tracks, frame, scale, this.style);
+    const tracks = this.tracks();
+    if (r.mode === 'click') {
+      const paths = this.paths.analysis();
+      const show = { fastest: this.showFastest(), mine: this.showMine() };
+      if (tracks && paths && (show.fastest || show.mine)) {
+        drawPaths(c, r, tracks, frame, scale, this.style, paths, show);
+      }
+      if (this.showOverlay()) drawClick(c, r, frame, scale, this.style);
+    } else if (tracks && this.showOverlay()) {
+      drawTrack(c, r, tracks, frame, scale, this.style);
     }
   }
 
@@ -170,6 +186,16 @@ export class Player {
   protected toggleOverlay(): void {
     this.showOverlay.update((on) => !on);
     localStorage.setItem(OVERLAY_KEY, this.showOverlay() ? '1' : '0');
+  }
+
+  protected toggleFastest(): void {
+    this.showFastest.update((on) => !on);
+    localStorage.setItem(FASTEST_KEY, this.showFastest() ? '1' : '0');
+  }
+
+  protected toggleMine(): void {
+    this.showMine.update((on) => !on);
+    localStorage.setItem(MINE_KEY, this.showMine() ? '1' : '0');
   }
 
   /**

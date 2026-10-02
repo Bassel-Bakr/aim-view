@@ -12,6 +12,7 @@ const SUMMARY = {
   score: 889.26,
   kills: 98,
   misses: 3,
+  shots: 101,
   median_interval: 0.425,
   still: 0.1,
   peak: 480.4,
@@ -27,7 +28,7 @@ const SUMMARY = {
 
 describe('click stats', () => {
   it("shows the whole run's numbers", () => {
-    const s = runStats(SUMMARY);
+    const s = runStats(SUMMARY, { share: 0.8, total: 1.234, extra: 2.04 });
     expect(s.map((x) => `${x.label}: ${x.value}`)).toEqual([
       'Score: 889.26',
       'Kills: 98',
@@ -36,6 +37,9 @@ describe('click stats', () => {
       'Still before the click: 100 ms',
       'Peak speed: 480 °/s',
       'Game FPS: 240',
+      'Fastest next target: 80%',
+      'Path cost in all: 1234 ms',
+      'More shots with the best path: ≈ 2.0',
     ]);
   });
 
@@ -52,10 +56,19 @@ describe('click stats', () => {
       click_speed: 30,
       shots: 2,
     } as Flick;
-    const s = killStats(m, SUMMARY);
+    const s = killStats(m, SUMMARY, '+40 ms');
     expect(s[0].value).toBe('12.3° ↑');
     expect(s[1]).toEqual({ label: 'Kill time', value: '500 ms', detail: 'run 425 ms' });
     expect(s[4].value).toBe('short, 1.2° to go');
+    expect(s.at(-1)).toMatchObject({ label: 'Path cost', value: '+40 ms' });
+  });
+
+  it('shows the path cards as under way while the tracks load', () => {
+    expect(
+      runStats(SUMMARY, null)
+        .slice(-3)
+        .map((x) => x.value),
+    ).toEqual(['…', '…', '…']);
   });
 
   it('says where the kills came from and what was measured', () => {

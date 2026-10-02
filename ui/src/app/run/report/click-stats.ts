@@ -16,8 +16,18 @@ export interface Stat {
   detail: string;
 }
 
+/** The run's picks against the fastest order, for its cards: null while the tracks load. */
+export interface PathSummary {
+  share: number | null;
+  total: number;
+  /** More shots (kills without a stats file) the best picks would have given, at the run's pace. */
+  extra: number;
+}
+
+const LOADING = '…';
+
 /** The whole run's cards. */
-export function runStats(s: ClickSummary): Stat[] {
+export function runStats(s: ClickSummary, paths: PathSummary | null): Stat[] {
   return [
     { label: 'Score', value: formatCount(s.score), detail: '' },
     { label: 'Kills', value: formatCount(s.kills), detail: '' },
@@ -26,11 +36,22 @@ export function runStats(s: ClickSummary): Stat[] {
     { label: 'Still before the click', value: formatMs(s.still), detail: '' },
     { label: 'Peak speed', value: formatSpeed(s.peak), detail: '' },
     { label: 'Game FPS', value: s.fps_avg ? String(Math.round(s.fps_avg)) : '–', detail: '' },
+    {
+      label: 'Fastest next target',
+      value: paths ? formatPercent(paths.share) : LOADING,
+      detail: 'of the picks with a choice',
+    },
+    { label: 'Path cost in all', value: paths ? formatMs(paths.total) : LOADING, detail: '' },
+    {
+      label: `More ${s.shots == null ? 'kills' : 'shots'} with the best path`,
+      value: paths ? `≈ ${paths.extra.toFixed(1)}` : LOADING,
+      detail: 'at your pace',
+    },
   ];
 }
 
 /** One kill's cards, each with the run's median under it where there is one. */
-export function killStats(m: Flick, s: ClickSummary): Stat[] {
+export function killStats(m: Flick, s: ClickSummary, pathCost: string): Stat[] {
   const run = (v: string) => `run ${v}`;
   return [
     { label: 'Distance', value: `${m.D0.toFixed(1)}° ${arrow(m.dir)}`, detail: '' },
@@ -46,6 +67,7 @@ export function killStats(m: Flick, s: ClickSummary): Stat[] {
       detail: run(formatSpeed(s.click_speed)),
     },
     { label: 'Shots', value: formatCount(m.shots), detail: '' },
+    { label: 'Path cost', value: pathCost, detail: 'against the fastest pick' },
   ];
 }
 

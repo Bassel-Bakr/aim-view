@@ -88,6 +88,16 @@
           }
         </div>
         <div [class]="ui.issueValue">{{ i.value }}</div>
+        @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
+          <div [class]="ui.issueWhy">
+            Costliest picks:
+            @for (c of pathing()?.costliest; track c.flick.n) {
+              <button type="button" [class]="ui.link" (click)="focus.play(c.flick)">
+                kill {{ c.flick.n }} {{ c.cost }}
+              </button>
+            }
+          </div>
+        }
         <div [class]="ui.issueWhy">{{ i.why }}</div>
       </div>
     }

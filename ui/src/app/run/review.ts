@@ -23,11 +23,14 @@ export class Review {
     return id ? { url: '/api/report', params: { id } } : undefined;
   });
 
-  /** Every target in every frame, which the tracking overlay and timeline draw. Clicking runs do not need them. */
+  /**
+   * Every target in every frame, once there is a review: the tracking overlay and timeline draw them, and a clicking
+   * run's fastest paths are worked out from them.
+   */
   readonly tracks = httpResource<Tracks | null>(() => {
     const id = this.library.selectedId();
     const report = this.report.hasValue() ? this.report.value() : null;
-    return id && report?.mode === 'track' ? { url: '/api/tracks', params: { id } } : undefined;
+    return id && report ? { url: '/api/tracks', params: { id } } : undefined;
   });
 
   private watcher = 0;
