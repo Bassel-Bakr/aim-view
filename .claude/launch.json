@@ -12,6 +12,15 @@
       "port": 8770
     },
     {
+      "name": "ui",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 4200
+    },
+    {
       "name": "model-web",
       "runtimeExecutable": "python",
       "runtimeArgs": [

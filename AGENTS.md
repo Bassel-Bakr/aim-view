@@ -16,6 +16,9 @@ python python/server.py --port 8770            # the review app, http://127.0.0.
 python python/model/test_model.py              # the detector's tests
 python python/model/eval_vods.py <model.pt>    # static runs against their stats files
 python python/model/eval_moving.py name=<model.pt> ...   # every scenario kind against the stats files
+bun run dev                                    # the Angular UI, http://localhost:4200/ (needs the server above)
+bun run test:ui                                # the UI's tests
+cargo check                                    # the Rust core
 ```
 
 Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
@@ -33,6 +36,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 - **Correctness first.** The user wants near-100% accuracy, even at the cost of speed. Judge a detector by the
   stats-file checks (`eval_vods.py`, `eval_moving.py`), not only crop scores.
 - **Bun for JavaScript** tools, not Node.
+- **Angular for speed.** No zone.js. OnPush everywhere (Angular 22's default: never set `Eager`). Signals for state and
+  `resource()` with `fetch` for data, not HttpClient or RxJS. Anything that changes every frame (the video overlay,
+  timelines) is drawn on a canvas in `requestAnimationFrame` or `requestVideoFrameCallback`, never through a template.
+  A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
 - **Spelling and style.** Write "center", not "centre". Docs in plain, simple English: short sentences, active voice,
   no arrows.
 - **Nothing gets deleted.** Old files move to a `retired/` folder; the user's own data is never overwritten.
@@ -43,10 +50,13 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 ## State (2026-10-02)
 
 - The detector is full_v3 (`infer.BEST`), trained on every scenario kind; small_v13 is the small one for speed.
-- Decided, not started (wait for the user's go): the app runs three ways from one code base (browser only, browser
-  with the Python server, desktop). The UI is Angular 22 and carries the redesign from the 2026-10-02 mockup. The
-  review core is Rust, built natively for the desktop app (Tauri 2) and as WebAssembly for the browser. Python stays
-  the reference: the core replaces nothing until its reports match Python's on every recording.
+- The plan: the app runs three ways from one code base (browser only, browser with the Python server, desktop). The UI
+  is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
+  desktop app (Tauri 2) and as WebAssembly for the browser. Python stays the reference: the core replaces nothing
+  until its reports match Python's on every recording.
+- Done: the layout (`python/`, the Rust crate at the root, `ui/`); the Angular app's shell (the top bar, against the
+  Python server). Next, after the user's go: the redesign's screens in `ui/`, then porting the review to Rust.
+- The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
   Rust prototype in `python/model/rust/` becomes the start of the core's detector).

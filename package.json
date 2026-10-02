@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "bun run --cwd ui start",
+    "build:web": "bun run --cwd ui build",
+    "test:ui": "bun run --cwd ui test --watch=false"
+  }
+}

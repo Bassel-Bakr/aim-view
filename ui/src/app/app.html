@@ -1,0 +1,9 @@
+<header class="top">
+  <span class="brand">aimview</span>
+  @if (models.error()) {
+    <span class="pill" role="status">The review server is not running</span>
+  } @else if (models.hasValue()) {
+    @let m = models.value();
+    <span class="pill">{{ m.chosen }} · {{ m.device === 'cuda' ? 'GPU' : 'CPU' }}</span>
+  }
+</header>

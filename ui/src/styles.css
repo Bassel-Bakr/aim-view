@@ -1,0 +1,16 @@
+:root {
+  color-scheme: dark;
+  --surface-0: #0e0f11;
+  --surface-1: #16181b;
+  --surface-2: #1f2125;
+  --surface-3: #2a2d32;
+  --text-primary: #f4f4f2;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --accent: #3987e5;
+  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary); }

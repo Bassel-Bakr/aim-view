@@ -1,0 +1,17 @@
+.top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  padding: 0 18px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-size: 16px; font-weight: 600; }
+.pill {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}

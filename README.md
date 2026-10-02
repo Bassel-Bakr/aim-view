@@ -38,12 +38,14 @@ aim-view/
 ├── ui/            the Angular 22 app
 ├── models/        the ONNX files every build ships
 ├── python/        the review, server and readers in Python; model/ for training and evaluation
-├── package.json   Bun workspace and the build scripts
+├── package.json   the build scripts, run with Bun
 ├── retired/       old code that has been replaced
 └── test_out/      data, not in git
 ```
 
-The Python code is in `python/`. The other folders arrive as they are built.
+Built so far: `python/`, the Rust crate (`Cargo.toml` and `src/`, empty for now) and the Angular app in `ui/` (its top
+bar). The other folders arrive as they are built. `package.json` becomes a Bun workspace once there is a second
+JavaScript package (the core's WebAssembly build).
 
 ## Layout today
 
@@ -55,6 +57,8 @@ The Python code is in `python/`. The other folders arrive as they are built.
 | `python/hud.py`, `python/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
 | `python/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
 | `python/README.md` | How the review works, in detail. |
+| `ui/` | The new web app in Angular 22 (in progress): zoneless, OnPush, signals. |
+| `Cargo.toml`, `src/` | The review core in Rust (started, empty). |
 | `python/model/MODEL_STATUS.md`, `python/model/REPRODUCE.md` | The detector's results and limits, and every command to rebuild it. |
 | `test_out/` | Not in git: each recording's review cache (`vod_app/`), uploads (`vod_uploads/`), the training data, runs and hand labels (`vod_model/`), and the HUD readers' test data (`hud/`). |
 
@@ -69,7 +73,17 @@ python python/server.py --port 8770
 Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
 `stats` folder. The detector runs on an NVIDIA GPU through PyTorch, or on the CPU through ONNX Runtime.
 
+The new Angular app runs beside it, and gets its data from that server:
+
+```bash
+bun install --cwd ui
+bun run dev
+```
+
+Then open http://localhost:4200/.
+
 ## Needs
 
 Python 3 with NumPy, SciPy and Pillow; PyTorch (GPU) or ONNX Runtime (CPU) for the detector; ffmpeg and ffprobe on
-the PATH. Training and the deployment prototypes need more: see `python/model/REPRODUCE.md`.
+the PATH. Training and the deployment prototypes need more: see `python/model/REPRODUCE.md`. The Angular app needs Bun;
+the Rust core needs Rust with the `wasm32-unknown-unknown` target.
