@@ -6,7 +6,7 @@ import { LocalFiles, localRecording } from '../web-files/local-files';
 import { ScenarioFacts } from '../web-files/scenario-facts';
 import { StatsCsv } from '../web-files/stats-csv';
 import { CoreModule } from './core-module';
-import { ReviewMessage, ReviewRequest, VideoReadings } from './review-messages';
+import { BrowserDevice, ReviewMessage, ReviewRequest, VideoReadings } from './review-messages';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
 const NO_SCENARIOS =
@@ -123,6 +123,7 @@ export class BrowserReview implements ReviewEngine {
     const cap = this.scenarios.get(localRecording(local).scenario)?.targets ?? null;
     const list = this.models.list.hasValue() ? this.models.list.value() : undefined;
     const model = list?.chosen ?? DEFAULT_MODEL;
+    const device: BrowserDevice = list?.device === 'wasm' ? 'wasm' : 'webgpu';
     const run: BrowserRun = { job: { stage: 'starting' } };
     this.runs.set(id, run);
     const worker = new Worker(new URL('./review.worker', import.meta.url), { type: 'module' });
@@ -132,6 +133,7 @@ export class BrowserReview implements ReviewEngine {
       coreUrl: new URL('core/aimview.wasm', base).href,
       ortPath: new URL('ort/', base).href,
       modelUrl: new URL(`models/detector_${model}_u8in.onnx`, base).href,
+      device,
       cap,
     };
     worker.onmessage = (e: MessageEvent<ReviewMessage>) => {

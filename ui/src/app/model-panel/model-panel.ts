@@ -1,10 +1,13 @@
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Badge } from '../controls/badge';
 import { Button } from '../controls/button';
-import { errorMessage } from '../api';
+import { Device, errorMessage } from '../api';
 import { DEVICE_LABELS, modelName, Models } from '../services/models';
 import { Review } from '../services/review';
 import { modelTable } from './model-table';
+
+/** Where the browser runs the detector, as the choice says it. */
+const RUNS_ON: Record<Device, string> = { cuda: 'GPU', cpu: 'CPU', wasm: 'CPU', webgpu: 'GPU' };
 
 /**
  * The model in use, in the top bar; it opens the models side by side (what each does best, its checks and speeds),
@@ -21,12 +24,17 @@ export class ModelPanel {
   private readonly review = inject(Review);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   protected readonly deviceLabels = DEVICE_LABELS;
+  protected readonly runsOn = RUNS_ON;
   protected readonly table = computed(() => {
     const list = this.models.current();
     return list ? modelTable(list) : null;
   });
   protected readonly switching = signal(false);
   protected readonly status = signal('');
+
+  protected useDevice(device: Device): void {
+    void this.models.useDevice(device);
+  }
 
   protected open(): void {
     this.status.set('');

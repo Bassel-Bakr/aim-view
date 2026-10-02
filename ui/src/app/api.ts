@@ -40,11 +40,14 @@ export interface Check {
 }
 
 /** Where the detector runs: the GPU, the CPU, or the browser (WebAssembly). */
-export type Device = 'cuda' | 'cpu' | 'wasm';
+/** Where the detector runs: the server's GPU (cuda) or CPU, or in the browser on the CPU (wasm) or the GPU. */
+export type Device = 'cuda' | 'cpu' | 'wasm' | 'webgpu';
 
 export interface ModelList {
   chosen: string;
   device: Device;
+  /** The devices the user can choose between, where the mode lets them choose (the browser). */
+  devices?: Device[];
   speed: string;
   checked_on: string;
   checks: Check[];

@@ -29,7 +29,7 @@
                 "input": "public"
               },
               {
-                "glob": "ort-wasm-simd-threaded.{wasm,mjs}",
+                "glob": "ort-wasm-simd-threaded{,.asyncify}.{wasm,mjs}",
                 "input": "node_modules/onnxruntime-web/dist",
                 "output": "ort"
               },

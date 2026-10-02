@@ -6,7 +6,8 @@ import { ModelCatalog } from '../platform/model-catalog';
 export const DEVICE_LABELS: Record<Device, string> = {
   cuda: 'GPU',
   cpu: 'CPU',
-  wasm: 'browser',
+  wasm: 'browser CPU',
+  webgpu: 'browser GPU',
 };
 
 /** The detector models, and the one new reviews use (the top bar and the run page show it). */
@@ -24,6 +25,11 @@ export class Models {
   /** Picks the model new reviews use. */
   async pick(name: string): Promise<void> {
     this.list.set(await this.catalog.pick(name));
+  }
+
+  /** Picks where new reviews run the detector. */
+  async useDevice(device: Device): Promise<void> {
+    this.list.set(await this.catalog.useDevice(device));
   }
 }
 

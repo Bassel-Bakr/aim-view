@@ -21,6 +21,14 @@
     @apply max-w-(--prose-width) text-sm text-secondary;
   }
 
+  .runs-on {
+    @apply flex flex-wrap items-center gap-4 text-sm text-secondary;
+  }
+
+  .runs-on-note {
+    @apply text-xs text-muted;
+  }
+
   .scroll {
     @apply flex-none overflow-x-auto;
   }

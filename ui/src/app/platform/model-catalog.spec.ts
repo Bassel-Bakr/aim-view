@@ -48,5 +48,17 @@ for (const mode of MODE_CASES) {
       const list = await mode.finish(catalog.pick('small_v13'), fakeServer());
       expect(list.chosen).toBe('small_v13');
     });
+
+    it('lets the user choose the device where it can, and keeps the choice', async () => {
+      const catalog = setUp(mode, ModelCatalog);
+      if (mode.name === 'server') {
+        await expect(catalog.useDevice('cpu')).rejects.toThrow();
+        return;
+      }
+      const list = await catalog.useDevice('wasm');
+      expect(list.device).toBe('wasm');
+      expect(list.devices).toContain('wasm');
+      await expect(catalog.useDevice('cuda')).rejects.toThrow();
+    });
   });
 }

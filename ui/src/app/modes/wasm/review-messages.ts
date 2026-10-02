@@ -1,14 +1,18 @@
 import { JobStage, Tracks } from '../../api';
 
+/** Where the browser runs the detector: the GPU (WebGPU) or the CPU (WebAssembly). */
+export type BrowserDevice = 'webgpu' | 'wasm';
+
 /**
- * What the review worker is asked: a recording's file, where the core, the detector runtime and the model are, and
- * the scenario's target count (null: not known).
+ * What the review worker is asked: a recording's file, where the core, the detector runtime and the model are, where
+ * to run the detector, and the scenario's target count (null: not known).
  */
 export interface ReviewRequest {
   file: Blob;
   coreUrl: string;
   ortPath: string;
   modelUrl: string;
+  device: BrowserDevice;
   cap: number | null;
 }
 
