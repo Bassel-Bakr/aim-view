@@ -2,7 +2,7 @@ import { computed, effect, inject, Injectable, signal, untracked } from '@angula
 import { ClickReport, Flick } from '../api';
 import { Library } from '../services/library';
 import { Playback } from './playback';
-import { Review } from './review';
+import { Review } from '../services/review';
 import { flickAt } from './track';
 
 const FOLLOW_KEY = 'aimview-follow';

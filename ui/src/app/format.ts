@@ -59,6 +59,22 @@ export function formatSpeed(degPerSecond: number | null | undefined): string {
   return degPerSecond == null ? NONE : `${Math.round(degPerSecond)} °/s`;
 }
 
+/** How far one time is from another: "at the same time", "12 s after", "3 min before", "2 h after", "4 days before". */
+export function formatOffset(seconds: number): string {
+  const a = Math.abs(seconds);
+  if (a < 1) return 'at the same time';
+  const days = Math.round(a / 86400);
+  const size =
+    a < 60
+      ? `${Math.round(a)} s`
+      : a < 3600
+        ? `${Math.round(a / 60)} min`
+        : a < 86400
+          ? `${Math.round(a / 3600)} h`
+          : `${days} ${days === 1 ? 'day' : 'days'}`;
+  return `${size} ${seconds < 0 ? 'before' : 'after'}`;
+}
+
 /** A count, or a dash when there is none. */
 export function formatCount(v: number | null | undefined): string {
   return v == null ? NONE : formatNumber(v);

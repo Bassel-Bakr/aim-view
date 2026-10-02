@@ -1,13 +1,16 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { JobStage, Recording } from '../api';
+import { formatPercent } from '../format';
+import { isLocal, LocalFiles } from '../services/local-files';
 import { modelName, Models } from '../services/models';
 import { FlickList } from './flick-list/flick-list';
 import { Player } from './player/player';
 import { ClickReport } from './report/click-report';
 import { TrackReport } from './report/track-report';
-import { Review } from './review';
+import { Review } from '../services/review';
 import { RunHeader } from './run-header/run-header';
 import { SpeedChart } from './speed-chart/speed-chart';
+import { StatsFile } from './stats-file/stats-file';
 import { Timeline } from './timeline/timeline';
 import { button } from '@themes/controls.styles';
 import { runStyles } from '@themes/run.styles';
@@ -37,7 +40,16 @@ const STAGES: Record<JobStage, string> = {
 /** The open recording: its header, the review's button and progress, the video, and a tracking run's timeline. */
 @Component({
   selector: 'app-run',
-  imports: [RunHeader, Player, Timeline, FlickList, SpeedChart, ClickReport, TrackReport],
+  imports: [
+    RunHeader,
+    StatsFile,
+    Player,
+    Timeline,
+    FlickList,
+    SpeedChart,
+    ClickReport,
+    TrackReport,
+  ],
   templateUrl: './run.html',
   styleUrl: './run.scss',
 })
@@ -45,6 +57,7 @@ export class Run {
   readonly recording = input.required<Recording>();
   protected readonly review = inject(Review);
   private readonly models = inject(Models);
+  private readonly local = inject(LocalFiles);
   protected readonly ui = slotClasses(runStyles());
   protected readonly button = button();
   protected readonly primaryButton = button({ intent: 'primary' });
@@ -63,8 +76,29 @@ export class Run {
     const r = this.report();
     return r?.mode === 'click' ? r : null;
   });
-  protected readonly videoUrl = computed(
-    () => `/video?id=${encodeURIComponent(this.recording().id)}`,
+  /** A recording from this computer: the server cannot see it, so it has no review. */
+  protected readonly isLocal = computed(() => isLocal(this.recording().id));
+  protected readonly statsOpen = signal(false);
+  /** A recording from this computer: its video, which may still be being remuxed into MP4. */
+  protected readonly localVideo = computed(
+    () => this.local.find(this.recording().id)?.video() ?? null,
+  );
+  /** Where the player reads the video; null while it is being remuxed. */
+  protected readonly videoUrl = computed<string | null>(() => {
+    const v = this.localVideo();
+    if (!v) return `/video?id=${encodeURIComponent(this.recording().id)}`;
+    return v.state === 'remuxing' ? null : v.url;
+  });
+  protected readonly remuxShare = computed(() => {
+    const v = this.localVideo();
+    return v?.state === 'remuxing' ? formatPercent(v.progress) : '';
+  });
+  /** Reviewed, but its report is gone (a new stats file): measured again on its tracks, not reviewed again. */
+  private readonly unmeasured = computed(
+    () =>
+      this.recording().analysed &&
+      this.review.report.hasValue() &&
+      this.review.report.value() === null,
   );
 
   /** Which model made the review on screen, and whether it is the one new reviews use. */
@@ -81,6 +115,7 @@ export class Run {
 
   protected readonly actionLabel = computed(() => {
     if (!this.recording().analysed) return 'Analyse';
+    if (this.unmeasured()) return 'Measure again';
     const chosen = this.models.chosen();
     const by = this.report()?.review_model;
     return chosen && by !== chosen ? `Review with ${modelName(chosen)}` : 'Review again';
@@ -105,6 +140,10 @@ export class Run {
   });
 
   protected startReview(): void {
-    void this.review.analyse(this.recording().analysed);
+    void this.review.analyse(this.recording().analysed && !this.unmeasured());
+  }
+
+  protected toggleStats(): void {
+    this.statsOpen.update((open) => !open);
   }
 }

@@ -1,16 +1,54 @@
 <div [class]="ui.head">
   <app-run-header [class]="ui.header" [recording]="recording()" [report]="report()" />
   <div [class]="ui.toolbar">
+    @if (!isLocal()) {
+      <button
+        type="button"
+        [class]="recording().analysed ? button : primaryButton"
+        [disabled]="review.running()"
+        (click)="startReview()"
+      >
+        {{ actionLabel() }}
+      </button>
+    }
     <button
       type="button"
-      [class]="recording().analysed ? button : primaryButton"
-      [disabled]="review.running()"
-      (click)="startReview()"
+      aria-controls="stats-file"
+      [class]="button"
+      [attr.aria-expanded]="statsOpen()"
+      (click)="toggleStats()"
     >
-      {{ actionLabel() }}
+      Stats file
     </button>
   </div>
 </div>
+@if (isLocal()) {
+  <p [class]="ui.note">
+    This recording stays in your browser. Its review needs the model in the browser, which is not
+    built yet.
+  </p>
+}
+@if (localVideo(); as v) {
+  @if (v.state === 'remuxing') {
+    <div [class]="ui.progress">
+      <progress max="1" [class]="ui.bar" [value]="v.progress"></progress>
+      <span role="status">Remuxing it into MP4 in the browser</span>
+      <span aria-hidden="true">{{ remuxShare() }}</span>
+    </div>
+  } @else if (v.state === 'failed') {
+    <p role="alert" [class]="ui.note">
+      Could not remux it into MP4 ({{ v.error }}). It plays as it is, if the browser can play it.
+    </p>
+  } @else if (v.remuxed) {
+    <p [class]="ui.note">
+      Remuxed into MP4 in the browser: the same video and sound, copied into a file the browser
+      plays.
+    </p>
+  }
+}
+@if (statsOpen()) {
+  <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
+}
 @if (reviewedBy(); as note) {
   <p [class]="ui.note">{{ note }}</p>
 }
@@ -23,13 +61,15 @@
 }
 <!-- The player keeps its place whatever the report, so the video never reloads when the report arrives -->
 <div class="stage">
-  <app-player [src]="videoUrl()" [report]="report()" [tracks]="tracks()">
-    @if (trackReport(); as tr) {
-      @if (tracks(); as t) {
-        <app-timeline [report]="tr" [tracks]="t" />
+  @if (videoUrl(); as src) {
+    <app-player [src]="src" [report]="report()" [tracks]="tracks()">
+      @if (trackReport(); as tr) {
+        @if (tracks(); as t) {
+          <app-timeline [report]="tr" [tracks]="t" />
+        }
       }
-    }
-  </app-player>
+    </app-player>
+  }
   @if (clickReport(); as cr) {
     <app-flick-list [report]="cr" />
   }

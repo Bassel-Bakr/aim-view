@@ -1796,7 +1796,7 @@ async function upload(files) {
   try {
     for (const v of videos) {
       last = await send(`/api/upload?name=${encodeURIComponent(v.name)}`, v, `Uploading ${v.name}:`);
-      if (videos.length === 1 && csvs.length) await send(`/api/upload?name=${encodeURIComponent(csvs[0].name)}&for=${encodeURIComponent(v.name)}`, csvs[0], "Stats file:");
+      if (videos.length === 1 && csvs.length) await send(`/api/upload?name=${encodeURIComponent(csvs[0].name)}&id=${encodeURIComponent(last.id)}`, csvs[0], "Stats file:");
     }
     $("#up-text").textContent = "Uploaded";
     await loadVods();

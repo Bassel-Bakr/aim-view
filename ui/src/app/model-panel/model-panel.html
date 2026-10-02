@@ -1,0 +1,128 @@
+@if (models.list.error()) {
+  <span role="status" [class]="ui.down">The review server is not running</span>
+} @else if (models.list.hasValue()) {
+  @let m = models.list.value();
+  <button
+    type="button"
+    aria-haspopup="dialog"
+    title="The model the review uses: see the models, what each does best, and change it"
+    [class]="ui.trigger"
+    (click)="open()"
+  >
+    {{ m.chosen }} · {{ m.device === 'cuda' ? 'GPU' : 'CPU' }}
+  </button>
+}
+
+<dialog #dialog aria-labelledby="models-title" [class]="ui.dialog">
+  <header [class]="ui.head">
+    <h2 id="models-title">Models</h2>
+    <button type="button" [class]="button" (click)="close()">Close</button>
+  </header>
+  <p [class]="ui.intro">
+    The model finds the targets in every frame; the review measures your aim from what it finds. New
+    reviews use the model you pick. Each recording keeps its reviews by other models, so switching
+    back is instant.
+  </p>
+  @if (table(); as t) {
+    <div [class]="ui.scroll">
+      <table [class]="ui.table">
+        <thead>
+          <tr>
+            <td></td>
+            @for (c of t.columns; track c.name) {
+              <th scope="col" [class]="ui.column">
+                {{ c.label }}
+                @if (c.isDefault) {
+                  <span [class]="badge">default</span>
+                }
+                @if (c.inUse) {
+                  <span [class]="goodBadge">in use</span>
+                }
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of t.rows; track row.label) {
+            <tr>
+              <th scope="row" [class]="ui.rowHead">
+                {{ row.label }}
+                @if (row.about) {
+                  <span [class]="ui.about">{{ row.about }}</span>
+                }
+              </th>
+              @for (cell of row.cells; track $index) {
+                <td [class]="row.prose ? ui.prose : cell.best ? ui.best : ui.cell">
+                  @if (cell.text === null) {
+                    <span [class]="ui.muted">–</span>
+                  } @else {
+                    {{ cell.text }}
+                    @if (cell.detail) {
+                      <span [class]="ui.muted">· {{ cell.detail }}</span>
+                    }
+                    @if (cell.best) {
+                      <span class="sr-only">(best)</span>
+                    }
+                  }
+                </td>
+              }
+            </tr>
+          }
+          <tr>
+            <th scope="row"><span class="sr-only">Pick</span></th>
+            @for (c of t.columns; track c.name) {
+              <td [class]="ui.cell">
+                @if (c.inUse) {
+                  <span [class]="ui.muted">In use</span>
+                } @else if (c.available) {
+                  <button
+                    type="button"
+                    [class]="button"
+                    [disabled]="switching()"
+                    (click)="use(c.name)"
+                  >
+                    Use {{ c.useLabel }}
+                  </button>
+                } @else {
+                  <span [class]="ui.muted">Needs the GPU</span>
+                }
+              </td>
+            }
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p [class]="note">{{ t.notes }}</p>
+    @if (t.older.length) {
+      <details [class]="ui.older">
+        <summary [class]="ui.summary">Older models</summary>
+        <p [class]="note">
+          Each one was replaced by a newer model. python/model/MODEL_STATUS.md says why.
+        </p>
+        <ul [class]="ui.olderList">
+          @for (c of t.older; track c.name) {
+            <li [class]="ui.olderRow">
+              <span>{{ c.name }}</span>
+              <span [class]="ui.muted">{{ c.size }}</span>
+              @if (c.inUse) {
+                <span [class]="ui.muted">In use</span>
+              } @else if (c.available) {
+                <button
+                  type="button"
+                  [class]="button"
+                  [disabled]="switching()"
+                  (click)="use(c.name)"
+                >
+                  Use {{ c.useLabel }}
+                </button>
+              } @else {
+                <span [class]="ui.muted">Needs the GPU</span>
+              }
+            </li>
+          }
+        </ul>
+      </details>
+    }
+  }
+  <p role="status" [class]="ui.status">{{ status() }}</p>
+</dialog>

@@ -25,11 +25,13 @@
 </div>
 @if (library.recordings.error()) {
   <p role="alert" [class]="ui.note">
-    The review server is not running. Start it with <code>python python/server.py</code>.
+    The review server is not running, so only recordings you upload are listed. Start it with
+    <code>python python/server.py</code>.
   </p>
 } @else if (!library.recordings.hasValue()) {
   <p role="status" [class]="ui.note">Loading the recordings…</p>
-} @else {
+}
+@if (library.recordings.hasValue() || library.all().length) {
   <div
     class="list"
     role="listbox"
@@ -63,6 +65,9 @@
           }
           @if (r.uploaded) {
             <span [class]="badge">uploaded</span>
+          }
+          @if (r.local) {
+            <span [class]="badge">in this browser</span>
           }
           @if (!r.stats) {
             <span [class]="badge">no stats</span>

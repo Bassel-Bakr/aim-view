@@ -75,8 +75,8 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   no arrows.
 - **Nothing gets deleted.** Old files move to a `retired/` folder; the user's own data is never overwritten.
 - **Data the user labelled** (in `test_out/`): hand-labelled crops (`test_out/vod_model/hand/`), area labels and types
-  (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`), cut-offs (`faint.json`) and run marks (`run.json`) per
-  recording. Keep them.
+  (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`), cut-offs (`faint.json`), run marks (`run.json`) and the
+  stats file picked for it (`stats.json`) per recording. Keep them.
 
 ## State (2026-10-02)
 
@@ -89,8 +89,11 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline),
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
   cards, how the bot was followed, and the what-if estimates), and the fastest-path analysis (path cost per kill, the
-  Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26). Next in
-  `ui/`: the tool panels (cut-off, run marks, areas), the queues, upload and the model panel. After that: porting the
+  Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
+  model panel, upload and the stats file panel. Upload keeps files in the browser (nothing is sent or saved): a video
+  that is not an MP4 is remuxed into one there with Mediabunny (streams copied, loaded only when needed), and a
+  stats .csv is read there. The stats file panel pairs a server recording with one of KovaaK's stats files
+  (`/api/stats`). Next in `ui/`: the tool panels (cut-off, run marks, areas) and the queues. After that: porting the
   review to Rust.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than

@@ -21,6 +21,7 @@
   --border-strong: rgba(255, 255, 255, 0.16);
   --grid: #24262a;
   --axis: #34373c;
+  --backdrop: rgba(0, 0, 0, 0.6);
 
   // Roles
   --accent: #3987e5;
@@ -114,6 +115,7 @@ $border: var(--border);
 $border-strong: var(--border-strong);
 $grid: var(--grid);
 $axis: var(--axis);
+$backdrop: var(--backdrop);
 
 $accent: var(--accent);
 $accent-hover: var(--accent-hover);

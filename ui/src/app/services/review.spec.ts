@@ -3,7 +3,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Job } from '../api';
 import { answer, ApiRoutes, recording } from '../fake-api';
-import { Library } from '../services/library';
+import { Library } from './library';
 import { Review } from './review';
 
 const ID = 'x/run.mp4';

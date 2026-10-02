@@ -14,7 +14,7 @@
 </p>
 @if (sourceDetail(); as detail) {
   <p [class]="ui.detail">{{ detail }}</p>
-} @else if (!r.stats && !r.analysed) {
+} @else if (!r.stats && !r.analysed && !r.local) {
   <p [class]="ui.detail">
     No stats file: the review reads KovaaK's session HUD in the video, or finds the kills in the
     video alone.

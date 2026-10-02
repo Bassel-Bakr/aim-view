@@ -20,10 +20,17 @@ describe('App', () => {
 
   it('shows the model the review uses and where it runs', async () => {
     const el = await render({
-      '/api/models': { chosen: 'full_v3', device: 'cuda', models: [] },
+      '/api/models': {
+        chosen: 'full_v3',
+        device: 'cuda',
+        speed: '',
+        checked_on: '',
+        checks: [],
+        models: [],
+      },
       '/api/vods': [],
     });
-    expect(el.querySelector('.top .pill')?.textContent?.trim()).toBe('full_v3 · GPU');
+    expect(el.querySelector('app-model-panel button')?.textContent?.trim()).toBe('full_v3 · GPU');
   });
 
   it('says so when the review server is not running', async () => {

@@ -41,9 +41,7 @@ export class Recordings {
   protected readonly query = signal('');
   protected readonly kind = signal<KindFilter>('all');
 
-  private readonly all = computed<Recording[]>(() =>
-    this.library.recordings.hasValue() ? this.library.recordings.value() : [],
-  );
+  private readonly all = this.library.all;
 
   protected readonly chips = computed<KindChip[]>(() => {
     const all = this.all();

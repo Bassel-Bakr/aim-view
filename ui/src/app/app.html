@@ -11,14 +11,8 @@
     </svg>
     aimview
   </span>
-  @if (models.error()) {
-    <span class="pill" [class]="pill" role="status">The review server is not running</span>
-  } @else if (models.hasValue()) {
-    @let m = models.value();
-    <span class="pill" [class]="pill"
-      >{{ m.chosen }} · {{ m.device === 'cuda' ? 'GPU' : 'CPU' }}</span
-    >
-  }
+  <app-upload [class]="ui.upload" />
+  <app-model-panel />
 </header>
 <app-recordings />
 <main [class]="ui.main">
@@ -28,6 +22,10 @@
     <section [class]="ui.empty">
       <h2 [class]="ui.emptyTitle">Pick a recording</h2>
       <p>Choose a run on the left. The arrow keys move through the list.</p>
+      <p>
+        Or upload one from this computer, with its stats .csv: use Upload, or drop the files on the
+        page. They stay in this browser.
+      </p>
       <p>
         Runs with a stats file (challenge mode) get the full review. Without one, the review reads
         KovaaK's session HUD when it is on screen, and otherwise finds the kills in the video alone.

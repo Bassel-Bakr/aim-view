@@ -8,6 +8,7 @@ Then open http://127.0.0.1:8770/
 """
 import argparse
 import functools
+import heapq
 import json
 import mimetypes
 import os
@@ -16,7 +17,7 @@ import sys
 import threading
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -31,6 +32,7 @@ EXPORTS = HERE / "model" / "exports"
 MODELS = HERE / "model" / "models.json"                # what the model picker shows about each model
 SETTINGS = CACHE / "settings.json"                     # the model the user picked, kept across restarts
 UPLOADS = HERE.parent / "test_out" / "vod_uploads"      # VODs uploaded from the page, any name; ids start "uploads/"
+STATS_UPLOADS = UPLOADS / "stats"                       # stats files uploaded for a recording, under their own names
 EXCLUDE_UPLOADS = CACHE / "exclude_uploads.json"        # the exclude areas last saved for an upload
 AREA_EXAMPLES = CACHE / "area_examples.jsonl"            # the saved areas the area finder learns from (areas.py)
 AREA_KINDS = CACHE / "area_kinds.json"                  # the types of area the user added, with what each is
@@ -48,6 +50,9 @@ VIDEO_TYPES = (".mp4", ".mkv", ".mov", ".webm")
 STATS_DEFAULT = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats"
 NAME = re.compile(r"^(?P<scenario>.+) - (?P<score>[-\d.]+) - (?P<stamp>\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d)\.mp4$")
 STATS_NAME = re.compile(r"^(?P<scenario>.+) - Challenge - (?P<stamp>\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d) Stats\.csv$")
+STATS_SOURCES = ("kovaak", "upload")                   # where a chosen stats file is: KovaaK's folder, or uploaded
+CANDIDATES = 40                                         # stats files offered to pair with a recording
+INDEX_AGE = 60                                          # seconds before the stats folder is listed again
 
 
 EPOCH = datetime(2000, 1, 1)
@@ -64,10 +69,19 @@ def stamp_seconds(stamp):
         return None
 
 
+def free_name(p):
+    """p, or p with " (2)", " (3)" and so on in its name when that file is there already: an upload never overwrites."""
+    out, n = p, 2
+    while out.exists():
+        out, n = p.with_name(f"{p.stem} ({n}){p.suffix}"), n + 1
+    return out
+
+
 class Library:
     def __init__(self, vods, stats):
         self.vods, self.stats = Path(vods), Path(stats)
         self.index, self.jobs, self.lock = {}, {}, threading.Lock()
+        self.indexed = 0.0                                # when the stats folder was last listed
         self.model, self.detector = "hand", None          # use() sets the model
         self.loaded = {}                                  # detectors by model name, each loaded once
         if AREA_EXAMPLES.exists():                        # examples from before type ids held the type's name
@@ -87,13 +101,19 @@ class Library:
                 t = stamp_seconds(m["stamp"])
                 if t is not None:
                     idx.setdefault(m["scenario"], []).append((t, name))
-        self.index = idx
+        self.index, self.indexed = idx, time.time()
+
+    def stats_index(self):
+        """The stats index, listed again once it is a minute old, so runs played while the server runs are found."""
+        if time.time() - self.indexed > INDEX_AGE:
+            self.load_stats_index()
+        return self.index
 
     def stats_for(self, scenario, stamp):
         t = stamp_seconds(stamp)
         if t is None:
             return None
-        cands = [(abs(ts - t), n) for ts, n in self.index.get(scenario, []) if abs(ts - t) <= 5]
+        cands = [(abs(ts - t), n) for ts, n in self.stats_index().get(scenario, []) if abs(ts - t) <= 5]
         return self.stats / min(cands)[1] if cands else None
 
     def resolve(self, vid):
@@ -103,8 +123,25 @@ class Library:
             raise FileNotFoundError(vid)
         return p
 
-    def stats_of(self, video):
-        """The stats file for a VOD: an uploaded one beside it (same name, .csv), else by name and time."""
+    def pairing(self, vid):
+        """The user's choice of stats file for a recording (stats.json in its folder): {file, source}, where file None
+        means no stats file. None: nothing chosen, so it is found by name and time."""
+        p = self.cache_dir(vid) / "stats.json"
+        return json.load(open(p, encoding="utf-8")) if p.exists() else None
+
+    def stats_file(self, name, source):
+        """A chosen stats file's path: in KovaaK's stats folder, or among the uploaded ones."""
+        if source not in STATS_SOURCES or Path(name).name != name or Path(name).suffix.lower() != ".csv":
+            raise ValueError(f"not a stats file: {name}")
+        return (self.stats if source == "kovaak" else STATS_UPLOADS) / name
+
+    def stats_of(self, vid, video):
+        """The stats file for a VOD: the user's choice (None when it is gone), else an uploaded one beside it (same
+        name, .csv), else by name and time."""
+        pick = self.pairing(vid)
+        if pick is not None:
+            p = self.stats_file(pick["file"], pick["source"]) if pick["file"] else None
+            return p if p and p.is_file() else None
         side = video.with_suffix(".csv")
         if video.parent.resolve() == UPLOADS.resolve() and side.exists():
             return side
@@ -192,10 +229,9 @@ class Library:
             if not m:
                 continue
             vid = p.relative_to(self.vods).as_posix()
-            st = self.stats_for(m["scenario"], m["stamp"])
             out.append(dict(id=vid, scenario=m["scenario"], kind=self.scenario_kinds.get(m["scenario"].lower()),
                             score=float(m["score"]), stamp=m["stamp"],
-                            mtime=p.stat().st_mtime, size=p.stat().st_size, stats=bool(st),
+                            mtime=p.stat().st_mtime, size=p.stat().st_size, stats=bool(self.stats_of(vid, p)),
                             analysed=self.reviewed(vid)))
         for p in UPLOADS.glob("*"):
             if p.suffix.lower() not in VIDEO_TYPES:
@@ -206,7 +242,7 @@ class Library:
                             kind=self.scenario_kinds.get((m["scenario"] if m else p.stem).lower()),
                             score=float(m["score"]) if m else None,
                             stamp=m["stamp"] if m else datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y.%m.%d-%H.%M.%S"),
-                            mtime=p.stat().st_mtime, size=p.stat().st_size, stats=bool(self.stats_of(p)), uploaded=True,
+                            mtime=p.stat().st_mtime, size=p.stat().st_size, stats=bool(self.stats_of(vid, p)), uploaded=True,
                             analysed=self.reviewed(vid)))
         other = self.not_aim()
         for v in out:
@@ -446,6 +482,49 @@ class Library:
             json.dump(clean, open(out / "run.json", "w"))
         return self.analyse(vid, again="measures")
 
+    def stats_info(self, vid, q=None):
+        """The stats file a recording uses and how it came to, and stats files to pair it with: its scenario's, or
+        with q those of every scenario whose name holds q, nearest the recording's time first. how: "picked" or
+        "upload" (the user's choice), "none" (the user said there is none), "gone" (the chosen file is missing),
+        "beside" (uploaded with the VOD), "found" (by name and time) or "missing"."""
+        video = self.resolve(vid)
+        pick, file = self.pairing(vid), self.stats_of(vid, video)
+        if pick is not None:
+            how = "none" if not pick["file"] else "gone" if file is None else \
+                "upload" if pick["source"] == "upload" else "picked"
+        else:
+            how = "missing" if file is None else "beside" if file.parent.resolve() == UPLOADS.resolve() else "found"
+        m = NAME.match(video.with_suffix(".mp4").name)
+        scenario = m["scenario"] if m else video.stem
+        t = stamp_seconds(m["stamp"]) if m else None
+        if t is None:                                     # an upload named freely: the time it was uploaded
+            t = (datetime.fromtimestamp(video.stat().st_mtime) - EPOCH).total_seconds()
+        index, text = self.stats_index(), (scenario if q is None else q).strip().lower()
+        names = [s for s in index if (s.lower() == text if q is None else text in s.lower())]
+        near = heapq.nsmallest(CANDIDATES, ((abs(ts - t), ts, s, n) for s in names for ts, n in index[s]))
+        stamp = lambda ts: (EPOCH + timedelta(seconds=ts)).strftime("%Y.%m.%d-%H.%M.%S")
+        return dict(file=file.name if file else pick["file"] if pick else None, how=how, scenario=scenario,
+                    candidates=[dict(name=n, scenario=s, stamp=stamp(ts), off=round(ts - t, 1)) for _, ts, s, n in near])
+
+    def set_stats(self, vid, body):
+        """The user's choice of stats file: {file, source} (file None: no stats file), or {auto: true}: found by name
+        and time again. Then the shown review is measured again with it on its tracks; the other reviews' reports go,
+        so each is measured again when it is next shown. Returns the job, and whether it has a stats file now."""
+        video = self.resolve(vid)
+        out = self.cache_dir(vid)
+        out.mkdir(parents=True, exist_ok=True)
+        if body.get("auto"):
+            (out / "stats.json").unlink(missing_ok=True)
+        else:
+            file, source = body.get("file"), body.get("source", "kovaak")
+            if file is not None and not self.stats_file(file, source).is_file():
+                raise FileNotFoundError(file)
+            json.dump(dict(file=file, source=source), open(out / "stats.json", "w"))
+        for p in [out / "report.json", *(out / "models").glob("*/report.json")]:
+            p.unlink(missing_ok=True)
+        job = self.analyse(vid, again="measures") if self.reviewed(vid) else dict(stage="none")
+        return dict(job=job, stats=self.stats_of(vid, video) is not None)
+
     def analyse(self, vid, again=False):
         """Reviews a recording. again=True: a new review with the chosen model (any other model's review stays).
         "measures": the shown review measured again on its own tracks. Else the shown review, or a new one by the
@@ -457,7 +536,7 @@ class Library:
                     job["again_after"] = True
                 return job
             video = self.resolve(vid)
-            stats = self.stats_of(video)                   # None: the session HUD, else the video alone
+            stats = self.stats_of(vid, video)              # None: the session HUD, else the video alone
             model, out = self.shown(vid)
             if again is True:
                 model, out = self.model, self.cache_dir(vid) / "models" / self.model
@@ -544,6 +623,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(self.lib.faint(q["id"]))
             if u.path == "/api/run":
                 return self.send_json(self.lib.run(q["id"]))
+            if u.path == "/api/stats":                      # ?q=: stats files of the scenarios whose names hold q
+                return self.send_json(self.lib.stats_info(q["id"], q.get("q")))
             if u.path == "/api/faint_queue":
                 return self.send_json(self.lib.faint_queue())
             if u.path == "/api/tracks":                     # every target per frame, for the fastest-order overlay
@@ -578,6 +659,9 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/run":                        # {start, end, length}: the run window, then measured again
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
                 return self.send_json(self.lib.set_run(q["id"], body))
+            if u.path == "/api/stats":                      # {file, source} or {auto}: the stats file, then measured again
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
+                return self.send_json(self.lib.set_stats(q["id"], body))
             if u.path == "/api/faint_submit":               # ?offset=: saved, and written as detector labels
                 return self.send_json(self.lib.submit_faint(q["id"], float(q.get("offset", 0.3))))
             if u.path == "/api/faint_skip":
@@ -598,19 +682,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(dict(error=str(e)), 400)
 
     def upload(self, q):
-        """A VOD (or its stats CSV, with for=<the VOD's file name>) streamed to UPLOADS. Returns its id."""
+        """A VOD streamed to UPLOADS, or a stats CSV for a recording (id=<its id>, or for=<an uploaded VOD's file
+        name>) streamed to STATS_UPLOADS and chosen for it. Neither overwrites a file: a taken name gets a number.
+        Returns the recording's id, the name saved, and for a stats file the job measuring it again."""
         name = Path(q.get("name", "")).name
         ext = Path(name).suffix.lower()
+        vid = None
         if ext == ".csv":
-            target = Path(q.get("for", "")).name
-            if Path(target).suffix.lower() not in VIDEO_TYPES:
-                raise ValueError("a stats file needs for=<the VOD's file name>")
-            dest = UPLOADS / (Path(target).stem + ".csv")
+            vid = q.get("id") or (f"uploads/{Path(q['for']).name}" if q.get("for") else None)
+            if not vid:
+                raise ValueError("a stats file needs id=<the recording's id>")
+            self.lib.resolve(vid)
+            dest = free_name(STATS_UPLOADS / name)
         elif ext in VIDEO_TYPES:
-            dest = UPLOADS / name
+            dest = free_name(UPLOADS / name)
         else:
             raise ValueError(f"not a video ({', '.join(VIDEO_TYPES)}) or a stats .csv: {name}")
-        UPLOADS.mkdir(parents=True, exist_ok=True)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         left = int(self.headers["Content-Length"])
         part = dest.with_name(dest.name + ".part")
         with open(part, "wb") as f:
@@ -621,7 +709,9 @@ class Handler(BaseHTTPRequestHandler):
                 f.write(chunk)
                 left -= len(chunk)
         part.replace(dest)
-        return dict(id=f"uploads/{dest.name}" if ext != ".csv" else f"uploads/{Path(q['for']).name}", saved=dest.name)
+        if vid is None:
+            return dict(id=f"uploads/{dest.name}", saved=dest.name)
+        return dict(id=vid, saved=dest.name, **self.lib.set_stats(vid, dict(file=dest.name, source="upload")))
 
     def send_file(self, p, video=False):
         size = p.stat().st_size

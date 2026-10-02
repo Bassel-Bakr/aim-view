@@ -21,6 +21,7 @@
   --color-border-strong: var(--border-strong);
   --color-grid: var(--grid);
   --color-axis: var(--axis);
+  --color-backdrop: var(--backdrop);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);

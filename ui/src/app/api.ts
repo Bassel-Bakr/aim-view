@@ -66,6 +66,8 @@ export interface Recording {
   analysed: boolean;
   not_aim: boolean;
   uploaded?: boolean;
+  /** Opened from this computer: it stays in this browser and is gone when the page closes. */
+  local?: boolean;
 }
 
 /** How the video maps to angles: frame size, the crosshair's pixel, and the focal length in pixels. */
@@ -338,6 +340,52 @@ export interface Job {
   total?: number;
   seconds?: number;
   error?: string;
+}
+
+/**
+ * How a recording's stats file came to it: the user picked one (picked) or uploaded one (upload) or said there is none
+ * (none), the chosen file is missing (gone), it was uploaded with the VOD (beside), it was found by its name and time
+ * (found), or there is none (missing).
+ */
+export type StatsHow = 'picked' | 'upload' | 'none' | 'gone' | 'beside' | 'found' | 'missing';
+
+/** Where a chosen stats file is: KovaaK's stats folder, or uploaded from the page. */
+export type StatsSource = 'kovaak' | 'upload';
+
+/** A stats file to pair a recording with. off: seconds from the recording's time to the file's (negative: before). */
+export interface StatsCandidate {
+  name: string;
+  scenario: string;
+  stamp: string;
+  off: number;
+}
+
+/** A recording's stats file, how it came to it, and stats files to pair it with, nearest in time first (/api/stats). */
+export interface StatsPairing {
+  file: string | null;
+  how: StatsHow;
+  scenario: string;
+  candidates: StatsCandidate[];
+}
+
+/** The user's choice of stats file: a file, or none (file null). */
+export interface StatsPick {
+  file: string | null;
+  source: StatsSource;
+}
+
+/** Back to finding the stats file by name and time. */
+export interface StatsAuto {
+  auto: true;
+}
+
+/** The body of POST /api/stats. */
+export type StatsChoice = StatsPick | StatsAuto;
+
+/** The answer to POST /api/stats: the job measuring the review again, and whether the recording has a stats file. */
+export interface StatsChange {
+  job: Job;
+  stats: boolean;
 }
 
 /** The body of an error response. */

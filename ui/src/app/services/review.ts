@@ -2,13 +2,15 @@ import { HttpClient, httpResource } from '@angular/common/http';
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { errorMessage, Job, Report, Tracks } from '../api';
-import { Library } from '../services/library';
+import { Library } from './library';
+import { isLocal } from './local-files';
 
 const POLL_MS = 500;
 
 /**
  * The open recording's review: its report and tracks, and the review job when one runs. A finished job reloads the
- * report (and with it the tracks), and marks the recording reviewed in the list.
+ * report (and with it the tracks), and marks the recording reviewed in the list. A recording from this computer has
+ * none: the review server cannot see it.
  */
 @Injectable({ providedIn: 'root' })
 export class Review {
@@ -20,7 +22,7 @@ export class Review {
   /** The report, or null when the recording has no review yet. */
   readonly report = httpResource<Report | null>(() => {
     const id = this.library.selectedId();
-    return id ? { url: '/api/report', params: { id } } : undefined;
+    return id && !isLocal(id) ? { url: '/api/report', params: { id } } : undefined;
   });
 
   /**
@@ -39,7 +41,7 @@ export class Review {
     effect(() => {
       const id = this.library.selectedId();
       this.job.set({ stage: 'none' });
-      if (id) void this.watch(id);
+      if (id && !isLocal(id)) void this.watch(id);
     });
   }
 
@@ -50,12 +52,17 @@ export class Review {
     this.watcher++;
     const params: Record<string, string> = again ? { id, again: '1' } : { id };
     try {
-      this.job.set(await firstValueFrom(this.http.post<Job>('/api/analyse', null, { params })));
+      this.follow(await firstValueFrom(this.http.post<Job>('/api/analyse', null, { params })));
     } catch (e) {
       this.job.set({ stage: 'error', error: errorMessage(e) });
-      return;
     }
-    if (this.job().stage !== 'error') void this.watch(id, true);
+  }
+
+  /** Shows a job the server started for the open recording, and follows it until it ends. */
+  follow(job: Job): void {
+    const id = this.library.selectedId();
+    this.job.set(job);
+    if (id && !['none', 'error'].includes(job.stage)) void this.watch(id, true);
   }
 
   /**
