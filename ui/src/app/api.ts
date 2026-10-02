@@ -56,6 +56,13 @@ export interface ModelList {
 /** A scenario's kind, from the game's tags (review.scenario_kinds). */
 export type Kind = 'static' | 'dynamic' | 'tracking' | 'switching';
 
+/** What a scenario's file says about its runs: its kind, time limit (seconds) and targets alive at once. */
+export interface ScenarioInfo {
+  kind: Kind;
+  limit: number | null;
+  targets: number | null;
+}
+
 /** A recording in the list (/api/vods). kind is null for a scenario the game no longer has. */
 export interface Recording {
   id: string;

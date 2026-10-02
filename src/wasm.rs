@@ -133,11 +133,11 @@ pub unsafe extern "C" fn tracker_finish(tracker: *mut Tracker) -> *mut u8 {
     let shows = t.watch.showing();
     reopen(&t.raw, &mut t.frames, &t.areas, &shows, t.cap);
     let frames: Vec<TrackFrame> = link(&t.frames);
-    bytes(serde_json::to_vec(&frames).unwrap_or_default())
+    bytes_out(serde_json::to_vec(&frames).unwrap_or_default())
 }
 
 /// A byte buffer handed to the page: its length (u32), then the bytes.
-fn bytes(data: Vec<u8>) -> *mut u8 {
+fn bytes_out(data: Vec<u8>) -> *mut u8 {
     let ptr = alloc(4 + data.len());
     unsafe {
         std::ptr::copy_nonoverlapping((data.len() as u32).to_le_bytes().as_ptr(), ptr, 4);
@@ -211,4 +211,26 @@ pub unsafe extern "C" fn fixed_add(f: *mut FixedMap, yuv: *const u8) {
 pub unsafe extern "C" fn fixed_finish(f: *mut FixedMap, out: *mut u8) {
     let f = unsafe { Box::from_raw(f) };
     unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) }.copy_from_slice(&f.map());
+}
+
+/// A scenario file's facts (its text, UTF-8, at least up to "[Map Data]"), as JSON: {kind, limit, targets}. Free the
+/// result as `tracker_finish`'s.
+///
+/// # Safety
+/// `text` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scenario_facts(text: *const u8, len: usize) -> *mut u8 {
+    let bytes = unsafe { std::slice::from_raw_parts(text, len) };
+    let facts = crate::scenario::facts(&String::from_utf8_lossy(bytes));
+    bytes_out(serde_json::to_vec(&facts).unwrap_or_default())
+}
+
+/// A clicking run reviewed: the request as JSON ({tracks, statsText, video, stats, run}), the outcome as JSON
+/// ({report} or {error}). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `request` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_clicks(request: *const u8, len: usize) -> *mut u8 {
+    bytes_out(crate::review::review_json(unsafe { std::slice::from_raw_parts(request, len) }))
 }

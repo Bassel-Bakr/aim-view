@@ -103,17 +103,22 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   cards, how the bot was followed, and the what-if estimates), and the fastest-path analysis (path cost per kill, the
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
   model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
-  (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there); the
-  review shows "not built yet". Server mode: files added are sent to the server, and the stats file panel lists
-  KovaaK's stats files (`/api/stats`).
-- The review in the browser, so far the track step (ui/src/app/modes/wasm/review.worker.ts, the Rust core in src/):
-  decode (Mediabunny and the browser's decoder: the same YUV as ffmpeg once the edit list's pre-roll, the frames
-  before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV (src/convert.rs, byte for
-  byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on the CPU), `keep`,
-  pop-up areas (`AreaWatch`) and `link`: all equal to Python's to the bit except the detector's float noise (17 of
-  6,038 frames differ by one pixel of area). About 27 frames a second for full_v3. Next: the rest of the review
-  (stats and HUD matching, camera motion, measures, summary, checks) in Rust the same way; then the run page shows
-  the report. KovaaK's stats and scenarios folders are under Program Files, which Chrome will not open for a page.
+  (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there). The
+  user picks KovaaK's folders once (steamapps, or each folder), and the browser remembers them. The stats folder lets
+  each run find its stats file by name and time. The scenario folders (Saved\SaveGames\Scenarios and the workshop's)
+  give each scenario's kind, time limit and target count. Server mode: files added are sent to the server, and the
+  stats file panel lists KovaaK's stats files (`/api/stats`).
+- The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
+  (review.worker.ts): decode (Mediabunny and the browser's decoder: the same YUV as ffmpeg once the edit list's
+  pre-roll, the frames before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV
+  (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
+  the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
+  float noise (17 of 6,038 frames differ by one pixel of area). About 27 frames a second for full_v3. The clicking
+  review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
+  gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number
+  within 1e-9 (`cargo test --release --test review_parity`). After the track step the core uses plain floating point:
+  it copies Python's logic, not its last bits. Next: runs without a stats file (the HUD, the video alone), then
+  tracking runs (camera motion and the rest).
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

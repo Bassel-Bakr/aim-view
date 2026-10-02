@@ -146,6 +146,13 @@ pub struct TrackFrame {
     pub s: Option<Vec<f64>>,
 }
 
+/// A recording's tracks, as tracks.json keeps them: the frame rate and each frame's targets.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Tracks {
+    pub fps: f64,
+    pub frames: Vec<TrackFrame>,
+}
+
 /// A target matched to a track, as the next frame sees it.
 #[derive(Clone, Copy)]
 struct Tracked {

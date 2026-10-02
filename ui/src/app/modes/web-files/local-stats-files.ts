@@ -3,6 +3,7 @@ import { Job, StatsChange, StatsChoice, StatsHow, StatsPairing } from '../../api
 import { StatsFiles, StatsSetup } from '../../platform/stats-files';
 import { LocalFiles, localRecording } from './local-files';
 import { StatsCsv, stampSeconds, statsSummary } from './stats-csv';
+import { KovaakFolders } from './kovaak-folders';
 import { StatsFolder } from './stats-folder';
 
 /** What a pairing is read from: the recording, its stats file and how it came, the search, the folder's state. */
@@ -16,6 +17,24 @@ export interface LocalPairingParams {
 
 const NO_JOB: Job = { stage: 'none' };
 
+/** The folders as the user is told about them. */
+const ROLE_NAMES = {
+  stats: 'the stats files',
+  scenarios: 'your scenarios',
+  workshop: "the workshop's scenarios",
+} as const;
+
+/** The stats folder chosen as files (where the browser's picker cannot open it), then the runs' stats found. */
+function readStatsFiles(
+  folders: KovaakFolders,
+  local: LocalFiles,
+): (files: File[]) => Promise<void> {
+  return async (files) => {
+    await folders.openStatsFiles(files);
+    await local.findAllStats();
+  };
+}
+
 /**
  * The stats files of recordings opened in the browser: found in KovaaK's stats folder by name and time (once the user
  * opens the folder; the browser remembers it), picked from its files by scenario, or a .csv chosen from this computer.
@@ -25,50 +44,42 @@ const NO_JOB: Job = { stage: 'none' };
 export class LocalStatsFiles implements StatsFiles {
   private readonly local = inject(LocalFiles);
   private readonly folder = inject(StatsFolder);
+  private readonly folders = inject(KovaakFolders);
   readonly searches = this.folder.ready;
 
   readonly setup = computed<StatsSetup | null>(() => {
-    const state = this.folder.state();
-    const open = async () => {
-      await this.folder.open();
+    const state = this.folders.state();
+    const then = (step: () => Promise<void>) => async () => {
+      await step();
       await this.local.findAllStats();
     };
-    const files = async (list: File[]) => {
-      await this.folder.openFiles(list);
-      await this.local.findAllStats();
-    };
-    switch (state.kind) {
-      case 'ready':
-      case 'listing':
-        return null;
-      case 'ask':
-        return {
-          label: `Allow reading ${state.name} again`,
-          detail:
-            'The browser remembers the stats folder, and asks once per visit before reading it again.',
-          run: async () => {
-            await this.folder.allow();
-            await this.local.findAllStats();
-          },
-          files: null,
-        };
-      case 'refused':
-        return {
-          label: "Open KovaaK's stats folder",
-          detail: `${state.error}. You can try again, or choose the folder as files: then it is read for this visit only.`,
-          run: open,
-          files,
-        };
-      default:
-        return {
-          label: "Open KovaaK's stats folder",
-          detail:
-            'FPSAimTrainer\\stats in the game folder: each run finds its stats file by its scenario and time. The ' +
-            'browser remembers the folder.',
-          run: open,
-          files: this.folder.picker ? null : files,
-        };
+    if (state.busy) return null;
+    if (state.ask.length) {
+      return {
+        label: `Allow reading ${state.ask.join(', ')} again`,
+        detail:
+          "The browser remembers KovaaK's folders, and asks once per visit before reading them again.",
+        run: then(() => this.folders.allow()),
+        files: null,
+      };
     }
+    const missing = (['stats', 'scenarios', 'workshop'] as const).filter(
+      (r) => !state.found.includes(r),
+    );
+    if (!missing.length) return null;
+    const what = missing.map((r) => ROLE_NAMES[r]).join(', ');
+    return {
+      label: state.found.length ? "Open more of KovaaK's folders" : "Open KovaaK's folders",
+      detail:
+        (state.refused ? `${state.refused}. ` : '') +
+        `Missing: ${what}. Pick steamapps (in the Steam folder) to give everything at once, or each folder: ` +
+        String.raw`FPSAimTrainer\stats (each run finds its stats file by scenario and time), ` +
+        String.raw`FPSAimTrainer\Saved\SaveGames\Scenarios and workshop\content\824270 ` +
+        "(each scenario's kind, time limit and target count). The browser remembers them.",
+      run: then(() => this.folders.open()),
+      files:
+        state.refused || !this.folders.picker ? readStatsFiles(this.folders, this.local) : null,
+    };
   });
 
   pairing(

@@ -1,5 +1,5 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { errorMessage, Recording, StatsHow } from '../../api';
+import { errorMessage, Kind, Recording, StatsHow } from '../../api';
 import { AddResult, RecordingSource, Transfer, VideoState } from '../../platform/recording-source';
 import {
   parseStatsCsv,
@@ -9,6 +9,7 @@ import {
   StatsCsv,
   statsSummary,
 } from './stats-csv';
+import { ScenarioFacts } from './scenario-facts';
 import { StatsFolder } from './stats-folder';
 import { isCsv, isMp4, isVideo, toMp4 } from './video-files';
 
@@ -30,16 +31,23 @@ export interface LocalFile {
   changes: Partial<Recording>;
 }
 
-/** A local file as a row of the recordings list; the stats file gives what the video's name does not. */
-export function localRecording(f: LocalFile): Recording {
+/**
+ * A local file as a row of the recordings list; the stats file gives what the video's name does not, and the
+ * scenario's file its kind (kindOf, when KovaaK's scenarios are open).
+ */
+export function localRecording(
+  f: LocalFile,
+  kindOf: (scenario: string) => Kind | null = () => null,
+): Recording {
   const vod = parseVodName(f.file.name);
   const stats = f.stats && statsSummary(f.stats);
   const stamp = new Date(f.file.lastModified);
   const pad = (n: number) => String(n).padStart(2, '0');
+  const scenario = vod?.scenario ?? stats?.scenario ?? f.file.name.replace(/\.\w+$/, '');
   return {
     id: f.id,
-    scenario: vod?.scenario ?? stats?.scenario ?? f.file.name.replace(/\.\w+$/, ''),
-    kind: null,
+    scenario,
+    kind: kindOf(scenario),
     score: vod?.score ?? stats?.score ?? null,
     stamp:
       vod?.stamp ??
@@ -68,8 +76,13 @@ export async function readStats(file: File): Promise<StatsCsv | null> {
 @Injectable({ providedIn: 'root' })
 export class LocalFiles implements RecordingSource {
   private readonly folder = inject(StatsFolder);
+  private readonly scenarios = inject(ScenarioFacts);
   readonly files = signal<LocalFile[]>([]);
-  readonly recordings = computed<Recording[]>(() => this.files().map(localRecording));
+  readonly recordings = computed<Recording[]>(() => {
+    const facts = this.scenarios.byName();
+    const kindOf = (s: string) => facts.get(s.toLowerCase())?.kind ?? null;
+    return this.files().map((f) => localRecording(f, kindOf));
+  });
   readonly loading = signal(false).asReadonly();
   readonly problem = signal<string | null>(null).asReadonly();
   readonly addedFilesGo = 'They stay in this browser.';

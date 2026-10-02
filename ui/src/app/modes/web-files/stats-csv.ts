@@ -10,6 +10,8 @@ export interface StatsCsv {
   name: string;
   meta: StatsMeta;
   killRows: number;
+  /** The whole file, which the review reads. */
+  text: string;
 }
 
 const STATS_NAME = /^(.+) - Challenge - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d) Stats\.csv$/;
@@ -34,7 +36,7 @@ export function parseStatsCsv(name: string, text: string): StatsCsv | null {
     if (!line.trim()) break;
     if (/^\d/.test(line)) killRows++;
   }
-  return 'Scenario' in meta ? { name, meta, killRows } : null;
+  return 'Scenario' in meta ? { name, meta, killRows, text } : null;
 }
 
 export function statsSummary(s: StatsCsv): StatsSummary {

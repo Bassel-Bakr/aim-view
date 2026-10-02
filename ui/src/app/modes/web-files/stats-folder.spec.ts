@@ -13,8 +13,9 @@ const NAMES = [
 describe('StatsFolder', () => {
   it('indexes the stats files by scenario, and finds a run within five seconds of its time', () => {
     const folder = TestBed.inject(StatsFolder);
-    folder.index('stats', NAMES);
-    expect(folder.state()).toEqual({ kind: 'ready', name: 'stats', files: 3 });
+    folder.index(NAMES);
+    expect(folder.state()).toBe('ready');
+    expect(folder.files).toBe(3);
     const t = Date.UTC(2026, 9, 1, 16, 23, 3) / 1000;
     expect(folder.find('Air', t)?.name).toBe(NAMES[0]);
     expect(folder.find('Air', t + 10)).toBeNull();
@@ -23,7 +24,7 @@ describe('StatsFolder', () => {
 
   it("offers the scenario's files nearest the time first, or any scenario whose name holds the search", () => {
     const folder = TestBed.inject(StatsFolder);
-    folder.index('stats', NAMES);
+    folder.index(NAMES);
     const t = Date.UTC(2026, 9, 1, 16, 23, 3) / 1000;
     expect(folder.candidates('air', null, t).map((c) => [c.name, c.off])).toEqual([
       [NAMES[0], 1],

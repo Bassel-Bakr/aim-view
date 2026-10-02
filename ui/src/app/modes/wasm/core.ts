@@ -16,6 +16,8 @@ export interface CoreExports {
   fixed_new(): number;
   fixed_add(fixed: number, yuv: number): void;
   fixed_finish(fixed: number, out: number): void;
+  scenario_facts(text: number, len: number): number;
+  review_clicks(request: number, len: number): number;
 }
 
 /** A block of the core's memory, reserved until freed. */

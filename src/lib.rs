@@ -5,9 +5,16 @@ pub mod convert;
 pub mod detect;
 pub mod fixed;
 pub mod geometry;
+pub mod matching;
+pub mod measure;
 pub mod popup;
 pub mod python;
+pub mod review;
+pub mod scenario;
 pub mod scipy;
+pub mod statistics;
+pub mod stats_file;
+pub mod summary;
 pub mod track;
 
 #[cfg(target_arch = "wasm32")]

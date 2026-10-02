@@ -3,7 +3,9 @@ recording, stage by stage: the fixed map, the detector's raw boxes per frame, wh
 when they show, and link()'s input and output. Written to test_out/parity/<name>/ (not in git: it is data).
 The detector is the ONNX export the browser runs (detector_<model>_u8in.onnx, ONNX Runtime on the CPU).
 Usage: python tests/fixtures.py <video> [--name NAME] [--model full_v3] [--areas exclude.json]
-       python tests/fixtures.py --hypot   (math.hypot cases for the Rust core's hypot)"""
+       python tests/fixtures.py --hypot   (math.hypot cases for the Rust core's hypot)
+       python tests/fixtures.py --scenarios   (every scenario file's facts, for the core's scenario reader)
+       python tests/fixtures.py --review <name>   (Python's review of a fixture's tracks, with its stats file)"""
 import argparse
 import json
 import sys
@@ -33,9 +35,50 @@ def hypot_cases():
     json.dump([s[:4] for s in review.OVERLAY_SHARES], open(out / "overlay.json", "w"))
 
 
+def scenario_cases():
+    """Every scenario file in the order review.scenario_facts reads them (later files win), and Python's facts by
+    lower-case name: kind, time limit, and target count (target_counts). The Rust core reads the same files."""
+    import glob
+    import os
+    paths = glob.glob(os.path.join(review.SCENARIOS[0], "*.sce")) + \
+        glob.glob(os.path.join(review.SCENARIOS[1], "*", "*.sce"))
+    facts = review.scenario_facts()
+    counts = review.target_counts()
+    out = ROOT / "test_out" / "parity"
+    out.mkdir(parents=True, exist_ok=True)
+    json.dump(dict(paths=paths, facts={n: dict(kind=k, limit=lim, targets=counts.get(n)) for n, (k, lim) in facts.items()}),
+              open(out / "scenarios.json", "w", encoding="utf-8"))
+    print(f"{len(paths)} scenario files, {len(facts)} scenarios")
+
+
+def review_case(name):
+    """Python's review of a fixture's tracks (frames.json, ONNX Runtime on the CPU) with the recording's stats file:
+    flicks.json, measures.json and report.json in test_out/parity/<name>/review/, as review.review writes them."""
+    import server
+    d = ROOT / "test_out" / "parity" / name
+    meta = json.load(open(d / "meta.json"))
+    out = d / "review"
+    out.mkdir(exist_ok=True)
+    for f in ("flicks.json", "measures.json", "report.json"):
+        (out / f).unlink(missing_ok=True)
+    tracks = dict(fps=meta["fps"], frames=json.load(open(d / "frames.json")), fixed=meta["fixed_share"],
+                  detector="OnnxDetector")
+    json.dump(tracks, open(out / "tracks.json", "w"))
+    lib = server.Library(r"E:\OBS\KovOBS", server.STATS_DEFAULT)
+    stats = lib.stats_of(Path(meta["video"]).name, Path(meta["video"]))
+    meta["stats"] = str(stats) if stats else None
+    json.dump(meta, open(d / "meta.json", "w"))
+    report = review.review(meta["video"], str(stats) if stats else None, out, exclude=meta["areas"])
+    print(f"{name}: {report['summary']['measured']} flicks measured, stats {stats.name if stats else None}")
+
+
 def main():
+    if sys.argv[1:2] == ["--review"]:
+        return review_case(sys.argv[2])
     if sys.argv[1:] == ["--hypot"]:
         return hypot_cases()
+    if sys.argv[1:] == ["--scenarios"]:
+        return scenario_cases()
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
     ap.add_argument("--name", default=None)

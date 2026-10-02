@@ -25,7 +25,7 @@ const TEXT = [
 ].join('\r\n');
 
 function stats(name: string): StatsCsv {
-  return { name, meta: { Scenario: 'x' }, killRows: 0 };
+  return { name, meta: { Scenario: 'x' }, killRows: 0, text: '' };
 }
 
 describe('parseStatsCsv', () => {
@@ -54,7 +54,7 @@ describe('statsSummary', () => {
   });
 
   it('counts the kill rows when the file has no Kills line, and has no accuracy without shots', () => {
-    const s = statsSummary({ name: 'x.csv', meta: { Scenario: 'x' }, killRows: 3 });
+    const s = statsSummary({ name: 'x.csv', meta: { Scenario: 'x' }, killRows: 3, text: '' });
     expect(s.kills).toBe(3);
     expect(s.accuracy).toBeNull();
     expect(s.stamp).toBeNull();
