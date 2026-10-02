@@ -12,11 +12,11 @@ export interface StatsCsv {
   killRows: number;
 }
 
-const STATS_NAME = /^(.+) - Challenge - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d) Stats\.csv$/i;
+const STATS_NAME = /^(.+) - Challenge - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d) Stats\.csv$/;
 const VOD_NAME = /^(.+) - ([-\d.]+) - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d)\.\w+$/;
 const STAMP = /^(\d{4})\.(\d\d)\.(\d\d)-(\d\d)\.(\d\d)\.(\d\d)$/;
 /** A stats file and a recording this many seconds apart or less are the same run. */
-const SAME_RUN_S = 5;
+export const SAME_RUN_S = 5;
 
 /**
  * Reads a stats file: every "key:,value" line, and the kill rows (the first table, up to its blank line; later tables
@@ -52,6 +52,17 @@ export function statsSummary(s: StatsCsv): StatsSummary {
     accuracy: hits !== null && misses !== null && shots > 0 ? hits / shots : null,
     stamp: STATS_NAME.exec(s.name)?.[2] ?? null,
   };
+}
+
+/** A stats file's name as KovaaK's writes it: "<scenario> - Challenge - <time the run ended> Stats.csv". */
+export interface StatsName {
+  scenario: string;
+  stamp: string;
+}
+
+export function parseStatsName(name: string): StatsName | null {
+  const m = STATS_NAME.exec(name);
+  return m ? { scenario: m[1], stamp: m[2] } : null;
 }
 
 /** A recording's name as KovOBS writes it: "<scenario> - <score> - <time>.mp4". */

@@ -9,6 +9,27 @@
     run ended.
   </p>
 
+  @if (stats.setup(); as setup) {
+    <div [class]="ui.setup">
+      <p [class]="ui.hint">{{ setup.detail }}</p>
+      <div [class]="ui.actions">
+        <button
+          type="button"
+          [class]="primaryButton"
+          [disabled]="saving()"
+          (click)="runSetup(setup)"
+        >
+          {{ setup.label }}
+        </button>
+        @if (setup.files) {
+          <button type="button" [class]="button" [disabled]="saving()" (click)="folder.click()">
+            Choose the folder as files
+          </button>
+        }
+      </div>
+      <input #folder type="file" webkitdirectory hidden (change)="pickFolder(folder, setup)" />
+    </div>
+  }
   @if (pairing.error(); as e) {
     <p role="alert" [class]="ui.failed">Could not load the stats files: {{ e.message }}</p>
   }
@@ -33,12 +54,12 @@
       <button
         type="button"
         [class]="button"
-        [disabled]="saving() || p.how === 'none' || (!stats.searches && !p.file)"
+        [disabled]="saving() || p.how === 'none' || (!stats.searches() && !p.file)"
         (click)="choose(null)"
       >
         No stats file
       </button>
-      @if (stats.searches) {
+      @if (stats.searches()) {
         <button
           type="button"
           [class]="button"
@@ -56,7 +77,7 @@
     {{ library.source.addedFilesGo }}
   </p>
 
-  @if (stats.searches) {
+  @if (stats.searches()) {
     <label [class]="ui.searchLabel">
       Stats files of the scenario
       <input

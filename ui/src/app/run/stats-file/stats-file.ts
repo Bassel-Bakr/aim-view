@@ -8,7 +8,7 @@ import {
   StatsPairing,
 } from '../../api';
 import { formatCount, formatNumber, formatOffset, formatPercent, formatStamp } from '../../format';
-import { StatsFiles } from '../../platform/stats-files';
+import { StatsFiles, StatsSetup } from '../../platform/stats-files';
 import { Library } from '../../services/library';
 import { Review } from '../../services/review';
 import { badge, button } from '@themes/controls.styles';
@@ -69,6 +69,7 @@ export class StatsFile {
   private readonly review = inject(Review);
   protected readonly ui = slotClasses(statsFileStyles());
   protected readonly button = button();
+  protected readonly primaryButton = button({ intent: 'primary' });
   protected readonly goodBadge = badge({ tone: 'good' });
 
   /** The search text; null: the recording's own scenario. A newly opened recording starts again from its own. */
@@ -135,6 +136,34 @@ export class StatsFile {
   /** Back to finding the stats file by the recording's name and time. */
   protected findAgain(): void {
     this.choice({ auto: true }, 'Found by its name and time again');
+  }
+
+  /** Opens the stats folder, or asks for leave to read it again (in the click, as the browser needs). */
+  protected runSetup(setup: StatsSetup): void {
+    void this.act(() => setup.run(), "KovaaK's stats folder is open");
+  }
+
+  /** The stats folder chosen as files (where the browser's folder picker cannot open it). */
+  protected pickFolder(input: HTMLInputElement, setup: StatsSetup): void {
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    const read = setup.files;
+    if (files.length && read) void this.act(() => read(files), "KovaaK's stats folder is read");
+  }
+
+  /** Runs a step that changes no file by itself, showing what it did or why it failed. */
+  private async act(step: () => Promise<void>, done: string): Promise<void> {
+    this.saving.set(true);
+    this.message.set(null);
+    try {
+      await step();
+      this.pairing.reload();
+      this.message.set({ text: done, failed: false });
+    } catch (e) {
+      this.message.set({ text: errorMessage(e), failed: true });
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   /** Pairs the recording with a .csv chosen from this computer. */

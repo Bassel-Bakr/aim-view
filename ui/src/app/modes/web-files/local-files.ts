@@ -1,7 +1,15 @@
-import { computed, Injectable, signal, WritableSignal } from '@angular/core';
-import { errorMessage, Recording } from '../../api';
+import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { errorMessage, Recording, StatsHow } from '../../api';
 import { AddResult, RecordingSource, Transfer, VideoState } from '../../platform/recording-source';
-import { parseStatsCsv, parseVodName, statsForVideo, StatsCsv, statsSummary } from './stats-csv';
+import {
+  parseStatsCsv,
+  parseVodName,
+  stampSeconds,
+  statsForVideo,
+  StatsCsv,
+  statsSummary,
+} from './stats-csv';
+import { StatsFolder } from './stats-folder';
 import { isCsv, isMp4, isVideo, toMp4 } from './video-files';
 
 const LOCAL = 'local:';
@@ -16,6 +24,8 @@ export interface LocalFile {
   file: File;
   video: WritableSignal<VideoState>;
   stats: StatsCsv | null;
+  /** How the stats file came to it: chosen by the user (upload, picked), found by name and time, or none. */
+  statsHow: StatsHow;
   added: number;
   changes: Partial<Recording>;
 }
@@ -57,6 +67,7 @@ export async function readStats(file: File): Promise<StatsCsv | null> {
  */
 @Injectable({ providedIn: 'root' })
 export class LocalFiles implements RecordingSource {
+  private readonly folder = inject(StatsFolder);
   readonly files = signal<LocalFile[]>([]);
   readonly recordings = computed<Recording[]>(() => this.files().map(localRecording));
   readonly loading = signal(false).asReadonly();
@@ -89,13 +100,16 @@ export class LocalFiles implements RecordingSource {
           : { state: 'remuxing', progress: 0 },
       ),
       stats: statsForVideo(file.name, stats, videos.length === 1),
+      statsHow: 'missing',
       added: Date.now(),
       changes: {},
     }));
+    for (const f of added) f.statsHow = f.stats ? 'upload' : 'missing';
     this.files.update((list) => [...[...added].reverse(), ...list]);
     for (const f of added) {
       if (f.video().state === 'remuxing') this.remuxes = this.remuxes.then(() => this.remux(f));
     }
+    await Promise.all(added.filter((f) => !f.stats).map((f) => this.findStats(f.id)));
     return {
       ids: added.map((f) => f.id),
       notStats: csvs.filter((_, i) => read[i] === null).map((f) => f.name),
@@ -107,15 +121,37 @@ export class LocalFiles implements RecordingSource {
   }
 
   /** Pairs a recording with a stats file; false when the file is not one of KovaaK's stats files. */
-  async pair(id: string, file: File): Promise<boolean> {
+  async pair(id: string, file: File, how: StatsHow = 'upload'): Promise<boolean> {
     const stats = await readStats(file);
-    if (stats) this.update(id, (f) => ({ ...f, stats }));
+    if (stats) this.update(id, (f) => ({ ...f, stats, statsHow: how }));
     return stats !== null;
   }
 
-  /** The recording has no stats file. */
+  /** The user says the recording has no stats file. */
   unpair(id: string): void {
-    this.update(id, (f) => ({ ...f, stats: null }));
+    this.update(id, (f) => ({ ...f, stats: null, statsHow: 'none' }));
+  }
+
+  /**
+   * Finds the recording's stats file in KovaaK's stats folder by its scenario and time (within five seconds), as the
+   * review server does; with the folder not open, or no such file, it has none. Returns whether it found one.
+   */
+  async findStats(id: string): Promise<boolean> {
+    const f = this.find(id);
+    if (!f) return false;
+    const r = localRecording(f);
+    const entry = this.folder.ready() ? this.folder.find(r.scenario, stampSeconds(r.stamp)) : null;
+    if (!entry) {
+      this.update(id, (g) => ({ ...g, stats: null, statsHow: 'missing' }));
+      return false;
+    }
+    return this.pair(id, await this.folder.read(entry.name), 'found');
+  }
+
+  /** Finds the stats file of every recording that has none and was not told it has none (the folder just opened). */
+  async findAllStats(): Promise<void> {
+    const open = this.files().filter((f) => f.statsHow === 'missing');
+    await Promise.all(open.map((f) => this.findStats(f.id)));
   }
 
   find(id: string | null): LocalFile | null {

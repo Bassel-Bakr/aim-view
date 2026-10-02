@@ -7,6 +7,7 @@ export const statsFileStyles = tv({
     head: 'flex items-center justify-between gap-7',
     title: 'm-0',
     intro: 'max-w-(--prose-width) text-sm text-secondary',
+    setup: 'flex flex-col gap-3 rounded-md border border-border-strong px-6 py-5',
     current: 'font-strong break-all',
     how: 'font-regular text-muted',
     facts: 'flex flex-wrap gap-x-11 gap-y-3 text-sm',
