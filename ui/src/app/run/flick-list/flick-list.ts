@@ -1,0 +1,81 @@
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  input,
+  viewChild,
+} from '@angular/core';
+import { ClickReport, Flick } from '../../api';
+import { arrow, formatCount, formatEnded, formatMs, formatSpeed } from '../../format';
+import { FlickFocus } from '../flick-focus';
+import { flickListStyles } from '@themes/flick-list.styles';
+import { slotClasses } from '@themes/slot-classes';
+import { toggleSwitch } from '@themes/controls.styles';
+
+/** A flick as the list shows it. */
+export interface FlickRow {
+  flick: Flick;
+  n: number;
+  distance: string;
+  toward: string;
+  killTime: string;
+  ended: string;
+  still: string;
+  peak: string;
+  clickSpeed: string;
+  shots: string;
+  missed: boolean;
+}
+
+export function flickRows(r: ClickReport): FlickRow[] {
+  return r.flicks.map((m) => ({
+    flick: m,
+    n: m.n,
+    distance: `${m.D0.toFixed(1)}°`,
+    toward: arrow(m.dir),
+    killTime: formatMs(m.total),
+    ended: formatEnded(m.end_left, r.summary.radius),
+    still: formatMs(m.still),
+    peak: formatSpeed(m.peak),
+    clickSpeed: formatSpeed(m.click_speed),
+    shots: formatCount(m.shots),
+    missed: m.shots > 1,
+  }));
+}
+
+/**
+ * Every flick of a clicking run, beside the video: click one to replay it slowed down. The flick in focus is marked
+ * and kept in view inside the list (never scrolling the page); "Follow the video" moves the focus with the video.
+ */
+@Component({
+  selector: 'app-flick-list',
+  templateUrl: './flick-list.html',
+  styleUrl: './flick-list.scss',
+})
+export class FlickList {
+  readonly report = input.required<ClickReport>();
+  protected readonly focus = inject(FlickFocus);
+  private readonly scroll = viewChild<ElementRef<HTMLElement>>('scroll');
+  protected readonly ui = slotClasses(flickListStyles());
+  protected readonly toggle = slotClasses(toggleSwitch());
+  protected readonly rows = computed(() => flickRows(this.report()));
+
+  constructor() {
+    afterRenderEffect(() => {
+      const m = this.focus.selected();
+      if (m) this.keepInView(m.n);
+    });
+  }
+
+  /** Centers the row in the list when it is out of view, scrolling the list only. */
+  private keepInView(n: number): void {
+    const box = this.scroll()?.nativeElement;
+    const row = box?.querySelector<HTMLElement>(`tr[data-n="${n}"]`);
+    if (!box || !row) return;
+    const top = row.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    if (top >= 0 && top + row.offsetHeight <= box.clientHeight) return;
+    box.scrollTop += top - box.clientHeight / 2 + row.offsetHeight / 2;
+  }
+}

@@ -21,10 +21,22 @@
     <span aria-hidden="true">{{ p.count }}</span>
   </div>
 }
-<app-player [class]="ui.player" [src]="videoUrl()" [report]="report()" [tracks]="tracks()">
-  @if (trackReport(); as tr) {
-    @if (tracks(); as t) {
-      <app-timeline [report]="tr" [tracks]="t" />
+<!-- The player keeps its place whatever the report, so the video never reloads when the report arrives -->
+<div class="stage">
+  <app-player [src]="videoUrl()" [report]="report()" [tracks]="tracks()">
+    @if (trackReport(); as tr) {
+      @if (tracks(); as t) {
+        <app-timeline [report]="tr" [tracks]="t" />
+      }
     }
+  </app-player>
+  @if (clickReport(); as cr) {
+    <app-flick-list [report]="cr" />
   }
-</app-player>
+</div>
+@if (clickReport(); as cr) {
+  <app-speed-chart [report]="cr" />
+  <app-click-report [class]="ui.report" [report]="cr" />
+} @else if (trackReport(); as tr) {
+  <app-track-report [class]="ui.report" [report]="tr" />
+}

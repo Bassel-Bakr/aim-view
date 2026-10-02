@@ -13,7 +13,8 @@ import {
 } from '@angular/core';
 import { Report, Tracks } from '../../api';
 import { Playback, RATES } from '../playback';
-import { clock, flickAt } from '../track';
+import { FlickFocus } from '../flick-focus';
+import { clock } from '../track';
 import { drawClick, drawTrack, OverlayStyle, readOverlayStyle } from './overlay';
 import { button, segmented, toggleSwitch } from '@themes/controls.styles';
 import { playerStyles } from '@themes/player.styles';
@@ -21,9 +22,6 @@ import { slotClasses } from '@themes/slot-classes';
 
 const OVERLAY_KEY = 'aimview-overlay';
 const RATE_LABELS: Record<number, string> = { 1: '1×', 0.5: '½×', 0.25: '¼×', 0.125: '⅛×' };
-/** A replayed flick starts this long before the flick and stops this long after its kill, in seconds. */
-const BEFORE_FLICK = 0.15;
-const AFTER_KILL = 1;
 
 /**
  * Calls back with the time of each frame the video shows, through the video's own frame callback; where the browser
@@ -73,6 +71,7 @@ export class Player {
   readonly report = input<Report | null>(null);
   readonly tracks = input<Tracks | null>(null);
   protected readonly playback = inject(Playback);
+  private readonly focus = inject(FlickFocus);
   private readonly destroyRef = inject(DestroyRef);
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('overlay');
@@ -207,15 +206,6 @@ export class Player {
       if (to !== undefined) this.playback.seek(to / r.fps);
       return;
     }
-    const flicks = r.flicks;
-    const at = flickAt(flicks, frame);
-    const i = at ? flicks.indexOf(at) : -1;
-    const next = flicks[Math.max(0, Math.min(flicks.length - 1, forward ? i + 1 : i - 1))];
-    if (next) {
-      this.playback.playRange(
-        Math.max(0, next.start_frame / r.fps - BEFORE_FLICK),
-        next.kill_frame / r.fps + AFTER_KILL,
-      );
-    }
+    this.focus.step(forward);
   }
 }

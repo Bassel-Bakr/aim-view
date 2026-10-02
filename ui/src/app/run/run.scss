@@ -1,0 +1,23 @@
+@use 'themes/theme' as t;
+@use 'themes/report' as r;
+
+@layer components {
+  // The video and, on a clicking run, the flick list: side by side when there is room, the list under the video when
+  // there is not
+  .stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: t.$space-6;
+    margin-top: t.$space-6;
+
+    app-player {
+      flex: 3 1 r.$player-min-width;
+      min-width: 0;
+    }
+
+    app-flick-list {
+      flex: 1 1 r.$flick-list-width;
+      min-height: r.$flick-list-min-height;
+    }
+  }
+}

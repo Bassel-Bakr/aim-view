@@ -32,6 +32,24 @@ export const badge = tv({
   defaultVariants: { tone: 'neutral' },
 });
 
+/** A number card: its value, what it is, and a line under it (the run's median, a detail, or why it matters). */
+export const card = tv({
+  slots: {
+    root: 'flex flex-col gap-1 rounded-lg border border-border bg-surface-1 px-6 py-5',
+    value: 'text-(length:--stat-size) font-strong text-value tabular-nums',
+    label: 'font-strong text-primary',
+    detail: 'text-xs text-muted',
+  },
+});
+
+/** A small color square in a legend; its color comes from a background class or style. */
+export const swatch = tv({
+  base: 'inline-block size-(--swatch-size) flex-none rounded-(--swatch-radius)',
+});
+
+/** A note under a section: what it measures and how. */
+export const note = tv({ base: 'mt-3 max-w-(--prose-width) text-xs text-muted' });
+
 /** A label in an outlined pill: a run's kind, its data source, the model in use. */
 export const pill = tv({
   base: 'rounded-pill border border-border-strong px-4 py-1 text-xs font-regular text-secondary',

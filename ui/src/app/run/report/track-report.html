@@ -1,0 +1,94 @@
+<section aria-label="The run's numbers">
+  <div [class]="ui.cards">
+    @for (s of stats(); track s.label) {
+      <div [class]="card.root">
+        <span [class]="card.value">{{ s.value }}</span>
+        <span [class]="card.label">{{ s.label }}</span>
+        @if (s.detail) {
+          <span [class]="card.detail">{{ s.detail }}</span>
+        }
+        <span [class]="ui.why">{{ s.why }}</span>
+      </div>
+    }
+  </div>
+  <p [class]="note">{{ about() }}</p>
+</section>
+
+@if (motion(); as m) {
+  <section aria-label="How you followed the target">
+    <h3>How you followed the target</h3>
+    @if (m.reason) {
+      <p [class]="note">{{ m.reason }}</p>
+    } @else {
+      <div [class]="ui.cards">
+        @for (s of m.stats; track s.label) {
+          <div [class]="card.root">
+            <span [class]="card.value">{{ s.value }}</span>
+            <span [class]="card.label">{{ s.label }}</span>
+            @if (s.detail) {
+              <span [class]="card.detail">{{ s.detail }}</span>
+            }
+            <span [class]="ui.why">{{ s.why }}</span>
+          </div>
+        }
+      </div>
+      <p [class]="note">{{ m.note }}</p>
+      <h3>By the target's direction</h3>
+      <p [class]="note">
+        How you did while the bot moved each way: the share of the time it moved that way, your time
+        on it, your usual distance from its middle line, and whether you trailed or led it.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Target moving</th>
+            <th>Time</th>
+            <th>On target</th>
+            <th>Distance from the line</th>
+            <th>Behind or ahead</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of m.rows; track r.moving) {
+            <tr>
+              <td>{{ r.moving }}</td>
+              <td>{{ r.time }}</td>
+              <td>{{ r.on }}</td>
+              <td>{{ r.distance }}</td>
+              <td>{{ r.lag }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+}
+
+@if (whatIf().length) {
+  <section aria-label="What would raise your accuracy">
+    <h3>What would raise your accuracy</h3>
+    <p [class]="note">
+      Each line is how much more of the time you would have been on the bot if that one thing had
+      been different and everything else the same: the off-target time it accounts for. They
+      overlap, so they do not add up; each is the most that change could give.
+    </p>
+    <table [class]="ui.whatIf">
+      <thead>
+        <tr>
+          <th>Change</th>
+          <th>Accuracy</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of whatIf(); track r.what) {
+          <tr>
+            <td>{{ r.what }}</td>
+            <td [class]="ui.gain">{{ r.gain }}</td>
+            <td [class]="ui.how">{{ r.how }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </section>
+}

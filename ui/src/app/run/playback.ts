@@ -20,6 +20,11 @@ export class Playback {
   private stopAt: number | null = null;
   private readonly listeners = new Set<FrameListener>();
 
+  /** A stretch is playing that stops by itself (playRange): one flick, replayed. */
+  get replaying(): boolean {
+    return this.stopAt !== null;
+  }
+
   /** The player hands over its video element, and takes it back with null. */
   attach(video: HTMLVideoElement | null): void {
     this.video = video;
@@ -50,6 +55,11 @@ export class Playback {
     this.stopAt = null;
     if (v.paused) v.play().catch(() => undefined);
     else v.pause();
+  }
+
+  pause(): void {
+    this.stopAt = null;
+    this.video?.pause();
   }
 
   seek(seconds: number): void {

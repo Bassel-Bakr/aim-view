@@ -1,4 +1,4 @@
-import { Kind } from './api';
+import { Direction, Kind } from './api';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -29,4 +29,61 @@ export function formatStamp(stamp: string, thisYear = new Date().getFullYear()):
 /** Bytes as "68 MB". */
 export function formatSize(bytes: number): string {
   return `${Math.round(bytes / 1e6)} MB`;
+}
+
+const NONE = '–';
+
+/** Seconds as "425 ms". */
+export function formatMs(seconds: number | null | undefined): string {
+  return seconds == null ? NONE : `${Math.round(1000 * seconds)} ms`;
+}
+
+/** Seconds as milliseconds under a second ("167 ms"), else seconds ("1.25 s"). */
+export function formatSeconds(seconds: number | null | undefined): string {
+  if (seconds == null) return NONE;
+  return seconds < 1 ? formatMs(seconds) : `${seconds.toFixed(2)} s`;
+}
+
+/** A share as "79%". */
+export function formatPercent(share: number | null | undefined): string {
+  return share == null ? NONE : `${Math.round(100 * share)}%`;
+}
+
+/** Degrees as "0.48°". */
+export function formatDegrees(deg: number | null | undefined, digits = 2): string {
+  return deg == null ? NONE : `${deg.toFixed(digits)}°`;
+}
+
+/** A speed as "480 °/s". */
+export function formatSpeed(degPerSecond: number | null | undefined): string {
+  return degPerSecond == null ? NONE : `${Math.round(degPerSecond)} °/s`;
+}
+
+/** A count, or a dash when there is none. */
+export function formatCount(v: number | null | undefined): string {
+  return v == null ? NONE : formatNumber(v);
+}
+
+/** A flick's direction in degrees (0 right, 90 up) as one of eight arrows. */
+export function arrow(direction: number): string {
+  const a = ((direction % 360) + 360) % 360;
+  return '→↗↑↖←↙↓↘'[Math.round(a / 45) % 8];
+}
+
+export const DIRECTION_ARROWS: Record<Direction, string> = {
+  right: '→',
+  'up-right': '↗',
+  up: '↑',
+  'up-left': '↖',
+  left: '←',
+  'down-left': '↙',
+  down: '↓',
+  'down-right': '↘',
+};
+
+/** Where a flick's main movement stopped, against a target of radius r: short of it, past it, or on it. */
+export function formatEnded(endLeft: number, r: number): string {
+  if (endLeft > r) return `short, ${endLeft.toFixed(1)}° to go`;
+  if (endLeft < -r) return `past, by ${(-endLeft - r).toFixed(1)}°`;
+  return 'on the target';
 }

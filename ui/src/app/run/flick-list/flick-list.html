@@ -1,0 +1,62 @@
+<div [class]="ui.head">
+  <span>
+    <span [class]="ui.title">Every flick</span>
+    <span [class]="ui.hint">· click one to play it slowed down</span>
+  </span>
+  <button
+    type="button"
+    role="switch"
+    [class]="toggle.root"
+    [attr.aria-checked]="focus.follow()"
+    (click)="focus.setFollow(!focus.follow())"
+  >
+    <span aria-hidden="true" [class]="toggle.knob"></span>
+    Follow the video
+  </button>
+</div>
+<div #scroll [class]="ui.scroll">
+  <table [class]="ui.table">
+    <thead>
+      <tr>
+        <th [class]="ui.th">Kill</th>
+        <th [class]="ui.th">Distance</th>
+        <th [class]="ui.th">Toward</th>
+        <th [class]="ui.th">Kill time</th>
+        <th [class]="ui.th">Main flick ended</th>
+        <th [class]="ui.th">Still</th>
+        <th [class]="ui.th">Peak</th>
+        <th [class]="ui.th">Click speed</th>
+        <th [class]="ui.th">Shots</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (r of rows(); track r.n) {
+        <tr
+          [class]="ui.row"
+          [attr.data-n]="r.n"
+          [attr.data-selected]="r.flick === focus.selected() ? '' : null"
+          [attr.aria-current]="r.flick === focus.selected() ? 'true' : null"
+        >
+          <td [class]="ui.td">
+            <button
+              type="button"
+              [class]="ui.play"
+              [attr.aria-label]="'Play kill ' + r.n"
+              (click)="focus.play(r.flick)"
+            >
+              {{ r.n }}
+            </button>
+          </td>
+          <td [class]="ui.td">{{ r.distance }}</td>
+          <td [class]="ui.td">{{ r.toward }}</td>
+          <td [class]="ui.td">{{ r.killTime }}</td>
+          <td [class]="ui.td">{{ r.ended }}</td>
+          <td [class]="ui.td">{{ r.still }}</td>
+          <td [class]="ui.td">{{ r.peak }}</td>
+          <td [class]="ui.td">{{ r.clickSpeed }}</td>
+          <td [class]="r.missed ? ui.missed : ui.td">{{ r.shots }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

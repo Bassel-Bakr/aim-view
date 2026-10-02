@@ -1,9 +1,13 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { JobStage, Recording } from '../api';
 import { modelName, Models } from '../services/models';
+import { FlickList } from './flick-list/flick-list';
 import { Player } from './player/player';
+import { ClickReport } from './report/click-report';
+import { TrackReport } from './report/track-report';
 import { Review } from './review';
 import { RunHeader } from './run-header/run-header';
+import { SpeedChart } from './speed-chart/speed-chart';
 import { Timeline } from './timeline/timeline';
 import { button } from '@themes/controls.styles';
 import { runStyles } from '@themes/run.styles';
@@ -33,8 +37,9 @@ const STAGES: Record<JobStage, string> = {
 /** The open recording: its header, the review's button and progress, the video, and a tracking run's timeline. */
 @Component({
   selector: 'app-run',
-  imports: [RunHeader, Player, Timeline],
+  imports: [RunHeader, Player, Timeline, FlickList, SpeedChart, ClickReport, TrackReport],
   templateUrl: './run.html',
+  styleUrl: './run.scss',
 })
 export class Run {
   readonly recording = input.required<Recording>();
@@ -53,6 +58,10 @@ export class Run {
   protected readonly trackReport = computed(() => {
     const r = this.report();
     return r?.mode === 'track' ? r : null;
+  });
+  protected readonly clickReport = computed(() => {
+    const r = this.report();
+    return r?.mode === 'click' ? r : null;
   });
   protected readonly videoUrl = computed(
     () => `/video?id=${encodeURIComponent(this.recording().id)}`,

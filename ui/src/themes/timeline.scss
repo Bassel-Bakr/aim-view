@@ -7,8 +7,8 @@
   --timeline-head: var(--warning);
   --timeline-death: var(--text-primary);
   --timeline-font: var(--font-size-xs) var(--font-family);
-  --timeline-swatch: 10px;
-  --timeline-swatch-radius: 2px;
+  --timeline-swatch: var(--swatch-size);
+  --timeline-swatch-radius: var(--swatch-radius);
 }
 
 $height: var(--timeline-height);

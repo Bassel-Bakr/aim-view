@@ -1,0 +1,9 @@
+@layer components {
+  // As tall as the video beside it: the list's own size never stretches the row
+  :host {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    contain: size;
+  }
+}

@@ -88,7 +88,9 @@ export type Source = 'stats' | 'hud' | 'aimlab' | 'video';
 
 export interface ReportInfo {
   source?: Source;
+  /** Kills matched to a target in the video, and kills the source counted. */
   matched?: number;
+  kills_stats?: number;
 }
 
 /** One kill and the flick to it (review.measure). Times in seconds, angles in degrees. */
@@ -117,27 +119,147 @@ export interface Flick {
   hold: number;
   breaks: number;
   off: number;
+  /** Where the kill's time went, as KillParts; null when one of its steps was not found. */
+  parts: KillParts | null;
+}
+
+/** A kill's time in its five steps, in seconds: react, main flick, onto the target, settle, still on the target. */
+export type KillParts = [react: number, flick: number, onto: number, settle: number, still: number];
+
+/** The kills in one band of distance. short and past are shares; times in seconds. */
+export interface DistanceBand {
+  lo: number;
+  hi: number;
+  n: number;
+  interval: number;
+  react: number;
+  short: number;
+  past: number;
+  still: number;
+}
+
+/** Compass direction of a flick, or of a target's motion. */
+export type Direction =
+  'right' | 'up-right' | 'up' | 'up-left' | 'left' | 'down-left' | 'down' | 'down-right';
+
+/** The kills toward one direction. beyond: the median time over what the distance predicts (Fitts' law). */
+export interface DirectionBand {
+  name: Direction;
+  n: number;
+  interval: number;
+  distance: number;
+  short: number;
+  past: number;
+  beyond: number | null;
+}
+
+/** One of the review's checks: "attention" when the run should look at it. */
+export interface Issue {
+  issue?: number;
+  title: string;
+  value: string;
+  flag: 'attention' | 'fine';
+  why: string;
 }
 
 export interface ClickSummary {
   scenario: string;
-  score: number;
+  score: number | null;
   kills: number;
-  misses: number;
-  accuracy: number;
+  misses: number | null;
+  shots: number | null;
+  accuracy: number | null;
   radius: number;
   measured: number;
+  sens: string | null;
+  fps_avg: number | null;
+  median_interval: number | null;
+  react: number | null;
+  flick: number | null;
+  peak: number | null;
+  still: number | null;
+  click_speed: number | null;
+  /** The average kill's time in its five steps. */
+  budget: KillParts | null;
+  by_distance: DistanceBand[];
+  by_direction: DirectionBand[];
   info: ReportInfo;
+}
+
+/** While the bot moved one way: the share of the time it did, the time on it, the distance and the lag. */
+export interface MotionBand {
+  name: Direction;
+  share: number;
+  on: number | null;
+  distance: number | null;
+  lag: number | null;
+}
+
+/**
+ * How the crosshair followed a moving bot (review.track_motion), from the camera's turn read in the video. reason:
+ * why it was not measured. Distances in degrees; lag negative behind the bot.
+ */
+export interface Motion {
+  reason?: string;
+  seconds?: number;
+  camera: number;
+  lag?: number | null;
+  lag_ms?: number | null;
+  off_behind?: number | null;
+  off_ahead?: number | null;
+  off_side?: number | null;
+  overshoots?: number | null;
+  overshoot_dist?: number | null;
+  overcorrect?: number | null;
+  corrections?: number | null;
+  swing_count?: number | null;
+  reaction?: number | null;
+  reversals?: number;
+  reversal_overshoot?: number | null;
+  reversal_overshoot_dist?: number | null;
+  error_h?: number | null;
+  error_v?: number | null;
+  target_speed?: number | null;
+  by_direction?: MotionBand[];
+}
+
+/** How much the accuracy would rise if one thing changed (review.what_if). gain: a share. */
+export interface WhatIf {
+  what: string;
+  gain: number;
+  how: string;
+}
+
+/** The faint-target cut-off a tracking run was measured with. */
+export interface FaintCut {
+  tracks: number;
+  cut: number;
 }
 
 export interface TrackSummary {
   scenario: string;
-  score: number;
-  accuracy: number;
-  on_target: number;
+  score: number | null;
+  accuracy: number | null;
+  on_target: number | null;
+  on_all: number | null;
+  error: number | null;
+  lost: number | null;
+  lost_cost: number | null;
+  slip_cost: number | null;
+  back: number | null;
+  longest_off: number | null;
+  bots: number;
+  to_next: number | null;
+  waiting: number | null;
+  onto: number | null;
+  switching: number | null;
+  fps_avg: number | null;
   start: number | null;
   end: number | null;
   switches: Switch[];
+  motion: Motion | null;
+  what_if: WhatIf[];
+  faint: FaintCut | null;
   info: ReportInfo;
 }
 
@@ -153,6 +275,7 @@ export interface ClickReport extends ReportBase {
   mode: 'click';
   summary: ClickSummary;
   flicks: Flick[];
+  issues: Issue[];
   paths: Record<string, PathPoint[]>;
 }
 

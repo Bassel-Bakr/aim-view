@@ -1,6 +1,6 @@
 import { tv } from 'tailwind-variants/lite';
 
-/** The run page: its header row, toolbar, notes and the review's progress. */
+/** The run page: its header row, toolbar, notes, the review's progress, and the report. */
 export const runStyles = tv({
   slots: {
     head: 'flex flex-wrap items-start justify-between gap-x-7 gap-y-4',
@@ -9,6 +9,6 @@ export const runStyles = tv({
     note: 'mt-2 text-xs text-muted',
     progress: 'mt-4 flex items-center gap-5 text-xs text-secondary',
     bar: 'w-(--progress-width) accent-accent',
-    player: 'mt-6',
+    report: 'mt-6 block',
   },
 });

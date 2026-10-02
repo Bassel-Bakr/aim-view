@@ -1,0 +1,77 @@
+<div [class]="ui.head">
+  <span [class]="ui.title">Crosshair speed in the flick, °/s</span>
+  <span [class]="ui.label">{{ title() }}</span>
+  <button
+    type="button"
+    role="switch"
+    [class]="toggle.root"
+    [attr.aria-checked]="smooth()"
+    (click)="toggleSmooth()"
+  >
+    <span aria-hidden="true" [class]="toggle.knob"></span>
+    Smooth
+  </button>
+</div>
+@if (!model()) {
+  <p [class]="ui.idle">Pick a kill in the list, or play the video with "Follow the video" on.</p>
+}
+<div [class]="ui.frame">
+  @let m = model();
+  <svg
+    #svg
+    role="slider"
+    tabindex="0"
+    aria-valuemin="0"
+    aria-valuenow="0"
+    [class]="ui.svg"
+    [attr.aria-label]="'Crosshair speed over the flick. ' + title()"
+    [attr.aria-valuemax]="flickMs()"
+    [attr.viewBox]="m ? '0 0 ' + m.size.width + ' ' + m.size.height : null"
+    [attr.hidden]="m ? null : ''"
+    (pointermove)="showPoint($event)"
+    (pointerleave)="hidePoint()"
+    (click)="goToPoint($event)"
+    (keydown)="stepWithKeys($event)"
+  >
+    @if (m) {
+      @for (g of m.grid; track g.label) {
+        <line
+          class="grid"
+          [attr.x1]="m.left"
+          [attr.x2]="m.size.width - m.right"
+          [attr.y1]="g.y"
+          [attr.y2]="g.y"
+        />
+        <text class="label" text-anchor="end" [attr.x]="m.left - 6" [attr.y]="g.y + 4">
+          {{ g.label }}
+        </text>
+      }
+      @for (t of m.ticks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.x" [attr.y]="m.size.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      <line
+        class="axis"
+        [attr.x1]="m.left"
+        [attr.x2]="m.size.width - m.right"
+        [attr.y1]="m.bottom"
+        [attr.y2]="m.bottom"
+      />
+      @for (k of m.moments; track k.label) {
+        <line
+          class="moment"
+          [attr.x1]="k.x"
+          [attr.x2]="k.x"
+          [attr.y1]="m.top"
+          [attr.y2]="m.bottom"
+        />
+        <text class="moment-label" [attr.x]="k.x + 3" [attr.y]="m.top + 10">{{ k.label }}</text>
+      }
+      <path class="speed" [attr.d]="m.line" />
+      <line #head class="head" [attr.y1]="m.top" [attr.y2]="m.bottom" />
+      <circle #marker class="marker" visibility="hidden" />
+    }
+  </svg>
+  <div #tip hidden aria-hidden="true" [class]="ui.tip"></div>
+</div>

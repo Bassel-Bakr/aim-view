@@ -1,0 +1,31 @@
+// Module tokens: the run's report (its cards, the time budget, the checks, the tables), the flick list beside the
+// video and a flick's speed chart.
+
+@mixin tokens {
+  --stat-size: 18px;
+  --cards-columns: repeat(auto-fill, minmax(150px, 1fr));
+  --issues-columns: repeat(auto-fill, minmax(320px, 1fr));
+  --tables-columns: repeat(auto-fit, minmax(420px, 1fr));
+  --budget-height: 26px;
+  --budget-thin-height: 10px;
+  --flick-list-width: 460px;
+  --player-min-width: 560px;
+  --flick-list-min-height: 320px;
+  --speed-chart-height: 150px;
+  --chart-line-width: 2;
+  --chart-dash: 3 3;
+  --chart-marker: 4px;
+  --issue-attention: var(--warning);
+  --issue-fine: var(--good-text);
+}
+
+$stat-size: var(--stat-size);
+$budget-height: var(--budget-height);
+$budget-thin-height: var(--budget-thin-height);
+$flick-list-width: var(--flick-list-width);
+$player-min-width: var(--player-min-width);
+$flick-list-min-height: var(--flick-list-min-height);
+$speed-chart-height: var(--speed-chart-height);
+$chart-line-width: var(--chart-line-width);
+$chart-dash: var(--chart-dash);
+$chart-marker: var(--chart-marker);
