@@ -106,11 +106,15 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
   model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
   (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there). The
-  user gives KovaaK's folders in the stats file panel. Chrome's folder picker refuses folders under Program Files, so
-  there the user chooses them as files instead: FPSAimTrainer gives the stats and the user's scenarios,
-  workshop\content\824270 the workshop's. Files chosen that way are read for that visit; the scenario facts are kept
-  in the browser. A folder the picker can open is remembered. The stats folder lets each run find its stats file by
-  name and time. The scenario folders give each scenario's kind, time limit and target count, which the review needs.
+  user opens a folder of recordings (VODs folder: Chrome's folder picker, remembered across visits; a recording's id
+  is its path there, and a non-MP4 one is remuxed when it is first opened), and Clear list empties the list. KovaaK's
+  folders are chosen as files (Chrome's picker refuses folders under Program Files): with Stats folder in the top bar,
+  in the stats file panel, or on the run page when the review needs them. FPSAimTrainer gives the stats and the
+  user's scenarios, workshop\content\824270 the workshop's. The browser keeps a copy of the stats files (IndexedDB,
+  `StatsCache`; choosing the folder again copies only new or changed files), each VOD's stats file, and the scenario
+  facts. The stats folder lets each run find its stats file by name and time. The scenario folders
+  give each scenario's kind, time limit and target count: the review waits for them unless the scenario is in neither
+  folder.
   Server mode: files added are sent to the server, and the stats file panel lists KovaaK's stats files (`/api/stats`).
 - The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
   (review.worker.ts): decode (Mediabunny and the browser's decoder: the same YUV as ffmpeg once the edit list's

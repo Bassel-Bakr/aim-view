@@ -17,7 +17,7 @@ export interface StatsEntry {
 export type FolderState = 'none' | 'listing' | 'ready';
 
 /** Where the folder's files are read from: its handle, or the files of a folder input (this visit only). */
-type Reader = (name: string) => Promise<File>;
+export type Reader = (name: string) => Promise<File>;
 
 /**
  * KovaaK's stats folder (FPSAimTrainer\stats), as KovaakFolders finds it: its files indexed by scenario and time
@@ -33,15 +33,10 @@ export class StatsFolder {
   /** How many stats files the folder holds. */
   files = 0;
 
-  /** Lists the folder and indexes its stats files. */
-  async useFolder(dir: FileSystemDirectoryHandle): Promise<void> {
-    this.state.set('listing');
-    const names: string[] = [];
-    for await (const [name, entry] of dir.entries()) {
-      if (entry.kind === 'file') names.push(name);
-    }
+  /** The stats files kept in this browser from a visit before (StatsCache), read from there. */
+  useKept(names: readonly string[], reader: Reader): void {
     this.index(names);
-    this.reader = async (n) => (await dir.getFileHandle(n)).getFile();
+    this.reader = reader;
   }
 
   /** The folder chosen as files (a folder input): read for this visit only. */

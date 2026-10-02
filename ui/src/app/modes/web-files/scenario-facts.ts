@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Kind, ScenarioInfo } from '../../api';
+import { ItemCount } from '../../platform/recording-source';
 import { CoreModule } from '../wasm/core-module';
 import { BrowserStore } from './browser-store';
 
@@ -72,6 +73,8 @@ export class ScenarioFacts {
   private readonly store = inject(BrowserStore);
   readonly byName = signal<ReadonlyMap<string, ScenarioInfo>>(new Map());
   readonly reading = signal(false);
+  /** How many of the files being read are read. */
+  readonly progress = signal<ItemCount | null>(null);
   readonly count = computed(() => this.byName().size);
   /** The folders the facts came from (this visit or one before). */
   readonly sources = signal<ReadonlySet<FactsSource>>(new Set());
@@ -124,7 +127,8 @@ export class ScenarioFacts {
       const next: FactsCache = {};
       for (const [path, hit] of Object.entries(cache))
         if (!replaced.has(sourceOf(path))) next[path] = hit;
-      for (const s of sources) {
+      for (const [k, s] of sources.entries()) {
+        this.progress.set({ done: k, total: sources.length });
         const file = await s.file();
         const hit = cache[s.path];
         const facts =
@@ -137,6 +141,7 @@ export class ScenarioFacts {
       await this.store.set(CACHE_KEY, next).catch(() => undefined);
     } finally {
       this.reading.set(false);
+      this.progress.set(null);
     }
   }
 }

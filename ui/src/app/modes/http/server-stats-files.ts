@@ -2,7 +2,7 @@ import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http'
 import { inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { StatsChange, StatsChoice, StatsPairing, Uploaded } from '../../api';
-import { StatsFiles, StatsSetup } from '../../platform/stats-files';
+import { StatsFiles } from '../../platform/stats-files';
 import { readStats } from '../web-files/local-files';
 
 /**
@@ -14,7 +14,8 @@ export class ServerStatsFiles implements StatsFiles {
   private readonly http = inject(HttpClient);
   readonly searches = signal(true).asReadonly();
   /** The server reaches the stats folder itself. */
-  readonly setup = signal<StatsSetup | null>(null).asReadonly();
+  readonly missing = signal<string | null>(null).asReadonly();
+  readonly chooseFolder = null;
 
   pairing(
     id: () => string | undefined,

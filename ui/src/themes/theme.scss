@@ -97,9 +97,11 @@
   --switch-knob: 11px;
   --switch-gap: 2px;
   --switch-travel: 11px;
+  --spinner-size: 14px;
 
   // Motion
   --motion-fast: 0.15s;
+  --motion-spin: 0.8s;
 }
 
 $surface-0: var(--surface-0);
@@ -183,5 +185,7 @@ $switch-height: var(--switch-height);
 $switch-knob: var(--switch-knob);
 $switch-gap: var(--switch-gap);
 $switch-travel: var(--switch-travel);
+$spinner-size: var(--spinner-size);
 
 $motion-fast: var(--motion-fast);
+$motion-spin: var(--motion-spin);

@@ -1,7 +1,8 @@
 import { Component, computed, DestroyRef, DOCUMENT, inject, signal } from '@angular/core';
 import { Button } from '../controls/button';
 import { errorMessage } from '../api';
-import { formatPercent } from '../format';
+import { formatCount, formatPercent } from '../format';
+import { FolderAction } from '../platform/recording-source';
 import { StatsFiles } from '../platform/stats-files';
 import { Library } from '../services/library';
 
@@ -12,6 +13,12 @@ export interface UploadNote {
 }
 
 const NOTE_MS = 6000;
+
+/** What the top bar says is being done: the words, and the share done (null while it is not known). */
+export interface BusyNote {
+  text: string;
+  share: number | null;
+}
 
 /**
  * Upload: recordings from this computer, by the button or dropped anywhere on the page, with their stats .csv files.
@@ -30,15 +37,26 @@ const NOTE_MS = 6000;
 })
 export class Upload {
   private readonly library = inject(Library);
-  private readonly stats = inject(StatsFiles);
+  protected readonly stats = inject(StatsFiles);
   protected readonly source = this.library.source;
-  /** What is being prepared or sent, with the share done. */
-  protected readonly transfer = computed(() => {
+  /** What is being done, in words with how far it is (items done of how many, or a share), for the top bar. */
+  protected readonly busy = computed<BusyNote | null>(() => {
     const t = this.source.transfer();
-    return t && `${t.label}${t.share === null ? '…' : `: ${formatPercent(t.share)}`}`;
+    if (t) {
+      const far = t.count
+        ? `: ${formatCount(t.count.done)} of ${formatCount(t.count.total)}`
+        : t.share === null
+          ? '…'
+          : `: ${formatPercent(t.share)}`;
+      return { text: `${t.label}${far}`, share: t.share };
+    }
+    const opening = this.opening();
+    return opening ? { text: `${opening}…`, share: null } : null;
   });
   protected readonly dragging = signal(false);
   protected readonly note = signal<UploadNote | null>(null);
+  /** A folder being opened: from the click until the browser hands its files over (it lists them first). */
+  protected readonly opening = signal<string | null>(null);
   private depth = 0;
   private noteTimer = 0;
 
@@ -56,6 +74,50 @@ export class Upload {
   protected pickFiles(input: HTMLInputElement): void {
     void this.open([...(input.files ?? [])]);
     input.value = '';
+  }
+
+  /** Opens a folder of recordings (in the click), and says how many it holds. */
+  protected openFolder(action: FolderAction): void {
+    void this.listFolder(() => action.run());
+  }
+
+  /** A folder of recordings chosen as files, where the browser cannot open it. */
+  protected pickFolder(input: HTMLInputElement, action: FolderAction): void {
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    const read = action.files;
+    if (files.length && read) void this.listFolder(() => read(files));
+  }
+
+  private async listFolder(step: () => Promise<void>): Promise<void> {
+    try {
+      await step();
+      const n = this.source.recordings().length;
+      if (n) this.show(`${n} recordings in the list`, false);
+    } catch (e) {
+      this.show(`Could not open the folder: ${errorMessage(e)}`, true);
+    }
+  }
+
+  /** Opens the folder input, showing that the folder is being opened until the browser hands its files over. */
+  protected chooseStatsFolder(input: HTMLInputElement): void {
+    this.opening.set('Opening the stats folder');
+    input.click();
+  }
+
+  /** KovaaK's stats folder chosen as files: each recording then finds its stats file. */
+  protected pickStatsFolder(
+    input: HTMLInputElement,
+    choose: (files: File[]) => Promise<void>,
+  ): void {
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    this.opening.set(null);
+    if (!files.length) return;
+    choose(files).then(
+      () => this.show("KovaaK's stats folder is read", false),
+      (e: unknown) => this.show(`Could not read the folder: ${errorMessage(e)}`, true),
+    );
   }
 
   protected showDropZone(e: DragEvent): void {

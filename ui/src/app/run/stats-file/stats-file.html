@@ -9,26 +9,9 @@
     run ended.
   </p>
 
-  @if (stats.setup(); as setup) {
+  @if (stats.missing(); as missing) {
     <div class="setup">
-      <p class="hint">{{ setup.detail }}</p>
-      <div class="actions">
-        <button
-          type="button"
-          appButton
-          intent="primary"
-          [disabled]="saving()"
-          (click)="runSetup(setup)"
-        >
-          {{ setup.label }}
-        </button>
-        @if (setup.files) {
-          <button type="button" appButton [disabled]="saving()" (click)="folder.click()">
-            Choose the folders as files
-          </button>
-        }
-      </div>
-      <input #folder type="file" webkitdirectory hidden (change)="pickFolder(folder, setup)" />
+      <p class="hint">{{ missing }}</p>
     </div>
   }
   @if (pairing.error(); as e) {

@@ -3,6 +3,7 @@
 // it overrides the base without any class merging, and a utility on the element still wins (the utilities layer comes
 // after this one). A global stylesheet of its own (angular.json), Sass first, then Tailwind: @reference gives @apply
 // the token theme.
+@use 'theme' as t;
 @reference '../tailwind.css';
 
 @layer components {
@@ -82,5 +83,33 @@
 
   .switch[aria-checked='true'] .switch-knob {
     @apply bg-accent after:translate-x-(--switch-travel) after:bg-on-accent;
+  }
+
+  // A spinning ring beside words that say what is being done (the words carry it; the ring only shows it is busy).
+  // With reduced motion it stays still.
+  .spinner {
+    @apply inline-block size-(--spinner-size) flex-none rounded-pill border-(length:--line-width-strong) border-border-strong border-t-accent;
+
+    animation: spin t.$motion-spin linear infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  }
+}
+
+@layer components {
+  // How far a step is: a ring that fills (--share, 0 to 1), beside words that say it.
+  .progress-ring {
+    @apply inline-block size-(--spinner-size) flex-none rounded-pill;
+
+    background: conic-gradient(t.$accent calc(var(--share) * 1turn), t.$border-strong 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - #{t.$line-width-strong}), black 0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
   }
 }

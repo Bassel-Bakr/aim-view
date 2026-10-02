@@ -22,10 +22,24 @@
     </button>
   }
 </div>
+@if (library.source.clearable && library.source.recordings().length) {
+  <button
+    type="button"
+    appButton
+    class="clear"
+    title="Empties the list in this browser; the files stay where they are."
+    (click)="clearList()"
+  >
+    Clear list
+  </button>
+}
 @if (library.source.problem(); as problem) {
   <p class="note" role="alert">{{ problem }}</p>
 } @else if (library.source.loading()) {
-  <p class="note" role="status">Loading the recordings…</p>
+  <p class="note loading" role="status">
+    <span class="spinner" aria-hidden="true"></span>
+    Loading the recordings…
+  </p>
 }
 @if (!library.source.loading()) {
   <div

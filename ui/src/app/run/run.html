@@ -23,7 +23,7 @@
     </button>
   </div>
 </div>
-@if (review.unavailable(); as why) {
+@if (review.unavailable() ?? review.caveat(); as why) {
   <p class="note">{{ why }}</p>
 }
 @if (video(); as v) {

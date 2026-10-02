@@ -1,6 +1,6 @@
 import { computed, inject, Injectable, resource, ResourceRef } from '@angular/core';
 import { Job, StatsChange, StatsChoice, StatsHow, StatsPairing } from '../../api';
-import { StatsFiles, StatsSetup } from '../../platform/stats-files';
+import { StatsFiles } from '../../platform/stats-files';
 import { LocalFiles, localRecording } from './local-files';
 import { StatsCsv, stampSeconds, statsSummary } from './stats-csv';
 import { KovaakFolders } from './kovaak-folders';
@@ -24,7 +24,7 @@ const ROLE_NAMES = {
   workshop: "the workshop's scenarios",
 } as const;
 
-/** KovaaK's folders chosen as files (where the browser's picker cannot open them), then the runs' stats found. */
+/** KovaaK's folders chosen as files, then the runs' stats found. */
 function readChosenFiles(
   folders: KovaakFolders,
   local: LocalFiles,
@@ -37,8 +37,8 @@ function readChosenFiles(
 
 /**
  * The stats files of recordings opened in the browser: found in KovaaK's stats folder by name and time (once the user
- * opens the folder; the browser remembers it), picked from its files by scenario, or a .csv chosen from this computer.
- * All read in the browser.
+ * chooses the folder), picked from its files by scenario, or a .csv chosen from this computer. All read in the
+ * browser.
  */
 @Injectable({ providedIn: 'root' })
 export class LocalStatsFiles implements StatsFiles {
@@ -46,40 +46,22 @@ export class LocalStatsFiles implements StatsFiles {
   private readonly folder = inject(StatsFolder);
   private readonly folders = inject(KovaakFolders);
   readonly searches = this.folder.ready;
+  readonly chooseFolder = readChosenFiles(this.folders, this.local);
 
-  readonly setup = computed<StatsSetup | null>(() => {
+  readonly missing = computed<string | null>(() => {
     const state = this.folders.state();
-    const then = (step: () => Promise<void>) => async () => {
-      await step();
-      await this.local.findAllStats();
-    };
     if (state.busy) return null;
-    if (state.ask.length) {
-      return {
-        label: `Allow reading ${state.ask.join(', ')} again`,
-        detail:
-          "The browser remembers KovaaK's folders, and asks once per visit before reading them again.",
-        run: then(() => this.folders.allow()),
-        files: null,
-      };
-    }
     const missing = (['stats', 'scenarios', 'workshop'] as const).filter(
       (r) => !state.found.includes(r),
     );
     if (!missing.length) return null;
-    const what = missing.map((r) => ROLE_NAMES[r]).join(', ');
-    return {
-      label: state.found.length ? "Open more of KovaaK's folders" : "Open KovaaK's folders",
-      detail:
-        (state.refused ? `${state.refused}. ` : '') +
-        `Missing: ${what}. The stats folder lets each run find its stats file by scenario and time; the ` +
-        "scenario folders give each scenario's kind, time limit and target count. Chrome's folder picker will not " +
-        'open folders under Program Files: there, choose them as files instead. FPSAimTrainer (in ' +
-        String.raw`steamapps\common) gives the stats and your scenarios, workshop\content\824270 the workshop's. ` +
-        'Folders chosen as files are read for this visit; the scenario facts are kept.',
-      run: then(() => this.folders.open()),
-      files: readChosenFiles(this.folders, this.local),
-    };
+    return (
+      `Missing: ${missing.map((r) => ROLE_NAMES[r]).join(', ')}. Give them with Stats folder at the top: ` +
+      String.raw`FPSAimTrainer (in steamapps\common) for the stats and your scenarios, workshop\content\824270 ` +
+      "for the workshop's. The stats folder lets each run find its stats file by scenario and time; the scenario " +
+      "folders give each scenario's kind, time limit and target count. The browser keeps a copy of the stats " +
+      'files: choose the folder again after new runs.'
+    );
   });
 
   pairing(

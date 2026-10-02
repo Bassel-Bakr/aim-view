@@ -1,6 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, signal } from '@angular/core';
 import { Badge } from '../controls/badge';
+import { Button } from '../controls/button';
 import { Kind, Recording } from '../api';
 import { KIND_LABELS } from '../format';
 import { Library } from '../services/library';
@@ -24,7 +25,7 @@ const PAGE = 10;
  */
 @Component({
   selector: 'app-recordings',
-  imports: [DecimalPipe, StampPipe, Badge],
+  imports: [DecimalPipe, StampPipe, Badge, Button],
   templateUrl: './recordings.html',
   styleUrl: './recordings.scss',
 })
@@ -59,6 +60,12 @@ export class Recordings {
     const i = this.shown().findIndex((r) => r.id === this.library.selectedId());
     return i < 0 ? null : `rec-${i}`;
   });
+
+  /** Empties the list (recordings opened in this browser): the files stay where they are. */
+  protected clearList(): void {
+    this.library.selectedId.set(null);
+    void this.library.source.clear();
+  }
 
   constructor() {
     afterRenderEffect(() => {

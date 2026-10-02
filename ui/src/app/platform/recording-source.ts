@@ -33,6 +33,26 @@ export interface AddResult {
 export interface Transfer {
   label: string;
   share: number | null;
+  /** How many items are done, of how many, where it goes item by item (files read, recordings paired). */
+  count?: ItemCount;
+}
+
+/** How many items are done, of how many. */
+export interface ItemCount {
+  done: number;
+  total: number;
+}
+
+/**
+ * A folder of recordings the user can open: what its button says and why, whether it is being read, the action (run
+ * in the click), and files: the folder chosen as files instead (a folder input), where the browser cannot open it.
+ */
+export interface FolderAction {
+  label: string;
+  detail: string;
+  busy: boolean;
+  run: () => Promise<void>;
+  files: ((files: File[]) => Promise<void>) | null;
 }
 
 /**
@@ -50,6 +70,10 @@ export abstract class RecordingSource {
   abstract readonly addedFilesGo: string;
   /** Files being prepared or sent; null when there are none. */
   abstract readonly transfer: Signal<Transfer | null>;
+  /** A folder of recordings to open; null where the mode lists its own (the review server's library). */
+  abstract readonly folder: Signal<FolderAction | null>;
+  /** Whether the list can be cleared (recordings opened in this browser); the server's library cannot. */
+  abstract readonly clearable: boolean;
 
   /** A recording's video, or null when the recording is not one of these. */
   abstract video(id: string): VideoState | null;
@@ -59,4 +83,6 @@ export abstract class RecordingSource {
   abstract add(files: readonly File[]): Promise<AddResult>;
   /** Changes a recording's row after a change made elsewhere (it was reviewed, it has a stats file). */
   abstract patch(id: string, change: Partial<Recording>): void;
+  /** Empties the list, and forgets the recordings folder: the files themselves stay where they are. */
+  abstract clear(): Promise<void>;
 }

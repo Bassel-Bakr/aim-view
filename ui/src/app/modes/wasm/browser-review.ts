@@ -10,11 +10,12 @@ import { ReviewMessage, ReviewRequest, VideoReadings } from './review-messages';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
 const NO_SCENARIOS =
-  "Open KovaaK's scenario folders first (in the stats file panel): the review needs each scenario's kind and " +
-  'target count.';
+  "Without this scenario's file the review does not know its target count or kind (a tracking run is reviewed as a " +
+  "clicking one). Give KovaaK's scenario folders with Stats folder at the top.";
 const NO_STATS =
-  'Pair this run with its stats file to review it in the browser. Runs without one (read from the HUD or the ' +
-  'video alone) are not reviewed here yet.';
+  "Pair this run with its stats file to review it in the browser: choose KovaaK's stats folder with Stats folder " +
+  'at the top, or its .csv in the stats file panel. Runs without one (read from the HUD or the video alone) are ' +
+  'not reviewed here yet.';
 const DEFAULT_MODEL = 'full_v3';
 
 /** A recording's tracks and video readings, as the worker found them, and the model that found them. */
@@ -59,8 +60,15 @@ export class BrowserReview implements ReviewEngine {
   unavailable(id: string): string | null {
     const f = this.local.find(id);
     if (!f) return NOT_OPEN;
-    if (this.scenarios.count() === 0) return NO_SCENARIOS;
     return f.stats ? null : NO_STATS;
+  }
+
+  /** A scenario no scenario file gives is reviewed as Python reviews it: no target count, a clicking run. */
+  caveat(id: string): string | null {
+    const f = this.local.find(id);
+    if (!f?.stats || this.scenarios.get(localRecording(f).scenario)) return null;
+    const from = this.scenarios.sources();
+    return from.has('scenarios') && from.has('workshop') ? null : NO_SCENARIOS;
   }
 
   report(id: () => string | undefined): ResourceRef<Report | null | undefined> {

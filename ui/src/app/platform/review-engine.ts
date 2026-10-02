@@ -9,6 +9,9 @@ export abstract class ReviewEngine {
   /** Why it cannot review this recording, in words; null when it can. */
   abstract unavailable(id: string): string | null;
 
+  /** What the review of this recording will lack, in words (it can still run); null when nothing. */
+  abstract caveat(id: string): string | null;
+
   /** The report of the recording's review, or null when it has none. Call it where a resource can be made. */
   abstract report(id: () => string | undefined): ResourceRef<Report | null | undefined>;
 

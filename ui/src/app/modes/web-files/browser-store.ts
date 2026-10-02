@@ -3,9 +3,12 @@ import { Injectable } from '@angular/core';
 const DB = 'aimview';
 const STORE = 'kv';
 
+/** A value to store, with its key. */
+export type StoreEntry = [key: string, value: unknown];
+
 /**
- * Small values kept in this browser across visits (IndexedDB): what localStorage cannot hold, such as a folder's
- * handle. Where there is no IndexedDB (tests), nothing is kept.
+ * Values kept in this browser across visits (IndexedDB): what localStorage cannot hold, such as a folder's handle or
+ * a copy of the stats files. Where there is no IndexedDB (tests), nothing is kept.
  */
 @Injectable({ providedIn: 'root' })
 export class BrowserStore {
@@ -38,6 +41,30 @@ export class BrowserStore {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
       tx.objectStore(STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /** Several values in one transaction. */
+  async setMany(entries: readonly StoreEntry[]): Promise<void> {
+    const db = await this.open();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      const store = tx.objectStore(STORE);
+      for (const [key, value] of entries) store.put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async remove(key: string): Promise<void> {
+    const db = await this.open();
+    if (!db) return;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

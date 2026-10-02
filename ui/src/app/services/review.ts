@@ -20,6 +20,11 @@ export class Review {
     const id = this.library.selectedId();
     return id === null ? null : this.engine.unavailable(id);
   });
+  /** What the open recording's review will lack, in words; null when nothing. */
+  readonly caveat = computed(() => {
+    const id = this.library.selectedId();
+    return id === null ? null : this.engine.caveat(id);
+  });
   private readonly reviewable = () => {
     const id = this.library.selectedId();
     return id !== null && this.engine.unavailable(id) === null ? id : undefined;

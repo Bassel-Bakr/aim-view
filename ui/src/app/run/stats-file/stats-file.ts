@@ -10,7 +10,7 @@ import {
   StatsPairing,
 } from '../../api';
 import { formatCount, formatNumber, formatOffset, formatPercent, formatStamp } from '../../format';
-import { StatsFiles, StatsSetup } from '../../platform/stats-files';
+import { StatsFiles } from '../../platform/stats-files';
 import { Library } from '../../services/library';
 import { Review } from '../../services/review';
 
@@ -133,19 +133,6 @@ export class StatsFile {
   /** Back to finding the stats file by the recording's name and time. */
   protected findAgain(): void {
     this.choice({ auto: true }, 'Found by its name and time again');
-  }
-
-  /** Opens the stats folder, or asks for leave to read it again (in the click, as the browser needs). */
-  protected runSetup(setup: StatsSetup): void {
-    void this.act(() => setup.run(), "KovaaK's stats folder is open");
-  }
-
-  /** KovaaK's folders chosen as files (where the browser's folder picker cannot open them). */
-  protected pickFolder(input: HTMLInputElement, setup: StatsSetup): void {
-    const files = [...(input.files ?? [])];
-    input.value = '';
-    const read = setup.files;
-    if (files.length && read) void this.act(() => read(files), "KovaaK's folders are read");
   }
 
   /** Runs a step that changes no file by itself, showing what it did or why it failed. */

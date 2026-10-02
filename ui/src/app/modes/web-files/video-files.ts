@@ -3,7 +3,11 @@ const CSV = /\.csv$/i;
 const MP4 = /\.mp4$/i;
 
 export function isVideo(file: File): boolean {
-  return VIDEO.test(file.name);
+  return isVideoName(file.name);
+}
+
+export function isVideoName(name: string): boolean {
+  return VIDEO.test(name);
 }
 
 export function isCsv(file: File): boolean {

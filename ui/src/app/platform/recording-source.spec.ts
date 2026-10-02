@@ -51,6 +51,22 @@ for (const mode of MODE_CASES) {
       expect(source.recordings().find((r) => r.id === added.ids[0])?.stats).toBe(false);
     });
 
+    it('offers a folder of recordings to open, unless the mode lists its own', () => {
+      const source = setUp(mode, RecordingSource);
+      const folder = source.folder();
+      if (mode.name === 'server') expect(folder).toBeNull();
+      else expect(folder).toMatchObject({ label: 'VODs folder', busy: false });
+    });
+
+    it('empties the list where it can be cleared', async () => {
+      const source = setUp(mode, RecordingSource);
+      await mode.finish(source.add([new File(['v'], NAME)]), fakeServer());
+      if (!source.clearable) return;
+      await source.clear();
+      expect(source.recordings()).toEqual([]);
+      expect(source.folder()).toMatchObject({ label: 'VODs folder' });
+    });
+
     it('changes a row after a change made elsewhere', async () => {
       const source = setUp(mode, RecordingSource);
       const [id] = (await mode.finish(source.add([new File(['v'], NAME)]), fakeServer())).ids;

@@ -2,7 +2,13 @@ import { HttpClient, HttpEventType, httpResource, HttpResponse } from '@angular/
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { filter, lastValueFrom, map, tap } from 'rxjs';
 import { Recording, Uploaded } from '../../api';
-import { AddResult, RecordingSource, Transfer, VideoState } from '../../platform/recording-source';
+import {
+  AddResult,
+  FolderAction,
+  RecordingSource,
+  Transfer,
+  VideoState,
+} from '../../platform/recording-source';
 import { readStats } from '../web-files/local-files';
 import { statsForVideo, StatsCsv } from '../web-files/stats-csv';
 import { isCsv, isVideo, mp4Name, toMp4 } from '../web-files/video-files';
@@ -29,6 +35,9 @@ export class ServerRecordings implements RecordingSource {
   );
   readonly addedFilesGo = 'They are sent to the review server, which keeps them.';
   readonly transfer = signal<Transfer | null>(null);
+  /** The server lists its own recordings folder. */
+  readonly folder = signal<FolderAction | null>(null).asReadonly();
+  readonly clearable = false;
 
   video(id: string): VideoState {
     return { state: 'ready', url: `/video?id=${encodeURIComponent(id)}`, remuxed: false };
@@ -66,6 +75,11 @@ export class ServerRecordings implements RecordingSource {
 
   patch(id: string, change: Partial<Recording>): void {
     this.list.update((list) => list?.map((r) => (r.id === id ? { ...r, ...change } : r)));
+  }
+
+  /** The server's library is the recordings folder itself: it is not cleared from the page. */
+  async clear(): Promise<void> {
+    throw new Error("The review server's recordings are its folder's: they are not cleared here");
   }
 
   /** Sends one file to /api/upload; the top bar follows its progress (this mode's HttpClient reports it). */

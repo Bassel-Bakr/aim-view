@@ -9,6 +9,10 @@ import { ReviewEngine } from '../../platform/review-engine';
 export class ServerReview implements ReviewEngine {
   private readonly http = inject(HttpClient);
 
+  caveat(): string | null {
+    return null;
+  }
+
   unavailable(): string | null {
     return null;
   }
