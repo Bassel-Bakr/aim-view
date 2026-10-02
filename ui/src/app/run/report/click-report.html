@@ -1,38 +1,38 @@
 <section aria-label="The run's numbers">
-  <div [class]="ui.head">
+  <div class="head">
     @if (picked(); as m) {
-      <span [class]="ui.headTitle">Kill {{ m.n }}</span>
-      <span [class]="ui.headHint">the run's median under each value</span>
-      <button type="button" [class]="button" (click)="focus.selected.set(null)">Whole run</button>
+      <span class="head-title">Kill {{ m.n }}</span>
+      <span class="head-hint">the run's median under each value</span>
+      <button type="button" appButton (click)="focus.selected.set(null)">Whole run</button>
     } @else {
-      <span [class]="ui.headTitle">Whole run</span>
-      <span [class]="ui.headHint">pick a kill for its own numbers</span>
+      <span class="head-title">Whole run</span>
+      <span class="head-hint">pick a kill for its own numbers</span>
     }
   </div>
-  <div [class]="ui.cards">
+  <div class="cards">
     @for (s of stats(); track s.label) {
-      <div [class]="card.root">
-        <span [class]="card.value" [title]="s.value">{{ s.value }}</span>
-        <span [class]="card.label">{{ s.label }}</span>
-        <span [class]="card.detail">{{ s.detail }}</span>
+      <div class="card">
+        <span class="card-value" [title]="s.value">{{ s.value }}</span>
+        <span class="card-label">{{ s.label }}</span>
+        <span class="card-detail">{{ s.detail }}</span>
       </div>
     }
   </div>
-  <p [class]="note">{{ source() }}</p>
+  <p class="section-note">{{ source() }}</p>
 </section>
 
 @if (budget(); as b) {
   <section aria-label="Where the time goes">
     <h3>{{ b.title }}</h3>
     @if (b.note) {
-      <p [class]="note">{{ b.note }}</p>
+      <p class="section-note">{{ b.note }}</p>
     }
-    <div [class]="ui.budget">
+    <div class="budget">
       @for (bar of b.bars; track $index) {
         @if (bar.label) {
-          <div [class]="ui.reference" [style.visibility]="bar.hidden ? 'hidden' : null">
+          <div class="reference" [style.visibility]="bar.hidden ? 'hidden' : null">
             <span>{{ bar.label }}</span>
-            <div [class]="ui.thinBar" [style.width.%]="bar.width">
+            <div class="thin-bar" [style.width.%]="bar.width">
               @for (seg of bar.segments; track $index) {
                 <div
                   [style.flex-grow]="seg.grow"
@@ -43,10 +43,10 @@
             </div>
           </div>
         } @else {
-          <div [class]="ui.bar" [style.width.%]="bar.width">
+          <div class="bar" [style.width.%]="bar.width">
             @for (seg of bar.segments; track $index) {
               <div
-                [class]="ui.segment"
+                class="segment"
                 [style.flex-grow]="seg.grow"
                 [style.background]="seg.color"
                 [title]="seg.title"
@@ -58,10 +58,10 @@
         }
       }
     </div>
-    <div [class]="ui.legend">
+    <div class="legend">
       @for (item of b.legend; track $index) {
-        <span [class]="ui.legendItem">
-          <i [class]="swatch" [style.background]="item.color"></i>
+        <span class="legend-item">
+          <i class="color-swatch" [style.background]="item.color"></i>
           {{ item.text }}
           @if (item.average) {
             <span [style.visibility]="item.averageHidden ? 'hidden' : null">{{
@@ -76,35 +76,35 @@
 
 <section aria-label="What to look at">
   <h3>What to look at</h3>
-  <div [class]="ui.issues">
+  <div class="issues">
     @for (i of issues(); track i.title) {
-      <div [class]="ui.issue">
-        <div [class]="ui.issueTop">
+      <div class="issue">
+        <div class="issue-top">
           <span>{{ i.issue ? '#' + i.issue + ' ' : '' }}{{ i.title }}</span>
           @if (i.flag === 'attention') {
-            <span [class]="ui.attention">▲ Look at this</span>
+            <span class="attention">▲ Look at this</span>
           } @else {
-            <span [class]="ui.fine">✓ Fine</span>
+            <span class="fine">✓ Fine</span>
           }
         </div>
-        <div [class]="ui.issueValue">{{ i.value }}</div>
+        <div class="issue-value">{{ i.value }}</div>
         @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
-          <div [class]="ui.issueWhy">
+          <div class="issue-why">
             Costliest picks:
             @for (c of pathing()?.costliest; track c.flick.n) {
-              <button type="button" [class]="ui.link" (click)="focus.play(c.flick)">
+              <button class="link" type="button" (click)="focus.play(c.flick)">
                 kill {{ c.flick.n }} {{ c.cost }}
               </button>
             }
           </div>
         }
-        <div [class]="ui.issueWhy">{{ i.why }}</div>
+        <div class="issue-why">{{ i.why }}</div>
       </div>
     }
   </div>
 </section>
 
-<div [class]="ui.tables">
+<div class="tables">
   <section aria-label="By distance">
     <h3>By distance</h3>
     <table>

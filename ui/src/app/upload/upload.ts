@@ -1,11 +1,9 @@
 import { Component, computed, DestroyRef, DOCUMENT, inject, signal } from '@angular/core';
+import { Button } from '../controls/button';
 import { errorMessage } from '../api';
 import { formatPercent } from '../format';
 import { StatsFiles } from '../platform/stats-files';
 import { Library } from '../services/library';
-import { button } from '@themes/controls.styles';
-import { uploadStyles } from '@themes/upload.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 /** What the last upload did, in words; failed for a file that could not be used. */
 export interface UploadNote {
@@ -20,8 +18,10 @@ const NOTE_MS = 6000;
  * Where they go is the mode's (RecordingSource). A stats file dropped alone pairs with the open recording.
  */
 @Component({
+  imports: [Button],
   selector: 'app-upload',
   templateUrl: './upload.html',
+  styleUrl: './upload.scss',
   host: {
     '(document:dragenter)': 'showDropZone($event)',
     '(document:dragleave)': 'hideDropZone()',
@@ -37,8 +37,6 @@ export class Upload {
     const t = this.source.transfer();
     return t && `${t.label}${t.share === null ? '…' : `: ${formatPercent(t.share)}`}`;
   });
-  protected readonly ui = slotClasses(uploadStyles());
-  protected readonly button = button();
   protected readonly dragging = signal(false);
   protected readonly note = signal<UploadNote | null>(null);
   private depth = 0;

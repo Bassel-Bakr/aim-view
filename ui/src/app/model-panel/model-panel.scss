@@ -1,0 +1,79 @@
+@reference '../../tailwind.css';
+
+@layer components {
+  .trigger {
+    @apply rounded-pill border border-border-strong px-4 py-1 text-xs text-secondary hover:bg-surface-2 hover:text-primary;
+  }
+
+  .down {
+    @apply rounded-pill border border-border-strong px-4 py-1 text-xs text-warning;
+  }
+
+  .dialog {
+    @apply m-auto max-h-(--dialog-max-height) w-(--dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+  }
+
+  .head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  .scroll {
+    @apply flex-none overflow-x-auto;
+  }
+
+  .model-panel-table {
+    @apply w-full;
+  }
+
+  .column {
+    @apply align-bottom text-sm text-primary;
+  }
+
+  .row-head {
+    @apply align-top;
+  }
+
+  .about {
+    @apply block font-regular whitespace-normal;
+  }
+
+  .cell {
+    @apply align-top;
+  }
+
+  .best {
+    @apply align-top font-strong text-good-text;
+  }
+
+  .prose {
+    @apply w-(--model-prose-width) min-w-(--model-prose-width) text-left align-top whitespace-normal text-secondary;
+  }
+
+  .muted {
+    @apply text-muted;
+  }
+
+  .older {
+    @apply text-sm;
+  }
+
+  .summary {
+    @apply cursor-pointer text-secondary;
+  }
+
+  .older-list {
+    @apply mt-3 flex flex-col gap-2;
+  }
+
+  .older-row {
+    @apply flex items-center gap-6;
+  }
+
+  .status {
+    @apply text-sm text-secondary;
+  }
+}

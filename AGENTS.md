@@ -65,18 +65,20 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   `tokens` mixin, which `styles.scss` includes in `:root`. Component styles `@use 'themes/...'` and use only `$tokens`:
   no raw colors, sizes, spaces, fonts or durations. Keywords and layout values (`flex`, `solid`, `0`, `100%`, `1fr`)
   are fine. Canvas drawings read their colors and fonts from the same CSS variables.
-- **Tailwind on the tokens.** Templates use Tailwind 4 utilities. `ui/src/tailwind.css` maps Tailwind's theme onto the
-  tokens (`@theme inline reference`, with Tailwind's own scales switched off), so a class can only reach a token:
-  `bg-surface-1`, `text-muted`, `p-4` (4 x `--space-1`), `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`.
-  Component SCSS holds only what utilities cannot say, inside `@layer components`; page-wide element styles are in
-  `@layer base`. That way a utility on an element always wins.
-- **Named styles with tailwind-variants** (`tailwind-variants/lite`, no tailwind-merge), all in `ui/src/themes/`
-  beside the tokens. The shared controls are in `controls.styles.ts` (`button({ intent: 'primary' })`,
-  `badge({ tone: 'good' })`, `pill()`, `chip()`, `segmented()`, `toggleSwitch()`); each component's own class lists
-  are `tv()` slots in `<component>.styles.ts`, imported as `@themes/<component>.styles`. Class strings are built once
-  in fields (`slotClasses(playerStyles())`, `button()`) and bound with `[class]`; never call a style function from a
-  template, least of all in a list. Without tailwind-merge, a style sets a property in its base or in its variants,
-  never both.
+- **Tailwind on the tokens.** `ui/src/tailwind.css` maps Tailwind 4's theme onto the tokens (`@theme inline
+  reference`, with Tailwind's own scales switched off), so a class can only reach a token: `bg-surface-1`, `text-muted`,
+  `p-4` (4 x `--space-1`), `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`. Page-wide element styles are
+  in `@layer base`, named classes in `@layer components`, so a utility on an element always wins.
+- **Named classes in SCSS, variants as data attributes.** Each part of a component is a class in its own SCSS
+  (`.screen { @apply relative overflow-hidden rounded-lg; }`, scoped by Angular's view encapsulation), and the
+  template names it (`class="screen"`). A component's SCSS starts with `@reference` to `tailwind.css`, so `@apply`
+  reaches the token theme: Sass compiles first, then Tailwind. The shared controls are global classes in
+  `ui/src/themes/controls.scss` (`.button`, `.badge`, `.chip`, `.card`, `.pill`, `.segmented`, `.switch`,
+  `.section-note`, `.color-swatch`). A variant is a data attribute (`&[data-intent='primary']`), set by the control's
+  directive in `ui/src/app/controls/` from a typed input (`<button appButton intent="primary">`, `<span appBadge
+  tone="good">`), so templates get completion and type checks. A variant's selector is more specific than the base,
+  so it overrides it with no class merging. A class name must not be a Tailwind utility (`table`, `grid`, `hidden`):
+  Tailwind would add the utility too. The old tailwind-variants modules are in `ui/retired/themes/`.
 - **Angular's style guide** (angular.dev/style-guide, the 2025 one, still current in Angular 22). Folders by feature
   (`recordings/`, `run/`, with each part in its own folder); a service that more than one feature uses goes in
   `services/`, a service only one feature uses stays in that feature. File names follow their class (`stamp-pipe.ts`

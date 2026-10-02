@@ -1,4 +1,5 @@
 import { Component, computed, inject, input } from '@angular/core';
+import { Button } from '../../controls/button';
 import { ClickReport as ClickReportData } from '../../api';
 import { extraShots, pathing, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
@@ -13,27 +14,21 @@ import {
   sortedIssues,
   sourceNote,
 } from './click-stats';
-import { clickReportStyles } from '@themes/click-report.styles';
-import { button, card, note, swatch } from '@themes/controls.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 /**
  * A clicking run's report: the whole run's cards (or the picked kill's, with the run's medians), where a kill's time
  * goes, the checks (Pathing among them once the tracks are in), and the kills by distance and by direction.
  */
 @Component({
+  imports: [Button],
   selector: 'app-click-report',
   templateUrl: './click-report.html',
+  styleUrl: './click-report.scss',
 })
 export class ClickReport {
   readonly report = input.required<ClickReportData>();
   protected readonly focus = inject(FlickFocus);
   private readonly paths = inject(PathCost);
-  protected readonly ui = slotClasses(clickReportStyles());
-  protected readonly card = slotClasses(card());
-  protected readonly note = note();
-  protected readonly swatch = swatch();
-  protected readonly button = button();
 
   protected readonly picked = this.focus.selected;
   private readonly pathSummary = computed<PathSummary | null>(() => {

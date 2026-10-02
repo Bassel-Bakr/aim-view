@@ -1,9 +1,9 @@
-<div [class]="ui.legend">
-  <span [class]="ui.title">On target over the run</span>
-  <span [class]="ui.item"><i class="swatch bg-on-target"></i>on the bot</span>
-  <span [class]="ui.item"><i class="swatch bg-off-target"></i>off it</span>
-  <span [class]="ui.item"><i class="swatch bg-muted"></i>switching after a death</span>
-  <span [class]="ui.hint">Click or drag to go there · ← → a second</span>
+<div class="legend">
+  <span class="title">On target over the run</span>
+  <span class="item"><i class="swatch bg-on-target"></i>on the bot</span>
+  <span class="item"><i class="swatch bg-off-target"></i>off it</span>
+  <span class="item"><i class="swatch bg-muted"></i>switching after a death</span>
+  <span class="hint">Click or drag to go there · ← → a second</span>
 </div>
 <div
   #box
@@ -13,11 +13,10 @@
   aria-label="Time on the bot over the run"
   aria-valuemin="0"
   aria-valuenow="0"
-  [class]="ui.box"
   [attr.aria-valuemax]="runSeconds()"
   (keydown)="moveWithKeys($event)"
 >
-  <canvas #chart aria-hidden="true" [class]="ui.chart"></canvas>
-  <div #head class="head" hidden aria-hidden="true" [class]="ui.head"></div>
-  <div #tip hidden aria-hidden="true" [class]="ui.tip"></div>
+  <canvas class="chart" #chart aria-hidden="true"></canvas>
+  <div #head class="head" hidden aria-hidden="true"></div>
+  <div class="tip" #tip hidden aria-hidden="true"></div>
 </div>

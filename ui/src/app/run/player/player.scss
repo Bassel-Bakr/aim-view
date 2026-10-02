@@ -1,4 +1,5 @@
 @use 'themes/player' as p;
+@reference '../../../tailwind.css';
 
 @layer components {
   :host {
@@ -20,5 +21,47 @@
     width: p.$kill-mark-width;
     height: p.$kill-mark-height;
     background: p.$kill-mark;
+  }
+}
+
+@layer components {
+  .screen {
+    @apply relative overflow-hidden rounded-lg;
+  }
+
+  .video {
+    @apply block size-full;
+  }
+
+  .canvas {
+    @apply pointer-events-none absolute inset-0 size-full;
+  }
+
+  .time {
+    @apply absolute bottom-4 left-4 rounded-md px-3 py-1 text-xs tabular-nums;
+  }
+
+  .seek-row {
+    @apply relative mt-4 h-(--seek-height);
+  }
+
+  .marks {
+    @apply pointer-events-none absolute inset-x-4 inset-y-0;
+  }
+
+  .seek {
+    @apply absolute inset-0 w-full cursor-pointer accent-accent;
+  }
+
+  .controls {
+    @apply mt-4 flex flex-wrap items-center gap-4;
+  }
+
+  .icon {
+    @apply size-(--icon-size-sm);
+  }
+
+  .hint {
+    @apply ml-auto text-xs text-muted;
   }
 }

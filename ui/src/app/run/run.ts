@@ -1,4 +1,5 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
+import { Button } from '../controls/button';
 import { JobStage, Recording } from '../api';
 import { formatPercent } from '../format';
 import { Library } from '../services/library';
@@ -12,9 +13,6 @@ import { RunHeader } from './run-header/run-header';
 import { SpeedChart } from './speed-chart/speed-chart';
 import { StatsFile } from './stats-file/stats-file';
 import { Timeline } from './timeline/timeline';
-import { button } from '@themes/controls.styles';
-import { runStyles } from '@themes/run.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 /** A review job's progress as the page shows it: the stage (announced) and the frames done (not announced). */
 export interface JobProgress {
@@ -49,6 +47,7 @@ const STAGES: Record<JobStage, string> = {
     SpeedChart,
     ClickReport,
     TrackReport,
+    Button,
   ],
   templateUrl: './run.html',
   styleUrl: './run.scss',
@@ -58,9 +57,6 @@ export class Run {
   protected readonly review = inject(Review);
   private readonly models = inject(Models);
   private readonly library = inject(Library);
-  protected readonly ui = slotClasses(runStyles());
-  protected readonly button = button();
-  protected readonly primaryButton = button({ intent: 'primary' });
 
   protected readonly report = computed(() =>
     this.review.report.hasValue() ? this.review.report.value() : null,

@@ -1,19 +1,7 @@
 import { tv } from 'tailwind-variants/lite';
 
-// The app's controls, shared by every page. Without tailwind-merge, a style sets a property in its base or in its
-// variants, never both.
-
-/** A button. intent: normal, or primary for the one main action on a page. */
-export const button = tv({
-  base: 'inline-flex min-h-(--control-height) items-center gap-3 rounded-md border px-6 font-strong whitespace-nowrap transition-colors',
-  variants: {
-    intent: {
-      normal: 'border-border-strong bg-surface-2 text-primary hover:enabled:bg-surface-3',
-      primary: 'border-accent bg-accent text-on-accent hover:enabled:bg-accent-hover',
-    },
-  },
-  defaultVariants: { intent: 'normal' },
-});
+// The app's controls, shared by every page, not yet moved to themes/controls.scss. Without tailwind-merge, a style
+// sets a property in its base or in its variants, never both.
 
 /** A filter chip: a small round button that says whether it is pressed (aria-pressed). */
 export const chip = tv({

@@ -15,9 +15,6 @@ import { ClickReport } from '../../api';
 import { FlickFocus } from '../flick-focus';
 import { Playback } from '../playback';
 import { ChartSize, frameAt, speedChart, SpeedChartModel, xOf, yOf } from './speed-chart-model';
-import { speedChartStyles } from '@themes/speed-chart.styles';
-import { toggleSwitch } from '@themes/controls.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 const SMOOTH_KEY = 'aimview-smooth';
 
@@ -39,8 +36,6 @@ export class SpeedChart {
   private readonly head = viewChild<ElementRef<SVGLineElement>>('head');
   private readonly marker = viewChild<ElementRef<SVGCircleElement>>('marker');
   private readonly tip = viewChild<ElementRef<HTMLElement>>('tip');
-  protected readonly ui = slotClasses(speedChartStyles());
-  protected readonly toggle = slotClasses(toggleSwitch());
 
   protected readonly smooth = signal(localStorage.getItem(SMOOTH_KEY) !== '0');
   private readonly size = signal<ChartSize>({ width: 600, height: 150 });

@@ -1,10 +1,10 @@
 <button
   type="button"
-  [class]="button"
+  appButton
   [title]="'Add recordings from this computer, with their stats .csv files. ' + source.addedFilesGo"
   (click)="file.click()"
 >
-  <svg viewBox="0 0 24 24" aria-hidden="true" [class]="ui.icon">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
     <path
       d="M12 16V4M7 9l5-5 5 5M5 20h14"
       fill="none"
@@ -25,16 +25,16 @@
   (change)="pickFiles(file)"
 />
 @if (transfer(); as t) {
-  <span role="status" [class]="ui.note">{{ t }}</span>
+  <span class="note" role="status">{{ t }}</span>
 } @else if (note(); as n) {
-  <span [class]="n.failed ? ui.failed : ui.note" [attr.role]="n.failed ? 'alert' : 'status'">{{
+  <span [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">{{
     n.text
   }}</span>
 }
 @if (dragging()) {
-  <div aria-hidden="true" [class]="ui.dropZone">
-    <div [class]="ui.dropBox">
-      <span [class]="ui.dropTitle">Drop a recording here</span>
+  <div class="drop-zone" aria-hidden="true">
+    <div class="drop-box">
+      <span class="drop-title">Drop a recording here</span>
       <span>and its stats .csv, if you have it. {{ source.addedFilesGo }}</span>
     </div>
   </div>

@@ -1,0 +1,79 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  .panel {
+    @apply mt-6 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
+  }
+
+  .head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .title {
+    @apply m-0;
+  }
+
+  .intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  .setup {
+    @apply flex flex-col gap-3 rounded-md border border-border-strong px-6 py-5;
+  }
+
+  .current {
+    @apply font-strong break-all;
+  }
+
+  .how {
+    @apply font-regular text-muted;
+  }
+
+  .facts {
+    @apply flex flex-wrap gap-x-11 gap-y-3 text-sm;
+  }
+
+  .fact-label {
+    @apply text-xs text-muted;
+  }
+
+  .actions {
+    @apply flex flex-wrap gap-3;
+  }
+
+  .search-label {
+    @apply flex max-w-(--prose-width) flex-col gap-2 text-xs text-muted;
+  }
+
+  .search {
+    @apply w-full rounded-md border border-border-strong bg-surface-0 px-6 py-4 text-sm text-primary placeholder:text-muted;
+  }
+
+  .list {
+    @apply flex max-h-(--candidates-height) flex-col overflow-y-auto rounded-md border border-border;
+  }
+
+  .row {
+    @apply flex min-h-(--control-height) items-center gap-6 border-b border-grid px-6 py-1 text-sm tabular-nums last:border-b-0;
+  }
+
+  .when {
+    @apply w-(--stamp-width) flex-none text-primary;
+  }
+
+  .off {
+    @apply flex-1 text-muted;
+  }
+
+  .scenario {
+    @apply min-w-0 flex-1 truncate text-secondary;
+  }
+
+  .hint {
+    @apply text-xs text-muted;
+  }
+
+  .failed {
+    @apply text-sm text-warning;
+  }
+}

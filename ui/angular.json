@@ -39,7 +39,7 @@
                 "output": "/"
               }
             ],
-            "styles": ["src/tailwind.css", "src/styles.scss"],
+            "styles": ["src/tailwind.css", "src/styles.scss", "src/themes/controls.scss"],
             "inlineStyleLanguage": "scss",
             "stylePreprocessorOptions": {
               "includePaths": ["src"]

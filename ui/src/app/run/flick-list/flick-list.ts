@@ -12,9 +12,6 @@ import { arrow, formatCount, formatEnded, formatMs, formatSpeed } from '../../fo
 import { PathAnalysis, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
-import { flickListStyles } from '@themes/flick-list.styles';
-import { slotClasses } from '@themes/slot-classes';
-import { toggleSwitch } from '@themes/controls.styles';
 
 /** A flick as the list shows it. */
 export interface FlickRow {
@@ -64,8 +61,6 @@ export class FlickList {
   protected readonly focus = inject(FlickFocus);
   private readonly paths = inject(PathCost);
   private readonly scroll = viewChild<ElementRef<HTMLElement>>('scroll');
-  protected readonly ui = slotClasses(flickListStyles());
-  protected readonly toggle = slotClasses(toggleSwitch());
   protected readonly rows = computed(() => flickRows(this.report(), this.paths.analysis()));
 
   constructor() {

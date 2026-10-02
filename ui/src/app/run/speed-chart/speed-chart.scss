@@ -1,5 +1,6 @@
 @use 'themes/theme' as t;
 @use 'themes/report' as r;
+@reference '../../../tailwind.css';
 
 // The chart's lines and labels: SVG strokes and fills, which utilities do not reach inside the drawing
 @layer components {
@@ -47,5 +48,35 @@
     fill: t.$series-1;
     stroke: t.$surface-0;
     stroke-width: r.$chart-line-width;
+  }
+}
+
+@layer components {
+  .chart-head {
+    @apply flex flex-wrap items-center gap-x-5 gap-y-1;
+  }
+
+  .title {
+    @apply font-strong text-primary;
+  }
+
+  .chart-label {
+    @apply text-xs text-muted;
+  }
+
+  .frame {
+    @apply relative mt-2;
+  }
+
+  .svg {
+    @apply block h-(--speed-chart-height) w-full cursor-crosshair;
+  }
+
+  .idle {
+    @apply mt-2 text-xs text-muted;
+  }
+
+  .tip {
+    @apply pointer-events-none absolute top-5 rounded-md bg-surface-3 px-4 py-1 text-xs whitespace-nowrap;
   }
 }

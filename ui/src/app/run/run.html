@@ -1,10 +1,11 @@
-<div [class]="ui.head">
-  <app-run-header [class]="ui.header" [recording]="recording()" [report]="report()" />
-  <div [class]="ui.toolbar">
+<div class="head">
+  <app-run-header class="header" [recording]="recording()" [report]="report()" />
+  <div class="toolbar">
     @if (!review.unavailable()) {
       <button
         type="button"
-        [class]="recording().analysed ? button : primaryButton"
+        appButton
+        [intent]="recording().analysed ? 'normal' : 'primary'"
         [disabled]="review.running()"
         (click)="startReview()"
       >
@@ -14,7 +15,7 @@
     <button
       type="button"
       aria-controls="stats-file"
-      [class]="button"
+      appButton
       [attr.aria-expanded]="statsOpen()"
       (click)="toggleStats()"
     >
@@ -23,21 +24,21 @@
   </div>
 </div>
 @if (review.unavailable(); as why) {
-  <p [class]="ui.note">{{ why }}</p>
+  <p class="note">{{ why }}</p>
 }
 @if (video(); as v) {
   @if (v.state === 'remuxing') {
-    <div [class]="ui.progress">
-      <progress max="1" [class]="ui.bar" [value]="v.progress"></progress>
+    <div class="progress">
+      <progress class="bar" max="1" [value]="v.progress"></progress>
       <span role="status">Remuxing it into MP4 in the browser</span>
       <span aria-hidden="true">{{ remuxShare() }}</span>
     </div>
   } @else if (v.state === 'failed') {
-    <p role="alert" [class]="ui.note">
+    <p class="note" role="alert">
       Could not remux it into MP4 ({{ v.error }}). It plays as it is, if the browser can play it.
     </p>
   } @else if (v.remuxed) {
-    <p [class]="ui.note">
+    <p class="note">
       Remuxed into MP4 in the browser: the same video and sound, copied into a file the browser
       plays.
     </p>
@@ -47,11 +48,11 @@
   <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
 }
 @if (reviewedBy(); as note) {
-  <p [class]="ui.note">{{ note }}</p>
+  <p class="note">{{ note }}</p>
 }
 @if (progress(); as p) {
-  <div [class]="ui.progress">
-    <progress max="1" [class]="ui.bar" [value]="p.fraction"></progress>
+  <div class="progress">
+    <progress class="bar" max="1" [value]="p.fraction"></progress>
     <span [attr.role]="p.failed ? 'alert' : 'status'">{{ p.stage }}</span>
     <span aria-hidden="true">{{ p.count }}</span>
   </div>
@@ -73,7 +74,7 @@
 </div>
 @if (clickReport(); as cr) {
   <app-speed-chart [report]="cr" />
-  <app-click-report [class]="ui.report" [report]="cr" />
+  <app-click-report class="report" [report]="cr" />
 } @else if (trackReport(); as tr) {
-  <app-track-report [class]="ui.report" [report]="tr" />
+  <app-track-report class="report" [report]="tr" />
 }

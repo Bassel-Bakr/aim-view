@@ -1,28 +1,29 @@
-<section id="stats-file" aria-labelledby="stats-file-title" [class]="ui.panel">
-  <header [class]="ui.head">
-    <h3 id="stats-file-title" [class]="ui.title">Stats file</h3>
-    <button type="button" [class]="button" (click)="closed.emit()">Close</button>
+<section class="panel" id="stats-file" aria-labelledby="stats-file-title">
+  <header class="head">
+    <h3 class="title" id="stats-file-title">Stats file</h3>
+    <button type="button" appButton (click)="closed.emit()">Close</button>
   </header>
-  <p [class]="ui.intro">
+  <p class="intro">
     KovaaK's writes a stats file for each challenge run, with its kills, shots and score. The review
     matches the kills in the video with it. The file is named after the scenario and the time the
     run ended.
   </p>
 
   @if (stats.setup(); as setup) {
-    <div [class]="ui.setup">
-      <p [class]="ui.hint">{{ setup.detail }}</p>
-      <div [class]="ui.actions">
+    <div class="setup">
+      <p class="hint">{{ setup.detail }}</p>
+      <div class="actions">
         <button
           type="button"
-          [class]="primaryButton"
+          appButton
+          intent="primary"
           [disabled]="saving()"
           (click)="runSetup(setup)"
         >
           {{ setup.label }}
         </button>
         @if (setup.files) {
-          <button type="button" [class]="button" [disabled]="saving()" (click)="folder.click()">
+          <button type="button" appButton [disabled]="saving()" (click)="folder.click()">
             Choose the folders as files
           </button>
         }
@@ -31,79 +32,74 @@
     </div>
   }
   @if (pairing.error(); as e) {
-    <p role="alert" [class]="ui.failed">Could not load the stats files: {{ e.message }}</p>
+    <p class="failed" role="alert">Could not load the stats files: {{ e.message }}</p>
   }
   @if (shown(); as p) {
-    <p [class]="ui.current">
-      {{ p.file ?? 'No stats file' }} <span [class]="ui.how">· {{ how() }}</span>
+    <p class="current">
+      {{ p.file ?? 'No stats file' }} <span class="how">· {{ how() }}</span>
     </p>
     @if (facts(); as list) {
-      <dl [class]="ui.facts">
+      <dl class="facts">
         @for (f of list; track f.label) {
           <div>
-            <dt [class]="ui.factLabel">{{ f.label }}</dt>
+            <dt class="fact-label">{{ f.label }}</dt>
             <dd>{{ f.value }}</dd>
           </div>
         }
       </dl>
     }
-    <div [class]="ui.actions">
-      <button type="button" [class]="button" [disabled]="saving()" (click)="file.click()">
+    <div class="actions">
+      <button type="button" appButton [disabled]="saving()" (click)="file.click()">
         {{ p.file ? 'Choose another .csv' : 'Choose a .csv' }}
       </button>
       <button
         type="button"
-        [class]="button"
+        appButton
         [disabled]="saving() || p.how === 'none' || (!stats.searches() && !p.file)"
         (click)="choose(null)"
       >
         No stats file
       </button>
       @if (stats.searches()) {
-        <button
-          type="button"
-          [class]="button"
-          [disabled]="saving() || !chosen()"
-          (click)="findAgain()"
-        >
+        <button type="button" appButton [disabled]="saving() || !chosen()" (click)="findAgain()">
           Find it by name and time
         </button>
       }
     </div>
   }
   <input #file type="file" accept=".csv" hidden (change)="pickFile(file)" />
-  <p [class]="ui.hint">
+  <p class="hint">
     You can also drop the .csv on the page while this recording is open.
     {{ library.source.addedFilesGo }}
   </p>
 
   @if (stats.searches()) {
-    <label [class]="ui.searchLabel">
+    <label class="search-label">
       Stats files of the scenario
       <input
+        class="search"
         #q
         type="search"
         autocomplete="off"
         placeholder="Scenario name"
-        [class]="ui.search"
         [value]="query() ?? recording().scenario"
         (input)="search(q.value)"
       />
     </label>
-    <ul aria-label="Stats files, nearest the recording's time first" [class]="ui.list">
+    <ul class="list" aria-label="Stats files, nearest the recording's time first">
       @for (r of rows(); track r.name) {
-        <li [class]="ui.row">
-          <span [class]="ui.when">{{ r.when }}</span>
-          <span [class]="ui.off">{{ r.off }}</span>
+        <li class="row">
+          <span class="when">{{ r.when }}</span>
+          <span class="off">{{ r.off }}</span>
           @if (r.scenario) {
-            <span [class]="ui.scenario" [title]="r.scenario">{{ r.scenario }}</span>
+            <span class="scenario" [title]="r.scenario">{{ r.scenario }}</span>
           }
           @if (r.inUse) {
-            <span [class]="goodBadge">in use</span>
+            <span appBadge tone="good">in use</span>
           } @else {
             <button
               type="button"
-              [class]="button"
+              appButton
               [attr.aria-label]="'Use the stats file ' + r.name"
               [disabled]="saving() || pairing.isLoading()"
               (click)="choose(r.name)"
@@ -113,7 +109,7 @@
           }
         </li>
       } @empty {
-        <li [class]="ui.hint">
+        <li class="hint">
           @if (pairing.isLoading()) {
             Looking for stats files…
           } @else {
@@ -125,7 +121,7 @@
   }
 
   @if (message(); as m) {
-    <p [class]="m.failed ? ui.failed : ui.hint" [attr.role]="m.failed ? 'alert' : 'status'">
+    <p [class]="m.failed ? 'failed' : 'hint'" [attr.role]="m.failed ? 'alert' : 'status'">
       {{ m.text }}
     </p>
   }

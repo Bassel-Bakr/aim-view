@@ -3,9 +3,6 @@ import { Component, computed, input } from '@angular/core';
 import { Recording, Report, Source } from '../../api';
 import { formatSize, KIND_LABELS } from '../../format';
 import { StampPipe } from '../../stamp-pipe';
-import { pill } from '@themes/controls.styles';
-import { runHeaderStyles } from '@themes/run-header.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 const SOURCES: Record<Source, string> = {
   stats: 'Stats file',
@@ -32,8 +29,6 @@ export class RunHeader {
   readonly recording = input.required<Recording>();
   readonly report = input<Report | null>(null);
   protected readonly kindLabels = KIND_LABELS;
-  protected readonly ui = slotClasses(runHeaderStyles());
-  protected readonly pill = pill();
   protected readonly size = computed(() => formatSize(this.recording().size));
 
   /** Where the review's kills came from, once there is a review; before that, whether a stats file was found. */

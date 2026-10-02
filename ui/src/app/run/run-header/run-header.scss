@@ -1,5 +1,21 @@
+@reference '../../../tailwind.css';
+
 @layer components {
   :host {
     display: block;
+  }
+}
+
+@layer components {
+  .title {
+    @apply flex flex-wrap items-center gap-4;
+  }
+
+  .sub {
+    @apply mt-2 text-muted;
+  }
+
+  .detail {
+    @apply mt-1 text-xs text-muted;
   }
 }

@@ -1,5 +1,6 @@
 @use 'themes/theme' as t;
 @use 'themes/timeline' as tl;
+@reference '../../../tailwind.css';
 
 @layer components {
   :host {
@@ -22,5 +23,39 @@
     width: tl.$swatch;
     height: tl.$swatch;
     border-radius: tl.$swatch-radius;
+  }
+}
+
+@layer components {
+  .legend {
+    @apply mb-3 flex flex-wrap items-center gap-x-7 gap-y-2 text-xs text-secondary;
+  }
+
+  .title {
+    @apply font-strong text-primary;
+  }
+
+  .item {
+    @apply flex items-center gap-3;
+  }
+
+  .hint {
+    @apply ml-auto text-muted;
+  }
+
+  .box {
+    @apply relative cursor-pointer select-none;
+  }
+
+  .chart {
+    @apply block size-full;
+  }
+
+  .head {
+    @apply absolute top-1 bottom-9;
+  }
+
+  .tip {
+    @apply absolute -top-13 rounded-md bg-surface-3 px-4 py-1 text-xs whitespace-nowrap;
   }
 }

@@ -1,29 +1,29 @@
-<div [class]="ui.head">
-  <span [class]="ui.title">Crosshair speed in the flick, °/s</span>
-  <span [class]="ui.label">{{ title() }}</span>
+<div class="chart-head">
+  <span class="title">Crosshair speed in the flick, °/s</span>
+  <span class="chart-label">{{ title() }}</span>
   <button
+    class="switch"
     type="button"
     role="switch"
-    [class]="toggle.root"
     [attr.aria-checked]="smooth()"
     (click)="toggleSmooth()"
   >
-    <span aria-hidden="true" [class]="toggle.knob"></span>
+    <span class="switch-knob" aria-hidden="true"></span>
     Smooth
   </button>
 </div>
 @if (!model()) {
-  <p [class]="ui.idle">Pick a kill in the list, or play the video with "Follow the video" on.</p>
+  <p class="idle">Pick a kill in the list, or play the video with "Follow the video" on.</p>
 }
-<div [class]="ui.frame">
+<div class="frame">
   @let m = model();
   <svg
+    class="svg"
     #svg
     role="slider"
     tabindex="0"
     aria-valuemin="0"
     aria-valuenow="0"
-    [class]="ui.svg"
     [attr.aria-label]="'Crosshair speed over the flick. ' + title()"
     [attr.aria-valuemax]="flickMs()"
     [attr.viewBox]="m ? '0 0 ' + m.size.width + ' ' + m.size.height : null"
@@ -73,5 +73,5 @@
       <circle #marker class="marker" visibility="hidden" />
     }
   </svg>
-  <div #tip hidden aria-hidden="true" [class]="ui.tip"></div>
+  <div class="tip" #tip hidden aria-hidden="true"></div>
 </div>

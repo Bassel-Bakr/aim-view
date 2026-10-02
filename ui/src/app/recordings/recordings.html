@@ -1,32 +1,31 @@
 <label class="block">
   <span class="sr-only">Filter the recordings by scenario</span>
   <input
+    class="search"
     #q
     type="search"
     placeholder="Filter by scenario"
     autocomplete="off"
-    [class]="ui.search"
     [value]="query()"
     (input)="query.set(q.value)"
   />
 </label>
-<div role="group" aria-label="Kind of run" [class]="ui.chips">
+<div class="chips" role="group" aria-label="Kind of run">
   @for (c of chips(); track c.key) {
     <button
       type="button"
       class="chip"
-      [class]="chip"
       [attr.aria-pressed]="kind() === c.key"
       (click)="kind.set(c.key)"
     >
-      {{ c.label }} <span [class]="ui.count">{{ c.count | number }}</span>
+      {{ c.label }} <span class="count">{{ c.count | number }}</span>
     </button>
   }
 </div>
 @if (library.source.problem(); as problem) {
-  <p role="alert" [class]="ui.note">{{ problem }}</p>
+  <p class="note" role="alert">{{ problem }}</p>
 } @else if (library.source.loading()) {
-  <p role="status" [class]="ui.note">Loading the recordings…</p>
+  <p class="note" role="status">Loading the recordings…</p>
 }
 @if (!library.source.loading()) {
   <div
@@ -34,22 +33,20 @@
     role="listbox"
     tabindex="0"
     aria-label="Recordings"
-    [class]="ui.list"
     [attr.aria-activedescendant]="activeId()"
     (click)="selectRow($event)"
     (keydown)="moveSelection($event)"
   >
     @for (r of shown(); track r.id; let i = $index) {
       <div
-        class="rec"
+        class="rec row"
         role="option"
-        [class]="ui.row"
         [id]="'rec-' + i"
         [attr.data-i]="i"
         [attr.aria-selected]="r.id === library.selectedId()"
       >
-        <div class="name" [class]="ui.name" [title]="r.scenario">{{ r.scenario }}</div>
-        <div class="meta" [class]="ui.meta">
+        <div class="name" [title]="r.scenario">{{ r.scenario }}</div>
+        <div class="meta">
           @if (r.score !== null) {
             <span>{{ r.score | number: '1.0-2' }}</span>
           }
@@ -58,24 +55,24 @@
             <span>{{ kindLabels[r.kind] }}</span>
           }
           @if (r.analysed) {
-            <span [class]="goodBadge">reviewed</span>
+            <span appBadge tone="good">reviewed</span>
           }
           @if (r.uploaded) {
-            <span [class]="badge">uploaded</span>
+            <span appBadge>uploaded</span>
           }
           @if (r.local) {
-            <span [class]="badge">in this browser</span>
+            <span appBadge>in this browser</span>
           }
           @if (!r.stats) {
-            <span [class]="badge">no stats</span>
+            <span appBadge>no stats</span>
           }
           @if (r.not_aim) {
-            <span [class]="badge">not an aim trainer</span>
+            <span appBadge>not an aim trainer</span>
           }
         </div>
       </div>
     } @empty {
-      <p [class]="ui.note">No recording matches.</p>
+      <p class="note">No recording matches.</p>
     }
   </div>
 }

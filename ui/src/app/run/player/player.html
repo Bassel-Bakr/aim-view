@@ -1,10 +1,10 @@
-<div class="screen" [class]="ui.screen" [style.aspect-ratio]="aspect()">
+<div class="screen" [style.aspect-ratio]="aspect()">
   <video
+    class="video"
     #video
     preload="metadata"
     muted
     playsinline
-    [class]="ui.video"
     [src]="src()"
     (click)="playback.toggle()"
     (play)="playback.paused.set(false)"
@@ -12,25 +12,25 @@
     (loadedmetadata)="loadedMetadata()"
     (seeked)="showSeekedFrame()"
   ></video>
-  <canvas #overlay aria-hidden="true" [class]="ui.canvas"></canvas>
-  <span #clock class="time" aria-hidden="true" [class]="ui.time"></span>
+  <canvas class="canvas" #overlay aria-hidden="true"></canvas>
+  <span #clock class="time" aria-hidden="true"></span>
 </div>
 
 <ng-content />
 
-<div [class]="ui.seekRow">
-  <div aria-hidden="true" [class]="ui.marks">
+<div class="seek-row">
+  <div class="marks" aria-hidden="true">
     @for (m of marks(); track $index) {
       <i class="mark" [style.left.%]="m"></i>
     }
   </div>
   <input
+    class="seek"
     #seek
     type="range"
     min="0"
     step="any"
     aria-label="Position in the video"
-    [class]="ui.seek"
     [max]="playback.duration()"
     (pointerdown)="startSeeking()"
     (pointerup)="stopSeeking()"
@@ -38,14 +38,14 @@
   />
 </div>
 
-<div [class]="ui.controls">
+<div class="controls">
   <button
     type="button"
-    [class]="button"
+    appButton
     [attr.aria-label]="playback.paused() ? 'Play' : 'Pause'"
     (click)="playback.toggle()"
   >
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" [class]="ui.icon">
+    <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       @if (playback.paused()) {
         <path d="M8 5v14l11-7z" />
       } @else {
@@ -53,11 +53,11 @@
       }
     </svg>
   </button>
-  <div role="group" aria-label="Playback speed" [class]="speed.group">
+  <div class="segmented" role="group" aria-label="Playback speed">
     @for (r of rates; track r) {
       <button
+        class="segmented-option"
         type="button"
-        [class]="speed.option"
         [attr.aria-pressed]="playback.rate() === r"
         (click)="playback.setRate(r)"
       >
@@ -66,36 +66,36 @@
     }
   </div>
   <button
+    class="switch"
     type="button"
     role="switch"
-    [class]="toggle.root"
     [attr.aria-checked]="showOverlay()"
     (click)="toggleOverlay()"
   >
-    <span aria-hidden="true" [class]="toggle.knob"></span>
+    <span class="switch-knob" aria-hidden="true"></span>
     Show the tracked target
   </button>
   @if (clicking()) {
     <button
+      class="switch"
       type="button"
       role="switch"
-      [class]="toggle.root"
       [attr.aria-checked]="showFastest()"
       (click)="toggleFastest()"
     >
-      <span aria-hidden="true" [class]="toggle.knob"></span>
+      <span class="switch-knob" aria-hidden="true"></span>
       Show the fastest path
     </button>
     <button
+      class="switch"
       type="button"
       role="switch"
-      [class]="toggle.root"
       [attr.aria-checked]="showMine()"
       (click)="toggleMine()"
     >
-      <span aria-hidden="true" [class]="toggle.knob"></span>
+      <span class="switch-knob" aria-hidden="true"></span>
       Show my path
     </button>
   }
-  <span [class]="ui.hint">Space plays · ← → one frame · Shift ← → the next kill</span>
+  <span class="hint">Space plays · ← → one frame · Shift ← → the next kill</span>
 </div>

@@ -1,41 +1,41 @@
 @if (models.list.error()) {
-  <span role="status" [class]="ui.down">The review server is not running</span>
+  <span class="down" role="status">The review server is not running</span>
 } @else if (models.current(); as m) {
   <button
+    class="trigger"
     type="button"
     aria-haspopup="dialog"
     title="The model the review uses: see the models, what each does best, and change it"
-    [class]="ui.trigger"
     (click)="open()"
   >
     {{ m.chosen }} · {{ deviceLabels[m.device] }}
   </button>
 }
 
-<dialog #dialog aria-labelledby="models-title" [class]="ui.dialog">
-  <header [class]="ui.head">
+<dialog class="dialog" #dialog aria-labelledby="models-title">
+  <header class="head">
     <h2 id="models-title">Models</h2>
-    <button type="button" [class]="button" (click)="close()">Close</button>
+    <button type="button" appButton (click)="close()">Close</button>
   </header>
-  <p [class]="ui.intro">
+  <p class="intro">
     The model finds the targets in every frame; the review measures your aim from what it finds. New
     reviews use the model you pick. Each recording keeps its reviews by other models, so switching
     back is instant.
   </p>
   @if (table(); as t) {
-    <div [class]="ui.scroll">
-      <table [class]="ui.table">
+    <div class="scroll">
+      <table class="model-panel-table">
         <thead>
           <tr>
             <td></td>
             @for (c of t.columns; track c.name) {
-              <th scope="col" [class]="ui.column">
+              <th class="column" scope="col">
                 {{ c.label }}
                 @if (c.isDefault) {
-                  <span [class]="badge">default</span>
+                  <span appBadge>default</span>
                 }
                 @if (c.inUse) {
-                  <span [class]="goodBadge">in use</span>
+                  <span appBadge tone="good">in use</span>
                 }
               </th>
             }
@@ -44,20 +44,20 @@
         <tbody>
           @for (row of t.rows; track row.label) {
             <tr>
-              <th scope="row" [class]="ui.rowHead">
+              <th class="row-head" scope="row">
                 {{ row.label }}
                 @if (row.about) {
-                  <span [class]="ui.about">{{ row.about }}</span>
+                  <span class="about">{{ row.about }}</span>
                 }
               </th>
               @for (cell of row.cells; track $index) {
-                <td [class]="row.prose ? ui.prose : cell.best ? ui.best : ui.cell">
+                <td [class]="row.prose ? 'prose' : cell.best ? 'best' : 'cell'">
                   @if (cell.text === null) {
-                    <span [class]="ui.muted">–</span>
+                    <span class="muted">–</span>
                   } @else {
                     {{ cell.text }}
                     @if (cell.detail) {
-                      <span [class]="ui.muted">· {{ cell.detail }}</span>
+                      <span class="muted">· {{ cell.detail }}</span>
                     }
                     @if (cell.best) {
                       <span class="sr-only">(best)</span>
@@ -70,20 +70,15 @@
           <tr>
             <th scope="row"><span class="sr-only">Pick</span></th>
             @for (c of t.columns; track c.name) {
-              <td [class]="ui.cell">
+              <td class="cell">
                 @if (c.inUse) {
-                  <span [class]="ui.muted">In use</span>
+                  <span class="muted">In use</span>
                 } @else if (c.available) {
-                  <button
-                    type="button"
-                    [class]="button"
-                    [disabled]="switching()"
-                    (click)="use(c.name)"
-                  >
+                  <button type="button" appButton [disabled]="switching()" (click)="use(c.name)">
                     Use {{ c.useLabel }}
                   </button>
                 } @else {
-                  <span [class]="ui.muted">{{ t.unavailable }}</span>
+                  <span class="muted">{{ t.unavailable }}</span>
                 }
               </td>
             }
@@ -91,31 +86,26 @@
         </tbody>
       </table>
     </div>
-    <p [class]="note">{{ t.notes }}</p>
+    <p class="section-note">{{ t.notes }}</p>
     @if (t.older.length) {
-      <details [class]="ui.older">
-        <summary [class]="ui.summary">Older models</summary>
-        <p [class]="note">
+      <details class="older">
+        <summary class="summary">Older models</summary>
+        <p class="section-note">
           Each one was replaced by a newer model. python/model/MODEL_STATUS.md says why.
         </p>
-        <ul [class]="ui.olderList">
+        <ul class="older-list">
           @for (c of t.older; track c.name) {
-            <li [class]="ui.olderRow">
+            <li class="older-row">
               <span>{{ c.name }}</span>
-              <span [class]="ui.muted">{{ c.size }}</span>
+              <span class="muted">{{ c.size }}</span>
               @if (c.inUse) {
-                <span [class]="ui.muted">In use</span>
+                <span class="muted">In use</span>
               } @else if (c.available) {
-                <button
-                  type="button"
-                  [class]="button"
-                  [disabled]="switching()"
-                  (click)="use(c.name)"
-                >
+                <button type="button" appButton [disabled]="switching()" (click)="use(c.name)">
                   Use {{ c.useLabel }}
                 </button>
               } @else {
-                <span [class]="ui.muted">{{ t.unavailable }}</span>
+                <span class="muted">{{ t.unavailable }}</span>
               }
             </li>
           }
@@ -123,5 +113,5 @@
       </details>
     }
   }
-  <p role="status" [class]="ui.status">{{ status() }}</p>
+  <p class="status" role="status">{{ status() }}</p>
 </dialog>

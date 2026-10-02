@@ -1,4 +1,5 @@
 @use 'themes/layout' as l;
+@reference '../tailwind.css';
 
 @layer components {
   :host {
@@ -20,5 +21,35 @@
 
   main {
     grid-area: main;
+  }
+}
+
+@layer components {
+  .top {
+    @apply flex items-center gap-7 border-b border-border bg-surface-1 px-9;
+  }
+
+  .brand {
+    @apply flex items-center gap-4 text-lg font-strong;
+  }
+
+  .logo {
+    @apply size-(--icon-size) text-accent;
+  }
+
+  .upload {
+    @apply flex min-w-0 flex-1 flex-row-reverse items-center gap-5;
+  }
+
+  .main {
+    @apply min-w-0 overflow-y-auto px-13 py-11;
+  }
+
+  .empty {
+    @apply mt-(--empty-offset) flex max-w-(--empty-width) flex-col gap-4 text-secondary;
+  }
+
+  .empty-title {
+    @apply text-primary;
   }
 }

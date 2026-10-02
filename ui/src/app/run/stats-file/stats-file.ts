@@ -1,4 +1,6 @@
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { Badge } from '../../controls/badge';
+import { Button } from '../../controls/button';
 import {
   errorMessage,
   Recording,
@@ -11,9 +13,6 @@ import { formatCount, formatNumber, formatOffset, formatPercent, formatStamp } f
 import { StatsFiles, StatsSetup } from '../../platform/stats-files';
 import { Library } from '../../services/library';
 import { Review } from '../../services/review';
-import { badge, button } from '@themes/controls.styles';
-import { statsFileStyles } from '@themes/stats-file.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 const HOW: Record<StatsHow, string> = {
   picked: 'your pick',
@@ -58,8 +57,10 @@ export interface PairingFor {
  * time first. A reviewed recording is then measured again with it.
  */
 @Component({
+  imports: [Button, Badge],
   selector: 'app-stats-file',
   templateUrl: './stats-file.html',
+  styleUrl: './stats-file.scss',
 })
 export class StatsFile {
   readonly recording = input.required<Recording>();
@@ -67,10 +68,6 @@ export class StatsFile {
   protected readonly stats = inject(StatsFiles);
   protected readonly library = inject(Library);
   private readonly review = inject(Review);
-  protected readonly ui = slotClasses(statsFileStyles());
-  protected readonly button = button();
-  protected readonly primaryButton = button({ intent: 'primary' });
-  protected readonly goodBadge = badge({ tone: 'good' });
 
   /** The search text; null: the recording's own scenario. A newly opened recording starts again from its own. */
   protected readonly query = linkedSignal<string, string | null>({

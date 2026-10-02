@@ -1,0 +1,86 @@
+// The app's controls, shared by every page, as component classes. A variant is a data attribute, set by the
+// control's directive from a typed input (src/app/controls/): a variant's selector is more specific than the base, so
+// it overrides the base without any class merging, and a utility on the element still wins (the utilities layer comes
+// after this one). A global stylesheet of its own (angular.json), Sass first, then Tailwind: @reference gives @apply
+// the token theme.
+@reference '../tailwind.css';
+
+@layer components {
+  // A button. data-intent="primary": the one main action on a page.
+  .button {
+    @apply inline-flex min-h-(--control-height) items-center gap-3 rounded-md border border-border-strong bg-surface-2 px-6 font-strong whitespace-nowrap text-primary transition-colors hover:enabled:bg-surface-3;
+
+    &[data-intent='primary'] {
+      @apply border-accent bg-accent text-on-accent hover:enabled:bg-accent-hover;
+    }
+  }
+
+  // A filter chip: a small round button that says whether it is pressed (aria-pressed).
+  .chip {
+    @apply min-h-(--control-height-sm) rounded-pill border border-border-strong px-5 py-1 text-xs text-secondary aria-pressed:border-accent aria-pressed:bg-surface-3 aria-pressed:text-primary;
+  }
+
+  // A status in words, never by color alone. data-tone="good": reviewed, done.
+  .badge {
+    @apply rounded-pill bg-surface-3 px-3 leading-(--badge-height) text-secondary;
+
+    &[data-tone='good'] {
+      @apply bg-good-soft text-good-text;
+    }
+  }
+
+  // A number card: its value, what it is, and a line under it (the run's median, a detail, or why it matters).
+  .card {
+    @apply flex flex-col gap-1 rounded-lg border border-border bg-surface-1 px-6 py-5;
+  }
+
+  .card-value {
+    @apply text-(length:--stat-size) font-strong text-value tabular-nums;
+  }
+
+  .card-label {
+    @apply font-strong text-primary;
+  }
+
+  .card-detail {
+    @apply text-xs text-muted;
+  }
+
+  // A small color square in a legend; its color comes from a background class or style.
+  .color-swatch {
+    @apply inline-block size-(--swatch-size) flex-none rounded-(--swatch-radius);
+  }
+
+  // A note under a section: what it measures and how.
+  .section-note {
+    @apply mt-3 max-w-(--prose-width) text-xs text-muted;
+  }
+
+  // A label in an outlined pill: a run's kind, its data source, the model in use.
+  .pill {
+    @apply rounded-pill border border-border-strong px-4 py-1 text-xs font-regular text-secondary;
+  }
+
+  // One choice of a few: a group of buttons, each saying whether it is pressed (aria-pressed).
+  .segmented {
+    @apply inline-flex rounded-md border border-border-strong bg-surface-2 p-1;
+  }
+
+  .segmented-option {
+    @apply min-h-(--control-height-sm) rounded-sm border border-transparent px-5 text-secondary tabular-nums aria-pressed:border-accent aria-pressed:bg-surface-3 aria-pressed:text-primary;
+  }
+
+  // An on/off switch: a button with role="switch" and aria-checked, its knob, and its label. On and off are said by
+  // the knob's place and the label, not by color alone.
+  .switch {
+    @apply inline-flex min-h-(--control-height) items-center gap-4 text-secondary;
+  }
+
+  .switch-knob {
+    @apply relative h-(--switch-height) w-(--switch-width) flex-none rounded-pill bg-surface-3 transition-colors after:absolute after:top-(--switch-gap) after:left-(--switch-gap) after:size-(--switch-knob) after:rounded-pill after:bg-muted after:transition-transform;
+  }
+
+  .switch[aria-checked='true'] .switch-knob {
+    @apply bg-accent after:translate-x-(--switch-travel) after:bg-on-accent;
+  }
+}

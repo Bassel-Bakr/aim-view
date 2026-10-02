@@ -1,29 +1,25 @@
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Badge } from '../controls/badge';
+import { Button } from '../controls/button';
 import { errorMessage } from '../api';
 import { DEVICE_LABELS, modelName, Models } from '../services/models';
 import { Review } from '../services/review';
 import { modelTable } from './model-table';
-import { badge, button, note } from '@themes/controls.styles';
-import { modelPanelStyles } from '@themes/model-panel.styles';
-import { slotClasses } from '@themes/slot-classes';
 
 /**
  * The model in use, in the top bar; it opens the models side by side (what each does best, its checks and speeds),
  * where another one can be picked. New reviews use the pick; a recording's reviews by other models stay.
  */
 @Component({
+  imports: [Button, Badge],
   selector: 'app-model-panel',
   templateUrl: './model-panel.html',
+  styleUrl: './model-panel.scss',
 })
 export class ModelPanel {
   protected readonly models = inject(Models);
   private readonly review = inject(Review);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
-  protected readonly ui = slotClasses(modelPanelStyles());
-  protected readonly button = button();
-  protected readonly note = note();
-  protected readonly badge = badge();
-  protected readonly goodBadge = badge({ tone: 'good' });
   protected readonly deviceLabels = DEVICE_LABELS;
   protected readonly table = computed(() => {
     const list = this.models.current();

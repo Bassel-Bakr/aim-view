@@ -1,0 +1,27 @@
+@reference '../../tailwind.css';
+
+@layer components {
+  .icon {
+    @apply size-(--icon-size-sm);
+  }
+
+  .note {
+    @apply truncate text-xs text-secondary;
+  }
+
+  .failed {
+    @apply truncate text-xs text-warning;
+  }
+
+  .drop-zone {
+    @apply fixed inset-0 z-10 grid place-items-center bg-backdrop p-13;
+  }
+
+  .drop-box {
+    @apply flex size-full flex-col items-center justify-center gap-3 rounded-lg border-(length:--line-width-strong) border-dashed border-accent text-secondary;
+  }
+
+  .drop-title {
+    @apply text-xl font-strong text-primary;
+  }
+}
