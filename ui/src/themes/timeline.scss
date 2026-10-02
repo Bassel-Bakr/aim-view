@@ -1,0 +1,18 @@
+// Module tokens: a tracking run's timeline (a canvas, which reads these variables when it draws).
+
+@mixin tokens {
+  --timeline-height: 130px;
+  --timeline-strip-height: 14;
+  --timeline-head-width: 2px;
+  --timeline-head: var(--warning);
+  --timeline-death: var(--text-primary);
+  --timeline-font: var(--font-size-xs) var(--font-family);
+  --timeline-swatch: 10px;
+  --timeline-swatch-radius: 2px;
+}
+
+$height: var(--timeline-height);
+$head-width: var(--timeline-head-width);
+$head: var(--timeline-head);
+$swatch: var(--timeline-swatch);
+$swatch-radius: var(--timeline-swatch-radius);

@@ -76,8 +76,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
   desktop app (Tauri 2) and as WebAssembly for the browser. Python stays the reference: the core replaces nothing
   until its reports match Python's on every recording.
-- Done: the layout (`python/`, the Rust crate at the root, `ui/`); the Angular app's shell (the top bar, against the
-  Python server). Next, after the user's go: the redesign's screens in `ui/`, then porting the review to Rust.
+- Done: the layout (`python/`, the Rust crate at the root, `ui/`). In `ui/`: the recordings list, and the run page
+  (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline).
+  Next in `ui/`: the report's cards and tables and the flick list, then the tool panels (cut-off, run marks, areas),
+  the queues, upload and the model panel. After that: porting the review to Rust.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

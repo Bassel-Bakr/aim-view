@@ -1,18 +1,16 @@
-import { Component, inject, resource } from '@angular/core';
-import { getJson, Models } from './api';
-import { Library } from './services/library';
+import { Component, inject } from '@angular/core';
 import { Recordings } from './recordings/recordings';
-import { RunHeader } from './run/run-header/run-header';
+import { Run } from './run/run';
+import { Library } from './services/library';
+import { Models } from './services/models';
 
 @Component({
   selector: 'app-root',
-  imports: [Recordings, RunHeader],
+  imports: [Recordings, Run],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
 export class App {
   protected readonly library = inject(Library);
-  protected readonly models = resource({
-    loader: ({ abortSignal }) => getJson<Models>('/api/models', abortSignal),
-  });
+  protected readonly models = inject(Models).list;
 }

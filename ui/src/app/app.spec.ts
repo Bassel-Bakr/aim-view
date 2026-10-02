@@ -37,7 +37,7 @@ describe('App', () => {
     const r = recording({ id: 'x/Controlsphere.mp4', scenario: 'Controlsphere', kind: 'tracking' });
     history.replaceState(null, '', `/?id=${encodeURIComponent(r.id)}`);
     const el = await render(fakeFetch({ '/api/vods': [r] }));
-    expect(el.querySelector('app-run-header h2')?.textContent).toContain('Controlsphere');
-    expect(el.querySelector('app-run-header h2')?.textContent).toContain('Tracking');
+    expect(el.querySelector('app-run h2')?.textContent).toContain('Controlsphere');
+    expect(el.querySelector('app-run h2')?.textContent).toContain('Tracking');
   });
 });

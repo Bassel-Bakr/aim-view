@@ -1,0 +1,26 @@
+@use 'themes/theme' as t;
+@use 'themes/timeline' as tl;
+
+@layer components {
+  :host {
+    display: block;
+    margin-top: t.$space-4;
+  }
+
+  .box {
+    height: tl.$height;
+  }
+
+  .head {
+    width: tl.$head-width;
+    margin-left: calc(-0.5 * #{tl.$head-width});
+    background: tl.$head;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: tl.$swatch;
+    height: tl.$swatch;
+    border-radius: tl.$swatch-radius;
+  }
+}

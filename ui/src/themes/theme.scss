@@ -24,6 +24,7 @@
 
   // Roles
   --accent: #3987e5;
+  --accent-hover: #4d95ea;
   --accent-soft: rgba(57, 135, 229, 0.16);
   --value: #7fb6f2;
   --good-soft: rgba(34, 177, 76, 0.16);
@@ -84,6 +85,13 @@
   --control-height: 32px;
   --badge-height: 18px;
   --icon-size: 20px;
+  --icon-size-sm: 16px;
+  --progress-width: 160px;
+  --disabled-opacity: 0.5;
+  --switch-width: 26px;
+  --switch-height: 15px;
+  --switch-knob: 11px;
+  --switch-gap: 2px;
 
   // Motion
   --motion-fast: 0.15s;
@@ -104,6 +112,7 @@ $grid: var(--grid);
 $axis: var(--axis);
 
 $accent: var(--accent);
+$accent-hover: var(--accent-hover);
 $accent-soft: var(--accent-soft);
 $value: var(--value);
 $good-soft: var(--good-soft);
@@ -157,5 +166,12 @@ $control-height-sm: var(--control-height-sm);
 $control-height: var(--control-height);
 $badge-height: var(--badge-height);
 $icon-size: var(--icon-size);
+$icon-size-sm: var(--icon-size-sm);
+$progress-width: var(--progress-width);
+$disabled-opacity: var(--disabled-opacity);
+$switch-width: var(--switch-width);
+$switch-height: var(--switch-height);
+$switch-knob: var(--switch-knob);
+$switch-gap: var(--switch-gap);
 
 $motion-fast: var(--motion-fast);

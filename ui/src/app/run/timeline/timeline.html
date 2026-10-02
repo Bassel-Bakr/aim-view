@@ -1,0 +1,29 @@
+<div class="mb-3 flex flex-wrap items-center gap-x-7 gap-y-2 text-xs text-secondary">
+  <span class="font-strong text-primary">On target over the run</span>
+  <span class="flex items-center gap-3"><i class="swatch bg-on-target"></i>on the bot</span>
+  <span class="flex items-center gap-3"><i class="swatch bg-off-target"></i>off it</span>
+  <span class="flex items-center gap-3"
+    ><i class="swatch bg-muted"></i>switching after a death</span
+  >
+  <span class="ml-auto text-muted">Click or drag to go there · ← → a second</span>
+</div>
+<div
+  #box
+  class="box relative cursor-pointer select-none"
+  role="slider"
+  tabindex="0"
+  aria-label="Time on the bot over the run"
+  aria-valuemin="0"
+  aria-valuenow="0"
+  [attr.aria-valuemax]="runSeconds()"
+  (keydown)="moveWithKeys($event)"
+>
+  <canvas #chart class="block size-full" aria-hidden="true"></canvas>
+  <div #head class="head absolute top-1 bottom-9" hidden aria-hidden="true"></div>
+  <div
+    #tip
+    class="absolute -top-13 rounded-md bg-surface-3 px-4 py-1 text-xs whitespace-nowrap"
+    hidden
+    aria-hidden="true"
+  ></div>
+</div>

@@ -27,7 +27,7 @@
 <app-recordings />
 <main class="min-w-0 overflow-y-auto px-13 py-11">
   @if (library.selected(); as r) {
-    <app-run-header [recording]="r" />
+    <app-run [recording]="r" />
   } @else {
     <section class="mt-(--empty-offset) flex max-w-(--empty-width) flex-col gap-4 text-secondary">
       <h2 class="text-primary">Pick a recording</h2>

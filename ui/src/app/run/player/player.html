@@ -1,0 +1,88 @@
+<div class="screen relative overflow-hidden rounded-lg" [style.aspect-ratio]="aspect()">
+  <video
+    #video
+    class="block size-full"
+    preload="metadata"
+    muted
+    playsinline
+    [src]="src()"
+    (click)="playback.toggle()"
+    (play)="playback.paused.set(false)"
+    (pause)="playback.paused.set(true)"
+    (loadedmetadata)="loadedMetadata()"
+    (seeked)="showSeekedFrame()"
+  ></video>
+  <canvas
+    #overlay
+    class="pointer-events-none absolute inset-0 size-full"
+    aria-hidden="true"
+  ></canvas>
+  <span
+    #clock
+    class="time absolute bottom-4 left-4 rounded-md px-3 py-1 text-xs tabular-nums"
+    aria-hidden="true"
+  ></span>
+</div>
+
+<ng-content />
+
+<div class="relative mt-4 h-(--seek-height)">
+  <div class="pointer-events-none absolute inset-x-4 inset-y-0" aria-hidden="true">
+    @for (m of marks(); track $index) {
+      <i class="mark" [style.left.%]="m"></i>
+    }
+  </div>
+  <input
+    #seek
+    type="range"
+    min="0"
+    step="any"
+    class="absolute inset-0 w-full cursor-pointer accent-accent"
+    aria-label="Position in the video"
+    [max]="playback.duration()"
+    (pointerdown)="startSeeking()"
+    (pointerup)="stopSeeking()"
+    (input)="seekTo(seek.valueAsNumber)"
+  />
+</div>
+
+<div class="mt-4 flex flex-wrap items-center gap-4">
+  <button
+    type="button"
+    class="btn"
+    [attr.aria-label]="playback.paused() ? 'Play' : 'Pause'"
+    (click)="playback.toggle()"
+  >
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      @if (playback.paused()) {
+        <path d="M8 5v14l11-7z" />
+      } @else {
+        <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+      }
+    </svg>
+  </button>
+  <div class="segmented" role="group" aria-label="Playback speed">
+    @for (r of rates; track r) {
+      <button
+        type="button"
+        [attr.aria-pressed]="playback.rate() === r"
+        (click)="playback.setRate(r)"
+      >
+        {{ rateLabels[r] }}
+      </button>
+    }
+  </div>
+  <button
+    type="button"
+    class="switch"
+    role="switch"
+    [attr.aria-checked]="showOverlay()"
+    (click)="toggleOverlay()"
+  >
+    <span class="knob" aria-hidden="true"></span>
+    Show the tracked target
+  </button>
+  <span class="ml-auto text-xs text-muted">
+    Space plays · ← → one frame · Shift ← → the next kill
+  </span>
+</div>

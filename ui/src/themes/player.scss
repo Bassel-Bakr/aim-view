@@ -1,0 +1,29 @@
+// Module tokens: the video player, its seek bar, and the overlay drawn on the video (a canvas, which reads these
+// variables when it draws).
+
+@mixin tokens {
+  --player-max-width: 1100px;
+  --player-screen: #000;
+  --player-time-bg: rgba(0, 0, 0, 0.55);
+  --seek-height: 20px;
+  --kill-mark-width: 1px;
+  --kill-mark-height: 5px;
+  --kill-mark: var(--text-muted);
+
+  --overlay-font: var(--font-size-xs) var(--font-family);
+  --overlay-crosshair: rgba(255, 255, 255, 0.35);
+  --overlay-other-target: rgba(255, 255, 255, 0.4);
+  --overlay-ring: var(--warning);
+  --overlay-label-bg: rgba(0, 0, 0, 0.6);
+  --overlay-label-text: #fff;
+  --overlay-line-width: 1;
+  --overlay-line-width-strong: 2;
+}
+
+$max-width: var(--player-max-width);
+$screen: var(--player-screen);
+$time-bg: var(--player-time-bg);
+$seek-height: var(--seek-height);
+$kill-mark-width: var(--kill-mark-width);
+$kill-mark-height: var(--kill-mark-height);
+$kill-mark: var(--kill-mark);

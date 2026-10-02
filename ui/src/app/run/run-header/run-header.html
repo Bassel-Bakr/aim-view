@@ -4,7 +4,7 @@
   @if (r.kind) {
     <span class="pill">{{ kindLabels[r.kind] }}</span>
   }
-  <span class="pill">{{ r.stats ? 'Stats file' : 'No stats file' }}</span>
+  <span class="pill" [title]="sourceDetail() ?? ''">{{ source() }}</span>
 </h2>
 <p class="mt-2 text-muted">
   @if (r.score !== null) {
@@ -12,3 +12,11 @@
   }
   {{ r.stamp | stamp }} · {{ size() }}
 </p>
+@if (sourceDetail(); as detail) {
+  <p class="mt-1 text-xs text-muted">{{ detail }}</p>
+} @else if (!r.stats && !r.analysed) {
+  <p class="mt-1 text-xs text-muted">
+    No stats file: the review reads KovaaK's session HUD in the video, or finds the kills in the
+    video alone.
+  </p>
+}
