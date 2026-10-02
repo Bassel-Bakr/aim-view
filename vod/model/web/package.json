@@ -1,0 +1,8 @@
+{
+  "name": "flowfix-detector-web",
+  "private": true,
+  "description": "Browser benchmark of the target detector with ONNX Runtime Web (WebGPU and WASM)",
+  "dependencies": {
+    "onnxruntime-web": "^1.30.0"
+  }
+}

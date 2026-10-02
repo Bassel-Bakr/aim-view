@@ -1,0 +1,22 @@
+[package]
+name = "kovobs-detect-wasm"
+version = "0.1.0"
+edition = "2024"
+
+# Only checks that the tract path builds for wasm32-unknown-unknown and shows how big it is.
+# A real browser build would add wasm-bindgen; this exports plain C functions instead.
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tract-onnx = { version = "0.23.8", features = ["getrandom-js"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

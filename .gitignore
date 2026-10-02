@@ -1,0 +1,13 @@
+# generated data, caches and models in training (recordings' reviews, datasets, runs, uploads)
+test_out/
+__pycache__/
+*.pyc
+# build output: Rust, Bun, wasm-pack, Angular, Tauri
+target/
+node_modules/
+/pkg/
+ui/dist/
+ui/.angular/
+desktop/gen/schemas/
+# the copy from flowfix
+_copy_*.log

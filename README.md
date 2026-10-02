@@ -7,7 +7,46 @@ KovaaK's recordings from KovOBS, other players' uploads, and Aim Lab runs.
 
 aimview started inside the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) and was copied here on 2026-10-02.
 
-## Layout
+## Where it's going
+
+aimview will run three ways from one code base:
+
+1. As a web app, with the detector and the review running in the browser.
+2. As a web app with the Python server doing some of the work.
+3. As a desktop app.
+
+The parts:
+
+- **Review core:** Rust. It is built natively for the desktop app and as WebAssembly for the browser. The Python code
+  stays the reference: the core replaces nothing until its reports match Python's on every recording.
+- **UI:** Angular 22, shared by all three. Each way of running supplies its own services for recordings, storage, the
+  detector and the review.
+- **Desktop app:** Tauri 2.
+- **Python:** the server, training and evaluation.
+
+Bun runs the JavaScript tools.
+
+### Target layout
+
+```
+aim-view/
+├── Cargo.toml     Cargo workspace, and the review core crate
+├── src/           the review core in Rust (wasm.rs: browser bindings, WebAssembly builds only)
+├── tests/         parity tests: Rust reports checked against Python's
+├── benches/       speed tests
+├── desktop/       the Tauri 2 app
+├── ui/            the Angular 22 app
+├── models/        the ONNX files every build ships
+├── python/        the review, server and readers in Python; model/ for training and evaluation
+├── package.json   Bun workspace and the build scripts
+├── retired/       old code that has been replaced
+└── test_out/      data, not in git
+```
+
+Today everything is still in `vod/`. Moving it to `python/` comes first, as its own step. The other folders arrive as
+they are built.
+
+## Layout today
 
 | Path | What it holds |
 | --- | --- |

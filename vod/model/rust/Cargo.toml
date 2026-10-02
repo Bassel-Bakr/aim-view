@@ -1,0 +1,32 @@
+[package]
+name = "kovobs-detect"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+serde_json = "1.0.151"
+tract-core = "=0.23.8"
+tract-linalg = { version = "=0.23.8", features = ["multithread-mm"] }
+tract-onnx = { version = "0.23.8", default-features = false }
+ort = { version = "2.0.0-rc.13", optional = true }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation"] }
+
+[features]
+default = []
+ort = ["dep:ort"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+# What KovOBS ships with: Cargo's release defaults (no LTO, 16 codegen units). Used to size and time the embedded case.
+[profile.kovobs]
+inherits = "release"
+lto = false
+codegen-units = 16
+strip = "none"

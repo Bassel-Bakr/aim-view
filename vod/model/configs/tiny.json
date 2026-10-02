@@ -1,0 +1,36 @@
+{
+  "name": "tiny",
+  "seed": 1,
+  "model": {
+    "widths": [
+      8,
+      16,
+      24,
+      32
+    ],
+    "blocks": [
+      1,
+      1,
+      1
+    ],
+    "head": 16
+  },
+  "train": {
+    "epochs": 20,
+    "batch": 64,
+    "lr": 0.003,
+    "weight_decay": 0.0001,
+    "workers": 8
+  },
+  "augment": {
+    "theme": 0.7,
+    "target": 0.8,
+    "texture": 0.3,
+    "crosshair": 0.5,
+    "blur": 0.5
+  },
+  "loss": {
+    "offset": 1.0,
+    "size": 0.5
+  }
+}

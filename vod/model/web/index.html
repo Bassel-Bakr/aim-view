@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Detector in the browser</title>
+  <style>
+    body { font: 14px/1.4 "Segoe UI", system-ui, sans-serif; background: #121211; color: #fff; margin: 20px; }
+    table { border-collapse: collapse; margin: 12px 0; }
+    th, td { padding: 4px 12px 4px 0; text-align: right; border-bottom: 1px solid #2c2c2a; }
+    th:first-child, td:first-child { text-align: left; }
+    canvas { max-width: 100%; border-radius: 6px; }
+    .muted { color: #8f8e86; }
+  </style>
+</head>
+<body>
+  <h1>Target detector in the browser</h1>
+  <p class="muted">ONNX Runtime Web on a real 1280 × 720 KovOBS frame. Results also land in <code>window.results</code>.</p>
+  <p id="status">Loading…</p>
+  <table id="table"><thead><tr><th>Model</th><th>Backend</th><th>Load</th><th>Median</th><th>p90</th><th>Of which input</th><th>Targets</th></tr></thead><tbody></tbody></table>
+  <canvas id="view" width="1280" height="720"></canvas>
+  <script type="module" src="bench.mjs"></script>
+</body>
+</html>

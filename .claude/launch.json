@@ -1,0 +1,69 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vod-review",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "vod/server.py",
+        "--port",
+        "8770"
+      ],
+      "port": 8770
+    },
+    {
+      "name": "model-web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "vod/model/web/serve_static.py",
+        "--port",
+        "8772"
+      ],
+      "port": 8772
+    },
+    {
+      "name": "label-check",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "vod/model/label_check.py",
+        "--n",
+        "400",
+        "--port",
+        "8773"
+      ],
+      "port": 8773
+    },
+    {
+      "name": "label-valorant",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "vod/model/label_check.py",
+        "--n",
+        "100",
+        "--port",
+        "8774",
+        "--data",
+        "test_out/vod_model/hand/valorant",
+        "--out",
+        "test_out/vod_model/hand/valorant/checked.jsonl"
+      ],
+      "port": 8774
+    },
+    {
+      "name": "label-batch2",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "vod/model/label_check.py",
+        "--n",
+        "200",
+        "--port",
+        "8775",
+        "--data",
+        "test_out/vod_model/hand/batch2",
+        "--out",
+        "test_out/vod_model/hand/batch2/checked.jsonl"
+      ],
+      "port": 8775
+    }
+  ]
+}
