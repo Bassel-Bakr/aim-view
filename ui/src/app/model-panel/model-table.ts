@@ -40,6 +40,7 @@ export interface ModelTable {
   rows: ModelRow[];
   notes: string;
   older: ModelColumn[];
+  unavailable: string;
 }
 
 /** Which way a row's best value lies, or null for a row with no best. */
@@ -155,6 +156,7 @@ export function modelTable(list: ModelList): ModelTable {
       ),
     ],
     notes: `${list.checked_on} ${list.speed}`,
+    unavailable: list.unavailable ?? 'Needs the GPU',
     older: list.models.filter((m) => m.older).map((m) => column(m, list.chosen)),
   };
 }

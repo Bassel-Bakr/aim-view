@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { JobStage, Recording } from '../api';
 import { formatPercent } from '../format';
-import { isLocal, LocalFiles } from '../services/local-files';
+import { Library } from '../services/library';
 import { modelName, Models } from '../services/models';
 import { FlickList } from './flick-list/flick-list';
 import { Player } from './player/player';
@@ -57,7 +57,7 @@ export class Run {
   readonly recording = input.required<Recording>();
   protected readonly review = inject(Review);
   private readonly models = inject(Models);
-  private readonly local = inject(LocalFiles);
+  private readonly library = inject(Library);
   protected readonly ui = slotClasses(runStyles());
   protected readonly button = button();
   protected readonly primaryButton = button({ intent: 'primary' });
@@ -76,21 +76,16 @@ export class Run {
     const r = this.report();
     return r?.mode === 'click' ? r : null;
   });
-  /** A recording from this computer: the server cannot see it, so it has no review. */
-  protected readonly isLocal = computed(() => isLocal(this.recording().id));
   protected readonly statsOpen = signal(false);
-  /** A recording from this computer: its video, which may still be being remuxed into MP4. */
-  protected readonly localVideo = computed(
-    () => this.local.find(this.recording().id)?.video() ?? null,
-  );
+  /** The recording's video, which may still be being remuxed into MP4. */
+  protected readonly video = computed(() => this.library.source.video(this.recording().id));
   /** Where the player reads the video; null while it is being remuxed. */
   protected readonly videoUrl = computed<string | null>(() => {
-    const v = this.localVideo();
-    if (!v) return `/video?id=${encodeURIComponent(this.recording().id)}`;
-    return v.state === 'remuxing' ? null : v.url;
+    const v = this.video();
+    return !v || v.state === 'remuxing' ? null : v.url;
   });
   protected readonly remuxShare = computed(() => {
-    const v = this.localVideo();
+    const v = this.video();
     return v?.state === 'remuxing' ? formatPercent(v.progress) : '';
   });
   /** Reviewed, but its report is gone (a new stats file): measured again on its tracks, not reviewed again. */

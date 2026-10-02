@@ -1,6 +1,4 @@
-import { HttpClient, httpResource } from '@angular/common/http';
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
 import {
   errorMessage,
   Recording,
@@ -10,17 +8,16 @@ import {
   StatsPairing,
 } from '../../api';
 import { formatCount, formatNumber, formatOffset, formatPercent, formatStamp } from '../../format';
+import { StatsFiles } from '../../platform/stats-files';
 import { Library } from '../../services/library';
-import { isLocal, LocalFiles } from '../../services/local-files';
 import { Review } from '../../services/review';
-import { statsSummary } from '../../services/stats-csv';
 import { badge, button } from '@themes/controls.styles';
 import { statsFileStyles } from '@themes/stats-file.styles';
 import { slotClasses } from '@themes/slot-classes';
 
 const HOW: Record<StatsHow, string> = {
   picked: 'your pick',
-  upload: 'uploaded by you',
+  upload: 'chosen by you from this computer',
   none: 'you chose none',
   gone: 'your pick, but the file is gone',
   beside: 'uploaded with the recording',
@@ -43,12 +40,6 @@ export interface StatsFact {
   value: string;
 }
 
-/** The stats file a recording from this computer has, and what it says. */
-export interface LocalStats {
-  name: string;
-  facts: StatsFact[];
-}
-
 /** What the last change did; failed when it could not be made. */
 export interface StatsMessage {
   text: string;
@@ -62,9 +53,9 @@ export interface PairingFor {
 }
 
 /**
- * Pairs the open recording with a stats file. The review server's recordings: one of KovaaK's stats files, searched
- * by scenario and offered nearest the recording's time first, or none; the review is then measured again with it.
- * A recording from this computer: a .csv chosen from this computer, read in the browser.
+ * Pairs the open recording with a stats file, through this mode's StatsFiles: a .csv from this computer, none, or
+ * (where it reaches KovaaK's stats folder) one of its files, searched by scenario and offered nearest the recording's
+ * time first. A reviewed recording is then measured again with it.
  */
 @Component({
   selector: 'app-stats-file',
@@ -73,27 +64,22 @@ export interface PairingFor {
 export class StatsFile {
   readonly recording = input.required<Recording>();
   readonly closed = output();
-  private readonly http = inject(HttpClient);
-  private readonly library = inject(Library);
+  protected readonly stats = inject(StatsFiles);
+  protected readonly library = inject(Library);
   private readonly review = inject(Review);
-  private readonly local = inject(LocalFiles);
   protected readonly ui = slotClasses(statsFileStyles());
   protected readonly button = button();
   protected readonly goodBadge = badge({ tone: 'good' });
 
-  protected readonly isLocal = computed(() => isLocal(this.recording().id));
   /** The search text; null: the recording's own scenario. A newly opened recording starts again from its own. */
   protected readonly query = linkedSignal<string, string | null>({
     source: () => this.recording().id,
     computation: () => null,
   });
-  protected readonly pairing = httpResource<StatsPairing>(() => {
-    const id = this.recording().id;
-    if (isLocal(id)) return undefined;
-    const q = this.query();
-    const params: Record<string, string> = q === null ? { id } : { id, q };
-    return { url: '/api/stats', params };
-  });
+  protected readonly pairing = this.stats.pairing(
+    () => this.recording().id,
+    () => this.query(),
+  );
   /** The last answer for this recording, kept while a new search loads, so the panel does not flicker. */
   protected readonly shown = linkedSignal<PairingFor, StatsPairing | null>({
     source: () => ({
@@ -122,20 +108,17 @@ export class StatsFile {
       inUse: c.name === p.file,
     }));
   });
-  protected readonly localStats = computed<LocalStats | null>(() => {
-    const stats = this.local.find(this.recording().id)?.stats;
-    if (!stats) return null;
-    const s = statsSummary(stats);
-    return {
-      name: stats.name,
-      facts: [
-        { label: 'Scenario', value: s.scenario ?? '–' },
-        { label: 'Score', value: s.score === null ? '–' : formatNumber(s.score) },
-        { label: 'Kills', value: formatCount(s.kills) },
-        { label: 'Accuracy', value: formatPercent(s.accuracy) },
-        { label: 'Ended', value: s.stamp ? formatStamp(s.stamp) : '–' },
-      ],
-    };
+  /** What the stats file says, when it was read where the page runs. */
+  protected readonly facts = computed<StatsFact[] | null>(() => {
+    const s = this.shown()?.facts;
+    if (!s) return null;
+    return [
+      { label: 'Scenario', value: s.scenario ?? '–' },
+      { label: 'Score', value: s.score === null ? '–' : formatNumber(s.score) },
+      { label: 'Kills', value: formatCount(s.kills) },
+      { label: 'Accuracy', value: formatPercent(s.accuracy) },
+      { label: 'Ended', value: s.stamp ? formatStamp(s.stamp) : '–' },
+    ];
   });
   protected readonly saving = signal(false);
   protected readonly message = signal<StatsMessage | null>(null);
@@ -146,45 +129,38 @@ export class StatsFile {
 
   /** Pairs the recording with one of KovaaK's stats files, or with none (null). */
   protected choose(file: string | null): void {
-    void this.save({ file, source: 'kovaak' }, file ? `Paired with ${file}` : 'No stats file');
+    this.choice({ file, source: 'kovaak' }, file ? `Paired with ${file}` : 'No stats file');
   }
 
   /** Back to finding the stats file by the recording's name and time. */
   protected findAgain(): void {
-    void this.save({ auto: true }, 'Found by its name and time again');
+    this.choice({ auto: true }, 'Found by its name and time again');
   }
 
-  protected async pickLocal(input: HTMLInputElement): Promise<void> {
+  /** Pairs the recording with a .csv chosen from this computer. */
+  protected pickFile(input: HTMLInputElement): void {
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
-    const ok = await this.local.pair(this.recording().id, file);
-    this.message.set(
-      ok
-        ? { text: `Paired with ${file.name}`, failed: false }
-        : { text: `${file.name} is not one of KovaaK's stats files`, failed: true },
-    );
+    const id = this.recording().id;
+    if (file) void this.save(() => this.stats.pairFile(id, file), `Paired with ${file.name}`);
   }
 
-  protected removeLocal(): void {
-    this.local.unpair(this.recording().id);
-    this.message.set({ text: 'No stats file', failed: false });
+  private choice(choice: StatsChoice, done: string): void {
+    const id = this.recording().id;
+    void this.save(() => this.stats.choose(id, choice), done);
   }
 
-  private async save(choice: StatsChoice, done: string): Promise<void> {
+  /** Makes a change, then shows it: the list's row, the review measured again, and what it did. */
+  private async save(change: () => Promise<StatsChange>, done: string): Promise<void> {
     const id = this.recording().id;
     this.saving.set(true);
     this.message.set(null);
     try {
-      const change = await firstValueFrom(
-        this.http.post<StatsChange>('/api/stats', choice, { params: { id } }),
-      );
-      this.library.recordings.update((list) =>
-        list?.map((r) => (r.id === id ? { ...r, stats: change.stats } : r)),
-      );
-      if (this.library.selectedId() === id) this.review.follow(change.job);
+      const made = await change();
+      this.library.source.patch(id, { stats: made.stats });
+      if (this.library.selectedId() === id) this.review.follow(made.job);
       this.pairing.reload();
-      const measuring = change.job.stage === 'none' ? '' : '; the review is measured again';
+      const measuring = made.job.stage === 'none' ? '' : '; the review is measured again';
       this.message.set({ text: `${done}${measuring}`, failed: false });
     } catch (e) {
       this.message.set({ text: `Could not save: ${errorMessage(e)}`, failed: true });

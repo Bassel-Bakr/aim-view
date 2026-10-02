@@ -1,8 +1,14 @@
 {
   "private": true,
   "scripts": {
-    "dev": "bun run --cwd ui start",
-    "build:web": "bun run --cwd ui build",
+    "dev": "bun run dev:browser",
+    "dev:browser": "bun run --cwd ui start --configuration browser",
+    "dev:server": "bun run --cwd ui start --configuration server",
+    "dev:desktop": "bun run --cwd ui start --configuration desktop",
+    "build": "bun run build:browser && bun run build:server && bun run build:desktop",
+    "build:browser": "bun run --cwd ui build --configuration production,browser",
+    "build:server": "bun run --cwd ui build --configuration production,server",
+    "build:desktop": "bun run --cwd ui build --configuration production,desktop",
     "test:ui": "bun run --cwd ui test --watch=false",
     "lint:ui": "bun run --cwd ui lint",
     "format": "bun run --cwd ui format"

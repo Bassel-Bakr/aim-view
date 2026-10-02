@@ -55,6 +55,33 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "browser": {
+              "fileReplacements": [
+                {
+                  "replace": "src/app/modes/mode.ts",
+                  "with": "src/app/modes/mode.browser.ts"
+                }
+              ],
+              "outputPath": "dist/browser"
+            },
+            "server": {
+              "fileReplacements": [
+                {
+                  "replace": "src/app/modes/mode.ts",
+                  "with": "src/app/modes/mode.server.ts"
+                }
+              ],
+              "outputPath": "dist/server"
+            },
+            "desktop": {
+              "fileReplacements": [
+                {
+                  "replace": "src/app/modes/mode.ts",
+                  "with": "src/app/modes/mode.desktop.ts"
+                }
+              ],
+              "outputPath": "dist/desktop"
             }
           },
           "defaultConfiguration": "production"
@@ -70,6 +97,15 @@
             },
             "development": {
               "buildTarget": "aimview:build:development"
+            },
+            "browser": {
+              "buildTarget": "aimview:build:development,browser"
+            },
+            "server": {
+              "buildTarget": "aimview:build:development,server"
+            },
+            "desktop": {
+              "buildTarget": "aimview:build:development,desktop"
             }
           },
           "defaultConfiguration": "development"

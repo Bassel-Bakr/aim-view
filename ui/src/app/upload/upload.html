@@ -1,7 +1,7 @@
 <button
   type="button"
-  title="Open recordings from this computer, with their stats .csv files. They stay in this browser."
   [class]="button"
+  [title]="'Add recordings from this computer, with their stats .csv files. ' + source.addedFilesGo"
   (click)="file.click()"
 >
   <svg viewBox="0 0 24 24" aria-hidden="true" [class]="ui.icon">
@@ -24,7 +24,9 @@
   accept=".mp4,.mkv,.mov,.webm,.csv"
   (change)="pickFiles(file)"
 />
-@if (note(); as n) {
+@if (transfer(); as t) {
+  <span role="status" [class]="ui.note">{{ t }}</span>
+} @else if (note(); as n) {
   <span [class]="n.failed ? ui.failed : ui.note" [attr.role]="n.failed ? 'alert' : 'status'">{{
     n.text
   }}</span>
@@ -33,7 +35,7 @@
   <div aria-hidden="true" [class]="ui.dropZone">
     <div [class]="ui.dropBox">
       <span [class]="ui.dropTitle">Drop a recording here</span>
-      <span>and its stats .csv, if you have it. It stays in this browser.</span>
+      <span>and its stats .csv, if you have it. {{ source.addedFilesGo }}</span>
     </div>
   </div>
 }

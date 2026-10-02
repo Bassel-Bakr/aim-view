@@ -16,7 +16,9 @@ python python/server.py --port 8770            # the review app, http://127.0.0.
 python python/model/test_model.py              # the detector's tests
 python python/model/eval_vods.py <model.pt>    # static runs against their stats files
 python python/model/eval_moving.py name=<model.pt> ...   # every scenario kind against the stats files
-bun run dev                                    # the Angular UI, http://localhost:4200/ (needs the server above)
+bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
+bun run dev:server                             # the same in server mode (needs the server above)
+bun run build                                  # every mode's build: ui/dist/browser, server, desktop
 bun run test:ui                                # the UI's tests
 bun run lint:ui                                # ESLint (angular-eslint's recommended set, plus the rules below)
 bun run format                                 # Prettier, over ui/
@@ -45,6 +47,14 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   config warns on the older forms. Anything that changes every frame (the video overlay,
   timelines) is drawn on a canvas in `requestAnimationFrame` or `requestVideoFrameCallback`, never through a template.
   A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
+- **Three modes, one app.** The UI runs in browser mode (everything in the browser), server mode (the Python server
+  does the work) or desktop mode (Tauri 2; the browser mode's services until `desktop/` exists). Features and
+  `services/` inject only the contracts in `ui/src/app/platform/` (`RecordingSource`, `StatsFiles`, `ReviewEngine`,
+  `ModelCatalog`), never `/api` or a mode's class. The implementations are in `ui/src/app/modes/`, in folders named
+  for what they wrap (`http/`, `web-files/`, `wasm/`, later `tauri/`), and each `mode.<name>.ts` picks one per
+  contract. The build configurations (`browser`, `server`, `desktop`) swap `modes/mode.ts` for it, so a build
+  carries only its own mode's code. Each contract has one spec that runs against every mode
+  (`platform/*.spec.ts`).
 - **Named types.** In TypeScript, every object or tuple type gets a name (an interface or a type alias). No inline
   anonymous types such as `{ gpu: number; cpu: number }` in a field or a signature. ESLint enforces it.
 - **Styles are SCSS, and every design value is a token.** A token is a CSS variable (so it can be edited live in the
@@ -90,11 +100,12 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
   cards, how the bot was followed, and the what-if estimates), and the fastest-path analysis (path cost per kill, the
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
-  model panel, upload and the stats file panel. Upload keeps files in the browser (nothing is sent or saved): a video
-  that is not an MP4 is remuxed into one there with Mediabunny (streams copied, loaded only when needed), and a
-  stats .csv is read there. The stats file panel pairs a server recording with one of KovaaK's stats files
-  (`/api/stats`). Next in `ui/`: the tool panels (cut-off, run marks, areas) and the queues. After that: porting the
-  review to Rust.
+  model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
+  (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there); the
+  review shows "not built yet". Server mode: files added are sent to the server, and the stats file panel lists
+  KovaaK's stats files (`/api/stats`). Next: the review in the browser (folders opened in the browser and browser
+  storage; decode and detect in a worker; the review core in Rust as WebAssembly), each step checked against
+  Python's results; the tool panels (cut-off, run marks, areas) and the queues are built on it.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

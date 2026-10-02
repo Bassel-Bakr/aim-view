@@ -1,8 +1,7 @@
-import { HttpRequest, provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpRequest } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Job } from '../api';
-import { answer, ApiRoutes, recording } from '../fake-api';
+import { answer, ApiRoutes, recording, serverMode } from '../fake-api';
 import { Library } from './library';
 import { Review } from './review';
 
@@ -18,7 +17,7 @@ async function serveUntil(routes: ApiRoutes, condition: () => boolean): Promise<
 }
 
 function open(): Review {
-  TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+  TestBed.configureTestingModule({ providers: serverMode() });
   TestBed.inject(Library).selectedId.set(ID);
   return TestBed.inject(Review);
 }
@@ -45,7 +44,7 @@ describe('Review', () => {
     };
     const review = open();
     const library = TestBed.inject(Library);
-    await serveUntil(routes, () => library.recordings.hasValue() && review.report.hasValue());
+    await serveUntil(routes, () => library.all().length > 0 && review.report.hasValue());
 
     const analysing = review.analyse(false);
     await serveUntil(routes, () => started !== null);

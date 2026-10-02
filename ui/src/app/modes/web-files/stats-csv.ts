@@ -1,5 +1,7 @@
 /** KovaaK's stats files, read in the browser (as review.load_stats reads them). */
 
+import { StatsSummary } from '../../api';
+
 /** A stats file's key-value lines ("Score:,558.46"), by key. */
 export type StatsMeta = Record<string, string>;
 
@@ -8,15 +10,6 @@ export interface StatsCsv {
   name: string;
   meta: StatsMeta;
   killRows: number;
-}
-
-/** What the page shows of a stats file. accuracy is a share (0 to 1); stamp comes from the file's name. */
-export interface StatsSummary {
-  scenario: string | null;
-  score: number | null;
-  kills: number | null;
-  accuracy: number | null;
-  stamp: string | null;
 }
 
 const STATS_NAME = /^(.+) - Challenge - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d) Stats\.csv$/i;

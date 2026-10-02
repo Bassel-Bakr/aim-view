@@ -1,8 +1,6 @@
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { ClickReport as ClickReportData, Flick } from '../../api';
-import { answer } from '../../fake-api';
+import { answer, serverMode } from '../../fake-api';
 import { FlickFocus } from '../flick-focus';
 import { ClickReport } from './click-report';
 
@@ -32,7 +30,7 @@ const REPORT = {
 describe('ClickReport', () => {
   it("shows the whole run's cards, then a picked kill's, and goes back", async () => {
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: serverMode(),
     });
     const fixture = TestBed.createComponent(ClickReport);
     fixture.componentRef.setInput('report', REPORT);

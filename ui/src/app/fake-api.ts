@@ -1,7 +1,13 @@
-import { HttpRequest } from '@angular/common/http';
-import { HttpTestingController, TestRequest } from '@angular/common/http/testing';
+import { HttpRequest, provideHttpClient } from '@angular/common/http';
+import {
+  HttpTestingController,
+  provideHttpClientTesting,
+  TestRequest,
+} from '@angular/common/http/testing';
+import { EnvironmentProviders, Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Recording } from './api';
+import { MODE as SERVER } from './modes/mode.server';
 
 /** An answer that changes from request to request: it gets the request. */
 export type RouteHandler = (req: HttpRequest<unknown>) => unknown;
@@ -57,4 +63,9 @@ export function recording(overrides: Partial<Recording>): Recording {
     not_aim: false,
     ...overrides,
   };
+}
+
+/** What a test of the server mode runs with: its services, and a fake review server that answer() answers. */
+export function serverMode(): (Provider | EnvironmentProviders)[] {
+  return [provideHttpClient(), provideHttpClientTesting(), ...SERVER.providers];
 }

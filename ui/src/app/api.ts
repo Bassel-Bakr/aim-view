@@ -39,7 +39,8 @@ export interface Check {
   of?: number;
 }
 
-export type Device = 'cuda' | 'cpu';
+/** Where the detector runs: the GPU, the CPU, or the browser (WebAssembly). */
+export type Device = 'cuda' | 'cpu' | 'wasm';
 
 export interface ModelList {
   chosen: string;
@@ -48,6 +49,8 @@ export interface ModelList {
   checked_on: string;
   checks: Check[];
   models: Model[];
+  /** Why a model that is not available cannot run here; without it, it needs the GPU. */
+  unavailable?: string;
 }
 
 /** A scenario's kind, from the game's tags (review.scenario_kinds). */
@@ -360,12 +363,25 @@ export interface StatsCandidate {
   off: number;
 }
 
-/** A recording's stats file, how it came to it, and stats files to pair it with, nearest in time first (/api/stats). */
+/** What the page shows of a stats file. accuracy is a share (0 to 1); stamp is when the run ended (its name). */
+export interface StatsSummary {
+  scenario: string | null;
+  score: number | null;
+  kills: number | null;
+  accuracy: number | null;
+  stamp: string | null;
+}
+
+/**
+ * A recording's stats file, how it came to it, and stats files to pair it with, nearest in time first (/api/stats).
+ * facts: what the file says, when it was read where the page runs.
+ */
 export interface StatsPairing {
   file: string | null;
   how: StatsHow;
   scenario: string;
   candidates: StatsCandidate[];
+  facts?: StatsSummary;
 }
 
 /** The user's choice of stats file: a file, or none (file null). */
@@ -386,6 +402,14 @@ export type StatsChoice = StatsPick | StatsAuto;
 export interface StatsChange {
   job: Job;
   stats: boolean;
+}
+
+/** The answer to an upload: the recording's id and the name saved; for a stats file, also the change it made. */
+export interface Uploaded {
+  id: string;
+  saved: string;
+  job?: Job;
+  stats?: boolean;
 }
 
 /** The body of an error response. */

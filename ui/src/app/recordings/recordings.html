@@ -23,15 +23,12 @@
     </button>
   }
 </div>
-@if (library.recordings.error()) {
-  <p role="alert" [class]="ui.note">
-    The review server is not running, so only recordings you upload are listed. Start it with
-    <code>python python/server.py</code>.
-  </p>
-} @else if (!library.recordings.hasValue()) {
+@if (library.source.problem(); as problem) {
+  <p role="alert" [class]="ui.note">{{ problem }}</p>
+} @else if (library.source.loading()) {
   <p role="status" [class]="ui.note">Loading the recordings…</p>
 }
-@if (library.recordings.hasValue() || library.all().length) {
+@if (!library.source.loading()) {
   <div
     class="list"
     role="listbox"

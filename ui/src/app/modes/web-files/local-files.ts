@@ -1,56 +1,23 @@
 import { computed, Injectable, signal, WritableSignal } from '@angular/core';
-import { errorMessage, Recording } from '../api';
+import { errorMessage, Recording } from '../../api';
+import { AddResult, RecordingSource, Transfer, VideoState } from '../../platform/recording-source';
 import { parseStatsCsv, parseVodName, statsForVideo, StatsCsv, statsSummary } from './stats-csv';
+import { isCsv, isMp4, isVideo, toMp4 } from './video-files';
 
 const LOCAL = 'local:';
-const VIDEO = /\.(mp4|mkv|mov|webm)$/i;
-const CSV = /\.csv$/i;
-const MP4 = /\.mp4$/i;
-
-/** Whether a recording's id is one opened from this computer. */
-export function isLocal(id: string | null): boolean {
-  return id?.startsWith(LOCAL) ?? false;
-}
-
-/** A video being remuxed into MP4; progress is the share done, 0 to 1. */
-export interface VideoRemuxing {
-  state: 'remuxing';
-  progress: number;
-}
-
-/** A video ready to play from url; remuxed when it was remuxed into MP4 in the browser. */
-export interface VideoReady {
-  state: 'ready';
-  url: string;
-  remuxed: boolean;
-}
-
-/** A video the remux failed on: it plays from the file as it is, if the browser can play it. */
-export interface VideoFailed {
-  state: 'failed';
-  url: string;
-  error: string;
-}
-
-export type LocalVideo = VideoRemuxing | VideoReady | VideoFailed;
 
 /**
- * A recording opened from this computer, with its stats file when it has one. A video that is not an MP4 is remuxed
- * into one in the browser first (see remuxToMp4). It stays in this browser: nothing is sent or saved, and it is gone
- * when the page closes.
+ * A recording opened from this computer, with its stats file when it has one, and changes made to its row since.
+ * A video that is not an MP4 is remuxed into one in the browser first. It stays in this browser: nothing is sent or
+ * saved, and it is gone when the page closes.
  */
 export interface LocalFile {
   id: string;
   file: File;
-  video: WritableSignal<LocalVideo>;
+  video: WritableSignal<VideoState>;
   stats: StatsCsv | null;
   added: number;
-}
-
-/** What adding files did: the recordings opened, and the .csv files that are not KovaaK's stats files. */
-export interface LocalAdd {
-  ids: string[];
-  notStats: string[];
+  changes: Partial<Recording>;
 }
 
 /** A local file as a row of the recordings list; the stats file gives what the video's name does not. */
@@ -71,15 +38,16 @@ export function localRecording(f: LocalFile): Recording {
         `${pad(stamp.getHours())}.${pad(stamp.getMinutes())}.${pad(stamp.getSeconds())}`,
     mtime: f.added / 1000,
     size: f.file.size,
-    stats: f.stats !== null,
     analysed: false,
     not_aim: false,
     local: true,
+    ...f.changes,
+    stats: f.stats !== null,
   };
 }
 
 /** Reads a .csv file as a stats file, or null when it is not one. */
-async function readStats(file: File): Promise<StatsCsv | null> {
+export async function readStats(file: File): Promise<StatsCsv | null> {
   return parseStatsCsv(file.name, await file.text());
 }
 
@@ -88,28 +56,41 @@ async function readStats(file: File): Promise<StatsCsv | null> {
  * a time, so two large videos are never in memory at once.
  */
 @Injectable({ providedIn: 'root' })
-export class LocalFiles {
+export class LocalFiles implements RecordingSource {
   readonly files = signal<LocalFile[]>([]);
   readonly recordings = computed<Recording[]>(() => this.files().map(localRecording));
+  readonly loading = signal(false).asReadonly();
+  readonly problem = signal<string | null>(null).asReadonly();
+  readonly addedFilesGo = 'They stay in this browser.';
+  readonly transfer = signal<Transfer | null>(null);
   private count = 0;
   private remuxes: Promise<void> = Promise.resolve();
 
+  video(id: string): VideoState | null {
+    return this.find(id)?.video() ?? null;
+  }
+
+  lasting(): boolean {
+    return false;
+  }
+
   /** Opens the videos among files, each with its stats file among the .csv files when one matches it. */
-  async add(files: readonly File[]): Promise<LocalAdd> {
-    const videos = files.filter((f) => VIDEO.test(f.name));
-    const csvs = files.filter((f) => CSV.test(f.name));
+  async add(files: readonly File[]): Promise<AddResult> {
+    const videos = files.filter(isVideo);
+    const csvs = files.filter(isCsv);
     const read = await Promise.all(csvs.map(readStats));
     const stats = read.filter((s): s is StatsCsv => s !== null);
     const added = videos.map((file): LocalFile => ({
       id: `${LOCAL}${++this.count}/${file.name}`,
       file,
-      video: signal<LocalVideo>(
-        MP4.test(file.name)
+      video: signal<VideoState>(
+        isMp4(file)
           ? { state: 'ready', url: URL.createObjectURL(file), remuxed: false }
           : { state: 'remuxing', progress: 0 },
       ),
       stats: statsForVideo(file.name, stats, videos.length === 1),
       added: Date.now(),
+      changes: {},
     }));
     this.files.update((list) => [...[...added].reverse(), ...list]);
     for (const f of added) {
@@ -121,41 +102,46 @@ export class LocalFiles {
     };
   }
 
+  patch(id: string, change: Partial<Recording>): void {
+    this.update(id, (f) => ({ ...f, changes: { ...f.changes, ...change } }));
+  }
+
   /** Pairs a recording with a stats file; false when the file is not one of KovaaK's stats files. */
   async pair(id: string, file: File): Promise<boolean> {
     const stats = await readStats(file);
-    if (stats) this.setStats(id, stats);
+    if (stats) this.update(id, (f) => ({ ...f, stats }));
     return stats !== null;
   }
 
   /** The recording has no stats file. */
   unpair(id: string): void {
-    this.setStats(id, null);
+    this.update(id, (f) => ({ ...f, stats: null }));
   }
 
   find(id: string | null): LocalFile | null {
     return this.files().find((f) => f.id === id) ?? null;
   }
 
-  /**
-   * Remuxes a file into MP4, showing the progress in whole percents (each change redraws what shows it). The remux
-   * code loads only now, the first time a video needs it.
-   */
+  /** Remuxes a file into MP4, showing the progress in whole percents (each change redraws what shows it). */
   private async remux(f: LocalFile): Promise<void> {
+    const label = `Remuxing ${f.file.name} into MP4`;
     try {
-      const { remuxToMp4 } = await import('./remux');
-      const mp4 = await remuxToMp4(f.file, (share) => {
+      const mp4 = await toMp4(f.file, (share) => {
         const progress = Math.floor(100 * share) / 100;
-        if (progress !== (f.video() as VideoRemuxing).progress)
-          f.video.set({ state: 'remuxing', progress });
+        const now = f.video();
+        if (now.state === 'remuxing' && now.progress === progress) return;
+        f.video.set({ state: 'remuxing', progress });
+        this.transfer.set({ label, share: progress });
       });
       f.video.set({ state: 'ready', url: URL.createObjectURL(mp4), remuxed: true });
     } catch (e) {
       f.video.set({ state: 'failed', url: URL.createObjectURL(f.file), error: errorMessage(e) });
+    } finally {
+      this.transfer.set(null);
     }
   }
 
-  private setStats(id: string, stats: StatsCsv | null): void {
-    this.files.update((list) => list.map((f) => (f.id === id ? { ...f, stats } : f)));
+  private update(id: string, change: (f: LocalFile) => LocalFile): void {
+    this.files.update((list) => list.map((f) => (f.id === id ? change(f) : f)));
   }
 }

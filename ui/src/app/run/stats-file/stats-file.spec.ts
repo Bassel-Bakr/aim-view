@@ -1,8 +1,7 @@
-import { HttpRequest, provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpRequest } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { StatsChoice, StatsPairing } from '../../api';
-import { answer, ApiRoutes, recording } from '../../fake-api';
+import { answer, ApiRoutes, recording, serverMode } from '../../fake-api';
 import { Library } from '../../services/library';
 import { StatsFile } from './stats-file';
 
@@ -28,7 +27,7 @@ const PAIRING: StatsPairing = {
 };
 
 async function render(routes: ApiRoutes): Promise<HTMLElement> {
-  TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+  TestBed.configureTestingModule({ providers: serverMode() });
   TestBed.inject(Library).selectedId.set(ID);
   const fixture = TestBed.createComponent(StatsFile);
   fixture.componentRef.setInput('recording', recording({ id: ID, scenario: 'Air', stats: false }));

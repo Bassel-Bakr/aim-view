@@ -1,7 +1,6 @@
 @if (models.list.error()) {
   <span role="status" [class]="ui.down">The review server is not running</span>
-} @else if (models.list.hasValue()) {
-  @let m = models.list.value();
+} @else if (models.current(); as m) {
   <button
     type="button"
     aria-haspopup="dialog"
@@ -9,7 +8,7 @@
     [class]="ui.trigger"
     (click)="open()"
   >
-    {{ m.chosen }} · {{ m.device === 'cuda' ? 'GPU' : 'CPU' }}
+    {{ m.chosen }} · {{ deviceLabels[m.device] }}
   </button>
 }
 
@@ -84,7 +83,7 @@
                     Use {{ c.useLabel }}
                   </button>
                 } @else {
-                  <span [class]="ui.muted">Needs the GPU</span>
+                  <span [class]="ui.muted">{{ t.unavailable }}</span>
                 }
               </td>
             }
@@ -116,7 +115,7 @@
                   Use {{ c.useLabel }}
                 </button>
               } @else {
-                <span [class]="ui.muted">Needs the GPU</span>
+                <span [class]="ui.muted">{{ t.unavailable }}</span>
               }
             </li>
           }

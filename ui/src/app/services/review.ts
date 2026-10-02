@@ -1,39 +1,40 @@
-import { HttpClient, httpResource } from '@angular/common/http';
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { errorMessage, Job, Report, Tracks } from '../api';
+import { errorMessage, Job } from '../api';
+import { ReviewEngine } from '../platform/review-engine';
 import { Library } from './library';
-import { isLocal } from './local-files';
 
 const POLL_MS = 500;
 
 /**
- * The open recording's review: its report and tracks, and the review job when one runs. A finished job reloads the
- * report (and with it the tracks), and marks the recording reviewed in the list. A recording from this computer has
- * none: the review server cannot see it.
+ * The open recording's review, from this mode's ReviewEngine: its report and tracks, and the review job when one runs.
+ * A finished job reloads the report (and with it the tracks), and marks the recording reviewed in the list.
  */
 @Injectable({ providedIn: 'root' })
 export class Review {
-  private readonly http = inject(HttpClient);
+  private readonly engine = inject(ReviewEngine);
   private readonly library = inject(Library);
   readonly job = signal<Job>({ stage: 'none' });
   readonly running = computed(() => !['none', 'done', 'error'].includes(this.job().stage));
+  /** Why the open recording cannot be reviewed here, in words; null when it can. */
+  readonly unavailable = computed(() => {
+    const id = this.library.selectedId();
+    return id === null ? null : this.engine.unavailable(id);
+  });
+  private readonly reviewable = () => {
+    const id = this.library.selectedId();
+    return id !== null && this.engine.unavailable(id) === null ? id : undefined;
+  };
 
   /** The report, or null when the recording has no review yet. */
-  readonly report = httpResource<Report | null>(() => {
-    const id = this.library.selectedId();
-    return id && !isLocal(id) ? { url: '/api/report', params: { id } } : undefined;
-  });
+  readonly report = this.engine.report(this.reviewable);
 
   /**
    * Every target in every frame, once there is a review: the tracking overlay and timeline draw them, and a clicking
    * run's fastest paths are worked out from them.
    */
-  readonly tracks = httpResource<Tracks | null>(() => {
-    const id = this.library.selectedId();
-    const report = this.report.hasValue() ? this.report.value() : null;
-    return id && report ? { url: '/api/tracks', params: { id } } : undefined;
-  });
+  readonly tracks = this.engine.tracks(() =>
+    this.report.hasValue() && this.report.value() ? this.reviewable() : undefined,
+  );
 
   private watcher = 0;
 
@@ -41,7 +42,7 @@ export class Review {
     effect(() => {
       const id = this.library.selectedId();
       this.job.set({ stage: 'none' });
-      if (id && !isLocal(id)) void this.watch(id);
+      if (id !== null && this.engine.unavailable(id) === null) void this.watch(id);
     });
   }
 
@@ -50,9 +51,8 @@ export class Review {
     const id = this.library.selectedId();
     if (!id) return;
     this.watcher++;
-    const params: Record<string, string> = again ? { id, again: '1' } : { id };
     try {
-      this.follow(await firstValueFrom(this.http.post<Job>('/api/analyse', null, { params })));
+      this.follow(await this.engine.start(id, again));
     } catch (e) {
       this.job.set({ stage: 'error', error: errorMessage(e) });
     }
@@ -75,14 +75,12 @@ export class Review {
     let ran = started;
     try {
       while (current()) {
-        const job = await firstValueFrom(this.http.get<Job>('/api/job', { params: { id } }));
+        const job = await this.engine.job(id);
         if (!current()) return;
         this.job.set(job);
         ran ||= this.running();
         if (job.stage === 'done' && ran) {
-          this.library.recordings.update((list) =>
-            list?.map((r) => (r.id === id ? { ...r, analysed: true } : r)),
-          );
+          this.library.source.patch(id, { analysed: true });
           this.report.reload();
           return;
         }

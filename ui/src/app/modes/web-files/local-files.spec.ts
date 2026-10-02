@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { isLocal, LocalFiles } from './local-files';
+import { LocalFiles } from './local-files';
 
 const STATS = 'Kill #,Timestamp\n1,16:22:20.833\n\nKills:,1\nScore:,30.42\nScenario:,Probe\n';
 
@@ -16,7 +16,7 @@ describe('LocalFiles', () => {
     ]);
     expect(added.notStats).toEqual([]);
     const [id] = added.ids;
-    expect(isLocal(id)).toBe(true);
+    expect(local.lasting()).toBe(false);
     expect(local.find(id)?.video()).toEqual({
       state: 'ready',
       url: expect.stringMatching(/^blob:/),
@@ -53,11 +53,5 @@ describe('LocalFiles', () => {
     expect(local.recordings()[0]).toMatchObject({ scenario: 'Probe', score: 30.42, stats: true });
     local.unpair(id);
     expect(local.recordings()[0].stats).toBe(false);
-  });
-
-  it('tells its ids from the review server’s', () => {
-    expect(isLocal('local:1/a.mp4')).toBe(true);
-    expect(isLocal('uploads/a.mp4')).toBe(false);
-    expect(isLocal(null)).toBe(false);
   });
 });

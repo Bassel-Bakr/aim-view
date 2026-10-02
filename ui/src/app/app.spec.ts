@@ -1,13 +1,11 @@
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
-import { answer, ApiRoutes, NO_SERVER, recording } from './fake-api';
+import { answer, ApiRoutes, NO_SERVER, recording, serverMode } from './fake-api';
 
 async function render(routes: ApiRoutes): Promise<HTMLElement> {
   TestBed.configureTestingModule({
     imports: [App],
-    providers: [provideHttpClient(), provideHttpClientTesting()],
+    providers: serverMode(),
   });
   const fixture = TestBed.createComponent(App);
   await answer(routes);

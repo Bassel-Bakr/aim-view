@@ -1,8 +1,6 @@
-import { HttpClient } from '@angular/common/http';
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { errorMessage, ModelList } from '../api';
-import { modelName, Models } from '../services/models';
+import { errorMessage } from '../api';
+import { DEVICE_LABELS, modelName, Models } from '../services/models';
 import { Review } from '../services/review';
 import { modelTable } from './model-table';
 import { badge, button, note } from '@themes/controls.styles';
@@ -19,7 +17,6 @@ import { slotClasses } from '@themes/slot-classes';
 })
 export class ModelPanel {
   protected readonly models = inject(Models);
-  private readonly http = inject(HttpClient);
   private readonly review = inject(Review);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   protected readonly ui = slotClasses(modelPanelStyles());
@@ -27,9 +24,11 @@ export class ModelPanel {
   protected readonly note = note();
   protected readonly badge = badge();
   protected readonly goodBadge = badge({ tone: 'good' });
-  protected readonly table = computed(() =>
-    this.models.list.hasValue() ? modelTable(this.models.list.value()) : null,
-  );
+  protected readonly deviceLabels = DEVICE_LABELS;
+  protected readonly table = computed(() => {
+    const list = this.models.current();
+    return list ? modelTable(list) : null;
+  });
   protected readonly switching = signal(false);
   protected readonly status = signal('');
 
@@ -48,10 +47,7 @@ export class ModelPanel {
     this.switching.set(true);
     this.status.set(`Loading ${modelName(name)}…`);
     try {
-      const list = await firstValueFrom(
-        this.http.post<ModelList>('/api/model', null, { params: { name } }),
-      );
-      this.models.list.set(list);
+      await this.models.pick(name);
     } catch (e) {
       this.status.set(`Could not switch: ${errorMessage(e)}`);
       return;

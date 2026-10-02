@@ -1,7 +1,5 @@
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { answer, recording } from '../fake-api';
+import { answer, recording, serverMode } from '../fake-api';
 import { Library } from '../services/library';
 import { Recordings } from './recordings';
 
@@ -12,7 +10,7 @@ const RECORDINGS = [
 ];
 
 async function render(): Promise<ComponentFixture<Recordings>> {
-  TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+  TestBed.configureTestingModule({ providers: serverMode() });
   const fixture = TestBed.createComponent(Recordings);
   await answer({ '/api/vods': RECORDINGS });
   await fixture.whenStable();

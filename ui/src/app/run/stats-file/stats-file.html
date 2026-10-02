@@ -9,49 +9,36 @@
     run ended.
   </p>
 
-  @if (isLocal()) {
-    @if (localStats(); as s) {
-      <p [class]="ui.current">{{ s.name }}</p>
+  @if (pairing.error(); as e) {
+    <p role="alert" [class]="ui.failed">Could not load the stats files: {{ e.message }}</p>
+  }
+  @if (shown(); as p) {
+    <p [class]="ui.current">
+      {{ p.file ?? 'No stats file' }} <span [class]="ui.how">· {{ how() }}</span>
+    </p>
+    @if (facts(); as list) {
       <dl [class]="ui.facts">
-        @for (f of s.facts; track f.label) {
+        @for (f of list; track f.label) {
           <div>
             <dt [class]="ui.factLabel">{{ f.label }}</dt>
             <dd>{{ f.value }}</dd>
           </div>
         }
       </dl>
-    } @else {
-      <p [class]="ui.current">No stats file</p>
     }
     <div [class]="ui.actions">
-      <button type="button" [class]="button" (click)="file.click()">
-        {{ localStats() ? 'Choose another stats file' : 'Choose a stats file' }}
+      <button type="button" [class]="button" [disabled]="saving()" (click)="file.click()">
+        {{ p.file ? 'Choose another .csv' : 'Choose a .csv' }}
       </button>
-      @if (localStats()) {
-        <button type="button" [class]="button" (click)="removeLocal()">No stats file</button>
-      }
-    </div>
-    <input #file type="file" accept=".csv" hidden (change)="pickLocal(file)" />
-    <p [class]="ui.hint">
-      It stays in this browser. You can also drop the .csv on the page while this recording is open.
-    </p>
-  } @else {
-    @if (pairing.error(); as e) {
-      <p role="alert" [class]="ui.failed">Could not load the stats files: {{ e.message }}</p>
-    }
-    @if (shown(); as p) {
-      <p [class]="ui.current">
-        {{ p.file ?? 'No stats file' }} <span [class]="ui.how">· {{ how() }}</span>
-      </p>
-      <div [class]="ui.actions">
-        <button
-          type="button"
-          [class]="button"
-          [disabled]="saving() || p.how === 'none'"
-          (click)="choose(null)"
-        >
-          No stats file
-        </button>
+      <button
+        type="button"
+        [class]="button"
+        [disabled]="saving() || p.how === 'none' || (!stats.searches && !p.file)"
+        (click)="choose(null)"
+      >
+        No stats file
+      </button>
+      @if (stats.searches) {
         <button
           type="button"
           [class]="button"
@@ -60,8 +47,16 @@
         >
           Find it by name and time
         </button>
-      </div>
-    }
+      }
+    </div>
+  }
+  <input #file type="file" accept=".csv" hidden (change)="pickFile(file)" />
+  <p [class]="ui.hint">
+    You can also drop the .csv on the page while this recording is open.
+    {{ library.source.addedFilesGo }}
+  </p>
+
+  @if (stats.searches) {
     <label [class]="ui.searchLabel">
       Stats files of the scenario
       <input

@@ -19,8 +19,9 @@ The parts:
 
 - **Review core:** Rust. It is built natively for the desktop app and as WebAssembly for the browser. The Python code
   stays the reference: the core replaces nothing until its reports match Python's on every recording.
-- **UI:** Angular 22, shared by all three. Each way of running supplies its own services for recordings, storage, the
-  detector and the review.
+- **UI:** Angular 22, shared by all three. Each way of running supplies its own services for recordings, stats files,
+  models and the review (`ui/src/app/platform/` holds what they must do, `ui/src/app/modes/` how each mode does it).
+  A build carries only its own mode's code.
 - **Desktop app:** Tauri 2.
 - **Python:** the server, training and evaluation.
 
@@ -73,14 +74,16 @@ python python/server.py --port 8770
 Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
 `stats` folder. The detector runs on an NVIDIA GPU through PyTorch, or on the CPU through ONNX Runtime.
 
-The new Angular app runs beside it, and gets its data from that server:
+The new Angular app runs in browser mode (everything in the browser) or in server mode (its data from that server):
 
 ```bash
 bun install --cwd ui
-bun run dev
+bun run dev           # browser mode
+bun run dev:server    # server mode
 ```
 
-Then open http://localhost:4200/.
+Then open http://localhost:4200/. `bun run build` builds every mode into `ui/dist/browser`, `ui/dist/server` and
+`ui/dist/desktop`.
 
 ## Needs
 

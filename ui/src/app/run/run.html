@@ -1,7 +1,7 @@
 <div [class]="ui.head">
   <app-run-header [class]="ui.header" [recording]="recording()" [report]="report()" />
   <div [class]="ui.toolbar">
-    @if (!isLocal()) {
+    @if (!review.unavailable()) {
       <button
         type="button"
         [class]="recording().analysed ? button : primaryButton"
@@ -22,13 +22,10 @@
     </button>
   </div>
 </div>
-@if (isLocal()) {
-  <p [class]="ui.note">
-    This recording stays in your browser. Its review needs the model in the browser, which is not
-    built yet.
-  </p>
+@if (review.unavailable(); as why) {
+  <p [class]="ui.note">{{ why }}</p>
 }
-@if (localVideo(); as v) {
+@if (video(); as v) {
   @if (v.state === 'remuxing') {
     <div [class]="ui.progress">
       <progress max="1" [class]="ui.bar" [value]="v.progress"></progress>
