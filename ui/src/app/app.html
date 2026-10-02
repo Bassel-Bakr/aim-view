@@ -1,5 +1,16 @@
 <header class="top">
-  <span class="brand">aimview</span>
+  <span class="brand">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2" />
+      <path
+        d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      />
+    </svg>
+    aimview
+  </span>
   @if (models.error()) {
     <span class="pill" role="status">The review server is not running</span>
   } @else if (models.hasValue()) {
@@ -7,3 +18,18 @@
     <span class="pill">{{ m.chosen }} · {{ m.device === 'cuda' ? 'GPU' : 'CPU' }}</span>
   }
 </header>
+<app-recordings />
+<main>
+  @if (library.selected(); as r) {
+    <app-run-header [recording]="r" />
+  } @else {
+    <section class="empty">
+      <h2>Pick a recording</h2>
+      <p>Choose a run on the left. The arrow keys move through the list.</p>
+      <p>
+        Runs with a stats file (challenge mode) get the full review. Without one, the review reads
+        KovaaK's session HUD when it is on screen, and otherwise finds the kills in the video alone.
+      </p>
+    </section>
+  }
+</main>

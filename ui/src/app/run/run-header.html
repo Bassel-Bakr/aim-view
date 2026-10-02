@@ -1,0 +1,14 @@
+@let r = recording();
+<h2>
+  {{ r.scenario }}
+  @if (r.kind) {
+    <span class="pill">{{ kindLabels[r.kind] }}</span>
+  }
+  <span class="pill">{{ r.stats ? 'Stats file' : 'No stats file' }}</span>
+</h2>
+<p class="sub">
+  @if (r.score !== null) {
+    Score {{ r.score | number: '1.0-2' }} ·
+  }
+  {{ r.stamp | stamp }} · {{ size() }}
+</p>

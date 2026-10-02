@@ -176,6 +176,11 @@ class Library:
             return other.parent.name, other.parent
         return self.model, own
 
+    @functools.cached_property
+    def scenario_kinds(self):
+        """Each scenario's kind by lower-case name (review.scenario_kinds), read once: it reads every scenario file."""
+        return review.scenario_kinds()
+
     def reviewed(self, vid):
         d = self.cache_dir(vid)
         return (d / "tracks.json").exists() or any((d / "models").glob("*/tracks.json"))
@@ -188,7 +193,8 @@ class Library:
                 continue
             vid = p.relative_to(self.vods).as_posix()
             st = self.stats_for(m["scenario"], m["stamp"])
-            out.append(dict(id=vid, scenario=m["scenario"], score=float(m["score"]), stamp=m["stamp"],
+            out.append(dict(id=vid, scenario=m["scenario"], kind=self.scenario_kinds.get(m["scenario"].lower()),
+                            score=float(m["score"]), stamp=m["stamp"],
                             mtime=p.stat().st_mtime, size=p.stat().st_size, stats=bool(st),
                             analysed=self.reviewed(vid)))
         for p in UPLOADS.glob("*"):
@@ -196,7 +202,9 @@ class Library:
                 continue
             vid = f"uploads/{p.name}"
             m = NAME.match(p.with_suffix(".mp4").name)
-            out.append(dict(id=vid, scenario=m["scenario"] if m else p.stem, score=float(m["score"]) if m else None,
+            out.append(dict(id=vid, scenario=m["scenario"] if m else p.stem,
+                            kind=self.scenario_kinds.get((m["scenario"] if m else p.stem).lower()),
+                            score=float(m["score"]) if m else None,
                             stamp=m["stamp"] if m else datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y.%m.%d-%H.%M.%S"),
                             mtime=p.stat().st_mtime, size=p.stat().st_size, stats=bool(self.stats_of(p)), uploaded=True,
                             analysed=self.reviewed(vid)))
