@@ -1,0 +1,478 @@
+# Target detector: status
+
+Last updated 2026-10-01. How to rebuild every number here: [REPRODUCE.md](REPRODUCE.md).
+
+## Objective
+
+A small model, embedded in software, that finds the targets in a KovaaK's static-clicking recording made by KovOBS.
+It replaces the hand-written detector in `python/review.py`, which fails when targets are not dark, when the theme
+changes, and when a target sits under the crosshair (Pokeball scenarios).
+
+- **Input:** one 1280 × 720 RGB frame, plus a "fixed map": 1 where the screen stays put over the run (crosshair, HUD),
+  0 elsewhere. The fixed map comes from the run's key frames (`review.fixed_map`).
+- **Output:** one box per target: centre x, centre y, width, height (frame pixels) and a score from 0 to 1.
+- **Where it plugs in:** `python/review.py` links the boxes into tracks, matches the kills with the stats file and
+  measures each flick. The review app (`python/server.py`) uses the model on its own when the export exists.
+- **Not a chatbot.** The model only detects. The review's text, numbers and issue rules stay ordinary code.
+
+Boxes, not a fixed "static" label, so tracking scenarios can be added later by fine-tuning on more data, without
+starting over.
+
+## Architecture
+
+A CenterNet-style detector ("objects as points"), written from scratch in PyTorch (`net.py`):
+
+- depthwise-separable convolutions, a small feature pyramid (strides 4, 8 and 16), nearest-neighbour upsampling;
+- one output map at stride 4: a centre heatmap, the centre's offset within its cell, and log width and log height;
+- 4 input channels: RGB (0 to 1) and the fixed map. The fixed map tells the crosshair and HUD apart from targets, so
+  colour does not have to.
+
+The exported ONNX graph also does the decoding that is awkward in other languages: the sigmoid and the 3 × 3 peak
+search. A caller only scans the score map for cells over the threshold. Two more exports go further. `_u8in` also
+does the pre-processing, so a caller passes the decoder's raw bytes. `_embed` does that and also picks the 100 best
+peaks, so a caller reads 100 rows of (cx, cy, w, h, score) and keeps those over the threshold: no pre- or
+post-processing left to port. It gives exactly the same boxes as the plain file.
+
+| Variant | Widths | Parameters | Compute at 1280 × 720 |
+| --- | --- | --- | --- |
+| tiny | 8, 16, 24, 32 | 6,829 | 0.16 GMAC |
+| small | 16, 32, 48, 64 | 32,037 | 0.59 GMAC |
+| full | 24, 48, 64, 96 | 80,765 | 1.37 GMAC |
+
+Why this and not an off-the-shelf detector: Ultralytics YOLO is AGPL, which rules it out for embedding in KovOBS.
+YOLOX-Nano is Apache-2.0 but needs about 6 GFLOPs at 720p, ten times small. Targets are simple shapes, so a tiny
+network trained on the right data does the job. Everything here is our own code under the project's licence. The
+runtimes are MIT (ONNX Runtime, onnxruntime-web) or MIT/Apache-2.0 (tract).
+
+## Dataset
+
+Real KovOBS frames, labelled automatically. No frame was labelled by hand.
+
+- **Source:** the user's KovOBS library, `E:\OBS\KovOBS`. A scenario counts as static when every target's MaxSpeed
+  is 0 in its `.sce` file. That gives 453 static scenarios; the 4 newest recordings of each make 530 VODs.
+- **Labels:** the hand-written detector in `review.py`, run on key frames only (about one every 2 seconds). A VOD is
+  kept only when its labels look trustworthy: targets found in most frames, with a steady count (steadiness at least
+  0.7). Frames whose target count is off are skipped. 419 of 530 VODs were kept.
+- **Crops:** 256 × 256 crops round the crosshair, round a target and at random, with the fixed map and a target mask.
+- **Splits:** by scenario folder, so no scenario is in two splits (checked by `validate_data.py` and the tests). A
+  stable hash puts 10% of folders in val and 10% in test. The folders of the four VODs used for the end-to-end check
+  (1w4ts Voltaic, 10 Sphere Hipfire Extra Small, both Pokeball LG56 folders) are always in test.
+
+| Split | VODs kept | Scenarios | Crops | Boxes | Box size (px, p5 / median / p95) |
+| --- | --- | --- | --- | --- | --- |
+| train | 320 of 400 | 168 | 21,719 | 38,021 | 5 / 8 / 32 |
+| val | 43 of 58 | 22 | 3,109 | 4,083 | 5 / 9 / 24 |
+| test | 56 of 72 | 28 | 3,830 | 6,138 | 3 / 7 / 24 |
+
+**Synthetic augmentation**, all on the GPU during training (`train.py`):
+- flips and quarter turns;
+- a new theme: the wall moved to a random colour, keeping its texture;
+- targets repainted in a random colour that still stands out, with their anti-aliased edges blended again;
+- added wall texture, blur and noise;
+- synthetic crosshairs (dot, plus or ring, any colour), drawn into the image and the fixed map. In v2, 70% of them sit
+  on a target, up to 0.6 target sizes off its centre, as when a player holds slightly off.
+
+So the model learns from real frames and real automatic labels, and sees colours and crosshairs that the library does
+not have.
+
+## Training
+
+AdamW, cosine schedule with warm-up, bf16 on the GPU, batch 64, 20 epochs, fixed seed. Focal loss on the heatmap
+(Gaussian peaks), L1 on offset and size. The checkpoint with the best validation F1 is kept. About 7 minutes for
+small on an RTX 5070 Ti. Configs are in `configs/` (`tiny`, `small`, `full`, and the same three with `_v2`).
+
+v2 changed only the crosshair augmentation (see above), after the first models lost targets held under the crosshair
+in Pokeball runs.
+
+## Evaluation
+
+### Crops of held-out scenarios
+
+Measured against the automatic labels, so these scores are agreement with the hand-written detector on frames where
+it was reliable, not ground truth. The threshold is chosen on val (0.4 for v1, 0.3 for v2), never on test.
+"Recoloured" repaints every test crop's wall and targets (fixed seed): does the model ignore colour?
+
+| Model | Precision | Recall | F1 | Centre error, median / p90 (px) | Recoloured F1 |
+| --- | --- | --- | --- | --- | --- |
+| tiny | 0.955 | 0.935 | 0.945 | 0.45 / 1.22 | 0.955 |
+| small | 0.969 | 0.934 | 0.951 | 0.30 / 0.85 | 0.967 |
+| full | 0.974 | 0.941 | 0.957 | 0.24 / 0.71 | 0.973 |
+| tiny_v2 | 0.931 | 0.937 | 0.934 | 0.49 / 1.40 | 0.936 |
+| **small_v2** | 0.954 | 0.956 | **0.955** | 0.32 / 1.02 | 0.954 |
+| full_v2 | 0.960 | 0.961 | 0.961 | 0.27 / 0.84 | 0.970 |
+
+The exports keep these scores: small_v2 fp32, fp16, u8in and embed give the same F1 (0.955); int8 gives 0.950.
+On crops, the v2 recipe helps full, costs small a little precision for recall, and hurts tiny, which is too small
+to learn targets under crosshairs as well.
+
+Per scenario, small_v2 scores 0.96 to 0.99 on the end-to-end scenarios (1w4ts Voltaic 0.96, 10 Sphere 0.98,
+Pokeball 5 0.96, Pokeball 1 0.99). The weakest test scenarios are covered under "Known limitations".
+
+### Whole VODs against the stats file
+
+The independent check. Each held-out VOD goes through the whole review, once with the hand-written detector and once
+with the model. The stats file records when each kill happened, which nothing in the pipeline can fake.
+- **Matched:** stats kills found as a tracked target ending at the crosshair.
+- **Confirmed:** matched kills whose track ends within 2 frames of the stats kill, under 0.6° from the crosshair.
+- **Flicks measured:** kills whose target was tracked from the previous kill.
+- **Time:** the whole review, on this PC.
+
+| VOD | Hand-written | small (v1) | small_v2 |
+| --- | --- | --- | --- |
+| 1w4ts Voltaic, 143 kills | 143 matched, 143 confirmed, 67 flicks, 26.8 s | 142, 142, 142 flicks, 19.1 s | 142, 142, 142 flicks, 19.2 s |
+| 10 Sphere Hipfire XS, 155 kills | 155, 138, 123 flicks, 16.4 s | 155, 127, 134 flicks, 10.0 s | 155, 127, 136 flicks, 11.3 s |
+| Pokeball 5 Sphere XS, 114 kills | 114, 74, 109 flicks, 22.7 s | 113, 48, 108 flicks, 18.4 s | 113, 61, 107 flicks, 18.9 s |
+| Pokeball 1 Sphere XS, 84 kills | 82, 41, 75 flicks, 34.2 s | 82, 58, 73 flicks, 25.2 s | 84, 61, 82 flicks, 17.8 s |
+| **Total, 496 kills** | 494, 396, 374 flicks | 492, 375, 457 flicks | **494, 391, 467 flicks** |
+
+The other sizes on the v2 recipe, same four VODs: tiny_v2 494 matched, 385 confirmed, 436 flicks; full_v2 493, 382,
+467. full_v2 is the best on crops and on Pokeball 5 (70 confirmed) but worse on Pokeball 1 (46). small_v2 has the best
+total and runs at twice full's speed, so it stays the pick.
+
+Over these four VODs, small_v2 matches as many kills as the hand-written detector and measures 93 more flicks,
+because its tracks rarely break. It works on targets of any colour, which the hand-written detector does not. It
+confirms 5 fewer kills overall: 20 more on Pokeball 1, but 11 fewer on 10 Sphere and 13 fewer on Pokeball 5, where an
+extra-small target sits under the crosshair at the kill.
+
+Two more held-out VODs, from the scenarios with the lowest crop scores (small_v2 first, then the hand-written
+detector):
+- **Jumbo1wall9000targets, 299 kills:** 299 and 299 matched; 280 and 293 confirmed; 257 and 158 flicks.
+- **ClickTrack Vertical 2t Long, 59 kills:** both match and confirm all 59 and measure 58 flicks.
+
+## Deployment
+
+All numbers on this PC: AMD Ryzen 7 9800X3D (8 cores, 16 threads), RTX 5070 Ti 16 GB, Windows 11. One real
+1280 × 720 frame. "Model" is the model alone; "frame" adds turning the frame's bytes into the model's input.
+
+### Files
+
+| File | Size | Use |
+| --- | --- | --- |
+| `exports/detector_small_v2_fp32.onnx` | 134.5 KB | The plain file: float input, score and box maps out; any ONNX runtime |
+| `exports/detector_small_v2_u8in.onnx` | 135.9 KB | Same model, raw uint8 frame in: the fastest whole frame on CPU and WASM |
+| `exports/detector_small_v2_embed.onnx` | 143.0 KB | **Recommended for embedding**: raw bytes in, the 100 best boxes out, same speed as u8in |
+| `exports/detector_small_v2_fp16.onnx` | 73.3 KB | Half the download, same detections; no faster on CPU |
+| `exports/detector_small_v2_int8.onnx` | 99.5 KB | Slower than fp32 on CPU, wrong on WebGPU: not recommended |
+| `exports/detector_small_v2.pt` | | PyTorch checkpoint, for batched GPU inference in the review app |
+
+The same set exists for tiny, small (v1) and full (v1: fp32, fp16, int8), and for tiny_v2 and full_v2 (all five).
+
+### Native CPU: ONNX Runtime 1.30 (Python here; the same library is used from Rust through the `ort` crate)
+
+Model alone / whole frame, ms per frame, median of 30:
+
+| File | 1 thread | 4 threads | 8 threads | Load | Peak memory |
+| --- | --- | --- | --- | --- | --- |
+| tiny fp32 | 3.1 / 5.2 | 1.2 / 3.2 | 1.0 / 3.2 | 11 ms | 140 MB |
+| small_v2 fp32 | 6.2 / 8.4 | 1.8 / 4.0 | 1.7 / 5.0 | 12 ms | 141 MB |
+| small_v2 fp16 | 6.5 / 8.6 | 1.8 / 4.1 | 1.8 / 4.8 | 15 ms | 141 MB |
+| **small_v2 u8in** | 7.7 / 7.7 | 2.3 / 2.3 | 2.3 / 2.4 | 13 ms | 143 MB |
+| small_v2 embed | 7.8 / 7.8 | 3.6 / 3.6 | 2.2 / 2.2 | 16 ms | 144 MB |
+| small_v2 int8 | 10.1 / 12.3 | 4.2 / 6.6 | 3.6 / 5.7 | 17 ms | 135 MB |
+| full fp32 | 13.4 / 15.7 | 4.2 / 6.0 | 3.7 / 7.0 | 13 ms | 192 MB |
+
+At 4 threads, single runs swing between about 2.3 and 3.7 ms for the raw-bytes models (the p90 shows it); 8
+threads are steadier. Peak memory is the whole Python process. About 72 MB of it is Python, NumPy and ONNX Runtime
+before the model loads; the session adds 53 to 121 MB, almost all of it buffers for a 720p frame's activations, not
+weights.
+int8 is slower than fp32 at every size: these networks are tiny and memory-bound, and the quantize and dequantize
+steps cost more than they save. With the raw-bytes model, 4 threads give 435 frames a second: a 60-second 120 fps
+VOD (7,200 frames) takes about 17 s on 4 threads; at 60 fps, half that.
+
+### Native GPU: PyTorch, the review app's path
+
+| Model | Batch 1 | Batch 16 | VRAM at batch 16 |
+| --- | --- | --- | --- |
+| tiny | 1.4 ms | 0.29 ms / frame | 482 MB |
+| small_v2 | 2.5 ms | 0.71 ms / frame | 686 MB |
+| full | 3.6 ms | 1.37 ms / frame | 880 MB |
+
+On whole VODs, decoding the video is now the limit, not the model. The review reads frames with `readinto` into its
+own buffers and decodes in a thread while the model runs. That cut the model path on the 1w4ts VOD (AV1, 2560 × 1440,
+120 fps, 7,933 frames) from 43.4 s to 19.2 s. ffmpeg alone needs 10.2 s to decode it.
+
+Later (2026-10-01) the frames go straight into pinned batch buffers on a thread, and the peaks of a whole batch are
+found on the GPU at once: the whole review of that VOD now takes 13.3 s, with every result the same (matched,
+confirmed and measured kills on all four end-to-end VODs). Faster options were tried and dropped because they
+changed results:
+- fp16 or fp32 inference instead of bf16 autocast (the precision the model was trained in): Pokeball 1 confirmed
+  55 kills against 61, the same kills matched;
+- decoding on the GPU, or sending NV12 and converting the colours on the GPU: 50 confirmed. The model is sensitive
+  to small colour differences on an extra-small target half hidden by the crosshair, so it gets ffmpeg's own RGB.
+Decoding on the GPU was also slower next to the detector (16.2 s against 11.9 s): the two share the GPU.
+
+### Native in Rust (KovOBS)
+
+`rust/` is a small Rust program (edition 2024, like KovOBS) with one `Detector` trait and two runtimes. Both give
+the Python detections to 0.0004 px. Details and the KovOBS wiring plan are in [rust/README.md](rust/README.md).
+
+| Runtime | Load | ms per frame (small fp32) | Peak memory | Adds to the exe |
+| --- | --- | --- | --- | --- |
+| **ONNX Runtime 1.28 via the `ort` crate**, static | 37 ms | 7.6 (1 thread), 5.0 (4), 4.1 (auto) | 109 MB | about 22 MB, no DLL |
+| tract 0.23 (pure Rust) | 17 ms | 96 (1 thread); 18 per frame with 16 frames in parallel | 74 MB | about 25 MB, no DLL |
+| tract in WASM (Node), SIMD | about 20 ms | 115 | 61 MB | 8.8 MB file, 2.4 MB gzipped |
+
+- tract is correct but 12 times slower: its depthwise convolution is a scalar loop, and this network is mostly
+  depthwise convolutions. Building for AVX2 gained 10%.
+- fp16 is no faster anywhere on the CPU, and in tract it is software half floats (1.6 s per frame). int8 is slower
+  than fp32 in both runtimes.
+- `ort` downloads a 341 MB static ONNX Runtime library once at build time, and its crate version is a release
+  candidate (2.0.0-rc.13).
+- For a 60-second 60 fps VOD with every frame analysed: about 15 s with `ort`, about 65 s with tract on 16 workers.
+- Recommendation: `ort` by default, tract behind a cargo feature as the fallback with no native library. The
+  model file can live in the binary (`include_bytes!`, 135 KB). The fixed map (`review.fixed_map`) must be ported to
+  Rust; it is a few lines of array code.
+
+### Local web server (B)
+
+`serve.py`: standard library HTTP, ONNX Runtime, no PyTorch, 127.0.0.1 only. `POST /detect` takes a raw RGB frame
+and the fixed map and returns the boxes as JSON. With small fp32 and 4 threads, 200 requests of a 3.7 MB frame took
+**7.8 ms** per round trip (median; p90 8.3 ms), of which 6.3 ms was detection. `GET /health` names the model.
+
+### Browser (C): onnxruntime-web 1.30
+
+In the Claude desktop app's Chromium pane, 8 WASM threads (cross-origin isolated), whole frame in ms (median of 20),
+the JavaScript conversion of the frame's bytes included:
+
+| File | WASM | WebGPU |
+| --- | --- | --- |
+| tiny fp32 | 8.5 | 12.7 |
+| small_v2 fp32 | 14.2 (3.9 of it converting) | 14.0 |
+| **small_v2 u8in** | **11.1** | 15.0 to 19.0 |
+| small_v2 embed | 11.0 | 14.1 |
+| small_v2 fp16 | 14.6 | 14.0 |
+| small_v2 int8 | 28.5 | wrong output |
+| full fp32 | 24.1 | 14.1 |
+
+- The browser gives the same boxes as Python to 0.01 px, on both backends (fp32, fp16 and u8in); embed finds the same
+  two targets.
+- WebGPU costs 12 to 19 ms at every model size, so the time is dispatch and read-back overhead, not compute. The first
+  WebGPU session also pays about 1.8 s of setup.
+- **Download:** the model is 73 to 143 KB. The runtime is the big part: the WASM-only build is 13.9 MB (3.7 MB
+  gzipped); the build with WebGPU is 27.6 MB (6.6 MB gzipped).
+- Reading back 100 boxes (embed) instead of the two maps saves WebGPU a few ms, but WASM is still faster.
+- Recommendation for the browser: WASM with the embed (or u8in) model, about 90 frames a second.
+
+## Every scenario kind: one model (2026-10-02)
+
+The user asked for tracking and switching runs (and dynamic clicking) in the training, so the review can handle every
+kind of scenario, and whether that needs a model of its own.
+
+**The data.** `review.scenario_kinds()` sorts the KovOBS library by the game's tags: 290 tracking folders, 236
+static, 142 dynamic and 67 switching. The hand-written labeller misses most moving targets: it looks for compact spots
+up to 120 px, so it skips capsules, close spheres and a target under the crosshair, and small_v11 learned the same
+blind spot (on held-out tracking frames it marked clouds and health bars and left the bot unmarked). So the moving
+recordings get their own labeller, `build_data.dark_labels`: in a recording that shows dark targets on light walls
+(the user's usual theme turns targets black), every blob dark in all three channels, at least 6 px, filling a third
+of its box, up to 400 px a side and up to 25 times taller than wide. A recording with more labels than its scenario
+has targets (a dark grid, dark props) is dropped. The 2 newest recordings of every moving scenario gave 475 of 593
+training VODs (337 scenarios, 34,043 crops), with val and test split by folder as before.
+
+**Three models, trained side by side** (10 epochs each, all from earlier checkpoints):
+- small_v13: small, on everything (the small_v11 data plus the moving data);
+- full_v3: full (80,765 parameters), on everything, from full_v2;
+- small_mv1: small, on the moving data alone.
+
+**Crops** (against the automatic labels; threshold 0.3):
+
+| Model | Moving test crops F1 | Static test crops F1 |
+| --- | --- | --- |
+| small_v11 | 0.811 | 0.912 |
+| small_mv1 | 0.885 | 0.902 |
+| small_v13 | 0.891 | 0.915 |
+| full_v3 | 0.889 | 0.917 |
+
+**Whole recordings against the stats files** (`eval_moving.py`). Static: the four end-to-end VODs, the valorant run and
+three 1wall 6targets extra small runs (854 kills). Dynamic and switching: the newest recording with a stats file of
+the first 6 test-split folders of each kind (1,112 kills; never trained on). Tracking: 12 test-split folders; the
+review's time on the target against the stats file's accuracy, the game's own measure of the same thing.
+
+| Check | small_v11 | small_mv1 | small_v13 | full_v3 |
+| --- | --- | --- | --- | --- |
+| Static: kills matched, flicks measured | 854, 846 | 854, 837 | 854, 844 | 854, 844 |
+| Dynamic and switching: kills matched, flicks | 1092, 1009 | 1091, 1045 | 1096, 1048 | 1097, 1060 |
+| Tracking: time on target minus accuracy, mean and mean size | -0.161, 0.211 | -0.054, 0.073 | -0.035, 0.086 | -0.025, 0.075 |
+| Uploads and Aim Lab (HUD kills): kills, flicks (of 997) | 997, 990 | | 997, 984 | 997, 982 |
+
+**One model is enough.** The static-only small_v11 already matches 98% of dynamic and switching kills: a moving target
+is a target, and the flick to it is measured the same way. What it could not do was tracking. Trained on everything,
+both new models keep static as it was and do best on dynamic and switching, and on tracking they come as close to the
+stats files as the moving-only model (full_v3 0.075, small_mv1 0.073, small_v13 0.086; small_v13's gap is mostly one
+run, Air Tracking 180: 0.39 for an accuracy of 0.62, full_v3 0.48). So dynamic clicking and switching need no model of
+their own, and neither does tracking. full_v3 is the more accurate of the two on moving runs (12 more flicks measured,
+tracking closer), at 2.3 times the compute, which the GPU review does not notice; on the uploads it measures 2 fewer
+flicks than small_v13 and 8 fewer than small_v11, all on the Aim Lab run (194 of 206; every kill is matched). The
+user put accuracy before speed, so full_v3 is the review's model; small_v13 is the choice where speed counts (the
+CPU, the browser, KovOBS).
+
+**Splitting stays possible.** The review knows each run's kind from its scenario name before it tracks, so a
+kind-specific model could be picked per run without any other change. The other way to combine two models into one is
+the one used here: train one model on both datasets (or on both models' labels). Neither is needed now.
+
+## Current best model
+
+**full_v3**, threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX, 169.6 KB as fp16. Static, dynamic, switching
+and tracking (section above). small_v13 (32,037 parameters, 134.5 KB) is the small one, for speed.
+
+- To embed (KovOBS, the browser, any language): `python/model/exports/detector_full_v3_embed.onnx` (or
+  `detector_small_v13_embed.onnx`). Raw RGB bytes and the fixed map in, the 100 best boxes out.
+- With the plain float input (any ONNX runtime, the HTTP server): `detector_full_v3_fp32.onnx`.
+- On the GPU, batched (the review app): `detector_full_v3.pt`.
+
+The checks of earlier models below were made with small_v11 as the best.
+
+small_v11 (2026-10-02) is small_v10 trained with KovaaK's own crosshairs: the 45 PNGs in the install's `crosshairs`
+folder, drawn into 60% of the training crosshairs, 5 to 40 px across, half of them tinted (`train.crosshair_real`;
+the user pointed to the crosshairs and themes on kvk-hub.app, of which these are the installed ones). It also draws a
+crosshair in 70% of the crops (was 60%), on a target 60% of the time (was 70%). small_v12 keeps v10's two shares and
+only adds the real crosshairs. The review now also keeps a crosshair-spot track from being taken for the killed
+target (`python/README.md`, "Which track is the killed target"), which all four rows below use:
+
+| Check | small_v7 | small_v10 | small_v11 | small_v12 |
+| --- | --- | --- | --- | --- |
+| Stats-file VODs: matched (of 496), confirmed, flicks | 494, 391, 490 | 496, 412, 492 | 493, 391, 489 | 496, 390, 491 |
+| of which Pokeball 5 confirmed | 75 | 70 | 59 | 64 |
+| Five YouTube uploads: flicks measured (of 985 kills) | 979 | 975 | 980 | 966 |
+| Video only, precision and recall: 1w4ts | 0.99, 0.99 | 0.71, 0.71 | 0.96, 0.95 | 0.94, 0.94 |
+| 10 Sphere | 0.81, 0.82 | 0.89, 0.90 | 0.85, 0.86 | 0.84, 0.86 |
+| Pokeball 1 | 0.67, 0.70 | 0.73, 0.75 | 0.73, 0.75 | 0.76, 0.77 |
+| Pokeball 5 | 0.64, 0.61 | 0.64, 0.63 | 0.58, 0.56 | 0.58, 0.57 |
+| Held-out hand crops (40 bots): found, false finds | 26, 86 | 31, 27 | 31, 18 | 31, 21 |
+| Aim Lab, video only: right, extra, missed (of 206) | 194, 17, 11 | 195, 20, 10 | 189, 18, 16 | 193, 13, 12 |
+
+small_v11 fixes what small_v10 broke (1w4ts from the video alone; the crosshair marked in 17% of ww5t 1920's turning
+frames, against v10's 24%, and the review rule handles the rest) and keeps the hand labels' gains. The cost is
+Pokeball 5: KovaaK's red-dot crosshairs over its tiny targets look like the training's real crosshairs, so the target
+is confirmed to the frame less often (59 of 114). Its flicks are all measured.
+
+small_v10 (2026-10-02) is small_v7's recipe plus the first hand labels: 207 crops the user checked on the label page
+(`hand_crops.py`, `label_check.py`), each counted 20 times in training. 100 come from the two valorant runs, whose
+tiled walls passed for targets, and 107 from the weak cases: two Jumbo1wall9000targets runs (dense fields), Pokeball 5
+and 1w4ts runs cropped round the crosshair (targets under it), two ClickTrack 2t runs (faint targets), and two
+YouTube runs by another player. None of the runs below are among them. 80 crops are held out as the test (valorant
+558.46, Jumbo 283, ww5t 2040). small_v9 used the valorant crops only.
+
+| Check | small_v7 | small_v9 | small_v10 |
+| --- | --- | --- | --- |
+| Held-out hand crops, every find (40 bots): found, false finds | 26, 86 | 25, 15 | 31, 27 |
+| of which Jumbo 283 (17 bots): found, false | 3, 23 | 2, 5 | 9, 12 |
+| Valorant runs, false targets a frame (no cap) | 13 | 1.5 to 2 | 2.3 to 2.9 |
+| Four stats-file VODs: matched (of 496), confirmed | 494, 391 | 494, 383 | 496, 412 |
+| Video only, precision and recall: 1w4ts | 0.99, 0.99 | 0.90, 0.91 | 0.71, 0.71 |
+| 10 Sphere | 0.81, 0.82 | 0.83, 0.85 | 0.89, 0.90 |
+| Pokeball 1 | 0.67, 0.70 | 0.71, 0.71 | 0.73, 0.75 |
+| Aim Lab, video only: right, extra, missed (of 206) | 194, 17, 11 | 192, 18, 13 | 195, 20, 10 |
+
+small_v10 sees targets under the crosshair better (10 Sphere confirmed 120 to 135, Pokeball 1 54 to 64), but it
+marks KovaaK's crosshair again in 16% of 1w4ts's turning frames (small_v7: none), so 1w4ts's kills from the video
+alone come 4 to 10 frames late. On the YouTube uploads it measures fewer flicks on ww5t (1920: 142 against 191; 2040:
+141 against 155) and more on 1902 (175 against 162). Next: draw the 45 crosshairs KovaaK's installs (`crosshairs/`,
+PNG) in training instead of the made-up dot, plus and ring.
+
+small_v7 (2026-10-02) stops taking KovaaK's crosshair for a target. small_v4 to v6 marked the user's crosshair as a
+target in a quarter to two thirds of the frames where the camera turns (small_v2 never did), so in a review from the
+video alone a dead target stayed "alive" on the crosshair for a few frames (1w4ts: 0.32 precision, 0.54 recall). Two
+changes:
+- **The labeller is small_v2** (`build_kills.LABELLER`), not the current best model: the kill-moment crops were
+  labelled by a model that already marked the crosshair, so the mistake fed itself.
+- **A target the labeller lost is labelled only where some of it shows beside the crosshair, unlike the wall round
+  it** (the median colour of its visible pixels at least 40 away from a ring of wall). A label on the crosshair alone
+  (the target already gone, or wholly covered) taught the crosshair as a target; small_v6's rule (skip only when 60%
+  is covered) still let small crosshairs through.
+- **Crosshairs with an outline** in the augmentation (`crosshair_outline` 0.5: a 1 or 2 px edge, mostly dark).
+
+Compared on the four stats-file VODs, the video-only check and the Aim Lab upload (206 kills, the hits read from
+Aim Lab's POINTS number):
+
+| Model | Flicks measured (4 VODs) | Confirmed | 1w4ts video only (precision, recall) | 10 Sphere video only | Aim Lab right, extra, missed |
+| --- | --- | --- | --- | --- | --- |
+| small_v6 | 484 | 436 | 0.32, 0.54 | 0.96, 0.97 | 168, 24, 37 |
+| small_v7 | 490 | 391 | 0.99, 0.99 | 0.81, 0.82 | 194, 17, 11 |
+| small_v8 (v7 without the outlines) | 473 | 394 | 0.68, 0.66 | 0.93, 0.94 | 188, 22, 17 |
+
+(The Aim Lab numbers include the review's crosshair-spot rule, `review.crosshair_spots`.) The outlined crosshairs are
+what fixes KovaaK's crosshair: small_v8, trained without them, marks it again in 36% of 1w4ts's turning frames. They
+also cost 10 Sphere: a KovaaK's red dot over a tiny black target looks like an outlined crosshair, so small_v7 loses
+the target just before the click (the kill count stays right, 156 for 155, but 4 to 6 frames early at 120 fps).
+small_v6's higher "confirmed" count was partly the crosshair itself, seen as the target up to the kill. Every model
+marks Aim Lab's crosshair in about half the turning frames (it is bigger than Aim Lab's targets, so one frame cannot
+tell it from a covered target); the review handles that (`python/README.md`). Validation F1 0.961.
+
+small_v6 (2026-10-01) is small_v4's recipe with two label fixes in `build_kills.py`:
+- **Other targets are capped by the scenario's target count.** small_v4 took the other targets in each kill-moment
+  crop from small_v2's detections, which included wall seams on some themes. small_v4 then marked those seams as
+  targets ("Failed miserable here": the valorant wall). small_v5 kept at most the scenario's target count, by score.
+- **No label for a target the crosshair covers.** small_v5 still labelled the killed target where it could not be
+  seen, with 60% or more of it under the crosshair. It learned the crosshair as a target: on the uploaded Aim Lab run
+  (206 kills) it marked Aim Lab's crosshair. small_v6 drops those labels; it still marked both crosshairs (above).
+
+On the four stats-file VODs (with the review's track joining, below) small_v6 matched all 496 kills, confirmed 436
+(small_v5: 425) and measured 484 flicks (small_v5: 492; 133 against 141 on 1w4ts). Its validation F1 is 0.956. On the
+valorant wall both still find about 14 false targets a frame; the review's cap on the target count removes them.
+
+The review now joins a killed target's tracks when the tracker lost it for a few frames (under the crosshair, behind a
+hit effect). Without that, a kill whose last track started under the crosshair was not measured: small_v6 measured
+only 72 flicks on 1w4ts, and the hand-written detector 67. With it, 133 and 130. The target radius now comes from the
+whole joined track, not the last piece: on 1w4ts it reads 0.45 deg with both detectors (0.43 measured by hand; it was
+0.33 with small_v6 and 0.31 with the hand-written detector).
+
+small_v4 (2026-10-01) fine-tunes small_v2 for 10 epochs on the key-frame crops plus 10,214 crops from the moments just
+before kills (`build_kills.py`): the clock lined up with the stats file from each VOD's first kills, a third of a
+second decoded before about 10 kills, and the killed target labelled even where the model lost it under the
+crosshair (its place follows the camera's turn). Outlines and another decoder's colours were added to the
+augmentation, and the user's 12 new runs (2026-10-01, other themes, target colours, crosshairs and outlines) were
+counted three times. On the four stats-file VODs it matched all 496 kills (small_v2: 494) and confirmed 414
+(small_v2: 391, the hand-written detector: 396); 10 Sphere went from 127 to 142 confirmed, Pokeball 5 from 61 to 69.
+On the general test crops its F1 is 0.939 against 0.946 at the same threshold: it now marks targets under the
+crosshair that the automatic labels miss, which those crops count as false.
+
+`infer.BEST` names it, and the review app and `serve.py` use it by default.
+
+## Known limitations
+
+- **Labels come from the hand-written detector.** The model learned what that detector finds on frames where it was
+  reliable. Where it fails without its filters noticing, the labels are wrong, and so are the scores. There is no
+  hand-labelled ground truth yet; the stats-file check is the independent one.
+- **Dense fields of big targets.** Jumbo1wall9000targets has the lowest crop score (F1 0.49), but mostly because its
+  labels are wrong: the labeller merges touching spheres into one box and skips most of the rest, because its texture
+  filter takes a dense field for wall texture. In the stats-file check the model does well there (299 of 299 kills
+  matched, 280 confirmed, 257 flicks measured; the hand-written detector confirms 293 and measures 158). Still, on
+  crops it often leaves spheres in a dense field unmarked, so it may have learned some of the labeller's blind spot.
+- **Faint, very small targets.** ClickTrack 2t scenarios (crop F1 0.79 to 0.85) have a second target that is small and
+  pale, and the model misses some. Several of its "false positives" there are real targets the labels missed, and
+  some are the pre-run countdown overlay (harmless: the review only reads the run). In the stats-file check on
+  ClickTrack Vertical 2t Long, the model matches and confirms all 59 kills.
+- **A target hidden by the crosshair.** When an extra-small target sits fully under the crosshair, neither detector sees
+  it, and the kill cannot be confirmed to the frame. v2 narrowed the gap (Pokeball 5: 48 to 61 confirmed; the
+  hand-written detector confirms 74).
+- **The review's numbers differ between detectors.** The model's boxes include a target's anti-aliased edge, so the
+  review's target radius can be larger with the model. On 1w4ts both now give 0.45° (since the review joins a killed
+  target's tracks; the hand-written detector gave 0.31° before), against 0.43° measured by hand. On Pokeball the model
+  gives 0.26° and the hand-written detector 0.19°. Pokeball
+  5's median kill interval reads 0.42 s with the model and 0.18 s with the hand-written detector; that one has not been
+  checked.
+- **Moving targets: dark ones on light walls only.** The moving data comes from recordings with dark targets on light
+  walls (`dark_labels`); other themes' moving targets come only through the recolouring augmentation.
+- **Thin capsules.** The model splits a thin capsule into short boxes and can leave its end unboxed; on Centering II
+  (a capsule a few pixels wide) the time on target reads 0.46 for an accuracy of 0.59. Small targets held under the
+  crosshair in tracking (Pasu Track Smaller, Pokeball 1w2ts) also read low, by 0.12 to 0.15.
+- **Tiled walls.** small_v13 marks far fewer seams than small_v11 on 1wall 6targets extra small 889.26, but one
+  corner seam still scores 0.35, and when fewer targets than the scenario's count are on screen, the cap keeps it.
+- **One resolution tested.** Frames are scaled to 1280 × 720. Other sizes work if both sides are multiples of 16, but
+  were not evaluated.
+
+## Next steps
+
+1. **Ground truth.** Label a few hundred crops by hand (or check the automatic labels by eye), most of them from the
+   weak cases: dense fields, faint targets, targets under the crosshair. Then the crop scores mean something.
+2. **Dense fields.** Paste extra targets into training crops (copy and paste from the target mask), touching and in
+   rows, and label dense scenarios with a labeller that has no texture filter.
+3. **Check the review's numbers.** Take the target radius from the scenario's `.sce` (size and distance) as a second
+   check, and find out why Pokeball 5's median kill interval differs between the detectors.
+4. **Tracking scenarios.** Done (full_v3, small_v13). Next: moving targets on other themes (label them with a
+   model instead of `dark_labels`), thin capsules, and more tracking runs in the check.
+5. **WebGPU.** The embed file already reads back only 100 boxes; the rest of the 12 ms floor is per-layer dispatch.
+   A hand-written WebGPU shader for this small network, or fused layers, could cut it. Until then, WASM is the
+   browser path.
+6. **KovOBS.** Wire the chosen Rust runtime into KovOBS behind a setting, with the fixed map from the first seconds of
+   key frames.

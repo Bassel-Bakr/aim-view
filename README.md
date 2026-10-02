@@ -43,29 +43,27 @@ aim-view/
 └── test_out/      data, not in git
 ```
 
-Today everything is still in `vod/`. Moving it to `python/` comes first, as its own step. The other folders arrive as
-they are built.
+The Python code is in `python/`. The other folders arrive as they are built.
 
 ## Layout today
 
 | Path | What it holds |
 | --- | --- |
-| `vod/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
-| `vod/server.py` | The review web app's server (port 8770) and its JSON API. |
-| `vod/app/` | The web app: `index.html`, `style.css`, `app.js` (plain HTML, CSS and JavaScript, no build step). |
-| `vod/hud.py`, `vod/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
-| `vod/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
-| `vod/README.md` | How the review works, in detail. |
-| `vod/model/MODEL_STATUS.md`, `vod/model/REPRODUCE.md` | The detector's results and limits, and every command to rebuild it. |
+| `python/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
+| `python/server.py` | The review web app's server (port 8770) and its JSON API. |
+| `python/app/` | The web app: `index.html`, `style.css`, `app.js` (plain HTML, CSS and JavaScript, no build step). |
+| `python/hud.py`, `python/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
+| `python/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
+| `python/README.md` | How the review works, in detail. |
+| `python/model/MODEL_STATUS.md`, `python/model/REPRODUCE.md` | The detector's results and limits, and every command to rebuild it. |
 | `test_out/` | Not in git: each recording's review cache (`vod_app/`), uploads (`vod_uploads/`), the training data, runs and hand labels (`vod_model/`), and the HUD readers' test data (`hud/`). |
 
-The folder keeps Flow Fix's layout (`vod/` and `test_out/` side by side), so every path in the code and the docs
-works as before.
+`python/` sits beside `test_out/`, as `vod/` did in Flow Fix, so the code's paths to its data work as before.
 
 ## Run the app
 
 ```bash
-python vod/server.py --port 8770
+python python/server.py --port 8770
 ```
 
 Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
@@ -74,4 +72,4 @@ Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and
 ## Needs
 
 Python 3 with NumPy, SciPy and Pillow; PyTorch (GPU) or ONNX Runtime (CPU) for the detector; ffmpeg and ffprobe on
-the PATH. Training and the deployment prototypes need more: see `vod/model/REPRODUCE.md`.
+the PATH. Training and the deployment prototypes need more: see `python/model/REPRODUCE.md`.

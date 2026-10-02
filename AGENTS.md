@@ -1,22 +1,21 @@
 # aimview: agent guide
 
-aimview reviews aim trainer recordings: `vod/review.py` is the pipeline, `vod/server.py` and `vod/app/` the web app,
-`vod/model/` the trained target detector. Read `README.md` first, then `vod/README.md` (how the review works) and
-`vod/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
-`vod/model/REPRODUCE.md`.
+aimview reviews aim trainer recordings: `python/review.py` is the pipeline, `python/server.py` and `python/app/` the web app,
+`python/model/` the trained target detector. Read `README.md` first, then `python/README.md` (how the review works) and
+`python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
+`python/model/REPRODUCE.md`.
 
 It was copied from the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) on 2026-10-02, with its caches and
-training data in `test_out/` (ignored by git). The layout is kept for now, so paths work as before. The planned stack
-and layout are in `README.md` ("Where it's going"). Moving `vod/` to `python/` comes first, as its own commit with
-only moves and path fixes.
+training data in `test_out/` (ignored by git). Its `vod/` folder became `python/` here. The planned stack and layout
+are in `README.md` ("Where it's going").
 
 ## Commands
 
 ```bash
-python vod/server.py --port 8770            # the review app, http://127.0.0.1:8770/
-python vod/model/test_model.py              # the detector's tests
-python vod/model/eval_vods.py <model.pt>    # static runs against their stats files
-python vod/model/eval_moving.py name=<model.pt> ...   # every scenario kind against the stats files
+python python/server.py --port 8770            # the review app, http://127.0.0.1:8770/
+python python/model/test_model.py              # the detector's tests
+python python/model/eval_vods.py <model.pt>    # static runs against their stats files
+python python/model/eval_moving.py name=<model.pt> ...   # every scenario kind against the stats files
 ```
 
 Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
@@ -50,4 +49,4 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   the reference: the core replaces nothing until its reports match Python's on every recording.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
-  Rust prototype in `vod/model/rust/` becomes the start of the core's detector).
+  Rust prototype in `python/model/rust/` becomes the start of the core's detector).

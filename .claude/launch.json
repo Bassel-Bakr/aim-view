@@ -5,7 +5,7 @@
       "name": "vod-review",
       "runtimeExecutable": "python",
       "runtimeArgs": [
-        "vod/server.py",
+        "python/server.py",
         "--port",
         "8770"
       ],
@@ -15,7 +15,7 @@
       "name": "model-web",
       "runtimeExecutable": "python",
       "runtimeArgs": [
-        "vod/model/web/serve_static.py",
+        "python/model/web/serve_static.py",
         "--port",
         "8772"
       ],
@@ -25,7 +25,7 @@
       "name": "label-check",
       "runtimeExecutable": "python",
       "runtimeArgs": [
-        "vod/model/label_check.py",
+        "python/model/label_check.py",
         "--n",
         "400",
         "--port",
@@ -37,7 +37,7 @@
       "name": "label-valorant",
       "runtimeExecutable": "python",
       "runtimeArgs": [
-        "vod/model/label_check.py",
+        "python/model/label_check.py",
         "--n",
         "100",
         "--port",
@@ -53,7 +53,7 @@
       "name": "label-batch2",
       "runtimeExecutable": "python",
       "runtimeArgs": [
-        "vod/model/label_check.py",
+        "python/model/label_check.py",
         "--n",
         "200",
         "--port",
