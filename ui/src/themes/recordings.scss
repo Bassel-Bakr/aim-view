@@ -1,0 +1,8 @@
+// Module tokens: the recordings list.
+
+@mixin tokens {
+  // A row's height before it is drawn: rows out of view skip rendering (content-visibility) and hold this space
+  --recordings-row-height: 54px;
+}
+
+$row-height: var(--recordings-row-height);

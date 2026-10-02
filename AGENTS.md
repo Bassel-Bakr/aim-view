@@ -45,6 +45,12 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
 - **Named types.** In TypeScript, every object or tuple type gets a name (an interface or a type alias). No inline
   anonymous types such as `{ gpu: number; cpu: number }` in a field or a signature. ESLint enforces it.
+- **Styles are SCSS, and every design value is a token.** A token is a CSS variable (so it can be edited live in the
+  browser), with an SCSS name for it: `$surface-0: var(--surface-0)`. The main tokens are in `ui/src/themes/theme.scss`;
+  page and module tokens (values only one part uses) are in `ui/src/themes/<page or module>.scss`. Each file has a
+  `tokens` mixin, which `styles.scss` includes in `:root`. Component styles `@use 'themes/...'` and use only `$tokens`:
+  no raw colors, sizes, spaces, fonts or durations. Keywords and layout values (`flex`, `solid`, `0`, `100%`, `1fr`)
+  are fine. Canvas drawings read their colors and fonts from the same CSS variables.
 - **Format and lint** the UI before calling a change done: `bun run format`, then `bun run lint:ui`.
 - **Spelling and style.** Write "center", not "centre". Docs in plain, simple English: short sentences, active voice,
   no arrows.

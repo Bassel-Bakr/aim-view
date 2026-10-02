@@ -8,7 +8,7 @@ import { RunHeader } from './run/run-header';
   selector: 'app-root',
   imports: [Recordings, RunHeader],
   templateUrl: './app.html',
-  styleUrl: './app.css',
+  styleUrl: './app.scss',
 })
 export class App {
   protected readonly library = inject(Library);

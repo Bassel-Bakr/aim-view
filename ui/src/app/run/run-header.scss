@@ -1,0 +1,26 @@
+@use 'themes/theme' as t;
+
+:host {
+  display: block;
+}
+
+h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: t.$space-4;
+}
+
+.pill {
+  padding: t.$space-1 t.$space-4;
+  border: t.$line-width solid t.$border-strong;
+  border-radius: t.$radius-pill;
+  color: t.$text-secondary;
+  font-size: t.$font-size-xs;
+  font-weight: t.$font-weight-regular;
+}
+
+.sub {
+  margin: t.$space-2 0 0;
+  color: t.$text-muted;
+}

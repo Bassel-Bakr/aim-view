@@ -1,0 +1,161 @@
+// The main design tokens: every color, space, size, font and timing the UI uses. Each is a CSS variable, so it can be
+// changed live in the browser's dev tools (on :root). SCSS reaches each one through the $ name below. Page and module
+// tokens (layout.scss, recordings.scss, ...) build on these. Component styles use tokens only, never raw values.
+
+@mixin tokens {
+  color-scheme: dark;
+
+  // Surfaces, from the page (0) up
+  --surface-0: #0e0f11;
+  --surface-1: #16181b;
+  --surface-2: #1f2125;
+  --surface-3: #2a2d32;
+
+  // Text
+  --text-primary: #f4f4f2;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+
+  // Lines
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --grid: #24262a;
+  --axis: #34373c;
+
+  // Roles
+  --accent: #3987e5;
+  --accent-soft: rgba(57, 135, 229, 0.16);
+  --value: #7fb6f2;
+  --good-soft: rgba(34, 177, 76, 0.16);
+  --good-text: #6fd38e;
+  --warning: #fab219;
+  --on-accent: #fff;
+
+  // Chart series
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+
+  // On and off the target: the overlay, the timeline and their legends
+  --on-target: var(--series-3);
+  --off-target: var(--series-2);
+
+  // Space: --space-N is 2N pixels
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-9: 18px;
+  --space-11: 22px;
+  --space-13: 26px;
+
+  // Corners
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  // Type
+  --font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 22px;
+  --font-weight-regular: 400;
+  --font-weight-strong: 600;
+  --line-height: 1.5;
+  --letter-spacing-tight: -0.01em;
+
+  // Line widths and focus
+  --line-width: 1px;
+  --line-width-strong: 2px;
+  --line-width-marker: 3px;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  // Controls
+  --control-height-sm: 28px;
+  --control-height: 32px;
+  --badge-height: 18px;
+  --icon-size: 20px;
+
+  // Motion
+  --motion-fast: 0.15s;
+}
+
+$surface-0: var(--surface-0);
+$surface-1: var(--surface-1);
+$surface-2: var(--surface-2);
+$surface-3: var(--surface-3);
+
+$text-primary: var(--text-primary);
+$text-secondary: var(--text-secondary);
+$text-muted: var(--text-muted);
+
+$border: var(--border);
+$border-strong: var(--border-strong);
+$grid: var(--grid);
+$axis: var(--axis);
+
+$accent: var(--accent);
+$accent-soft: var(--accent-soft);
+$value: var(--value);
+$good-soft: var(--good-soft);
+$good-text: var(--good-text);
+$warning: var(--warning);
+$on-accent: var(--on-accent);
+
+$series-1: var(--series-1);
+$series-2: var(--series-2);
+$series-3: var(--series-3);
+$series-4: var(--series-4);
+$series-5: var(--series-5);
+
+$on-target: var(--on-target);
+$off-target: var(--off-target);
+
+$space-1: var(--space-1);
+$space-2: var(--space-2);
+$space-3: var(--space-3);
+$space-4: var(--space-4);
+$space-5: var(--space-5);
+$space-6: var(--space-6);
+$space-7: var(--space-7);
+$space-9: var(--space-9);
+$space-11: var(--space-11);
+$space-13: var(--space-13);
+
+$radius-sm: var(--radius-sm);
+$radius-md: var(--radius-md);
+$radius-lg: var(--radius-lg);
+$radius-pill: var(--radius-pill);
+
+$font-family: var(--font-family);
+$font-size-xs: var(--font-size-xs);
+$font-size-sm: var(--font-size-sm);
+$font-size-md: var(--font-size-md);
+$font-size-lg: var(--font-size-lg);
+$font-size-xl: var(--font-size-xl);
+$font-weight-regular: var(--font-weight-regular);
+$font-weight-strong: var(--font-weight-strong);
+$line-height: var(--line-height);
+$letter-spacing-tight: var(--letter-spacing-tight);
+
+$line-width: var(--line-width);
+$line-width-strong: var(--line-width-strong);
+$line-width-marker: var(--line-width-marker);
+$focus-width: var(--focus-width);
+$focus-offset: var(--focus-offset);
+
+$control-height-sm: var(--control-height-sm);
+$control-height: var(--control-height);
+$badge-height: var(--badge-height);
+$icon-size: var(--icon-size);
+
+$motion-fast: var(--motion-fast);

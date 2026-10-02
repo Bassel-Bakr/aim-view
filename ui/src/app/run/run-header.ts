@@ -9,7 +9,7 @@ import { StampPipe } from '../pipes';
   selector: 'app-run-header',
   imports: [DecimalPipe, StampPipe],
   templateUrl: './run-header.html',
-  styleUrl: './run-header.css',
+  styleUrl: './run-header.scss',
 })
 export class RunHeader {
   readonly recording = input.required<Recording>();

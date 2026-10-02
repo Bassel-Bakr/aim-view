@@ -25,7 +25,7 @@ const PAGE = 10;
   selector: 'app-recordings',
   imports: [DecimalPipe, StampPipe],
   templateUrl: './recordings.html',
-  styleUrl: './recordings.css',
+  styleUrl: './recordings.scss',
 })
 export class Recordings {
   protected readonly library = inject(Library);

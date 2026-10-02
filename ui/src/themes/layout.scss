@@ -1,0 +1,13 @@
+// Page tokens: the app's frame (top bar, recordings column, main area) and the empty page.
+
+@mixin tokens {
+  --top-bar-height: 52px;
+  --sidebar-width: 300px;
+  --empty-width: 560px;
+  --empty-offset: 12vh;
+}
+
+$top-bar-height: var(--top-bar-height);
+$sidebar-width: var(--sidebar-width);
+$empty-width: var(--empty-width);
+$empty-offset: var(--empty-offset);
