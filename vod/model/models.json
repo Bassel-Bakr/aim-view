@@ -1,0 +1,43 @@
+{
+  "about": "The review app's model picker (server.py /api/models). The numbers come from MODEL_STATUS.md: the checks from \"Every scenario kind: one model\", the speeds from \"Deployment\". Keep the two in step.",
+  "speed": "Per frame, one 1280 x 720 frame on the Ryzen 7 9800X3D and RTX 5070 Ti, measured per model size (small, full): GPU is PyTorch in batches of 16, CPU is ONNX Runtime fp32 on 4 threads, browser is onnxruntime-web on WASM.",
+  "checks": [
+    {"key": "static", "name": "Static runs", "of": 854, "what": "kills matched, flicks measured"},
+    {"key": "moving", "name": "Dynamic and switching runs", "of": 1112, "what": "kills matched, flicks measured"},
+    {"key": "uploads", "name": "Uploads and Aim Lab", "of": 997, "what": "kills matched, flicks measured"},
+    {"key": "tracking", "name": "Tracking", "what": "time on the bot minus the stats file's accuracy: mean, and mean size (nearer 0 is better)"}
+  ],
+  "checked_on": "Recordings no model trained on, against their stats files (eval_moving.py).",
+  "models": {
+    "full_v3": {
+      "params": 80765, "kb": 324.4,
+      "trained": "Every scenario kind: static, dynamic, switching and tracking.",
+      "speed_ms": {"gpu": 1.37, "cpu": 6.0, "browser": 24.1},
+      "best": "The most accurate on moving runs: the most flicks measured on dynamic and switching runs, and tracking nearest the stats files.",
+      "weak": "2.3 times small_v13's compute. On the Aim Lab upload it measures 8 fewer flicks than small_v11.",
+      "checks": {"static": [854, 844], "moving": [1097, 1060], "uploads": [997, 982], "tracking": [-0.025, 0.075]}
+    },
+    "small_v13": {
+      "params": 32037, "kb": 134.5,
+      "trained": "Every scenario kind: static, dynamic, switching and tracking.",
+      "speed_ms": {"gpu": 0.71, "cpu": 4.0, "browser": 14.2},
+      "best": "Nearly full_v3's results at less than half the compute. The one for the CPU, the browser and KovOBS.",
+      "weak": "Tracking a little further from the stats files, mostly on one run (Air Tracking 180).",
+      "checks": {"static": [854, 844], "moving": [1096, 1048], "uploads": [997, 984], "tracking": [-0.035, 0.086]}
+    },
+    "small_v11": {
+      "params": 32037, "kb": 134.5,
+      "trained": "Static runs only, with KovaaK's own crosshairs drawn in.",
+      "speed_ms": {"gpu": 0.71, "cpu": 4.0, "browser": 14.2},
+      "best": "Static runs and uploads: the most flicks measured on static runs and on the uploads and the Aim Lab run.",
+      "weak": "It never saw a moving bot, so it cannot track, and it measures the fewest flicks on dynamic and switching runs.",
+      "checks": {"static": [854, 846], "moving": [1092, 1009], "uploads": [997, 990], "tracking": [-0.161, 0.211]}
+    },
+    "hand": {
+      "label": "Hand-written",
+      "trained": "No training: the rule-based finder in review.py. The first training labels came from it.",
+      "best": "Needs no model files and no GPU.",
+      "weak": "It assumes dark targets, so it fails on other colors and themes, and on a target under the crosshair (Pokeball scenarios)."
+    }
+  }
+}
