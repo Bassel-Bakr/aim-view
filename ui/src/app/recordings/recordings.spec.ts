@@ -1,6 +1,8 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { answer, recording } from '../fake-api';
 import { Library } from '../services/library';
-import { fakeFetch, recording } from '../fake-api';
 import { Recordings } from './recordings';
 
 const RECORDINGS = [
@@ -10,8 +12,9 @@ const RECORDINGS = [
 ];
 
 async function render(): Promise<ComponentFixture<Recordings>> {
-  vi.stubGlobal('fetch', fakeFetch({ '/api/vods': RECORDINGS }));
+  TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
   const fixture = TestBed.createComponent(Recordings);
+  await answer({ '/api/vods': RECORDINGS });
   await fixture.whenStable();
   return fixture;
 }
@@ -21,10 +24,7 @@ const texts = (f: ComponentFixture<Recordings>, selector: string) =>
   [...el(f).querySelectorAll(selector)].map((n) => n.textContent?.replace(/\s+/g, ' ').trim());
 
 describe('Recordings', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    history.replaceState(null, '', '/');
-  });
+  afterEach(() => history.replaceState(null, '', '/'));
 
   it('offers a chip per kind of run, with its count', async () => {
     const f = await render();

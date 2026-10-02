@@ -1,5 +1,7 @@
 /** The review server's JSON API (python/server.py), typed. */
 
+import { HttpErrorResponse } from '@angular/common/http';
+
 /** Milliseconds per 1280 x 720 frame on each runtime. */
 export interface ModelSpeed {
   gpu: number;
@@ -208,16 +210,8 @@ export interface ApiError {
   error?: string;
 }
 
-async function json<T>(r: Response): Promise<T> {
-  const body: T & ApiError = await r.json();
-  if (!r.ok) throw new Error(body.error ?? r.statusText);
-  return body;
-}
-
-export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  return json<T>(await fetch(path, { signal }));
-}
-
-export async function postJson<T>(path: string): Promise<T> {
-  return json<T>(await fetch(path, { method: 'POST' }));
+/** What went wrong with a request: the server's own message when it sent one ({error}), else the request's. */
+export function errorMessage(e: unknown): string {
+  if (e instanceof HttpErrorResponse) return (e.error as ApiError | null)?.error ?? e.message;
+  return e instanceof Error ? e.message : String(e);
 }

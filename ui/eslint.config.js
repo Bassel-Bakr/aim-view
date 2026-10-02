@@ -54,10 +54,6 @@ module.exports = defineConfig([
               name: '@angular/forms',
               message: 'Prefer signal forms from @angular/forms/signals.',
             },
-            {
-              name: '@angular/common/http',
-              message: 'Prefer resource() with fetch (api.ts).',
-            },
           ],
         },
       ],

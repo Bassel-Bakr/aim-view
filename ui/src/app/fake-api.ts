@@ -1,22 +1,45 @@
+import { HttpRequest } from '@angular/common/http';
+import { HttpTestingController, TestRequest } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
 import { Recording } from './api';
 
-/** An answer that changes from call to call: it gets the request's URL and options. */
-export type RouteHandler = (url: URL, init?: RequestInit) => unknown;
+/** An answer that changes from request to request: it gets the request. */
+export type RouteHandler = (req: HttpRequest<unknown>) => unknown;
 
 /** API paths and the JSON each one answers with, or a handler that makes it. */
 export type ApiRoutes = Record<string, unknown>;
 
-/** A fetch that answers the paths in routes with their JSON, and any other path with a 404. */
-export function fakeFetch(routes: ApiRoutes): typeof fetch {
-  return async (input, init) => {
-    const url = new URL(String(input), 'http://localhost');
-    if (!(url.pathname in routes)) {
-      return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+/** A response body, as a test request takes it. */
+type Body = Parameters<TestRequest['flush']>[0];
+
+/** An answer meaning the server is not there: the request fails without a response. */
+export const NO_SERVER = Symbol('no server');
+
+const settle = () => new Promise((r) => setTimeout(r));
+
+/**
+ * Answers the app's pending requests as the review server would: each path in routes with its JSON (or what its
+ * handler returns), any other path with a 404. Repeats until no request is left, since answers start new ones.
+ */
+export async function answer(routes: ApiRoutes): Promise<void> {
+  const http = TestBed.inject(HttpTestingController);
+  for (let idle = 0; idle < 3;) {
+    TestBed.tick();
+    const pending = http.match(() => true);
+    idle = pending.length ? 0 : idle + 1;
+    for (const req of pending) {
+      const path = req.request.url;
+      if (!(path in routes)) {
+        req.flush({ error: 'not found' }, { status: 404, statusText: 'Not Found' });
+        continue;
+      }
+      const route = routes[path];
+      const body = typeof route === 'function' ? (route as RouteHandler)(req.request) : route;
+      if (body === NO_SERVER) req.error(new ProgressEvent('error'));
+      else req.flush(body as Body);
     }
-    const route = routes[url.pathname];
-    const body = typeof route === 'function' ? (route as RouteHandler)(url, init) : route;
-    return new Response(JSON.stringify(body));
-  };
+    await settle();
+  }
 }
 
 /** A recording for tests: a reviewed static run with a stats file, unless overrides say otherwise. */

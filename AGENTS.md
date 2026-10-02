@@ -39,8 +39,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   stats-file checks (`eval_vods.py`, `eval_moving.py`), not only crop scores.
 - **Bun for JavaScript** tools, not Node.
 - **Angular for speed.** No zone.js. OnPush everywhere (Angular 22's default: never set `Eager`). Prefer signals for
-  state (RxJS is allowed where it fits better) and `resource()` with `fetch` for data. Prefer signal forms
-  (`@angular/forms/signals`); the lint config warns on the older forms and HttpClient. Anything that changes every frame (the video overlay,
+  state (RxJS is allowed where it fits better). Data comes through `HttpClient` (which sends with `fetch`, Angular's
+  default), as `httpResource()` for reads, so every request passes the interceptors in `app.config.ts`; tests answer
+  requests with `provideHttpClientTesting()` (`fake-api.ts`). Prefer signal forms (`@angular/forms/signals`); the lint
+  config warns on the older forms. Anything that changes every frame (the video overlay,
   timelines) is drawn on a canvas in `requestAnimationFrame` or `requestVideoFrameCallback`, never through a template.
   A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
 - **Named types.** In TypeScript, every object or tuple type gets a name (an interface or a type alias). No inline
