@@ -1,0 +1,38 @@
+# aimview
+
+Review aim trainer recordings (VODs). The app tracks every target frame by frame with a trained detector, matches
+the kills with the run's stats file (or reads the game's HUD in the video), and measures each flick. For tracking runs
+it measures the time on the target, how the crosshair followed the bot, and what would raise the accuracy. It works on
+KovaaK's recordings from KovOBS, other players' uploads, and Aim Lab runs.
+
+aimview started inside the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) and was copied here on 2026-10-02.
+
+## Layout
+
+| Path | What it holds |
+| --- | --- |
+| `vod/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
+| `vod/server.py` | The review web app's server (port 8770) and its JSON API. |
+| `vod/app/` | The web app: `index.html`, `style.css`, `app.js` (plain HTML, CSS and JavaScript, no build step). |
+| `vod/hud.py`, `vod/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
+| `vod/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
+| `vod/README.md` | How the review works, in detail. |
+| `vod/model/MODEL_STATUS.md`, `vod/model/REPRODUCE.md` | The detector's results and limits, and every command to rebuild it. |
+| `test_out/` | Not in git: each recording's review cache (`vod_app/`), uploads (`vod_uploads/`), the training data, runs and hand labels (`vod_model/`), and the HUD readers' test data (`hud/`). |
+
+The folder keeps Flow Fix's layout (`vod/` and `test_out/` side by side), so every path in the code and the docs
+works as before.
+
+## Run the app
+
+```bash
+python vod/server.py --port 8770
+```
+
+Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
+`stats` folder. The detector runs on an NVIDIA GPU through PyTorch, or on the CPU through ONNX Runtime.
+
+## Needs
+
+Python 3 with NumPy, SciPy and Pillow; PyTorch (GPU) or ONNX Runtime (CPU) for the detector; ffmpeg and ffprobe on
+the PATH. Training and the deployment prototypes need more: see `vod/model/REPRODUCE.md`.
