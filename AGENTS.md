@@ -18,6 +18,8 @@ python python/model/eval_vods.py <model.pt>    # static runs against their stats
 python python/model/eval_moving.py name=<model.pt> ...   # every scenario kind against the stats files
 bun run dev                                    # the Angular UI, http://localhost:4200/ (needs the server above)
 bun run test:ui                                # the UI's tests
+bun run lint:ui                                # ESLint (angular-eslint's recommended set, plus the rules below)
+bun run format                                 # Prettier, over ui/
 cargo check                                    # the Rust core
 ```
 
@@ -36,10 +38,14 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 - **Correctness first.** The user wants near-100% accuracy, even at the cost of speed. Judge a detector by the
   stats-file checks (`eval_vods.py`, `eval_moving.py`), not only crop scores.
 - **Bun for JavaScript** tools, not Node.
-- **Angular for speed.** No zone.js. OnPush everywhere (Angular 22's default: never set `Eager`). Signals for state and
-  `resource()` with `fetch` for data, not HttpClient or RxJS. Anything that changes every frame (the video overlay,
+- **Angular for speed.** No zone.js. OnPush everywhere (Angular 22's default: never set `Eager`). Prefer signals for
+  state (RxJS is allowed where it fits better) and `resource()` with `fetch` for data. Prefer signal forms
+  (`@angular/forms/signals`); the lint config warns on the older forms and HttpClient. Anything that changes every frame (the video overlay,
   timelines) is drawn on a canvas in `requestAnimationFrame` or `requestVideoFrameCallback`, never through a template.
   A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
+- **Named types.** In TypeScript, every object or tuple type gets a name (an interface or a type alias). No inline
+  anonymous types such as `{ gpu: number; cpu: number }` in a field or a signature. ESLint enforces it.
+- **Format and lint** the UI before calling a change done: `bun run format`, then `bun run lint:ui`.
 - **Spelling and style.** Write "center", not "centre". Docs in plain, simple English: short sentences, active voice,
   no arrows.
 - **Nothing gets deleted.** Old files move to a `retired/` folder; the user's own data is never overwritten.
