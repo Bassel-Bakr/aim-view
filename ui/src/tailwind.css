@@ -1,0 +1,62 @@
+/*
+ * Tailwind, on the design tokens. The tokens' values live in src/themes/ (CSS variables on :root); this file only
+ * names them for Tailwind. "inline" makes each utility use the token's variable, so a token changed in the browser
+ * changes every class that uses it; "reference" keeps Tailwind from writing variables of its own. Tailwind's own
+ * colors, sizes and fonts are switched off (--*: initial), so a class can only reach a token. Plain CSS, not SCSS:
+ * Tailwind 4 does not run through Sass.
+ */
+@import 'tailwindcss';
+
+@theme inline reference {
+  --*: initial;
+
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-grid: var(--grid);
+  --color-axis: var(--axis);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-value: var(--value);
+  --color-good-soft: var(--good-soft);
+  --color-good-text: var(--good-text);
+  --color-warning: var(--warning);
+  --color-on-accent: var(--on-accent);
+  --color-on-target: var(--on-target);
+  --color-off-target: var(--off-target);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-series-5: var(--series-5);
+
+  /* p-4 is 4 x 2px = 8px, the same as --space-4 */
+  --spacing: var(--space-1);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
+
+  --default-border-width: var(--line-width);
+  --default-outline-width: var(--focus-width);
+  --default-transition-duration: var(--motion-fast);
+  --default-font-family: var(--font-family);
+
+  --font-sans: var(--font-family);
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-md: var(--font-size-md);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
+  --font-weight-regular: var(--font-weight-regular);
+  --font-weight-strong: var(--font-weight-strong);
+  --leading-normal: var(--line-height);
+  --tracking-tight: var(--letter-spacing-tight);
+}

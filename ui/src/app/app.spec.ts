@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
-import { fakeFetch, recording } from './testing';
+import { fakeFetch, recording } from './fake-api';
 
 async function render(fetchImpl: typeof fetch): Promise<HTMLElement> {
   vi.stubGlobal('fetch', fetchImpl);

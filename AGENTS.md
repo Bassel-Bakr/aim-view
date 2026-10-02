@@ -51,6 +51,16 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   `tokens` mixin, which `styles.scss` includes in `:root`. Component styles `@use 'themes/...'` and use only `$tokens`:
   no raw colors, sizes, spaces, fonts or durations. Keywords and layout values (`flex`, `solid`, `0`, `100%`, `1fr`)
   are fine. Canvas drawings read their colors and fonts from the same CSS variables.
+- **Tailwind on the tokens.** Templates use Tailwind 4 utilities. `ui/src/tailwind.css` maps Tailwind's theme onto the
+  tokens (`@theme inline reference`, with Tailwind's own scales switched off), so a class can only reach a token:
+  `bg-surface-1`, `text-muted`, `p-4` (4 x `--space-1`), `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`.
+  Component SCSS holds only what utilities cannot say, inside `@layer components`; page-wide element styles are in
+  `@layer base`. That way a utility on an element always wins.
+- **Angular's style guide** (angular.dev/style-guide, the 2025 one, still current in Angular 22). Folders by feature
+  (`recordings/`, `run/`, with each part in its own folder); a service that more than one feature uses goes in
+  `services/`, a service only one feature uses stays in that feature. File names follow their class (`stamp-pipe.ts`
+  for `StampPipe`), never generic (`utils.ts`, `helpers.ts`). Event handlers are named for what they do
+  (`selectRow`, not `onClick`). `inject()`, `protected` for template-only members, `readonly` for inputs and queries.
 - **Format and lint** the UI before calling a change done: `bun run format`, then `bun run lint:ui`.
 - **Spelling and style.** Write "center", not "centre". Docs in plain, simple English: short sentences, active voice,
   no arrows.

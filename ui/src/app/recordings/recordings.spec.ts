@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Library } from '../library';
-import { fakeFetch, recording } from '../testing';
+import { Library } from '../services/library';
+import { fakeFetch, recording } from '../fake-api';
 import { Recordings } from './recordings';
 
 const RECORDINGS = [

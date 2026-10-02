@@ -1,52 +1,55 @@
-<label class="search">
+<label class="block">
   <span class="sr-only">Filter the recordings by scenario</span>
   <input
     #q
     type="search"
     placeholder="Filter by scenario"
     autocomplete="off"
+    class="w-full rounded-md border border-border-strong bg-surface-0 px-6 py-4 text-primary placeholder:text-muted"
     [value]="query()"
     (input)="query.set(q.value)"
   />
 </label>
-<div class="chips" role="group" aria-label="Kind of run">
+<div class="flex flex-wrap gap-3" role="group" aria-label="Kind of run">
   @for (c of chips(); track c.key) {
     <button
       type="button"
-      class="chip"
+      class="chip min-h-(--control-height-sm) cursor-pointer rounded-pill border border-border-strong px-5 py-1 text-xs text-secondary aria-pressed:border-accent aria-pressed:bg-surface-3 aria-pressed:text-primary"
       [attr.aria-pressed]="kind() === c.key"
       (click)="kind.set(c.key)"
     >
-      {{ c.label }} <span class="count">{{ c.count | number }}</span>
+      {{ c.label }} <span class="ml-1 text-muted">{{ c.count | number }}</span>
     </button>
   }
 </div>
 @if (library.recordings.error()) {
-  <p class="note" role="alert">
+  <p class="text-sm text-muted" role="alert">
     The review server is not running. Start it with <code>python python/server.py</code>.
   </p>
 } @else if (!library.recordings.hasValue()) {
-  <p class="note" role="status">Loading the recordings…</p>
+  <p class="text-sm text-muted" role="status">Loading the recordings…</p>
 } @else {
   <div
-    class="list"
+    class="list -mx-2 min-h-0 flex-1 overflow-y-auto px-2"
     role="listbox"
     tabindex="0"
     aria-label="Recordings"
     [attr.aria-activedescendant]="activeId()"
-    (click)="onClick($event)"
-    (keydown)="onKey($event)"
+    (click)="selectRow($event)"
+    (keydown)="moveSelection($event)"
   >
     @for (r of shown(); track r.id; let i = $index) {
       <div
-        class="rec"
+        class="rec cursor-pointer rounded-md border-l-(length:--line-width-marker) border-transparent px-5 py-4 hover:bg-surface-2 aria-selected:border-accent aria-selected:bg-accent-soft"
         role="option"
         [id]="'rec-' + i"
         [attr.data-i]="i"
         [attr.aria-selected]="r.id === library.selectedId()"
       >
-        <div class="name" [title]="r.scenario">{{ r.scenario }}</div>
-        <div class="meta">
+        <div class="name truncate text-sm font-strong" [title]="r.scenario">{{ r.scenario }}</div>
+        <div
+          class="meta mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted tabular-nums"
+        >
           @if (r.score !== null) {
             <span>{{ r.score | number: '1.0-2' }}</span>
           }
@@ -55,7 +58,7 @@
             <span>{{ kindLabels[r.kind] }}</span>
           }
           @if (r.analysed) {
-            <span class="badge done">reviewed</span>
+            <span class="badge bg-good-soft text-good-text">reviewed</span>
           }
           @if (r.uploaded) {
             <span class="badge">uploaded</span>
@@ -69,7 +72,7 @@
         </div>
       </div>
     } @empty {
-      <p class="note">No recording matches.</p>
+      <p class="text-sm text-muted">No recording matches.</p>
     }
   </div>
 }

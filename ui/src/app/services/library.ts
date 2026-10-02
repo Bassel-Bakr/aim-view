@@ -1,5 +1,5 @@
 import { computed, effect, Injectable, resource, signal } from '@angular/core';
-import { getJson, Recording } from './api';
+import { getJson, Recording } from '../api';
 
 /** The recordings, and the one that is open. The open one is kept in the URL (?id=), so a link opens it. */
 @Injectable({ providedIn: 'root' })

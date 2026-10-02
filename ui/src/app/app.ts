@@ -1,8 +1,8 @@
 import { Component, inject, resource } from '@angular/core';
 import { getJson, Models } from './api';
-import { Library } from './library';
+import { Library } from './services/library';
 import { Recordings } from './recordings/recordings';
-import { RunHeader } from './run/run-header';
+import { RunHeader } from './run/run-header/run-header';
 
 @Component({
   selector: 'app-root',

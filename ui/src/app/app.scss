@@ -1,64 +1,24 @@
-@use 'themes/theme' as t;
 @use 'themes/layout' as l;
 
-:host {
-  display: grid;
-  grid-template:
-    'top top' l.$top-bar-height
-    'side main' minmax(0, 1fr)
-    / l.$sidebar-width minmax(0, 1fr);
-  height: 100vh;
-}
-
-.top {
-  display: flex;
-  grid-area: top;
-  align-items: center;
-  gap: t.$space-7;
-  padding: 0 t.$space-9;
-  border-bottom: t.$line-width solid t.$border;
-  background: t.$surface-1;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: t.$space-4;
-  font-size: t.$font-size-lg;
-  font-weight: t.$font-weight-strong;
-
-  svg {
-    width: t.$icon-size;
-    height: t.$icon-size;
-    color: t.$accent;
+@layer components {
+  :host {
+    display: grid;
+    grid-template:
+      'top top' l.$top-bar-height
+      'side main' minmax(0, 1fr)
+      / l.$sidebar-width minmax(0, 1fr);
+    height: 100vh;
   }
-}
 
-.pill {
-  padding: t.$space-1 t.$space-5;
-  border: t.$line-width solid t.$border-strong;
-  border-radius: t.$radius-pill;
-  color: t.$text-secondary;
-  font-size: t.$font-size-xs;
-}
+  .top {
+    grid-area: top;
+  }
 
-app-recordings {
-  grid-area: side;
-}
+  app-recordings {
+    grid-area: side;
+  }
 
-main {
-  grid-area: main;
-  min-width: 0;
-  padding: t.$space-11 t.$space-13;
-  overflow-y: auto;
-}
-
-.empty {
-  max-width: l.$empty-width;
-  margin-top: l.$empty-offset;
-  color: t.$text-secondary;
-
-  h2 {
-    color: t.$text-primary;
+  main {
+    grid-area: main;
   }
 }

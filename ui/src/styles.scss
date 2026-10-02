@@ -2,55 +2,46 @@
 @use 'themes/layout';
 @use 'themes/recordings';
 
+// The tokens' values. Unlayered, so they win over anything Tailwind sets on :root.
 :root {
   @include t.tokens;
   @include layout.tokens;
   @include recordings.tokens;
-
-  font-family: t.$font-family;
-  font-size: t.$font-size-md;
-  line-height: t.$line-height;
 }
 
-* {
-  box-sizing: border-box;
-}
+// Page-wide element styles go in Tailwind's base layer and component styles in its components layer, so a utility
+// class on an element always wins over both.
+@layer base {
+  :root {
+    font-family: t.$font-family;
+    font-size: t.$font-size-md;
+    line-height: t.$line-height;
+  }
 
-body {
-  margin: 0;
-  overflow: hidden;
-  background: t.$surface-0;
-  color: t.$text-primary;
-}
+  body {
+    overflow: hidden;
+    background: t.$surface-0;
+    color: t.$text-primary;
+  }
 
-h2 {
-  margin: 0;
-  font-size: t.$font-size-xl;
-  font-weight: t.$font-weight-strong;
-  letter-spacing: t.$letter-spacing-tight;
-}
+  h2 {
+    font-size: t.$font-size-xl;
+    font-weight: t.$font-weight-strong;
+    letter-spacing: t.$letter-spacing-tight;
+  }
 
-:focus-visible {
-  outline: t.$focus-width solid t.$accent;
-  outline-offset: t.$focus-offset;
-}
+  :focus-visible {
+    outline: t.$focus-width solid t.$accent;
+    outline-offset: t.$focus-offset;
+  }
 
-// Text for screen readers only
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

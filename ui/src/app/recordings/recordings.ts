@@ -2,8 +2,8 @@ import { DecimalPipe } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, signal } from '@angular/core';
 import { Kind, Recording } from '../api';
 import { KIND_LABELS } from '../format';
-import { Library } from '../library';
-import { StampPipe } from '../pipes';
+import { Library } from '../services/library';
+import { StampPipe } from '../stamp-pipe';
 
 export type KindFilter = Kind | 'all';
 
@@ -68,12 +68,12 @@ export class Recordings {
     });
   }
 
-  protected onClick(e: MouseEvent): void {
+  protected selectRow(e: MouseEvent): void {
     const row = (e.target as HTMLElement).closest<HTMLElement>('[role=option]');
     if (row) this.library.selectedId.set(this.shown()[Number(row.dataset['i'])].id);
   }
 
-  protected onKey(e: KeyboardEvent): void {
+  protected moveSelection(e: KeyboardEvent): void {
     const list = this.shown();
     const at = list.findIndex((r) => r.id === this.library.selectedId());
     let to: number;

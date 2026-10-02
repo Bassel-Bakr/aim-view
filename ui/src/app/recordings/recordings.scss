@@ -1,115 +1,33 @@
 @use 'themes/theme' as t;
 @use 'themes/recordings' as rec;
 
-:host {
-  display: flex;
-  flex-direction: column;
-  gap: t.$space-5;
-  min-height: 0;
-  padding: t.$space-7 t.$space-6;
-  border-right: t.$line-width solid t.$border;
-  background: t.$surface-1;
-}
+@layer components {
+  :host {
+    display: flex;
+    flex-direction: column;
+    gap: t.$space-5;
+    min-height: 0;
+    padding: t.$space-7 t.$space-6;
+    border-right: t.$line-width solid t.$border;
+    background: t.$surface-1;
+  }
 
-.search input {
-  width: 100%;
-  padding: t.$space-4 t.$space-6;
-  border: t.$line-width solid t.$border-strong;
-  border-radius: t.$radius-md;
-  background: t.$surface-0;
-  color: t.$text-primary;
-  font: inherit;
-}
+  .list {
+    outline-offset: calc(-1 * #{t.$focus-offset});
+  }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: t.$space-3;
-}
+  // Rows out of view skip rendering and hold their space: the list stays quick with every recording in it
+  .rec {
+    content-visibility: auto;
+    contain-intrinsic-size: auto rec.$row-height;
+  }
 
-.chip {
-  min-height: t.$control-height-sm;
-  padding: t.$space-1 t.$space-5;
-  border: t.$line-width solid t.$border-strong;
-  border-radius: t.$radius-pill;
-  background: transparent;
-  color: t.$text-secondary;
-  font: inherit;
-  font-size: t.$font-size-xs;
-  cursor: pointer;
-
-  &[aria-pressed='true'] {
-    border-color: t.$accent;
+  // A status in words, never by color alone
+  .badge {
+    padding: 0 t.$space-3;
+    border-radius: t.$radius-pill;
     background: t.$surface-3;
-    color: t.$text-primary;
+    color: t.$text-secondary;
+    line-height: t.$badge-height;
   }
-}
-
-.count {
-  margin-left: t.$space-1;
-  color: t.$text-muted;
-}
-
-.list {
-  flex: 1;
-  min-height: 0;
-  margin: 0 calc(-1 * #{t.$space-2});
-  padding: 0 t.$space-2;
-  overflow-y: auto;
-  outline-offset: calc(-1 * #{t.$focus-offset});
-}
-
-.rec {
-  padding: t.$space-4 t.$space-5;
-  border-left: t.$line-width-marker solid transparent;
-  border-radius: t.$radius-md;
-  cursor: pointer;
-  content-visibility: auto;
-  contain-intrinsic-size: auto rec.$row-height;
-
-  &:hover {
-    background: t.$surface-2;
-  }
-
-  &[aria-selected='true'] {
-    border-left-color: t.$accent;
-    background: t.$accent-soft;
-  }
-}
-
-.name {
-  overflow: hidden;
-  font-size: t.$font-size-sm;
-  font-weight: t.$font-weight-strong;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: t.$space-2 t.$space-4;
-  margin-top: t.$space-1;
-  color: t.$text-muted;
-  font-size: t.$font-size-xs;
-  font-variant-numeric: tabular-nums;
-}
-
-.badge {
-  padding: 0 t.$space-3;
-  border-radius: t.$radius-pill;
-  background: t.$surface-3;
-  color: t.$text-secondary;
-  line-height: t.$badge-height;
-
-  &.done {
-    background: t.$good-soft;
-    color: t.$good-text;
-  }
-}
-
-.note {
-  color: t.$text-muted;
-  font-size: t.$font-size-sm;
 }
