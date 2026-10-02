@@ -5,6 +5,9 @@ import { Player } from './player/player';
 import { Review } from './review';
 import { RunHeader } from './run-header/run-header';
 import { Timeline } from './timeline/timeline';
+import { button } from '@themes/controls.styles';
+import { runStyles } from '@themes/run.styles';
+import { slotClasses } from '@themes/slot-classes';
 
 /** A review job's progress as the page shows it: the stage (announced) and the frames done (not announced). */
 export interface JobProgress {
@@ -37,6 +40,9 @@ export class Run {
   readonly recording = input.required<Recording>();
   protected readonly review = inject(Review);
   private readonly models = inject(Models);
+  protected readonly ui = slotClasses(runStyles());
+  protected readonly button = button();
+  protected readonly primaryButton = button({ intent: 'primary' });
 
   protected readonly report = computed(() =>
     this.review.report.hasValue() ? this.review.report.value() : null,

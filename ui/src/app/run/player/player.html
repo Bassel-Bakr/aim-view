@@ -1,10 +1,10 @@
-<div class="screen relative overflow-hidden rounded-lg" [style.aspect-ratio]="aspect()">
+<div class="screen" [class]="ui.screen" [style.aspect-ratio]="aspect()">
   <video
     #video
-    class="block size-full"
     preload="metadata"
     muted
     playsinline
+    [class]="ui.video"
     [src]="src()"
     (click)="playback.toggle()"
     (play)="playback.paused.set(false)"
@@ -12,22 +12,14 @@
     (loadedmetadata)="loadedMetadata()"
     (seeked)="showSeekedFrame()"
   ></video>
-  <canvas
-    #overlay
-    class="pointer-events-none absolute inset-0 size-full"
-    aria-hidden="true"
-  ></canvas>
-  <span
-    #clock
-    class="time absolute bottom-4 left-4 rounded-md px-3 py-1 text-xs tabular-nums"
-    aria-hidden="true"
-  ></span>
+  <canvas #overlay aria-hidden="true" [class]="ui.canvas"></canvas>
+  <span #clock class="time" aria-hidden="true" [class]="ui.time"></span>
 </div>
 
 <ng-content />
 
-<div class="relative mt-4 h-(--seek-height)">
-  <div class="pointer-events-none absolute inset-x-4 inset-y-0" aria-hidden="true">
+<div [class]="ui.seekRow">
+  <div aria-hidden="true" [class]="ui.marks">
     @for (m of marks(); track $index) {
       <i class="mark" [style.left.%]="m"></i>
     }
@@ -37,8 +29,8 @@
     type="range"
     min="0"
     step="any"
-    class="absolute inset-0 w-full cursor-pointer accent-accent"
     aria-label="Position in the video"
+    [class]="ui.seek"
     [max]="playback.duration()"
     (pointerdown)="startSeeking()"
     (pointerup)="stopSeeking()"
@@ -46,14 +38,14 @@
   />
 </div>
 
-<div class="mt-4 flex flex-wrap items-center gap-4">
+<div [class]="ui.controls">
   <button
     type="button"
-    class="btn"
+    [class]="button"
     [attr.aria-label]="playback.paused() ? 'Play' : 'Pause'"
     (click)="playback.toggle()"
   >
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" [class]="ui.icon">
       @if (playback.paused()) {
         <path d="M8 5v14l11-7z" />
       } @else {
@@ -61,10 +53,11 @@
       }
     </svg>
   </button>
-  <div class="segmented" role="group" aria-label="Playback speed">
+  <div role="group" aria-label="Playback speed" [class]="speed.group">
     @for (r of rates; track r) {
       <button
         type="button"
+        [class]="speed.option"
         [attr.aria-pressed]="playback.rate() === r"
         (click)="playback.setRate(r)"
       >
@@ -74,15 +67,13 @@
   </div>
   <button
     type="button"
-    class="switch"
     role="switch"
+    [class]="toggle.root"
     [attr.aria-checked]="showOverlay()"
     (click)="toggleOverlay()"
   >
-    <span class="knob" aria-hidden="true"></span>
+    <span aria-hidden="true" [class]="toggle.knob"></span>
     Show the tracked target
   </button>
-  <span class="ml-auto text-xs text-muted">
-    Space plays · ← → one frame · Shift ← → the next kill
-  </span>
+  <span [class]="ui.hint">Space plays · ← → one frame · Shift ← → the next kill</span>
 </div>

@@ -92,6 +92,7 @@
   --switch-height: 15px;
   --switch-knob: 11px;
   --switch-gap: 2px;
+  --switch-travel: 11px;
 
   // Motion
   --motion-fast: 0.15s;
@@ -173,5 +174,6 @@ $switch-width: var(--switch-width);
 $switch-height: var(--switch-height);
 $switch-knob: var(--switch-knob);
 $switch-gap: var(--switch-gap);
+$switch-travel: var(--switch-travel);
 
 $motion-fast: var(--motion-fast);

@@ -15,6 +15,9 @@ import { Report, Tracks } from '../../api';
 import { Playback, RATES } from '../playback';
 import { clock, flickAt } from '../track';
 import { drawClick, drawTrack, OverlayStyle, readOverlayStyle } from './overlay';
+import { button, segmented, toggleSwitch } from '@themes/controls.styles';
+import { playerStyles } from '@themes/player.styles';
+import { slotClasses } from '@themes/slot-classes';
 
 const OVERLAY_KEY = 'aimview-overlay';
 const RATE_LABELS: Record<number, string> = { 1: '1×', 0.5: '½×', 0.25: '¼×', 0.125: '⅛×' };
@@ -76,6 +79,10 @@ export class Player {
   private readonly clockText = viewChild.required<ElementRef<HTMLElement>>('clock');
   private readonly seekBar = viewChild.required<ElementRef<HTMLInputElement>>('seek');
 
+  protected readonly ui = slotClasses(playerStyles());
+  protected readonly button = button();
+  protected readonly speed = slotClasses(segmented());
+  protected readonly toggle = slotClasses(toggleSwitch());
   protected readonly rates = RATES;
   protected readonly rateLabels = RATE_LABELS;
   protected readonly aspect = signal<string | null>(null);

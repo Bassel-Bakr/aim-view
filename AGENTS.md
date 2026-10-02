@@ -58,6 +58,13 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   `bg-surface-1`, `text-muted`, `p-4` (4 x `--space-1`), `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`.
   Component SCSS holds only what utilities cannot say, inside `@layer components`; page-wide element styles are in
   `@layer base`. That way a utility on an element always wins.
+- **Named styles with tailwind-variants** (`tailwind-variants/lite`, no tailwind-merge), all in `ui/src/themes/`
+  beside the tokens. The shared controls are in `controls.styles.ts` (`button({ intent: 'primary' })`,
+  `badge({ tone: 'good' })`, `pill()`, `chip()`, `segmented()`, `toggleSwitch()`); each component's own class lists
+  are `tv()` slots in `<component>.styles.ts`, imported as `@themes/<component>.styles`. Class strings are built once
+  in fields (`slotClasses(playerStyles())`, `button()`) and bound with `[class]`; never call a style function from a
+  template, least of all in a list. Without tailwind-merge, a style sets a property in its base or in its variants,
+  never both.
 - **Angular's style guide** (angular.dev/style-guide, the 2025 one, still current in Angular 22). Folders by feature
   (`recordings/`, `run/`, with each part in its own folder); a service that more than one feature uses goes in
   `services/`, a service only one feature uses stays in that feature. File names follow their class (`stamp-pipe.ts`

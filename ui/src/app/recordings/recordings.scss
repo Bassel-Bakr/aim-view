@@ -21,13 +21,4 @@
     content-visibility: auto;
     contain-intrinsic-size: auto rec.$row-height;
   }
-
-  // A status in words, never by color alone
-  .badge {
-    padding: 0 t.$space-3;
-    border-radius: t.$radius-pill;
-    background: t.$surface-3;
-    color: t.$text-secondary;
-    line-height: t.$badge-height;
-  }
 }

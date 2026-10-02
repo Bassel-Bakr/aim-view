@@ -5,51 +5,52 @@
     type="search"
     placeholder="Filter by scenario"
     autocomplete="off"
-    class="w-full rounded-md border border-border-strong bg-surface-0 px-6 py-4 text-primary placeholder:text-muted"
+    [class]="ui.search"
     [value]="query()"
     (input)="query.set(q.value)"
   />
 </label>
-<div class="flex flex-wrap gap-3" role="group" aria-label="Kind of run">
+<div role="group" aria-label="Kind of run" [class]="ui.chips">
   @for (c of chips(); track c.key) {
     <button
       type="button"
-      class="chip min-h-(--control-height-sm) cursor-pointer rounded-pill border border-border-strong px-5 py-1 text-xs text-secondary aria-pressed:border-accent aria-pressed:bg-surface-3 aria-pressed:text-primary"
+      class="chip"
+      [class]="chip"
       [attr.aria-pressed]="kind() === c.key"
       (click)="kind.set(c.key)"
     >
-      {{ c.label }} <span class="ml-1 text-muted">{{ c.count | number }}</span>
+      {{ c.label }} <span [class]="ui.count">{{ c.count | number }}</span>
     </button>
   }
 </div>
 @if (library.recordings.error()) {
-  <p class="text-sm text-muted" role="alert">
+  <p role="alert" [class]="ui.note">
     The review server is not running. Start it with <code>python python/server.py</code>.
   </p>
 } @else if (!library.recordings.hasValue()) {
-  <p class="text-sm text-muted" role="status">Loading the recordings…</p>
+  <p role="status" [class]="ui.note">Loading the recordings…</p>
 } @else {
   <div
-    class="list -mx-2 min-h-0 flex-1 overflow-y-auto px-2"
+    class="list"
     role="listbox"
     tabindex="0"
     aria-label="Recordings"
+    [class]="ui.list"
     [attr.aria-activedescendant]="activeId()"
     (click)="selectRow($event)"
     (keydown)="moveSelection($event)"
   >
     @for (r of shown(); track r.id; let i = $index) {
       <div
-        class="rec cursor-pointer rounded-md border-l-(length:--line-width-marker) border-transparent px-5 py-4 hover:bg-surface-2 aria-selected:border-accent aria-selected:bg-accent-soft"
+        class="rec"
         role="option"
+        [class]="ui.row"
         [id]="'rec-' + i"
         [attr.data-i]="i"
         [attr.aria-selected]="r.id === library.selectedId()"
       >
-        <div class="name truncate text-sm font-strong" [title]="r.scenario">{{ r.scenario }}</div>
-        <div
-          class="meta mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted tabular-nums"
-        >
+        <div class="name" [class]="ui.name" [title]="r.scenario">{{ r.scenario }}</div>
+        <div class="meta" [class]="ui.meta">
           @if (r.score !== null) {
             <span>{{ r.score | number: '1.0-2' }}</span>
           }
@@ -58,21 +59,21 @@
             <span>{{ kindLabels[r.kind] }}</span>
           }
           @if (r.analysed) {
-            <span class="badge bg-good-soft text-good-text">reviewed</span>
+            <span [class]="goodBadge">reviewed</span>
           }
           @if (r.uploaded) {
-            <span class="badge">uploaded</span>
+            <span [class]="badge">uploaded</span>
           }
           @if (!r.stats) {
-            <span class="badge">no stats</span>
+            <span [class]="badge">no stats</span>
           }
           @if (r.not_aim) {
-            <span class="badge">not an aim trainer</span>
+            <span [class]="badge">not an aim trainer</span>
           }
         </div>
       </div>
     } @empty {
-      <p class="text-sm text-muted">No recording matches.</p>
+      <p [class]="ui.note">No recording matches.</p>
     }
   </div>
 }

@@ -22,6 +22,7 @@
   --color-grid: var(--grid);
   --color-axis: var(--axis);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --color-value: var(--value);
   --color-good-soft: var(--good-soft);

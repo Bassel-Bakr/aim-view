@@ -3,6 +3,7 @@
   "singleQuote": true,
   "plugins": ["prettier-plugin-tailwindcss"],
   "tailwindStylesheet": "./src/tailwind.css",
+  "tailwindFunctions": ["tv"],
   "overrides": [
     {
       "files": "*.html",

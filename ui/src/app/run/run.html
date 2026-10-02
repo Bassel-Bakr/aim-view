@@ -1,10 +1,9 @@
-<div class="flex flex-wrap items-start justify-between gap-x-7 gap-y-4">
-  <app-run-header class="min-w-0 flex-1" [recording]="recording()" [report]="report()" />
-  <div class="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-2">
+<div [class]="ui.head">
+  <app-run-header [class]="ui.header" [recording]="recording()" [report]="report()" />
+  <div [class]="ui.toolbar">
     <button
       type="button"
-      class="btn"
-      [class.btn-primary]="!recording().analysed"
+      [class]="recording().analysed ? button : primaryButton"
       [disabled]="review.running()"
       (click)="startReview()"
     >
@@ -13,16 +12,16 @@
   </div>
 </div>
 @if (reviewedBy(); as note) {
-  <p class="mt-2 text-xs text-muted">{{ note }}</p>
+  <p [class]="ui.note">{{ note }}</p>
 }
 @if (progress(); as p) {
-  <div class="mt-4 flex items-center gap-5 text-xs text-secondary">
-    <progress class="w-(--progress-width) accent-accent" max="1" [value]="p.fraction"></progress>
+  <div [class]="ui.progress">
+    <progress max="1" [class]="ui.bar" [value]="p.fraction"></progress>
     <span [attr.role]="p.failed ? 'alert' : 'status'">{{ p.stage }}</span>
     <span aria-hidden="true">{{ p.count }}</span>
   </div>
 }
-<app-player class="mt-6" [src]="videoUrl()" [report]="report()" [tracks]="tracks()">
+<app-player [class]="ui.player" [src]="videoUrl()" [report]="report()" [tracks]="tracks()">
   @if (trackReport(); as tr) {
     @if (tracks(); as t) {
       <app-timeline [report]="tr" [tracks]="t" />

@@ -14,6 +14,8 @@ import { TrackReport, Tracks } from '../../api';
 import { Playback } from '../playback';
 import { describe, timeline } from '../track';
 import { drawTimeline, readTimelineStyle, TimelineStyle } from './timeline-drawing';
+import { timelineStyles } from '@themes/timeline.styles';
+import { slotClasses } from '@themes/slot-classes';
 
 /** Seconds the arrow keys move, and Page Up or Down. */
 const STEP = 1;
@@ -39,6 +41,7 @@ export class Timeline {
   private readonly head = viewChild.required<ElementRef<HTMLElement>>('head');
   private readonly tip = viewChild.required<ElementRef<HTMLElement>>('tip');
 
+  protected readonly ui = slotClasses(timelineStyles());
   protected readonly data = computed(() => timeline(this.report(), this.tracks()));
   protected readonly runSeconds = computed(() => Math.round(this.data().n / this.data().fps));
   private style: TimelineStyle | null = null;

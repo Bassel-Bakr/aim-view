@@ -4,6 +4,9 @@ import { Kind, Recording } from '../api';
 import { KIND_LABELS } from '../format';
 import { Library } from '../services/library';
 import { StampPipe } from '../stamp-pipe';
+import { badge, chip } from '@themes/controls.styles';
+import { recordingsStyles } from '@themes/recordings.styles';
+import { slotClasses } from '@themes/slot-classes';
 
 export type KindFilter = Kind | 'all';
 
@@ -31,6 +34,10 @@ export class Recordings {
   protected readonly library = inject(Library);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly kindLabels = KIND_LABELS;
+  protected readonly ui = slotClasses(recordingsStyles());
+  protected readonly chip = chip();
+  protected readonly badge = badge();
+  protected readonly goodBadge = badge({ tone: 'good' });
   protected readonly query = signal('');
   protected readonly kind = signal<KindFilter>('all');
 
