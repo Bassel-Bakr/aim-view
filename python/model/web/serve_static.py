@@ -15,6 +15,9 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        # readable from the UI's dev server (another port) too, which is cross-origin isolated as well
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 

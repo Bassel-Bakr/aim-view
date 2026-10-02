@@ -24,9 +24,14 @@ const MODELS = MODELS_FILE as unknown as ModelsFile;
 const CHOSEN_KEY = 'aimview-model';
 /** The model the browser reviews with until the user picks one: the best on every check (infer.BEST). */
 const DEFAULT_MODEL = 'full_v3';
-const NOT_YET = 'Not built for the browser yet';
+/** The hand-written detector is Python code, not a model file: it runs here once the review core has it. */
+const HAND = 'hand';
+const NOT_PORTED = 'Not in the browser yet (Python code, not a model file)';
 
-/** The models as the browser runs them: none can run until the review in the browser is built. */
+/**
+ * The models as the browser runs them: every one with an ONNX export, on onnxruntime-web's WebAssembly backend
+ * (MODEL_STATUS.md, "Browser"). The hand-written detector waits for the review core.
+ */
 export function browserModels(file: ModelsFile, chosen: string): ModelList {
   return {
     chosen,
@@ -39,9 +44,9 @@ export function browserModels(file: ModelsFile, chosen: string): ModelList {
       name,
       label: m.label ?? name,
       default: name === DEFAULT_MODEL,
-      available: false,
+      available: name !== HAND,
     })),
-    unavailable: NOT_YET,
+    unavailable: NOT_PORTED,
   };
 }
 

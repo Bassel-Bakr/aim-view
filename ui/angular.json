@@ -27,13 +27,24 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "ort-wasm-simd-threaded.{wasm,mjs}",
+                "input": "node_modules/onnxruntime-web/dist",
+                "output": "ort"
+              },
+              {
+                "glob": "**/*",
+                "input": "generated",
+                "output": "/"
               }
             ],
             "styles": ["src/tailwind.css", "src/styles.scss"],
             "inlineStyleLanguage": "scss",
             "stylePreprocessorOptions": {
               "includePaths": ["src"]
-            }
+            },
+            "webWorkerTsConfig": "tsconfig.worker.json"
           },
           "configurations": {
             "production": {
@@ -89,7 +100,11 @@
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {
-            "proxyConfig": "proxy.conf.json"
+            "proxyConfig": "proxy.conf.json",
+            "headers": {
+              "Cross-Origin-Opener-Policy": "same-origin",
+              "Cross-Origin-Embedder-Policy": "require-corp"
+            }
           },
           "configurations": {
             "production": {

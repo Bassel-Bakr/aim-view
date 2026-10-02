@@ -311,9 +311,14 @@ export type TrackPoint = [id: number, x: number, y: number];
 export type TargetSize = [width: number, height: number];
 
 /** One frame's targets. wh: their sizes, s: the model's scores (when the model made them). */
+/** How far the view moved since the frame before, in degrees. */
+export type ViewShift = [x: number, y: number];
+
 export interface TrackFrame {
   i: number;
   t: TrackPoint[];
+  shift?: ViewShift;
+  a?: number[];
   wh?: TargetSize[];
   s?: number[];
 }
@@ -322,6 +327,9 @@ export interface TrackFrame {
 export interface Tracks {
   fps: number;
   frames: TrackFrame[];
+  /** The share of the screen found fixed (crosshair, HUD), and what found the targets. */
+  fixed?: number;
+  detector?: string;
 }
 
 export type JobStage =

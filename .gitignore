@@ -7,6 +7,7 @@ target/
 node_modules/
 /pkg/
 ui/dist/
+ui/generated/
 ui/.angular/
 desktop/gen/schemas/
 # the copy from flowfix

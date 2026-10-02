@@ -22,7 +22,9 @@ bun run build                                  # every mode's build: ui/dist/bro
 bun run test:ui                                # the UI's tests
 bun run lint:ui                                # ESLint (angular-eslint's recommended set, plus the rules below)
 bun run format                                 # Prettier, over ui/
-cargo check                                    # the Rust core
+cargo test --release                           # the Rust core, checked against Python's results (test_out/parity/)
+python tests/fixtures.py <video> [--areas exclude.json]   # Python's results stage by stage, for those checks
+bun run assets                                 # the core as WebAssembly and the models, into ui/generated/
 ```
 
 Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
@@ -103,9 +105,15 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
   (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there); the
   review shows "not built yet". Server mode: files added are sent to the server, and the stats file panel lists
-  KovaaK's stats files (`/api/stats`). Next: the review in the browser (folders opened in the browser and browser
-  storage; decode and detect in a worker; the review core in Rust as WebAssembly), each step checked against
-  Python's results; the tool panels (cut-off, run marks, areas) and the queues are built on it.
+  KovaaK's stats files (`/api/stats`).
+- The review in the browser, so far the track step (ui/src/app/modes/wasm/review.worker.ts, the Rust core in src/):
+  decode (Mediabunny and the browser's decoder: the same YUV as ffmpeg once the edit list's pre-roll, the frames
+  before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV (src/convert.rs, byte for
+  byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on the CPU), `keep`,
+  pop-up areas (`AreaWatch`) and `link`: all equal to Python's to the bit except the detector's float noise (17 of
+  6,038 frames differ by one pixel of area). About 27 frames a second for full_v3. Next: the rest of the review
+  (stats and HUD matching, camera motion, measures, summary, checks) in Rust the same way; then the run page shows
+  the report. KovaaK's stats and scenarios folders are under Program Files, which Chrome will not open for a page.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
