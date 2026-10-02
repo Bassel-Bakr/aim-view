@@ -17,7 +17,10 @@ export interface CoreExports {
   fixed_add(fixed: number, yuv: number): void;
   fixed_finish(fixed: number, out: number): void;
   scenario_facts(text: number, len: number): number;
-  review_clicks(request: number, len: number): number;
+  review_report(request: number, len: number): number;
+  camera_new(fixed: number): number;
+  camera_add(camera: number, yuv: number, rgb: number): void;
+  camera_finish(camera: number, frames: number, len: number): number;
 }
 
 /** A block of the core's memory, reserved until freed. */

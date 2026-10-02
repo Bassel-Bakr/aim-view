@@ -84,6 +84,23 @@ pub fn count_runs(a: &[bool]) -> usize {
     a.iter().enumerate().filter(|&(i, &v)| v && (i == 0 || !a[i - 1])).count()
 }
 
+/// `find_objects(label(a)[0])` for a line: each run of true as (start, stop), in order.
+pub fn runs(a: &[bool]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut start = None;
+    for (i, &v) in a.iter().chain([&false]).enumerate() {
+        match (v, start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                out.push((s, i));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

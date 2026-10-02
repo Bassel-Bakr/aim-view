@@ -1,4 +1,5 @@
-//! The review of a clicking run with its stats file (review.py: `review`, the clicking branch).
+//! The review of a run with its stats file (review.py: `review`): a clicking run's flicks, or a tracking run's time
+//! on the target.
 
 use std::collections::BTreeMap;
 
@@ -10,6 +11,7 @@ use crate::measure::{choices, measure, target_radius, Measure};
 use crate::stats_file::StatsFile;
 use crate::summary::{judge, summarize, Issue, Mode, Summary};
 use crate::track::Tracks;
+use crate::tracking::{CameraReading, TrackSummary, countdown_end, stats_length, track_summary};
 
 /// The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees come from.
 #[derive(Clone, Debug, Serialize)]
@@ -85,32 +87,134 @@ pub fn review_clicks(
     Ok(Reviewed { flicks, report })
 }
 
-/// What the page asks the core to review: the tracks, the stats file's text and name, the video's name and the user's
-/// run marks.
+/// A tracking run's report, as report.json keeps it: the summary, with the clicking run's parts empty.
+#[derive(Clone, Debug, Serialize)]
+pub struct TrackReport {
+    pub video: String,
+    pub stats: Option<String>,
+    pub summary: TrackSummary,
+    pub issues: Vec<Issue>,
+    pub flicks: Vec<Measure>,
+    pub mode: Mode,
+    pub paths: BTreeMap<String, Vec<PathPoint>>,
+    pub fps: f64,
+    pub geometry: Geometry,
+    pub appeared: BTreeMap<String, i64>,
+    pub crosshair: Vec<(f64, f64)>,
+    pub run: Option<serde_json::Value>,
+    pub limit: Option<f64>,
+}
+
+/// What a tracking run reads from its video besides the tracks: per frame the camera's reading, and whether KovaaK's
+/// countdown bar shows.
+pub struct VideoReadings<'a> {
+    pub camera: &'a [CameraReading],
+    pub countdown: &'a [bool],
+}
+
+/// Reviews a tracking run from its tracks, its stats file and its video's readings. `limit`: the scenario's time
+/// limit (seconds), which the stats file's own length overrides.
+pub fn review_tracking(
+    tracks: &Tracks,
+    stats_text: &str,
+    video: &str,
+    stats: &str,
+    limit: Option<f64>,
+    readings: VideoReadings,
+    run: Option<serde_json::Value>,
+) -> Result<TrackReport, String> {
+    let file = StatsFile::parse(stats_text);
+    let fps = tracks.fps;
+    let limit = stats_length(stats, &file).or(limit);
+    let (mut deaths, mut start) = (Vec::new(), None);
+    if !file.rows.is_empty() {
+        // bots that die: their kills, matched in the video, and the challenge's start on the video's clock
+        let kills = file.kills()?;
+        let (flicks, info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
+        deaths = flicks.iter().map(|f| f.kill_frame).collect();
+        if let Some(off) = info.offset
+            && info.matched > 0
+        {
+            start = Some((off * fps).round_ties_even() as i64);
+        }
+    }
+    if start.is_none()
+        && let Some(l) = limit.filter(|&l| l != 0.0)
+    {
+        // no kills to place the start: KovaaK's countdown ends it
+        let until = (tracks.frames.len() as f64 / fps - l + 3.0).max(5.0);
+        start = countdown_end(readings.countdown, fps, until).map(|i| i as i64);
+    }
+    let summary = track_summary(tracks, &file.meta, limit, Some(readings.camera), &deaths, start, KillSource::Stats);
+    Ok(TrackReport {
+        video: video.into(),
+        stats: Some(stats.into()),
+        summary,
+        issues: Vec::new(),
+        flicks: Vec::new(),
+        mode: Mode::Track,
+        paths: BTreeMap::new(),
+        fps,
+        geometry: Geometry { W, H, CX, CY, K },
+        appeared: BTreeMap::new(),
+        crosshair: Vec::new(),
+        run,
+        limit,
+    })
+}
+
+/// What the page asks the core to review: the tracks, the video's name, the stats file's name and text, the user's
+/// run marks; for a tracking run also the scenario's time limit and the video's readings.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClickRequest {
+pub struct ReviewRequest {
     pub tracks: Tracks,
-    pub stats_text: String,
     pub video: String,
     pub stats: String,
+    pub stats_text: String,
     #[serde(default)]
     pub run: Option<serde_json::Value>,
+    #[serde(default)]
+    pub tracking: bool,
+    #[serde(default)]
+    pub limit: Option<f64>,
+    #[serde(default)]
+    pub camera: Vec<CameraReading>,
+    #[serde(default)]
+    pub countdown: Vec<bool>,
+}
+
+/// A clicking run's report or a tracking run's.
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum AnyReport {
+    Click(Box<Report>),
+    Track(Box<TrackReport>),
 }
 
 /// The report, or why there is none: {"report": ...} or {"error": "..."}.
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Outcome {
-    Report(Box<Report>),
+    Report(AnyReport),
     Error(String),
+}
+
+fn review_request(r: ReviewRequest) -> Result<AnyReport, String> {
+    if r.tracking {
+        let readings = VideoReadings { camera: &r.camera, countdown: &r.countdown };
+        review_tracking(&r.tracks, &r.stats_text, &r.video, &r.stats, r.limit, readings, r.run)
+            .map(|t| AnyReport::Track(Box::new(t)))
+    } else {
+        review_clicks(&r.tracks, &r.stats_text, &r.video, &r.stats, r.run).map(|c| AnyReport::Click(Box::new(c.report)))
+    }
 }
 
 /// A request (JSON) reviewed, as JSON.
 pub fn review_json(request: &[u8]) -> Vec<u8> {
-    let outcome = serde_json::from_slice::<ClickRequest>(request)
+    let outcome = serde_json::from_slice::<ReviewRequest>(request)
         .map_err(|e| format!("The review request could not be read: {e}"))
-        .and_then(|r| review_clicks(&r.tracks, &r.stats_text, &r.video, &r.stats, r.run))
-        .map_or_else(Outcome::Error, |r| Outcome::Report(Box::new(r.report)));
+        .and_then(review_request)
+        .map_or_else(Outcome::Error, Outcome::Report);
     serde_json::to_vec(&outcome).unwrap_or_default()
 }

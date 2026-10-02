@@ -78,6 +78,11 @@ impl StatsFile {
         StatsFile { meta, rows }
     }
 
+    /// When the challenge started, in microseconds since midnight.
+    pub fn start_micros(&self) -> Option<i64> {
+        micros(self.meta.get("Challenge Start")?)
+    }
+
     /// The shots each kill took (the table's sixth column).
     pub fn shots(&self) -> Result<Vec<i64>, String> {
         self.rows

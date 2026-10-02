@@ -14,6 +14,7 @@ exclude = ["python/model/rust"]
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
+rustfft = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 

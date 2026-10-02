@@ -2,8 +2,9 @@
 // The review in the browser, in a worker: decodes the recording (Mediabunny, the browser's own decoder), turns each
 // frame into the exact pixels ffmpeg gives Python (the core's converter), finds the targets with the detector model
 // (onnxruntime-web, WebAssembly) and tracks them (the core's tracker, which also watches the excluded areas for
-// pop-ups). python/review.py's track_model, step by step: the fixed map from the key frames, then every frame. Frames before time 0 are the edit list's pre-roll: ffmpeg
-// drops them, so the review does too.
+// pop-ups). python/review.py's track_model, step by step: the fixed map from the key frames, then every frame. Frames
+// before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each frame also feeds the camera
+// watch (the camera's turn and KovaaK's countdown bar, which a tracking run's review reads).
 import {
   ALL_FORMATS,
   BlobSource,
@@ -15,7 +16,7 @@ import {
 import * as ort from 'onnxruntime-web/wasm';
 import { TrackFrame, Tracks } from '../../api';
 import { Core, CoreBlock, matrixNumber } from './core';
-import { ReviewMessage, ReviewRequest } from './review-messages';
+import { ReviewMessage, ReviewRequest, VideoReadings } from './review-messages';
 
 const W = 1280;
 const H = 720;
@@ -136,6 +137,7 @@ async function review(req: ReviewRequest): Promise<void> {
   const fixedBlock = core.reserve(W * H);
   core.x.fixed_finish(fixedBuilder, fixedBlock.ptr);
   const fixed = core.bytes(fixedBlock).slice();
+  const camera = core.x.camera_new(fixedBlock.ptr);
   core.free(fixedBlock);
   const fixedTensor = new ort.Tensor('uint8', fixed, [1, H, W]);
 
@@ -155,6 +157,8 @@ async function review(req: ReviewRequest): Promise<void> {
     await writeI420(s, core, block, scratch);
     s.close();
     core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
+    core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
+    core.x.camera_add(camera, yuv720.ptr, rgb.ptr);
     core.x.tracker_watch(tracker, rgb.ptr);
     const out = await session.run({
       rgb: new ort.Tensor('uint8', core.bytes(rgb).slice(), [1, H, W, 3]),
@@ -166,9 +170,18 @@ async function review(req: ReviewRequest): Promise<void> {
     if (++n % PROGRESS_EVERY === 0) say({ kind: 'progress', stage: 'tracking', done: n, total });
   }
   say({ kind: 'progress', stage: 'linking', done: n, total });
-  const frames = JSON.parse(core.takeText(core.x.tracker_finish(tracker))) as TrackFrame[];
+  const framesText = core.takeText(core.x.tracker_finish(tracker));
+  const frames = JSON.parse(framesText) as TrackFrame[];
+  const framesBytes = new TextEncoder().encode(framesText);
+  const framesBlock = core.reserve(framesBytes.length);
+  core.bytes(framesBlock).set(framesBytes);
+  const readingsText = core.takeText(
+    core.x.camera_finish(camera, framesBlock.ptr, framesBytes.length),
+  );
+  core.free(framesBlock);
+  const readings = JSON.parse(readingsText) as VideoReadings;
   if (converter) core.x.converter_free(converter);
   const share = fixed.reduce((a, v) => a + v, 0) / fixed.length;
   const tracks: Tracks = { fps, frames, fixed: share, detector: 'onnxruntime-web' };
-  say({ kind: 'done', tracks, seconds: (performance.now() - start) / 1000, keyFrames });
+  say({ kind: 'done', tracks, readings, seconds: (performance.now() - start) / 1000, keyFrames });
 }

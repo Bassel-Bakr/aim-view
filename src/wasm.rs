@@ -225,12 +225,49 @@ pub unsafe extern "C" fn scenario_facts(text: *const u8, len: usize) -> *mut u8 
     bytes_out(serde_json::to_vec(&facts).unwrap_or_default())
 }
 
-/// A clicking run reviewed: the request as JSON ({tracks, statsText, video, stats, run}), the outcome as JSON
+/// A run reviewed: the request as JSON (src/review.rs: `ReviewRequest`), the outcome as JSON
 /// ({report} or {error}). Free the result as `tracker_finish`'s.
 ///
 /// # Safety
 /// `request` must hold `len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn review_clicks(request: *const u8, len: usize) -> *mut u8 {
+pub unsafe extern "C" fn review_report(request: *const u8, len: usize) -> *mut u8 {
     bytes_out(crate::review::review_json(unsafe { std::slice::from_raw_parts(request, len) }))
+}
+
+/// A camera watch for a recording (src/camera.rs), its tiles kept clear of the KovOBS overlay and of the fixed map
+/// (`fixed`: 1280 * 720 bytes, 1 fixed).
+///
+/// # Safety
+/// `fixed` must hold 1280 * 720 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_new(fixed: *const u8) -> *mut crate::camera::CameraWatch {
+    let fixed = unsafe { std::slice::from_raw_parts(fixed, DST_W * DST_H) };
+    let bad = crate::camera::excluded(Mask::without(&crate::geometry::overlay_shares()).kept(), fixed);
+    Box::into_raw(Box::new(crate::camera::CameraWatch::new(&bad)))
+}
+
+/// One frame: its YUV 4:2:0 at 1280 x 720 (the luma is read) and its RGB24 at 1280 x 720 (the countdown bar).
+///
+/// # Safety
+/// `c` from `camera_new`; `yuv` and `rgb` must hold one frame each.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_add(c: *mut crate::camera::CameraWatch, yuv: *const u8, rgb: *const u8) {
+    let c = unsafe { &mut *c };
+    let gray = unsafe { std::slice::from_raw_parts(yuv, DST_W * DST_H) };
+    c.add(gray, unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
+}
+
+/// The readings, the tracks known (`frames`: the JSON `tracker_finish` gave), as JSON {camera, countdown}, and frees the
+/// watch. Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `c` from `camera_new`, not used again; `frames` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_finish(c: *mut crate::camera::CameraWatch, frames: *const u8, len: usize) -> *mut u8 {
+    let c = unsafe { Box::from_raw(c) };
+    let frames: Vec<TrackFrame> =
+        serde_json::from_slice(unsafe { std::slice::from_raw_parts(frames, len) }).unwrap_or_default();
+    let out = serde_json::json!({ "camera": c.readings(&frames), "countdown": c.countdown });
+    bytes_out(serde_json::to_vec(&out).unwrap_or_default())
 }

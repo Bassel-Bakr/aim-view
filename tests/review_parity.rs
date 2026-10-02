@@ -5,53 +5,13 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde_json::Value;
-
 use aimview::review::review_clicks;
 use aimview::track::Tracks;
 
+mod common;
+use common::{compare, read, Diff};
+
 const CASES: [&str; 2] = ["av1", "pokeball134"];
-
-/// Where two JSON values differ (paths), and how many numbers were equal only within the tolerance.
-#[derive(Default)]
-struct Diff {
-    wrong: Vec<String>,
-    close: usize,
-}
-
-fn compare(path: &str, got: &Value, want: &Value, diff: &mut Diff) {
-    match (got, want) {
-        (Value::Number(a), Value::Number(b)) => {
-            let (a, b) = (a.as_f64().unwrap(), b.as_f64().unwrap());
-            if a != b {
-                if (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1e-3) {
-                    diff.close += 1;
-                } else {
-                    diff.wrong.push(format!("{path}: {a} against {b}"));
-                }
-            }
-        }
-        (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
-            for (i, (x, y)) in a.iter().zip(b).enumerate() {
-                compare(&format!("{path}[{i}]"), x, y, diff);
-            }
-        }
-        (Value::Object(a), Value::Object(b)) => {
-            for k in a.keys().chain(b.keys().filter(|k| !a.contains_key(*k))) {
-                match (a.get(k), b.get(k)) {
-                    (Some(x), Some(y)) => compare(&format!("{path}.{k}"), x, y, diff),
-                    (x, y) => diff.wrong.push(format!("{path}.{k}: {x:?} against {y:?}")),
-                }
-            }
-        }
-        _ if got == want => {}
-        _ => diff.wrong.push(format!("{path}: {got} against {want}")),
-    }
-}
-
-fn read(path: &PathBuf) -> Value {
-    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
-}
 
 #[test]
 fn clicking_review_matches_python() {

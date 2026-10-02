@@ -6,18 +6,21 @@ import { LocalFiles, localRecording } from '../web-files/local-files';
 import { ScenarioFacts } from '../web-files/scenario-facts';
 import { StatsCsv } from '../web-files/stats-csv';
 import { CoreModule } from './core-module';
-import { ReviewMessage, ReviewRequest } from './review-messages';
+import { ReviewMessage, ReviewRequest, VideoReadings } from './review-messages';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
-const TRACKING = 'Tracking runs are not reviewed in the browser yet.';
+const NO_SCENARIOS =
+  "Open KovaaK's scenario folders first (in the stats file panel): the review needs each scenario's kind and " +
+  'target count.';
 const NO_STATS =
   'Pair this run with its stats file to review it in the browser. Runs without one (read from the HUD or the ' +
   'video alone) are not reviewed here yet.';
 const DEFAULT_MODEL = 'full_v3';
 
-/** A recording's tracks, as the worker found them, and the model that found them. */
+/** A recording's tracks and video readings, as the worker found them, and the model that found them. */
 export interface FoundTracks {
   tracks: Tracks;
+  readings: VideoReadings;
   model: string;
 }
 
@@ -26,10 +29,11 @@ export interface BrowserRun {
   job: Job;
 }
 
-/** What a report is worked out from: the recording, its video's name, its stats file and its tracks (when found). */
+/** What a report is worked out from: the recording, its video's and scenario's names, its stats file and its tracks. */
 export interface ReportParams {
   id: string;
   video: string;
+  scenario: string;
   stats: StatsCsv | null;
   found: FoundTracks | undefined;
 }
@@ -41,7 +45,7 @@ function sameParams(a: ReportParams | undefined, b: ReportParams | undefined): b
 /**
  * The review in the browser: the detector (onnxruntime-web) and the review core (Rust, as WebAssembly). A worker
  * (review.worker.ts) finds the tracks; the core on the page measures them against the stats file, so a stats file
- * paired later gives a report without finding the tracks again. Clicking runs with a stats file so far.
+ * paired later gives a report without finding the tracks again. Clicking and tracking runs with a stats file so far.
  */
 @Injectable({ providedIn: 'root' })
 export class BrowserReview implements ReviewEngine {
@@ -55,7 +59,7 @@ export class BrowserReview implements ReviewEngine {
   unavailable(id: string): string | null {
     const f = this.local.find(id);
     if (!f) return NOT_OPEN;
-    if (this.scenarios.kind(localRecording(f).scenario) === 'tracking') return TRACKING;
+    if (this.scenarios.count() === 0) return NO_SCENARIOS;
     return f.stats ? null : NO_STATS;
   }
 
@@ -65,7 +69,13 @@ export class BrowserReview implements ReviewEngine {
         const at = id();
         const f = at === undefined ? null : this.local.find(at);
         if (!f) return undefined;
-        return { id: f.id, video: f.file.name, stats: f.stats, found: this.found().get(f.id) };
+        return {
+          id: f.id,
+          video: f.file.name,
+          scenario: localRecording(f).scenario,
+          stats: f.stats,
+          found: this.found().get(f.id),
+        };
       },
       { equal: sameParams },
     );
@@ -73,12 +83,16 @@ export class BrowserReview implements ReviewEngine {
       params,
       loader: async ({ params: p }) => {
         if (!p.stats || !p.found) return null;
-        const report = await this.core.reviewClicks({
+        const facts = this.scenarios.get(p.scenario);
+        const report = await this.core.report({
           tracks: p.found.tracks,
           statsText: p.stats.text,
           video: p.video,
           stats: p.stats.name,
           run: null,
+          tracking: facts?.kind === 'tracking',
+          limit: facts?.limit ?? null,
+          ...p.found.readings,
         });
         return { ...report, review_model: p.found.model };
       },
@@ -117,7 +131,9 @@ export class BrowserReview implements ReviewEngine {
       if (m.kind === 'progress') run.job = { stage: m.stage, done: m.done, total: m.total };
       else {
         if (m.kind === 'done')
-          this.found.update((all) => new Map(all).set(id, { tracks: m.tracks, model }));
+          this.found.update((all) =>
+            new Map(all).set(id, { tracks: m.tracks, readings: m.readings, model }),
+          );
         run.job =
           m.kind === 'done'
             ? { stage: 'done', seconds: Math.round(m.seconds * 10) / 10 }

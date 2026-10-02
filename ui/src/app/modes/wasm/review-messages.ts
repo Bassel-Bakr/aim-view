@@ -19,10 +19,24 @@ export interface ReviewProgress {
   total: number;
 }
 
-/** The tracks, and the timings of the run (seconds). */
+/** The room's move on screen since the frame before (degrees), and how many tiles agreed on it. */
+export type CameraShift = [dx: number, dy: number, tiles: number];
+
+/** The camera's turn in a frame, or null where it could not be read. */
+export type CameraReading = CameraShift | null;
+
+/** What a tracking run reads from the video besides the tracks: per frame, the camera's reading and whether KovaaK's
+ * countdown bar shows (src/camera.rs). */
+export interface VideoReadings {
+  camera: CameraReading[];
+  countdown: boolean[];
+}
+
+/** The tracks, the video's readings, and the timings of the run (seconds). */
 export interface ReviewTracked {
   kind: 'done';
   tracks: Tracks;
+  readings: VideoReadings;
   seconds: number;
   keyFrames: number;
 }

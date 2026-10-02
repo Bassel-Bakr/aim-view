@@ -21,6 +21,11 @@ pub struct RawBox {
 pub struct Mask(Vec<bool>);
 
 impl Mask {
+    /// Whether each pixel (row by row, 1280 x 720) is kept.
+    pub fn kept(&self) -> &[bool] {
+        &self.0
+    }
+
     /// Everywhere but the boxes, given as shares of the frame [x0, y0, x1, y1] (python/review.py: `mask_of`).
     pub fn without(boxes: &[[f64; 4]]) -> Mask {
         let mut m = vec![true; W * H];

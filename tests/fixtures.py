@@ -5,7 +5,9 @@ The detector is the ONNX export the browser runs (detector_<model>_u8in.onnx, ON
 Usage: python tests/fixtures.py <video> [--name NAME] [--model full_v3] [--areas exclude.json]
        python tests/fixtures.py --hypot   (math.hypot cases for the Rust core's hypot)
        python tests/fixtures.py --scenarios   (every scenario file's facts, for the core's scenario reader)
-       python tests/fixtures.py --review <name>   (Python's review of a fixture's tracks, with its stats file)"""
+       python tests/fixtures.py --review <name>   (Python's review of a fixture's tracks, with its stats file)
+       python tests/fixtures.py --from-cache <review cache folder> <name>   (the same from the review app's cached
+           tracks and camera readings, for runs no fixture covers)"""
 import argparse
 import json
 import sys
@@ -69,12 +71,60 @@ def review_case(name):
     meta["stats"] = str(stats) if stats else None
     json.dump(meta, open(d / "meta.json", "w"))
     report = review.review(meta["video"], str(stats) if stats else None, out, exclude=meta["areas"])
-    print(f"{name}: {report['summary']['measured']} flicks measured, stats {stats.name if stats else None}")
+    if report["mode"] == "track":
+        track_inputs(meta["video"], out, len(tracks["frames"]))
+        print(f"{name}: tracking run, on target {report['summary']['on_target']}, stats {stats.name if stats else None}")
+    else:
+        print(f"{name}: {report['summary']['measured']} flicks measured, stats {stats.name if stats else None}")
+
+
+def cache_case(cache, name):
+    """A parity case from the review app's cache of a run (tracks.json, camera.json and report.json in `cache`):
+    Python's review again of the same tracks and camera readings, with the run's stats file and no user marks."""
+    import shutil
+    cache = Path(cache)
+    old = json.load(open(cache / "report.json"))
+    out = ROOT / "test_out" / "parity" / name / "review"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.json").unlink(missing_ok=True)
+    shutil.copyfile(cache / "tracks.json", out / "tracks.json")
+    shutil.copyfile(cache / "camera.json", out / "camera.json")      # newer than the tracks: review() reuses it
+    report = review.review(old["video"], old["stats"], out)
+    track_inputs(old["video"], out, len(json.load(open(out / "tracks.json"))["frames"]))
+    m = report["summary"].get("motion") or {}
+    print(f"{name}: on target {report['summary']['on_target']}, reversals {m.get('reversals')}")
+
+
+def track_inputs(video, out, n, pairs=40):
+    """What a tracking run's review reads from the video besides the tracks: each frame's count of countdown-teal
+    pixels (countdown_end's test, teal.json), and for camera_motion `pairs` sample frames with the frame before them,
+    gray at 1280 x 720 as camera_motion reads them (gray.raw, frames in gray.json)."""
+    import subprocess
+    W, H = review.W, review.H
+    p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", video, "-vf",
+                          f"scale={W}:{H}:flags=area,crop=300:60:490:200,format=rgb24", "-f", "rawvideo", "-"],
+                         stdout=subprocess.PIPE, bufsize=0)
+    teal = []
+    for buf in review._read(p, 300 * 60 * 3):
+        a = np.frombuffer(buf, np.uint8).reshape(60, 300, 3).astype(np.int16)
+        teal.append(int(((a[..., 0] < 60) & (a[..., 1] > 200) & (np.abs(a[..., 2] - 184) < 45)).sum()))
+    json.dump(teal, open(out / "teal.json", "w"))
+    picks = sorted({int(i) for i in np.linspace(1, n - 1, pairs)})
+    want = {i - 1 for i in picks} | set(picks)
+    p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", video, "-vf", f"scale={W}:{H}:flags=area,format=gray",
+                          "-f", "rawvideo", "-"], stdout=subprocess.PIPE, bufsize=0)
+    with open(out / "gray.raw", "wb") as f:
+        for i, buf in enumerate(review._read(p, W * H)):
+            if i in want:
+                f.write(buf)
+    json.dump(dict(frames=sorted(want), picks=picks), open(out / "gray.json", "w"))
 
 
 def main():
     if sys.argv[1:2] == ["--review"]:
         return review_case(sys.argv[2])
+    if sys.argv[1:2] == ["--from-cache"]:
+        return cache_case(sys.argv[2], sys.argv[3])
     if sys.argv[1:] == ["--hypot"]:
         return hypot_cases()
     if sys.argv[1:] == ["--scenarios"]:

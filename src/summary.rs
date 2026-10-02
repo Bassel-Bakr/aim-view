@@ -9,11 +9,13 @@ use crate::measure::{Choice, Measure};
 use crate::statistics::{mean, med, median, pstdev};
 
 /// Click: one shot a kill. Hold: the trigger is held on the target (the median kill takes more than 3 shots).
+/// Track: a tracking run, on the target all along.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     Click,
     Hold,
+    Track,
 }
 
 /// A hold-fire run's holding: the median time from reaching a target to its kill, the share of kills where the
