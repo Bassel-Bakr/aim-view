@@ -145,6 +145,13 @@ pub fn review_tracking(
         let until = (tracks.frames.len() as f64 / fps - l + 3.0).max(5.0);
         start = countdown_end(readings.countdown, fps, until).map(|i| i as i64);
     }
+    // the user's own window comes first
+    let mut limit = limit;
+    if let Some(marks) = run.as_ref() {
+        let (first, length) = run_window(marks, fps, limit);
+        start = first.or(start);
+        limit = length;
+    }
     let summary = track_summary(tracks, &file.meta, limit, Some(readings.camera), &deaths, start, KillSource::Stats);
     Ok(TrackReport {
         video: video.into(),
@@ -161,6 +168,26 @@ pub fn review_tracking(
         run,
         limit,
     })
+}
+
+/// The user's run window (start, end, length in seconds, any of them null) as the first frame and the length in
+/// seconds, or (None, limit) where it says nothing (python/review.py: `run_window`). Two of the three settle the third;
+/// a start or an end alone takes the length given (the stats file's or the scenario's).
+pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (Option<i64>, Option<f64>) {
+    let get = |k: &str| marks.get(k).and_then(serde_json::Value::as_f64);
+    let (a, b) = (get("start"), get("end"));
+    let frame = |t: f64| (t * fps).round_ties_even() as i64;
+    if let (Some(a), Some(b)) = (a, b)
+        && b > a
+    {
+        return (Some(frame(a)), Some(b - a));
+    }
+    let length = get("length").filter(|&l| l != 0.0).or(limit.filter(|&l| l != 0.0));
+    match (a, b, length) {
+        (Some(a), _, _) => (Some(frame(a)), length),
+        (None, Some(b), Some(l)) => (Some(frame((b - l).max(0.0))), length),
+        _ => (None, length),
+    }
 }
 
 /// What the page asks the core to review: the tracks, the video's name, the stats file's name and text, the user's
@@ -217,4 +244,23 @@ pub fn review_json(request: &[u8]) -> Vec<u8> {
         .and_then(review_request)
         .map_or_else(Outcome::Error, Outcome::Report);
     serde_json::to_vec(&outcome).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// python/review.py's run_window: two marks settle the third; one takes the length given.
+    #[test]
+    fn the_run_window_as_python_reads_it() {
+        let w = |m: serde_json::Value, limit| run_window(&m, 60.0, limit);
+        assert_eq!(w(json!({"start": 2.0, "end": 12.0, "length": null}), Some(60.0)), (Some(120), Some(10.0)));
+        assert_eq!(w(json!({"start": 2.0, "end": null, "length": 5.0}), Some(60.0)), (Some(120), Some(5.0)));
+        assert_eq!(w(json!({"start": 2.0, "end": null, "length": null}), Some(60.0)), (Some(120), Some(60.0)));
+        assert_eq!(w(json!({"start": null, "end": 12.0, "length": 5.0}), None), (Some(420), Some(5.0)));
+        assert_eq!(w(json!({"start": null, "end": 3.0, "length": 5.0}), None), (Some(0), Some(5.0)));
+        assert_eq!(w(json!({"start": null, "end": null, "length": null}), Some(60.0)), (None, Some(60.0)));
+        assert_eq!(w(json!({"start": 9.0, "end": 3.0, "length": 0.0}), None), (Some(540), None));
+    }
 }

@@ -14,6 +14,18 @@ for (const mode of MODE_CASES) {
       else expect(job).toEqual({ stage: 'error', error: why });
     });
 
+    it('keeps a run window for a recording it can review, and refuses one it cannot', async () => {
+      const engine = setUp(mode, ReviewEngine);
+      const marks = { start: 2, end: 30, length: null };
+      const routes = { '/api/run': { stage: 'none' } };
+      const job = await mode.finish(
+        engine.setMarks(ID, marks).catch((e: unknown) => ({ stage: 'error', error: String(e) })),
+        routes,
+      );
+      if (engine.unavailable(ID) === null) expect(job.stage).not.toBe('error');
+      else expect(job.stage).toBe('error');
+    });
+
     it('answers how a recording’s job stands', async () => {
       const engine = setUp(mode, ReviewEngine);
       const job = await mode.finish(engine.job(ID), { '/api/job': { stage: 'none' } });

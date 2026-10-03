@@ -25,13 +25,39 @@ pub const LEAST_RUN: usize = 600;
 const PROGRESS_EVERY: usize = 60;
 
 /// What to review: the video, the detector model (its _u8in export), the frames it takes at once, the scenario's
-/// target count (0: not known) and the runs to split the recording into.
+/// target count (0: not known), the runs to split the recording into, and the part of the video to track (the user's
+/// run window with a margin; None: all of it).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
     pub batch: usize,
     pub cap: usize,
     pub runs: usize,
+    pub window: Option<TimeWindow>,
+}
+
+/// A part of a video, in seconds.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, serde::Deserialize)]
+pub struct TimeWindow {
+    pub start: f64,
+    pub end: f64,
+}
+
+/// The frames to review: from `first` up to `end` (not included), as indexes in the recording.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameRange {
+    pub first: usize,
+    pub end: usize,
+}
+
+/// The frames a time window holds: from the first at or after its start to the last at or before its end; all of them
+/// for no window, or one with no frames.
+pub fn window_frames(times: &[f64], window: Option<TimeWindow>) -> FrameRange {
+    let all = FrameRange { first: 0, end: times.len() };
+    let Some(w) = window else { return all };
+    let Some(first) = times.iter().position(|&t| t >= w.start) else { return all };
+    let end = times.iter().position(|&t| t > w.end).unwrap_or(times.len());
+    if end <= first { all } else { FrameRange { first, end } }
 }
 
 /// The tracks as tracks.json keeps them: the frame rate, each frame's targets, the share of the frame the fixed map
@@ -42,6 +68,8 @@ pub struct Tracks {
     pub frames: Vec<TrackFrame>,
     pub fixed: f64,
     pub detector: String,
+    /// The part of the video tracked, when only part of it was; the frames outside are empty.
+    pub window: Option<TimeWindow>,
 }
 
 /// A review's tracks and the video's readings.
@@ -63,20 +91,27 @@ pub struct Run {
     pub frames: usize,
 }
 
-/// The recording's frames split into up to `parts` runs, each from a key frame: the cut at the key frame nearest its
-/// share of the frames, and none that would leave a run of fewer than `least` frames.
-pub fn split_runs(times: &[f64], keys: &[f64], parts: usize, least: usize) -> Vec<Run> {
-    let n = times.len();
-    let mut starts = vec![0];
+/// The recording's frames in `range` split into up to `parts` runs, each from a key frame: the first from the key frame
+/// at or before the range's first frame (decoding starts at a key frame), each cut at the key frame nearest its share of
+/// the frames, and none that would leave a run of fewer than `least` frames.
+pub fn split_runs(times: &[f64], keys: &[f64], parts: usize, least: usize, range: FrameRange) -> Vec<Run> {
+    let begin = keys
+        .iter()
+        .filter_map(|&k| times.iter().position(|&t| t == k))
+        .filter(|&i| i <= range.first)
+        .max()
+        .unwrap_or(0);
+    let n = range.end - begin;
+    let mut starts = vec![begin];
     for i in 1..parts {
-        let want = times[n * i / parts];
+        let want = times[begin + n * i / parts];
         let best = keys
             .iter()
             .copied()
-            .filter(|&k| k > times[0])
+            .filter(|&k| k > times[begin])
             .min_by(|a, b| (a - want).abs().total_cmp(&(b - want).abs()));
         let Some(at) = best.and_then(|k| times.iter().position(|&t| t == k)) else { continue };
-        if at - starts[starts.len() - 1] >= least && n - at >= least {
+        if at >= starts[starts.len() - 1] + least && range.end >= at + least {
             starts.push(at);
         }
     }
@@ -84,10 +119,10 @@ pub fn split_runs(times: &[f64], keys: &[f64], parts: usize, least: usize) -> Ve
         .map(|i| {
             let next = starts.get(i + 1).copied();
             Run {
-                from: if i > 0 { times[starts[i]] } else { 0.0 },
+                from: if starts[i] > 0 { times[starts[i]] } else { 0.0 },
                 to: next.map(|j| times[j]),
                 first: starts[i],
-                frames: next.unwrap_or(n) - starts[i],
+                frames: next.unwrap_or(range.end) - starts[i],
             }
         })
         .collect()
@@ -101,18 +136,25 @@ fn frame_bytes(info: &VideoInfo) -> usize {
 /// Reviews a recording: its tracks and readings.
 pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     let info = probe(&req.video)?;
-    let total = info.times.len();
-    if total == 0 {
+    if info.times.is_empty() {
         return Err("the video has no frames".into());
     }
+    let range = window_frames(&info.times, req.window);
+    let runs = split_runs(&info.times, &info.keys, req.runs.max(1), LEAST_RUN, range);
+    let total = runs.iter().map(|r| r.frames).sum();
     progress("looking", 0, total);
     let fixed = fixed_map(&req.video, &info)?;
-    let runs = split_runs(&info.times, &info.keys, req.runs.max(1), LEAST_RUN);
     let done = AtomicUsize::new(0);
     let parts: Vec<Result<RunPart, String>> = thread::scope(|s| {
         let running: Vec<_> = runs
             .iter()
-            .map(|run| s.spawn(|| review_run(req, &info, &fixed, run, &done, total, progress)))
+            .enumerate()
+            // a review from part way in: the first run's camera watch has nothing before its first frame
+            .map(|(i, run)| {
+                let skip = if i == 0 { run.first } else { 0 };
+                let (info, fixed, done) = (&info, &fixed, &done);
+                s.spawn(move || review_run(req, info, fixed, run, skip, done, total, progress))
+            })
             .collect();
         running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a run of the review failed".into()))).collect()
     });
@@ -130,11 +172,12 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     }
     let frames = tracker.finish();
     let readings = camera.finish(&frames);
-    if readings.countdown.len() != total {
+    if readings.countdown.len() != frames.len() {
         return Err("the camera watch's runs do not join up".into());
     }
     let share = fixed.iter().map(|&v| v as f64).sum::<f64>() / fixed.len() as f64;
-    let tracks = Tracks { fps: info.fps, frames, fixed: share, detector: format!("onnxruntime ({device})") };
+    let detector = format!("onnxruntime ({device})");
+    let tracks = Tracks { fps: info.fps, frames, fixed: share, detector, window: req.window };
     Ok(Reviewed { tracks, readings })
 }
 
@@ -186,11 +229,13 @@ struct RunPart {
 /// One run: this thread decodes and converts each frame and watches its areas; a detector thread takes the frames a
 /// batch at a time and hands their maps to the tracker in order; a camera thread reads the camera's turn. A run but
 /// the last also reads the next run's first frame, for the camera's turn into it.
+#[allow(clippy::too_many_arguments)]
 fn review_run(
     req: &Request,
     info: &VideoInfo,
     fixed: &[u8],
     run: &Run,
+    skip: usize,
     done: &AtomicUsize,
     total: usize,
     progress: Progress,
@@ -232,6 +277,7 @@ fn review_run(
         });
         let watching = s.spawn(move || {
             let mut camera = CameraWatch::for_recording(fixed);
+            camera.skip(skip);
             let mut rgb = vec![0u8; rgb_bytes];
             for (luma, rows) in camera_frames {
                 rgb[rows_from..rows_to].copy_from_slice(&rows);
@@ -299,7 +345,8 @@ mod tests {
     #[test]
     fn runs_as_the_browser_splits_them() {
         let (times, keys) = video(6038, 240);
-        let runs = split_runs(&times, &keys, 2, 600);
+        let all = |n| FrameRange { first: 0, end: n };
+        let runs = split_runs(&times, &keys, 2, 600, all(6038));
         assert_eq!(
             runs,
             vec![
@@ -308,9 +355,26 @@ mod tests {
             ]
         );
         let (times, keys) = video(900, 240);
-        assert_eq!(split_runs(&times, &keys, 2, 600).len(), 1);
+        assert_eq!(split_runs(&times, &keys, 2, 600, all(900)).len(), 1);
         let (times, keys) = video(9000, 300);
-        let firsts: Vec<usize> = split_runs(&times, &keys, 3, 600).iter().map(|r| r.first).collect();
+        let firsts: Vec<usize> = split_runs(&times, &keys, 3, 600, all(9000)).iter().map(|r| r.first).collect();
         assert_eq!(firsts, vec![0, 3000, 6000]);
+    }
+
+    /// A window: from the key frame before it to its end, as the browser splits it (split-runs.spec.ts).
+    #[test]
+    fn runs_in_a_window_as_the_browser_splits_them() {
+        let (times, keys) = video(6000, 240);
+        let range = window_frames(&times, Some(TimeWindow { start: 30.0, end: 80.0 }));
+        assert_eq!(range, FrameRange { first: 1800, end: 4801 });
+        assert_eq!(
+            split_runs(&times, &keys, 2, 600, range),
+            vec![
+                Run { from: times[1680], to: Some(times[3120]), first: 1680, frames: 1440 },
+                Run { from: times[3120], to: None, first: 3120, frames: 1681 },
+            ]
+        );
+        let all = FrameRange { first: 0, end: 600 };
+        assert_eq!(window_frames(&times[..600], Some(TimeWindow { start: 50.0, end: 60.0 })), all);
     }
 }

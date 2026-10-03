@@ -245,6 +245,13 @@ impl CameraWatch {
         VideoReadings { camera: self.readings(frames), countdown: self.countdown }
     }
 
+    /// Frames not reviewed before the first one (a review from part way in): no reading, no countdown. Before any
+    /// frame is added.
+    pub fn skip(&mut self, frames: usize) {
+        self.shifts.extend(std::iter::repeat_n([None; TILES], frames));
+        self.countdown.extend(std::iter::repeat_n(false, frames));
+    }
+
     /// What this run of the recording read, to join with the other runs' (a recording split into runs, reviewed in
     /// workers at once, has a watch for each).
     pub fn part(self) -> CameraPart {

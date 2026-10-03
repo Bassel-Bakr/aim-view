@@ -359,6 +359,14 @@ export interface Tracks {
   /** The share of the screen found fixed (crosshair, HUD), and what found the targets. */
   fixed?: number;
   detector?: string;
+  /** The part of the video tracked, when only part of it was (the user's run window); the frames outside are empty. */
+  window?: TimeWindow | null;
+}
+
+/** A part of a video, in seconds. */
+export interface TimeWindow {
+  start: number;
+  end: number;
 }
 
 export type JobStage =

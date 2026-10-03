@@ -19,7 +19,7 @@ import type { InferenceSession } from 'onnxruntime-web/wasm';
 import { CameraLink } from './camera-link';
 import { Core, CoreBlock, matrixNumber } from './core';
 import { BrowserDevice, FrameFormat, ReviewMessage, ReviewRequest } from './review-messages';
-import { splitRuns } from './split-runs';
+import { splitRuns, windowFrames } from './split-runs';
 
 /** WebGPU's flag constants, which TypeScript's worker library leaves out (it has WebGPU's types). */
 declare const GPUBufferUsage: Readonly<
@@ -267,8 +267,9 @@ async function review(req: ReviewRequest): Promise<void> {
   if (!track) throw new Error('The file has no video');
   const fps = frameRate((await track.computePacketStats(240)).averagePacketRate);
   const { times, keys } = await frameTimes(track);
-  const total = times.length;
-  const run = splitRuns(times, keys, req.runs, LEAST_RUN)[req.run];
+  const runs = splitRuns(times, keys, req.runs, LEAST_RUN, windowFrames(times, req.window));
+  const total = runs.reduce((a, r) => a + r.frames, 0);
+  const run = runs[req.run];
   if (!run) {
     say({ kind: 'part', part: null });
     return;
@@ -327,7 +328,9 @@ async function review(req: ReviewRequest): Promise<void> {
   core.free(fixedBlock);
   if (!format) throw new Error('The video has no frames');
   const camera = new CameraLink(req.camera);
-  camera.start({ kind: 'start', coreUrl: req.coreUrl, fixed, ...format });
+  // a review from part way in: the first run's camera watch has nothing before its first frame
+  const skip = req.run === 0 ? run.first : 0;
+  camera.start({ kind: 'start', coreUrl: req.coreUrl, fixed, skip, ...format });
   // the fixed map once for each frame of a call: the detector takes up to req.batch frames at once
   const fixedAll = (k: number) => {
     const all = new Uint8Array(k * W * H);
@@ -445,11 +448,15 @@ async function review(req: ReviewRequest): Promise<void> {
   };
   const inFlight: Promise<unknown>[] = [];
   // the run's frames, then the next run's first (a frame within half a frame of the next run's time)
+  // the run's frames, then (but for the last run) the next run's first; decoding stops at the frame after them
   const half = 0.5 / fps;
-  const end = run.to === null ? Infinity : run.to + half;
-  const videoFrames = samples.samples(run.from, end)[Symbol.asyncIterator]();
+  const after = times[run.first + run.frames + (run.to === null ? 0 : 1)];
+  const videoFrames = samples
+    .samples(run.from, after === undefined ? Infinity : after - half)
+    [Symbol.asyncIterator]();
   let next = videoFrames.next();
   let nextRunRead = false;
+  let taken = 0;
   let detecting: Promise<void> = Promise.resolve();
   for (;;) {
     const got = await next;
@@ -460,14 +467,18 @@ async function review(req: ReviewRequest): Promise<void> {
       s.close();
       continue;
     }
-    if (run.to !== null && s.timestamp > run.to - half) {
-      await convert(s);
-      nextRunRead = true;
+    if (taken === run.frames) {
+      if (run.to === null) s.close();
+      else {
+        await convert(s);
+        nextRunRead = true;
+      }
       const rest = await next;
       if (!rest.done) rest.value.close();
       await videoFrames.return?.();
       break;
     }
+    taken++;
     await convert(s);
     core.x.tracker_watch(tracker, rgb.ptr);
     waiting.set(core.bytes(rgb), count++ * frameBytes);

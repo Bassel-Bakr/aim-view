@@ -17,6 +17,18 @@
         {{ actionLabel() }}
       </button>
     }
+    @if (!review.unavailable()) {
+      <button
+        type="button"
+        aria-controls="run-window"
+        appButton
+        title="Where the run starts and ends: the review measures only that part"
+        [attr.aria-expanded]="windowOpen()"
+        (click)="toggleWindow()"
+      >
+        {{ windowLabel() }}
+      </button>
+    }
     <button
       type="button"
       aria-controls="stats-file"
@@ -53,6 +65,9 @@
 }
 @if (statsOpen()) {
   <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
+}
+@if (windowOpen()) {
+  <app-run-window (closed)="toggleWindow()" />
 }
 @if (progress(); as p) {
   <div class="progress">

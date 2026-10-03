@@ -11,7 +11,8 @@ use aimview::scenario::{Facts, Kind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::review::{Request, review};
+use crate::review::{Request, TimeWindow, review};
+use crate::run_window::{RunMarks, covers};
 
 const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];
 /// Stats files offered to pair with a recording.
@@ -588,9 +589,12 @@ impl Library {
         let out = self.review_dir(id).join("models").join(&model);
         let scenario = parse_name(&video.with_extension("mp4").file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
             .map(|(s, _, _)| s.to_lowercase());
-        let cap = scenario.and_then(|s| self.facts().get(&s).and_then(|f| f.targets)).unwrap_or(0);
+        let facts = scenario.and_then(|s| self.facts().get(&s).cloned());
+        let cap = facts.as_ref().and_then(|f| f.targets).unwrap_or(0);
         let runs = if std::thread::available_parallelism().map_or(1, |n| n.get()) >= 8 { 2 } else { 1 };
-        let req = Request { video, model: self.model_file(&model), batch: 4, cap, runs };
+        // the user's run window: only its part of the video is tracked
+        let window = RunMarks::read(&self.review_dir(id)).tracked(facts.and_then(|f| f.limit));
+        let req = Request { video, model: self.model_file(&model), batch: 4, cap, runs, window };
         let job = Arc::new(Mutex::new(Job::new("starting", &model)));
         jobs.insert(id.to_string(), job.clone());
         drop(jobs);
@@ -619,6 +623,30 @@ impl Library {
         Ok(first)
     }
 
+    /// The user's run window for the recording (all three null when none is marked).
+    pub fn marks(&self, id: &str) -> Answer<Value> {
+        self.resolve(id)?;
+        Ok(json!(RunMarks::read(&self.review_dir(id))))
+    }
+
+    /// Keeps the run window ({start, end, length}; all null forgets it). The report reads it when it is shown; a review
+    /// that tracked less of the video than the new window needs is made again.
+    pub fn set_marks(self: &Arc<Self>, id: &str, body: &Value) -> Answer<Value> {
+        let video = self.resolve(id)?;
+        let marks = RunMarks::parse(body).map_err(Failure::bad)?;
+        marks.save(&self.review_dir(id))?;
+        let (shown, dir) = self.shown(id);
+        let Some(tracks) = read_json::<Value>(&dir.join("tracks.json")) else { return Ok(json!(Job::new("none", ""))) };
+        let tracked: Option<TimeWindow> = serde_json::from_value(tracks["window"].clone()).unwrap_or(None);
+        let scenario = parse_name(&video.with_extension("mp4").file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+            .map(|(s, _, _)| s.to_lowercase());
+        let limit = scenario.and_then(|s| self.facts().get(&s).and_then(|f| f.limit));
+        if covers(tracked, marks.tracked(limit)) {
+            return Ok(json!(Job::new("done", &shown)));
+        }
+        self.analyse(id, true)
+    }
+
     /// The shown review's tracks (tracks.json), or None.
     pub fn tracks(&self, id: &str) -> Option<Vec<u8>> {
         std::fs::read(self.shown(id).1.join("tracks.json")).ok()
@@ -641,7 +669,7 @@ impl Library {
             "statsText": String::from_utf8_lossy(&stats_text),
             "video": video.file_name().map(|n| n.to_string_lossy().into_owned()),
             "stats": stats.file_name().map(|n| n.to_string_lossy().into_owned()),
-            "run": null,
+            "run": Some(RunMarks::read(&self.review_dir(id))).filter(RunMarks::is_set),
             "tracking": facts.as_ref().is_some_and(|f| f.kind == Kind::Tracking),
             "limit": facts.as_ref().and_then(|f| f.limit),
             "camera": readings["camera"],

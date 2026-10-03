@@ -273,6 +273,15 @@ pub unsafe extern "C" fn camera_add(c: *mut crate::camera::CameraWatch, yuv: *co
     c.add(gray, unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
 }
 
+/// Frames not reviewed before the first (a review from part way in): `CameraWatch::skip`.
+///
+/// # Safety
+/// `c` from `camera_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_skip(c: *mut crate::camera::CameraWatch, frames: usize) {
+    unsafe { &mut *c }.skip(frames);
+}
+
 /// The run's part of the watch as JSON (src/camera.rs: `CameraPart`), and frees the watch. Free the result as
 /// `tracker_finish`'s.
 ///

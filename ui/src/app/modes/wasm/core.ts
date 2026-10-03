@@ -27,6 +27,7 @@ export interface CoreExports {
   camera_add(camera: number, yuv: number, rgb: number): void;
   camera_finish(camera: number, frames: number, len: number): number;
   camera_part(camera: number): number;
+  camera_skip(camera: number, frames: number): void;
   camera_add_part(camera: number, part: number, len: number): number;
 }
 

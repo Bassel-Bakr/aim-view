@@ -1,0 +1,63 @@
+<section class="panel" id="run-window" aria-labelledby="run-window-title">
+  <header class="head">
+    <h3 class="title" id="run-window-title">Run window</h3>
+    <button type="button" appButton (click)="closed.emit()">Close</button>
+  </header>
+  <p class="intro">
+    Mark where the run starts and ends: the review measures only that part. In the browser and the
+    desktop app a new review also tracks only it, with a second either side, so menus and waiting
+    around the run are skipped. A start or an end alone takes the stats file's or the scenario's
+    length.
+  </p>
+  <div class="fields">
+    <label class="field">
+      <span class="field-label">Start</span>
+      <input
+        class="time"
+        #a
+        type="text"
+        inputmode="decimal"
+        placeholder="m:ss.s"
+        [value]="start()"
+        (input)="start.set(a.value)"
+      />
+    </label>
+    <button type="button" appButton (click)="markStart()">Here</button>
+    <label class="field">
+      <span class="field-label">End</span>
+      <input
+        class="time"
+        #b
+        type="text"
+        inputmode="decimal"
+        placeholder="m:ss.s"
+        [value]="end()"
+        (input)="end.set(b.value)"
+      />
+    </label>
+    <button type="button" appButton (click)="markEnd()">Here</button>
+  </div>
+  @if (problem(); as why) {
+    <p class="hint">{{ why }}</p>
+  }
+  <div class="actions">
+    <button
+      type="button"
+      appButton
+      intent="primary"
+      [disabled]="!!problem() || review.running()"
+      (click)="save()"
+    >
+      Save
+    </button>
+    <button
+      type="button"
+      appButton
+      title="Forget the marks: the review finds the run itself"
+      [disabled]="review.running()"
+      (click)="clear()"
+    >
+      Automatic
+    </button>
+  </div>
+</section>

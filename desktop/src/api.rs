@@ -71,6 +71,8 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         (false, "/api/job") => id().map(|id| lib.job(&id)),
         (true, "/api/analyse") => id().and_then(|id| lib.analyse(&id, query("again").as_deref() == Some("1"))),
         (false, "/api/report") => id().and_then(|id| lib.report(&id)),
+        (false, "/api/run") => id().and_then(|id| lib.marks(&id)),
+        (true, "/api/run") => id().and_then(|id| lib.set_marks(&id, &body())),
         (false, "/api/stats") => id().and_then(|id| lib.stats_info(&id, query("q").as_deref())),
         (true, "/api/stats") => id().and_then(|id| lib.set_stats(&id, &body())),
         (true, "/api/upload") => lib.upload(&query("name").unwrap_or_default(), query("id").as_deref(), req.body()),

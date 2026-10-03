@@ -156,8 +156,15 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   1e-8 degrees on the same frames (`--test camera_parity`). Two inputs differ from Python's on purpose: the camera
   reads the frame's Y plane, where Python reads ffmpeg's `format=gray` (which goes through the colors: readings differ
   by a median 0.001 degrees), and the countdown test does not depend on the HUD color (Python's looks for teal only).
-  Not in the browser yet: runs without a stats file (KovaaK's HUD, Aim Lab's, the video alone), and the user's marks
-  (run window, faint cut-off, areas).
+  The run window (the run page's Run window: start and end, typed or from the playhead) works in every mode: the server
+  keeps it as run.json and measures again; the browser (SavedMarks) and the desktop app (run_window.rs, run.json) also
+  track only the window with a second either side (split-runs.ts `trackedWindow`, `windowFrames`: from the key frame
+  before it; the first run's tracker and camera watch start part way in, and the joins fill the frames before it with
+  empty ones), and track again when a new window reaches past the tracked one. The core measures a tracking run from it
+  as Python does (review.rs `run_window`). av1 with 0:20 to 0:40: the same boxes and camera readings inside the window
+  as the whole review, 7.2 s against 14.2 s in the browser, 6.7 s against 10.4 s natively.
+  Not in the browser yet: runs without a stats file (KovaaK's HUD, Aim Lab's, the video alone), and the user's other
+  marks (faint cut-off, areas).
 - The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
   (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
   (desktop/src/api.rs over a custom protocol: no network port, nothing outside the app reaches it; library.rs: the VODs
@@ -171,7 +178,7 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
   python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
-  DirectML.dll in the installer, the user's marks, runs without a stats file.
+  DirectML.dll in the installer, the user's other marks (faint cut-off, areas), runs without a stats file.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

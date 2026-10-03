@@ -1,5 +1,5 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
-import { errorMessage, Job } from '../api';
+import { errorMessage, Job, RunMarks } from '../api';
 import { ReviewEngine } from '../platform/review-engine';
 import { Library } from './library';
 
@@ -41,6 +41,9 @@ export class Review {
     this.report.hasValue() && this.report.value() ? this.reviewable() : undefined,
   );
 
+  /** The user's run window for the open recording; null when none is marked. */
+  readonly marks = this.engine.marks(this.reviewable);
+
   private watcher = 0;
 
   constructor() {
@@ -58,6 +61,20 @@ export class Review {
     this.watcher++;
     try {
       this.follow(await this.engine.start(id, again));
+    } catch (e) {
+      this.job.set({ stage: 'error', error: errorMessage(e) });
+    }
+  }
+
+  /** Keeps the open recording's run window (null: none), and follows the review it measures again or makes again. */
+  async saveMarks(marks: RunMarks | null): Promise<void> {
+    const id = this.library.selectedId();
+    if (!id) return;
+    this.watcher++;
+    try {
+      const job = await this.engine.setMarks(id, marks);
+      this.marks.reload();
+      this.follow(job);
     } catch (e) {
       this.job.set({ stage: 'error', error: errorMessage(e) });
     }

@@ -1,13 +1,15 @@
 import { computed, inject, Injectable, resource, ResourceRef, signal } from '@angular/core';
-import { Job, Report, Tracks } from '../../api';
+import { Job, Report, RunMarks, Tracks } from '../../api';
 import { ModelCatalog } from '../../platform/model-catalog';
 import { ReviewEngine } from '../../platform/review-engine';
 import { LocalFile, LocalFiles, localRecording } from '../web-files/local-files';
-import { SavedReview, SavedReviews } from '../web-files/saved-reviews';
+import { SavedMarks } from '../web-files/saved-marks';
+import { fingerprint, SavedReview, SavedReviews } from '../web-files/saved-reviews';
 import { ScenarioFacts } from '../web-files/scenario-facts';
 import { StatsCsv } from '../web-files/stats-csv';
 import { CoreModule } from './core-module';
 import { BrowserDevice, ReviewMessage, ReviewRequest, RunPart } from './review-messages';
+import { covers, trackedWindow } from './split-runs';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
 const NO_SCENARIOS =
@@ -41,11 +43,15 @@ export interface ShownReview {
   found: SavedReview | undefined;
 }
 
-/** What a report is worked out from: the review shown, the video's and scenario's names, and the stats file. */
+/**
+ * What a report is worked out from: the review shown, the video's and scenario's names, the stats file, and the user's
+ * run window.
+ */
 export interface ReportParams extends ShownReview {
   video: string;
   scenario: string;
   stats: StatsCsv | null;
+  marks: RunMarks | null;
 }
 
 function sameShown(a: ShownReview | undefined, b: ShownReview | undefined): boolean {
@@ -53,7 +59,7 @@ function sameShown(a: ShownReview | undefined, b: ShownReview | undefined): bool
 }
 
 function sameParams(a: ReportParams | undefined, b: ReportParams | undefined): boolean {
-  return sameShown(a, b) && a?.stats === b?.stats;
+  return sameShown(a, b) && a?.stats === b?.stats && a?.marks === b?.marks;
 }
 
 /** A review in memory: the recording's and the model's. */
@@ -73,6 +79,7 @@ export class BrowserReview implements ReviewEngine {
   private readonly models = inject(ModelCatalog);
   private readonly core = inject(CoreModule);
   private readonly saved = inject(SavedReviews);
+  private readonly savedMarks = inject(SavedMarks);
   private readonly runs = new Map<string, BrowserRun>();
   /** The reviews in memory, by foundKey: made here, or read from the saved reviews. */
   private readonly found = signal<ReadonlyMap<string, SavedReview>>(new Map());
@@ -104,6 +111,7 @@ export class BrowserReview implements ReviewEngine {
           video: f.file.name,
           scenario: localRecording(f).scenario,
           stats: f.stats,
+          marks: this.savedMarks.all().get(fingerprint(f.file)) ?? null,
         };
       },
       { equal: sameParams },
@@ -120,7 +128,7 @@ export class BrowserReview implements ReviewEngine {
           statsText: p.stats.text,
           video: p.video,
           stats: p.stats.name,
-          run: null,
+          run: p.marks,
           tracking: facts?.kind === 'tracking',
           limit: facts?.limit ?? null,
           ...found.readings,
@@ -185,7 +193,10 @@ export class BrowserReview implements ReviewEngine {
     if (why) return { stage: 'error', error: why };
     const local = this.local.find(id);
     if (!local) return { stage: 'error', error: NOT_OPEN };
-    const cap = this.scenarios.get(localRecording(local).scenario)?.targets ?? null;
+    const facts = this.scenarios.get(localRecording(local).scenario);
+    const cap = facts?.targets ?? null;
+    // the user's run window: only its part of the video is tracked
+    const window = trackedWindow(await this.savedMarks.load(local.file), facts?.limit ?? null);
     const list = this.models.list.hasValue() ? this.models.list.value() : undefined;
     const model = this.chosenModel();
     const device: BrowserDevice = list?.device === 'wasm' ? 'wasm' : 'webgpu';
@@ -216,6 +227,7 @@ export class BrowserReview implements ReviewEngine {
         frames: joined.frames,
         fixed: first.fixed.reduce((a, v) => a + v, 0) / first.fixed.length,
         detector: `onnxruntime-web (${DEVICE_NAMES[first.device]})`,
+        window,
       };
       const review: SavedReview = { tracks, readings: joined.readings, model };
       this.found.update((all) => new Map(all).set(foundKey(id, model), review));
@@ -235,6 +247,7 @@ export class BrowserReview implements ReviewEngine {
         file: local.file,
         run: i,
         runs,
+        window,
         coreUrl: new URL('core/aimview.wasm', base).href,
         ortPath: new URL('ort/', base).href,
         modelUrl: new URL(`models/detector_${model}_u8in.onnx`, base).href,
@@ -269,6 +282,30 @@ export class BrowserReview implements ReviewEngine {
       worker.postMessage(request, [channel.port1]);
     }
     return run.job;
+  }
+
+  marks(id: () => string | undefined): ResourceRef<RunMarks | null | undefined> {
+    return resource({
+      params: () => {
+        const at = id();
+        return at === undefined ? undefined : (this.local.find(at)?.file ?? undefined);
+      },
+      loader: ({ params: file }) => this.savedMarks.load(file),
+    });
+  }
+
+  /** Keeps the window; a review that tracked less of the video than the new window needs is made again. */
+  async setMarks(id: string, marks: RunMarks | null): Promise<Job> {
+    const f = this.local.find(id);
+    if (!f) throw new Error(NOT_OPEN);
+    await this.savedMarks.save(f.file, marks);
+    const { model, found } = this.shown(f);
+    const review = found ?? (model ? await this.restore(id, model) : null);
+    if (!review) return { stage: 'none' };
+    const limit = this.scenarios.get(localRecording(f).scenario)?.limit ?? null;
+    return covers(review.tracks.window ?? null, trackedWindow(marks, limit))
+      ? { stage: 'done' }
+      : this.start(id);
   }
 
   async job(id: string): Promise<Job> {

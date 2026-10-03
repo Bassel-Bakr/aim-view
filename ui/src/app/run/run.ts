@@ -16,6 +16,7 @@ import { HEADLINE_TILES, trackStats } from './report/track-stats';
 import { TrackReport } from './report/track-report';
 import { Review } from '../services/review';
 import { RunHeader } from './run-header/run-header';
+import { formatClock, RunWindow } from './run-window/run-window';
 import { SpeedChart } from './speed-chart/speed-chart';
 import { StatsFile } from './stats-file/stats-file';
 import { Timeline } from './timeline/timeline';
@@ -57,6 +58,7 @@ const STAGES: Record<JobStage, string> = {
     ClickSide,
     Headline,
     KillLanes,
+    RunWindow,
     TrackReport,
     Button,
   ],
@@ -108,6 +110,14 @@ export class Run {
       : tiles;
   });
   protected readonly statsOpen = signal(false);
+  protected readonly windowOpen = signal(false);
+  /** The run window's button: the marked times, or what it does when none are. */
+  protected readonly windowLabel = computed(() => {
+    const m = this.review.marks.hasValue() ? this.review.marks.value() : null;
+    if (!m || (m.start == null && m.end == null)) return 'Run window';
+    const at = (s: number | null) => (s == null ? '…' : formatClock(s));
+    return `Run ${at(m.start)}–${at(m.end)}`;
+  });
   /** The recording's video, which may still be being remuxed into MP4. */
   protected readonly video = computed(() => this.library.source.video(this.recording().id));
   /** Where the player reads the video; null while it is being remuxed. */
@@ -167,6 +177,10 @@ export class Run {
 
   protected startReview(): void {
     void this.review.analyse(this.recording().analysed && !this.unmeasured());
+  }
+
+  protected toggleWindow(): void {
+    this.windowOpen.update((open) => !open);
   }
 
   protected toggleStats(): void {

@@ -1,18 +1,19 @@
-import { JobStage } from '../../api';
+import { JobStage, TimeWindow } from '../../api';
 
 /** Where the browser runs the detector: the GPU (WebGPU) or the CPU (WebAssembly). */
 export type BrowserDevice = 'webgpu' | 'wasm';
 
 /**
  * What the review worker is asked: a recording's file, which of its runs to review (`run` of `runs`: split-runs.ts;
- * each run has a worker of its own), where the core, the detector runtime and the model are, where to run the
- * detector and how many frames it takes at once, the scenario's target count (null: not known), and the port to the
- * camera worker.
+ * each run has a worker of its own) and the part of it to review (null: all of it), where the core, the detector
+ * runtime and the model are, where to run the detector and how many frames it takes at once, the scenario's target
+ * count (null: not known), and the port to the camera worker.
  */
 export interface ReviewRequest {
   file: Blob;
   run: number;
   runs: number;
+  window: TimeWindow | null;
   coreUrl: string;
   ortPath: string;
   modelUrl: string;
@@ -30,11 +31,15 @@ export interface FrameFormat {
   full: number;
 }
 
-/** The camera worker's start: where the core is, the frames' format, and the fixed map (1280 x 720). */
+/**
+ * The camera worker's start: where the core is, the frames' format, the fixed map (1280 x 720), and the frames before
+ * the review's first, which it does not see (a review from part way in; 0 but for the first run of such a review).
+ */
 export interface CameraStart extends FrameFormat {
   kind: 'start';
   coreUrl: string;
   fixed: Uint8Array;
+  skip: number;
 }
 
 /**

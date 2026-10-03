@@ -75,8 +75,12 @@ impl Tracker {
     }
 
     /// The next run's part, after the frames the tracker has: each frame's boxes kept or dropped as `push_boxes`
-    /// does, and its looks after the ones before. Returns the frames added.
+    /// does, and its looks after the ones before. A part that starts later (a review from part way in) has empty frames
+    /// before it. Returns the frames the part added.
     pub fn add_part(&mut self, part: TrackPart) -> usize {
+        while self.raw.len() < part.watch.from() {
+            self.push_boxes(&[]);
+        }
         for raw in &part.raw {
             self.push_boxes(raw);
         }
@@ -89,5 +93,30 @@ impl Tracker {
         let shows = self.watch.showing();
         reopen(&self.raw, &mut self.frames, &self.areas, &shows, self.cap);
         link(&self.frames)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::{H, W};
+
+    /// A review from part way in: its part joins with empty frames before it, so the frames keep their places.
+    #[test]
+    fn a_part_from_part_way_in_keeps_the_frames_in_place() {
+        let rgb = vec![0u8; W * H * 3];
+        let target = RawBox { cx: 640.0, cy: 300.0, w: 20.0, h: 20.0, score: 0.9 };
+        let mut run = Tracker::kovobs(0);
+        run.start_at(5);
+        for _ in 0..3 {
+            run.watch(&rgb);
+            run.push_boxes(&[target]);
+        }
+        let mut joined = Tracker::kovobs(0);
+        assert_eq!(joined.add_part(run.part()), 3);
+        let frames = joined.finish();
+        assert_eq!(frames.len(), 8);
+        assert!(frames[..5].iter().all(|f| f.t.is_empty()));
+        assert!(frames[5..].iter().all(|f| f.t.len() == 1));
     }
 }

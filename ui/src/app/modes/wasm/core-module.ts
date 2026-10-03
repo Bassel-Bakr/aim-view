@@ -87,24 +87,23 @@ export class CoreModule {
     core.bytes(fixed).set(parts[0].fixed);
     const camera = core.x.camera_new(fixed.ptr);
     core.free(fixed);
-    let frames = 0;
     let joined = true;
     let cameraFrames = 0;
     for (const p of parts) {
       joined &&=
         withText(p.track, (ptr, len) => core.x.tracker_add_part(tracker, ptr, len)) === p.frames;
-      frames += p.frames;
       cameraFrames = withText(p.camera, (ptr, len) => core.x.camera_add_part(camera, ptr, len));
     }
     const framesText = core.takeText(core.x.tracker_finish(tracker));
     const readingsText = core.takeText(
       withText(framesText, (ptr, len) => core.x.camera_finish(camera, ptr, len)),
     );
-    if (!joined || cameraFrames !== frames) throw new Error("The review's runs do not join up");
-    return {
-      frames: JSON.parse(framesText) as TrackFrame[],
-      readings: JSON.parse(readingsText) as VideoReadings,
-    };
+    const frames = JSON.parse(framesText) as TrackFrame[];
+    // a review from part way in has empty frames before its first, in the tracks and the camera's readings alike
+    if (!joined || cameraFrames !== frames.length) {
+      throw new Error("The review's runs do not join up");
+    }
+    return { frames, readings: JSON.parse(readingsText) as VideoReadings };
   }
 
   /** A run's report from its tracks and stats file: src/review.rs. */

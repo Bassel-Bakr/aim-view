@@ -60,6 +60,7 @@ async function start(t: CameraStart): Promise<Watch> {
   core.bytes(fixed).set(t.fixed);
   const camera = core.x.camera_new(fixed.ptr);
   core.free(fixed);
+  if (t.skip) core.x.camera_skip(camera, t.skip);
   const rows = core.x.camera_rgb_rows();
   return {
     core,

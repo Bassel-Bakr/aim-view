@@ -3,6 +3,7 @@
 
 @mixin tokens {
   --stat-size: 18px;
+  --time-field-width: 96px;
   --headline-columns: repeat(auto-fit, minmax(150px, 1fr));
   --side-width: 400px;
   --side-min-width: 320px;

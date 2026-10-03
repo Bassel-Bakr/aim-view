@@ -54,13 +54,17 @@ impl TryFrom<LookBits> for Look {
 }
 
 /// Watches a recording's excluded areas frame by frame. A recording split into runs (reviewed in workers at once) has
-/// a watch for each run, each started at its run's first frame and joined in order after.
+/// a watch for each run, each started at its run's first frame and joined in order after. A recording reviewed only
+/// from part way in (the user's run window) starts its first watch there: the frames before it have no looks.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AreaWatch {
     boxes: Vec<[usize; 4]>,
     steps: Vec<usize>,
     looks: Vec<Vec<Look>>,
     frames: usize,
+    /// The first frame watched: frames before it were not reviewed.
+    #[serde(default)]
+    from: usize,
 }
 
 impl AreaWatch {
@@ -74,18 +78,33 @@ impl AreaWatch {
             })
             .collect();
         let steps = boxes.iter().map(|&[x0, y0, x1, y1]| ((x1 - x0).max(y1 - y0) / 64).max(1)).collect();
-        AreaWatch { looks: vec![Vec::new(); boxes.len()], boxes, steps, frames: 0 }
+        AreaWatch { looks: vec![Vec::new(); boxes.len()], boxes, steps, frames: 0, from: 0 }
     }
 
     /// For a run of the recording that starts at frame `first`, before its first frame: it looks at the frames the
     /// whole recording's watch would (every `STEP`th from the start), so its looks follow on from the run before's.
     pub fn start_at(&mut self, first: usize) {
         self.frames = first;
+        if self.unwatched() {
+            self.from = first;
+        }
+    }
+
+    /// The first frame watched: for a run of the recording, the frame it started at.
+    pub fn from(&self) -> usize {
+        self.from
+    }
+
+    fn unwatched(&self) -> bool {
+        self.looks.iter().all(Vec::is_empty)
     }
 
     /// The looks of the run after this one (its watch started where this one stopped).
     pub fn join(&mut self, next: AreaWatch) {
         assert_eq!(self.boxes, next.boxes, "another recording's areas");
+        if self.unwatched() {
+            self.from = next.from;
+        }
         for (looks, more) in self.looks.iter_mut().zip(next.looks) {
             looks.extend(more);
         }
@@ -156,8 +175,12 @@ impl AreaWatch {
         if numpy_median(&pick(true)) < 0.5 || numpy_median(&pick(false)) >= 0.2 {
             return None;
         }
-        let seen: Vec<bool> =
-            matched.iter().flat_map(|&m| std::iter::repeat_n(m >= 0.35, STEP)).take(self.frames).collect();
+        // the frames before the first look (none unless the review started part way in) are not excluded
+        let skipped = self.from.div_ceil(STEP) * STEP;
+        let seen: Vec<bool> = std::iter::repeat_n(false, skipped)
+            .chain(matched.iter().flat_map(|&m| std::iter::repeat_n(m >= 0.35, STEP)))
+            .take(self.frames)
+            .collect();
         Some(dilate_line(&seen, 4))
     }
 }

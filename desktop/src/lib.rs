@@ -7,6 +7,7 @@ pub mod detector;
 pub mod ffmpeg;
 pub mod library;
 pub mod review;
+pub mod run_window;
 pub mod video;
 
 use std::sync::Arc;
