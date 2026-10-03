@@ -138,4 +138,79 @@
       of its edge, the crosshair was on it.
     </p>
   </figure>
+
+  @let am = around();
+  <figure class="chart">
+    <figcaption class="chart-title">Where you sat around the moving bot</figcaption>
+    @if (am.reason) {
+      <p class="chart-note">{{ am.reason }}</p>
+    } @else {
+      <svg
+        class="chart-svg"
+        role="img"
+        aria-label="Where the crosshair sat around the bot while it moved, the bot moving to the right"
+        [attr.viewBox]="'0 0 ' + am.box.width + ' ' + am.box.height"
+      >
+        <line
+          class="grid"
+          [attr.x1]="am.box.left"
+          [attr.x2]="am.box.width - am.box.right"
+          [attr.y1]="am.center.y"
+          [attr.y2]="am.center.y"
+        />
+        <line
+          class="grid"
+          [attr.x1]="am.center.x"
+          [attr.x2]="am.center.x"
+          [attr.y1]="am.box.top"
+          [attr.y2]="am.box.height - am.box.bottom"
+        />
+        @for (c of am.cells; track $index) {
+          <rect
+            class="cell"
+            [attr.x]="c.x"
+            [attr.y]="c.y"
+            [attr.width]="c.size"
+            [attr.height]="c.size"
+            [attr.fill-opacity]="c.shade"
+          >
+            <title>{{ c.title }}</title>
+          </rect>
+        }
+        <circle
+          class="edge-ring"
+          [attr.cx]="am.center.x"
+          [attr.cy]="am.center.y"
+          [attr.r]="am.radius"
+        />
+        @if (am.usual; as u) {
+          <path
+            class="usual"
+            [attr.d]="'M' + (u.x - 6) + ',' + u.y + 'h12M' + u.x + ',' + (u.y - 6) + 'v12'"
+          />
+        }
+        <text class="label" text-anchor="start" [attr.x]="am.box.left" [attr.y]="am.center.y - 6">
+          behind
+        </text>
+        <text
+          class="label"
+          text-anchor="end"
+          [attr.x]="am.box.width - am.box.right"
+          [attr.y]="am.center.y - 6"
+        >
+          ahead
+        </text>
+        @for (t of am.xTicks; track t.label) {
+          <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="am.box.height - 6">
+            {{ t.label }}
+          </text>
+        }
+      </svg>
+      <p class="chart-note">
+        Every moment the bot moved and you were with it, turned so it moves to the right. The
+        darker, the more time there. The circle is its usual edge; the cross, your usual place along
+        its motion.
+      </p>
+    }
+  </figure>
 </div>

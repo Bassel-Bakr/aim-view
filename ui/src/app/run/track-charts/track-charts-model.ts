@@ -1,7 +1,14 @@
 import { TrackReport, Tracks } from '../../api';
 import { formatDegrees, formatPercent } from '../../format';
 import { median } from '../median';
-import { AxisTick, BOX, ChartBox, niceStep, ticks } from '../run-charts/run-charts-model';
+import {
+  AxisTick,
+  BOX,
+  ChartBox,
+  ChartPoint,
+  niceStep,
+  ticks,
+} from '../run-charts/run-charts-model';
 import { boxes, nearest, Timeline, TrackState } from '../track';
 
 /** A stretch of the run as a bar: where it starts in the video, its place, and what it says on hover. */
@@ -42,6 +49,35 @@ export interface SpreadModel {
   edge: AxisTick | null;
   median: AxisTick | null;
 }
+
+/** A cell of the map: its place and size, its shade (0 to 1, by the time spent there), and what it says on hover. */
+export interface MapCell {
+  x: number;
+  y: number;
+  size: number;
+  shade: number;
+  title: string;
+}
+
+/**
+ * Where the crosshair sat around the bot while it moved, the bot turned to move to the right: right of its center is
+ * ahead of it, left behind, up and down to its sides. reason: why there is no map.
+ */
+export interface AroundModel {
+  box: ChartBox;
+  cells: MapCell[];
+  center: ChartPoint;
+  /** The bot's usual edge. */
+  radius: number;
+  /** The crosshair's usual place along the motion (the median). */
+  usual: ChartPoint | null;
+  xTicks: AxisTick[];
+  reason: string | null;
+}
+
+/** The map's cells across its height. */
+const MAP_ROWS = 24;
+const OLD_REVIEW = 'The review of this run is older than this map: review it again to see it.';
 
 /** The length of a stretch, in seconds; a last, shorter one is shown when it holds this much of the run. */
 export const WINDOW = 10;
@@ -154,5 +190,75 @@ export function distanceSpread(tracks: Tracks, tl: Timeline): SpreadModel {
     yTicks: ticks(highest, y, (s) => formatPercent(s)),
     edge: r == null || r > top ? null : { at: x(r), label: `its edge ${formatDegrees(r)}` },
     median: mid == null ? null : { at: x(mid), label: `median ${formatDegrees(mid)}` },
+  };
+}
+
+/** Where the crosshair sat around the moving bot (the motion's frames, review.track_motion's "around"). */
+export function aroundMap(report: TrackReport): AroundModel {
+  const box = BOX;
+  const motion = report.summary.motion;
+  const pts = motion?.around ?? [];
+  const center: ChartPoint = { x: box.left + plotWidth(box) / 2, y: box.top + plotHeight(box) / 2 };
+  const empty = (reason: string): AroundModel => ({
+    box,
+    cells: [],
+    center,
+    radius: 0,
+    usual: null,
+    xTicks: [],
+    reason,
+  });
+  if (!motion) return empty(OLD_REVIEW);
+  if (motion.reason) return empty(`Not measured: ${motion.reason}.`);
+  if (!pts.length) return empty(OLD_REVIEW);
+  const r = median(pts.map((p) => p[2])) ?? 0;
+  const across = pts.map((p) => Math.abs(p[1])).sort((a, b) => a - b);
+  const reach = Math.max(1.5 * r, across[Math.floor(0.98 * (across.length - 1))]);
+  const scale = plotHeight(box) / 2 / reach;
+  const halfWidth = plotWidth(box) / 2 / scale;
+  const cell = (2 * reach) / MAP_ROWS;
+  const columns = Math.floor((2 * halfWidth) / cell);
+  const counts = new Map<number, number>();
+  for (const [along, side] of pts) {
+    const col = Math.floor((along + (columns * cell) / 2) / cell);
+    const row = Math.floor((side + reach) / cell);
+    if (col < 0 || col >= columns || row < 0 || row >= MAP_ROWS) continue;
+    const key = row * columns + col;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const most = Math.max(1, ...counts.values());
+  const left = center.x - (columns * cell * scale) / 2;
+  const cells = [...counts].map(([key, count]): MapCell => {
+    const row = Math.floor(key / columns);
+    const col = key % columns;
+    const along = (col + 0.5) * cell - (columns * cell) / 2;
+    const side = (row + 0.5) * cell - reach;
+    const way = along >= 0 ? 'ahead' : 'behind';
+    return {
+      x: left + col * cell * scale,
+      y: box.top + (MAP_ROWS - 1 - row) * cell * scale,
+      size: cell * scale,
+      shade: Math.sqrt(count / most),
+      title: `${formatDegrees(Math.abs(along))} ${way}, ${formatDegrees(Math.abs(side))} to the side: ${formatPercent(count / pts.length)} of the time`,
+    };
+  });
+  const usual = median(pts.map((p) => p[0]));
+  const step = niceStep(halfWidth);
+  const xTicks: AxisTick[] = [];
+  for (let v = -Math.floor(halfWidth / step) * step; v <= halfWidth + 1e-9; v += step) {
+    const label =
+      Math.abs(v) < 1e-9
+        ? '0'
+        : `${v > 0 ? '+' : '−'}${formatDegrees(Math.abs(v), step < 1 ? 1 : 0)}`;
+    xTicks.push({ at: center.x + v * scale, label });
+  }
+  return {
+    box,
+    cells,
+    center,
+    radius: r * scale,
+    usual: usual == null ? null : { x: center.x + usual * scale, y: center.y },
+    xTicks,
+    reason: null,
   };
 }

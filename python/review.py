@@ -1253,6 +1253,9 @@ def track_motion(frames, fps, cam, i0, i1, inside, switching=None):
         cx, cy = -lx, -ly                               # the crosshair from the target's centre line
         al[i], ac[i] = cx * ux + cy * uy, -cx * uy + cy * ux
         ra[i] = rc[i] = r
+    # each moving frame's offset along the motion (positive: ahead) and across it, and the target's radius: where the
+    # crosshair sat around the target
+    out["around"] = [[float(al[i]), float(ac[i]), float(ra[i])] for i in moving]
     mv = np.array(moving)
     out.update(target_speed=float(np.median(speed[mv])),
                mouse_speed=float(np.nanmedian(np.hypot(mouse[mv, 0], mouse[mv, 1]))),

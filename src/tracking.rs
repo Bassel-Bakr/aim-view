@@ -143,6 +143,10 @@ pub struct Motion {
     pub error_h: Option<f64>,
     pub error_v: Option<f64>,
     pub seconds: f64,
+    /// Each moving frame's offset along the target's motion (positive: ahead of it) and across it, and the target's
+    /// radius, in degrees: where the crosshair sat around the target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub around: Option<Vec<[f64; 3]>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<&'static str>,
     #[serde(flatten)]
@@ -209,6 +213,7 @@ pub fn track_motion(
         error_h: med(&near.iter().map(|t| t.lx.abs()).collect::<Vec<_>>()),
         error_v: med(&near.iter().map(|t| t.ly.abs()).collect::<Vec<_>>()),
         seconds: moving.len() as f64 / fps,
+        around: None,
         reason: None,
         counts: None,
     };
@@ -219,13 +224,16 @@ pub fn track_motion(
     // along and across the target's motion: the crosshair's offset from its center line
     let mut al = vec![f64::NAN; n];
     let mut ra = vec![f64::NAN; n];
+    let mut around = Vec::with_capacity(moving.len());
     for &i in &moving {
         let t = tgt[i].unwrap();
         let (ux, uy) = (own[i].0 / speed[i], own[i].1 / speed[i]);
         let (cx, cy) = (-t.lx, -t.ly);
         al[i] = cx * ux + cy * uy;
         ra[i] = t.r;
+        around.push([al[i], -cx * uy + cy * ux, t.r]);
     }
+    out.around = Some(around);
     let of = |f: &dyn Fn(usize) -> f64| moving.iter().map(|&i| f(i)).collect::<Vec<f64>>();
     out.target_speed = med(&of(&|i| speed[i]));
     out.mouse_speed = med(&of(&|i| mouse[i].0.hypot(mouse[i].1)).into_iter().filter(|v| !v.is_nan()).collect::<Vec<_>>());

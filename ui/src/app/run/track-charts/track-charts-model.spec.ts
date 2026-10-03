@@ -1,6 +1,6 @@
-import { TrackFrame, TrackReport, Tracks } from '../../api';
+import { AroundPoint, Motion, TrackFrame, TrackReport, Tracks } from '../../api';
 import { Timeline, TrackState } from '../track';
-import { distanceSpread, onTargetWindows } from './track-charts-model';
+import { aroundMap, distanceSpread, onTargetWindows } from './track-charts-model';
 
 const FPS = 10;
 
@@ -56,5 +56,29 @@ describe('track charts', () => {
     expect(total).toBeGreaterThan(0);
     expect(m.median?.label).toBe('median 0.10°');
     expect(m.edge?.label).toBe('its edge 0.30°');
+  });
+
+  it('maps where the crosshair sat around the moving bot: ahead to the right, behind to the left', () => {
+    const ahead: AroundPoint[] = new Array<AroundPoint>(30).fill([0.4, 0, 0.3]);
+    const behind: AroundPoint[] = new Array<AroundPoint>(10).fill([-0.4, 0, 0.3]);
+    const motion = { camera: 1, around: [...ahead, ...behind] } as Motion;
+    const m = aroundMap({ summary: { motion } } as unknown as TrackReport);
+    expect(m.reason).toBeNull();
+    const [right, left] = [...m.cells].sort((a, b) => b.x - a.x);
+    expect(right.x).toBeGreaterThan(m.center.x);
+    expect(left.x + left.size).toBeLessThan(m.center.x);
+    expect(right.shade).toBe(1);
+    expect(left.shade).toBeCloseTo(Math.sqrt(1 / 3), 6);
+    expect(right.title).toContain('ahead');
+    expect(m.usual?.x).toBeGreaterThan(m.center.x);
+  });
+
+  it('says why there is no map', () => {
+    const map = (motion: Motion | null) =>
+      aroundMap({ summary: { motion } } as unknown as TrackReport).reason;
+    expect(map({ camera: 1, reason: 'too little tracking' } as Motion)).toBe(
+      'Not measured: too little tracking.',
+    );
+    expect(map({ camera: 1 } as Motion)).toContain('review it again');
   });
 });

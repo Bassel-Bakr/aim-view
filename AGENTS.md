@@ -102,7 +102,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 - Done: the layout (`python/`, the Rust crate at the root, `ui/`). In `ui/`: the recordings list, and the run page
   (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline),
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
-  cards, how the bot was followed, and the what-if estimates), and the fastest-path analysis (path cost per kill, the
+  cards, how the bot was followed, and the what-if estimates; for both, "The run at a glance": a clicking run's kill
+  times, distance against kill time, where the clicks landed and every flick's speed, a tracking run's time on the
+  bot 10 s at a time, distance from its center line, and where the crosshair sat around it, from the motion's
+  per-frame `around` offsets), and the fastest-path analysis (path cost per kill, the
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
   model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
   (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there). The

@@ -218,6 +218,9 @@ export interface MotionBand {
   lag: number | null;
 }
 
+/** A frame's offset from the bot's center line along its motion (positive: ahead) and across it, and its radius. */
+export type AroundPoint = [along: number, across: number, radius: number];
+
 /**
  * How the crosshair followed a moving bot (review.track_motion), from the camera's turn read in the video. reason:
  * why it was not measured. Distances in degrees; lag negative behind the bot.
@@ -244,6 +247,8 @@ export interface Motion {
   error_v?: number | null;
   target_speed?: number | null;
   by_direction?: MotionBand[];
+  /** Each frame of the motion measured: where the crosshair sat around the bot. */
+  around?: AroundPoint[];
 }
 
 /** How much the accuracy would rise if one thing changed (review.what_if). gain: a share. */
