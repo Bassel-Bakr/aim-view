@@ -35,6 +35,8 @@ for (const f of [
 ]) {
   copyFileSync(join(exports, f), join(out, 'models', f));
 }
+// the list itself, so the desktop app (which bundles this folder) reads the same models and default
+copyFileSync(join(root, 'python/model/models.json'), join(out, 'models', 'models.json'));
 const unexported = listed.filter((n) => !exported.includes(n));
 const unsettled = exported.filter((n) => !settled.includes(n));
 console.log(`ui/generated: core/aimview.wasm and ${exported.length} models`);

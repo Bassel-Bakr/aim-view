@@ -8,6 +8,7 @@
     {"key": "tracking", "name": "Tracking", "what": "time on the bot minus the stats file's accuracy: mean, and mean size (nearer 0 is better)"}
   ],
   "checked_on": "Recordings no model trained on, against their stats files (eval_moving.py).",
+  "default": "full_v3",
   "models": {
     "full_v3": {
       "params": 80765, "kb": 324.4,

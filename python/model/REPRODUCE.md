@@ -355,8 +355,10 @@ file.
 
 `--list` adds a model that passes to `models.json`, before "hand", with what the gate measured (parameters, size,
 checks, and where the report is), so `bun run assets` ships it. The speeds and the words about the model are yours to
-add. It never edits `models.json` on a fail, and never changes the default model: on a pass it prints the lines that
-name it (`infer.BEST`, the service's `BEST`, the browser's `DEFAULT_MODEL`).
+add. It never edits `models.json` on a fail, and never changes the default model: that is the one line
+`"default": "<name>"` in `models.json`, which `infer.py` (`BEST`), the service and the browser all read, and the
+desktop app's installer bundles (`bun run assets` copies the listed models and `models.json` into `ui/generated/models/`).
+So a new model needs no change to code: export it, pass the gate, list it, and set the default if you want it.
 
 Results (2026-10-04):
 

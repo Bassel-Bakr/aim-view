@@ -11,7 +11,7 @@ use super::{Answer, Failure, Library, read_json, write_json};
 use crate::config::Device;
 
 pub(super) const FILE: &str = "settings.json";
-/// The model new reviews use until the user picks one (infer.BEST).
+/// The model new reviews use until the user picks one when models.json names no default (its "default": infer.BEST).
 pub const BEST: &str = "full_v3";
 /// The frames the detector can take at once (the browser offers the same).
 pub const BATCHES: [usize; 4] = [1, 2, 4, 8];
@@ -55,7 +55,7 @@ impl Library {
     /// python/server.py kept can be a model only it runs).
     pub fn model(&self) -> String {
         let picked = self.settings().0.get("model").and_then(Value::as_str).map(str::to_string);
-        picked.filter(|m| self.model_file(m).is_file()).unwrap_or_else(|| BEST.into())
+        picked.filter(|m| self.model_file(m).is_file()).unwrap_or_else(|| self.default_model())
     }
 
     /// The device new reviews run the detector on: the user's pick when this build has it, else the configuration's.
@@ -88,6 +88,13 @@ impl Library {
         self.models()
     }
 
+    /// The model models.json names as the default ("default"), else BEST: a new model becomes the default by a change
+    /// to that file, not to code.
+    pub fn default_model(&self) -> String {
+        let named = self.models_info().and_then(|i| i["default"].as_str().map(str::to_string));
+        named.filter(|m| self.model_file(m).is_file()).unwrap_or_else(|| BEST.into())
+    }
+
     /// The detector export of a model.
     pub fn model_file(&self, name: &str) -> PathBuf {
         self.config.models.join(format!("detector_{name}_u8in.onnx"))
@@ -103,6 +110,7 @@ impl Library {
     pub fn models(&self) -> Answer<Value> {
         let info: Value = self.models_info().ok_or("models.json is missing".to_string())?;
         let mut models = Vec::new();
+        let default = self.default_model();
         for (name, m) in info["models"].as_object().into_iter().flatten() {
             if !self.model_file(name).is_file() {
                 continue;
@@ -112,7 +120,7 @@ impl Library {
             if m.get("label").is_none() {
                 m["label"] = json!(name);
             }
-            m["default"] = json!(name == BEST);
+            m["default"] = json!(*name == default);
             m["available"] = json!(true);
             models.push(m);
         }

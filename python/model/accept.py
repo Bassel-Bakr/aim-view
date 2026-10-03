@@ -39,7 +39,6 @@ import hashlib
 import json
 import os
 import pickle
-import re
 import shutil
 import subprocess
 import sys
@@ -69,11 +68,6 @@ DRAWS, SDS, SEED = 400, 2.0, 0
 CLICKING = ("static", "dynamic", "switching")
 TOLERANCE = 3                                   # eval_video_alone.py's frames between a video kill and its stats kill
 # where the default model is named (the user changes it, never this gate)
-DEFAULT_AT = (("python/model/infer.py", r'^BEST = "(\w+)"'),
-              ("service/src/library/settings.rs", r'^pub const BEST: &str = "(\w+)";'),
-              ("ui/src/app/modes/wasm/browser-models.ts", r"^const DEFAULT_MODEL = '(\w+)';"))
-
-
 def say(*a):
     print(*a, flush=True)
 
@@ -383,16 +377,9 @@ def add_to_models(m, e):
 
 
 def default_lines(best, name):
-    """Where the default model is named, with the change that would make `name` the default."""
-    out = []
-    info = json.loads(MODELS.read_text(encoding="utf-8"))
-    if "default" in info:
-        out.append(f'python/model/models.json: "default": "{best}"  (to "{name}")')
-    for f, pat in DEFAULT_AT:
-        for i, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
-            if re.match(pat, line):
-                out.append(f"{f}:{i}: {line.split('  #')[0].strip()}  ({best} to {name})")
-    return out
+    """The one change that makes `name` the default: models.json's "default", which infer.py, the service and the
+    browser all read."""
+    return [f'python/model/models.json: "default": "{best}"  (to "{name}"; then bun run assets)']
 
 
 # ---- the verdict -----------------------------------------------------------------------------------------------------

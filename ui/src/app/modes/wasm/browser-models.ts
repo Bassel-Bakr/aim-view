@@ -16,6 +16,8 @@ export interface ModelsFile {
   speed: string;
   checked_on: string;
   checks: Check[];
+  /** The model reviews use until the user picks one (models.json's "default"). */
+  default?: string;
   models: Record<string, ModelEntry>;
 }
 
@@ -35,8 +37,11 @@ const DEVICES: Device[] = HAS_GPU ? ['webgpu', 'wasm'] : ['wasm'];
 const BATCHES = [1, 2, 4, 8];
 const DEFAULT_BATCH: Record<Device, number> = { webgpu: 4, wasm: 1, cuda: 1, cpu: 1, directml: 4 };
 const BATCH_KEY = 'aimview-batch-';
-/** The model the browser reviews with until the user picks one: the best on every check (infer.BEST). */
-const DEFAULT_MODEL = 'full_v3';
+/**
+ * The model the browser reviews with until the user picks one: models.json's "default" (infer.BEST), so a new model
+ * becomes the default by a change to that file, not to code.
+ */
+const DEFAULT_MODEL = MODELS.default ?? 'full_v3';
 /** The hand-written detector is Python code, not a model file: it runs here once the review core has it. */
 const HAND = 'hand';
 const NOT_PORTED = 'Not in the browser yet (Python code, not a model file)';

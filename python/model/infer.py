@@ -8,13 +8,17 @@ import sys
 import time
 from pathlib import Path
 
+import json
+
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 THRESHOLD = 0.3                 # chosen on the val split for small_v2 (eval.py's sweep)
-BEST = "full_v3"                # the model the review app uses: exports/detector_<BEST>.pt or _fp32.onnx
+# the model the review app uses (exports/detector_<BEST>.pt or _fp32.onnx): models.json's "default", so a new model
+# becomes the default by a change to that file, not to code
+BEST = json.loads((Path(__file__).resolve().parent / "models.json").read_text(encoding="utf-8")).get("default", "full_v3")
 
 
 def decode_np(score, reg, thr=THRESHOLD):
