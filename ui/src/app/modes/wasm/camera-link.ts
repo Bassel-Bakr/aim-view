@@ -14,8 +14,6 @@ export class CameraLink {
   private wake: (() => void) | null = null;
   private failure: Error | null = null;
   private done: ((parts: WatchParts) => void) | null = null;
-  private sessionText: string | null = null;
-  private sessionHeard: ((session: string) => void) | null = null;
   private failed: ((error: Error) => void) | null = null;
 
   constructor(private readonly port: MessagePort) {
@@ -30,16 +28,6 @@ export class CameraLink {
   /** Starts the camera watch, after the last key frame. */
   start(task: CameraStart): void {
     this.post(task);
-  }
-
-  /** KovaaK's session box as the HUD watch found it in the key frames (hud_session_box's JSON), once start asked. */
-  session(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      if (this.sessionText !== null) return resolve(this.sessionText);
-      if (this.failure) return reject(this.failure);
-      this.sessionHeard = resolve;
-      this.failed = reject;
-    });
   }
 
   /** A buffer for the next frame, once one is free. */
@@ -81,10 +69,7 @@ export class CameraLink {
 
   private hear(m: CameraReply): void {
     if (m.kind === 'free') this.free.push(m.frame);
-    else if (m.kind === 'session') {
-      this.sessionText = m.session;
-      this.sessionHeard?.(m.session);
-    } else if (m.kind === 'part') this.done?.(m.part);
+    else if (m.kind === 'part') this.done?.(m.part);
     else {
       this.failure = new Error(`The camera watch failed: ${m.error}`);
       this.failed?.(this.failure);

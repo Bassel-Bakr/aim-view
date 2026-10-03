@@ -81,7 +81,23 @@ async function render() {
     return e;
   };
   const full = () => document.fullscreenElement === player;
-  return { draft, settle, button, field, press, change, full };
+  return { draft, settle, player, button, field, press, change, full };
+}
+
+/** The player as above, where the browser refuses full screen; the page's top layer, which jsdom lacks, standing in. */
+async function renderRefused() {
+  const page = await render();
+  const { player } = page;
+  player.requestFullscreen = () => Promise.reject(new TypeError('Permissions check failed'));
+  let shown = false;
+  player.showPopover = () => {
+    shown = true;
+  };
+  player.hidePopover = () => {
+    shown = false;
+  };
+  const filling = () => shown && player.getAttribute('popover') === 'manual';
+  return { ...page, filling };
 }
 
 describe('Player full screen', () => {
@@ -135,5 +151,42 @@ describe('Player full screen', () => {
     await change(null);
     expect(full()).toBe(false);
     expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('Player filling the window', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(document, 'fullscreenElement');
+    Reflect.deleteProperty(document, 'exitFullscreen');
+  });
+
+  it('fills the window when the browser refuses full screen, and leaves it from the button', async () => {
+    const { settle, player, button, filling } = await renderRefused();
+    button.click();
+    await settle();
+    expect(filling()).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    button.click();
+    await settle();
+    expect(filling()).toBe(false);
+    expect(player.hasAttribute('popover')).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('fills it with F and leaves it with F', async () => {
+    const { press, filling } = await renderRefused();
+    await press('f');
+    expect(filling()).toBe(true);
+    await press('f');
+    expect(filling()).toBe(false);
+  });
+
+  it('leaves it with Escape and keeps the areas editor open', async () => {
+    const { draft, press, filling } = await renderRefused();
+    await press('f');
+    const escape = await press('Escape');
+    expect(filling()).toBe(false);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(draft.open()).toBe(true);
   });
 });

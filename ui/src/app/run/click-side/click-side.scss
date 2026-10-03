@@ -2,8 +2,9 @@
 @reference '../../../tailwind.css';
 
 @layer components {
-  .segment {
-    border-radius: r.$budget-radius;
+  // Figures of one width, so the kill times line up
+  .distance {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -28,16 +29,23 @@
     @apply text-xs text-muted;
   }
 
+  .bar,
+  .thin-bar {
+    @apply mb-3 flex h-(--budget-thin-height) gap-1;
+  }
+
   .bar {
-    @apply mt-3 mb-3 flex h-(--budget-thin-height) gap-1;
+    @apply mt-3;
   }
 
   .thin-bar {
-    @apply mt-1 mb-3 flex h-(--budget-thin-height) gap-1 opacity-60;
+    @apply mt-1 opacity-60;
   }
 
   .segment {
     @apply min-w-0;
+
+    border-radius: r.$budget-radius;
   }
 
   .reference {
@@ -61,7 +69,7 @@
   }
 
   .distance {
-    @apply grid grid-cols-(--distance-columns) items-center gap-5 py-1 tabular-nums;
+    @apply grid grid-cols-(--distance-columns) items-center gap-5 py-1;
   }
 
   .band {
@@ -76,12 +84,13 @@
     @apply block h-full rounded-sm bg-accent;
   }
 
-  .kill {
+  .kill,
+  .short {
     @apply text-right;
   }
 
   .short {
-    @apply text-right text-muted;
+    @apply text-muted;
   }
 
   .check {

@@ -91,7 +91,9 @@
   }
 }
 @if (statsOpen()) {
-  <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
+  @defer (on immediate) {
+    <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
+  }
 }
 @if (progress(); as p) {
   <div class="progress">
@@ -141,9 +143,14 @@
     <app-click-side class="side" [report]="cr" />
   }
 </div>
-@if (clickReport(); as cr) {
-  <app-click-report class="report" [report]="cr" />
-} @else if (trackReport(); as tr) {
-  <app-track-report class="report" [report]="tr" [tracks]="tracks()" />
+<!-- The report and the mouse panel load on their own, after the page: the report once there is one -->
+@defer (when report()) {
+  @if (clickReport(); as cr) {
+    <app-click-report class="report" [report]="cr" />
+  } @else if (trackReport(); as tr) {
+    <app-track-report class="report" [report]="tr" [tracks]="tracks()" />
+  }
 }
-<app-mouse-panel [recording]="recording()" />
+@defer (on immediate) {
+  <app-mouse-panel [recording]="recording()" />
+}

@@ -1,15 +1,17 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { Tracks } from '../../api';
-import { FinderResult, HudReading, VideoReadings } from '../wasm/review-messages';
+import { FinderResult } from '../wasm/area-finder-messages';
+import { HudReading, VideoReadings } from '../wasm/review-messages';
 import { BrowserStore } from './browser-store';
 
 const INDEX = 'review-index';
 const KEY = 'review:';
 
 /**
- * A recording's tracks, video readings and what its HUD read (null: nothing), as the browser review found them, the
- * model that found them, and what the area finder found in its frames. A review saved before the HUD was read has no
- * `hud`: it reads as null; one saved before the area finder ran has no `found`.
+ * A recording's tracks, video readings and what its HUD read (null: nothing), as the browser review found them, and the
+ * model that found them. A review saved before the HUD was read has no `hud`: it reads as null. A review saved while
+ * the area finder ran in the review's first run also has what the finder found (`found`), which BrowserAreaFinder
+ * reads when it has kept nothing of its own for the recording.
  */
 export interface SavedReview {
   tracks: Tracks;
@@ -69,6 +71,16 @@ export class SavedReviews {
   async load(file: File, model: string): Promise<SavedReview | null> {
     await this.read;
     return (await this.store.get<SavedReview>(key(file, model))) ?? null;
+  }
+
+  /** What the area finder found, as a review saved while the finder ran in the review kept it; null when none did. */
+  async finderResult(file: File): Promise<FinderResult | null> {
+    await this.read;
+    for (const model of Object.keys(this.index().get(fingerprint(file)) ?? {})) {
+      const found = (await this.load(file, model))?.found;
+      if (found) return found;
+    }
+    return null;
   }
 
   /** Keeps a review, in place of the same model's earlier one. The index says so at once. */

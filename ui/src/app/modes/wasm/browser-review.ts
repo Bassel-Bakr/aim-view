@@ -11,13 +11,8 @@ import { StatsCsv } from '../web-files/stats-csv';
 import { StatsFolder } from '../web-files/stats-folder';
 import { CoreModule } from './core-module';
 import { SavedAreas } from '../web-files/saved-areas';
-import {
-  BrowserDevice,
-  FinderResult,
-  ReviewMessage,
-  ReviewRequest,
-  RunPart,
-} from './review-messages';
+import { BrowserAreaFinder } from './browser-area-finder';
+import { BrowserDevice, ReviewMessage, ReviewRequest, RunPart } from './review-messages';
 import { covers, trackedWindow } from './split-runs';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
@@ -109,6 +104,7 @@ export class BrowserReview implements ReviewEngine {
   private readonly savedFaint = inject(SavedFaint);
   private readonly statsFolder = inject(StatsFolder);
   private readonly savedAreas = inject(SavedAreas);
+  private readonly finder = inject(BrowserAreaFinder);
   private readonly runs = new Map<string, BrowserRun>();
   /** The reviews in memory, by foundKey: made here, or read from the saved reviews. */
   private readonly found = signal<ReadonlyMap<string, SavedReview>>(new Map());
@@ -286,19 +282,14 @@ export class BrowserReview implements ReviewEngine {
         version: joined.version,
         areas,
       };
-      const finder = got.find((p) => p.found)?.found;
-      const found = finder ? (JSON.parse(finder) as FinderResult) : null;
-      const review: SavedReview = {
-        tracks,
-        readings: joined.readings,
-        hud: joined.hud,
-        model,
-        found,
-      };
+      const review: SavedReview = { tracks, readings: joined.readings, hud: joined.hud, model };
       this.found.update((all) => new Map(all).set(foundKey(id, model), review));
       // kept for the next visit; a browser that cannot keep it still shows it now
       this.saved.save(local.file, review).catch((err: unknown) => console.warn(err));
       end({ stage: 'done', seconds: Math.round((performance.now() - begun) / 100) / 10 });
+      // then the area finder, in a worker of its own, once a recording (it keeps what it found). Started beside the
+      // review, it slowed the review down (a recording with 11 key frames: 21 to 40 s, against 21 to 28 s without it).
+      this.finder.result(local.file).catch((err: unknown) => console.warn(err));
     };
     const base = new URL(document.baseURI);
     for (let i = 0; i < runs; i++) {
@@ -372,15 +363,6 @@ export class BrowserReview implements ReviewEngine {
     return covers(review.tracks.window ?? null, trackedWindow(marks, limit))
       ? { stage: 'done' }
       : this.start(id);
-  }
-
-  /** What the area finder found in the frames of the recording's shown review; null when it has none. */
-  async finderResult(id: string): Promise<FinderResult | null> {
-    const f = this.local.find(id);
-    if (!f) return null;
-    const { model, found } = this.shown(f);
-    const review = found ?? (model ? await this.restore(id, model) : null);
-    return review?.found ?? null;
   }
 
   async job(id: string): Promise<Job> {

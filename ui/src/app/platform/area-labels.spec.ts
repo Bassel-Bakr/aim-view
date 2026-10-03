@@ -1,8 +1,19 @@
 import { HttpRequest } from '@angular/common/http';
-import { ResourceRef } from '@angular/core';
+import { Provider, ResourceRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { AreaBox, AreaKind, errorMessage, KindEdit, Recording, RecordingAreas } from '../api';
+import {
+  AreaBox,
+  AreaKind,
+  errorMessage,
+  FoundAreas,
+  KindEdit,
+  Recording,
+  RecordingAreas,
+} from '../api';
 import { ApiRoutes, recording, Refused } from '../fake-api';
+import { FinderResult } from '../modes/wasm/area-finder-messages';
+import { BrowserAreaFinder } from '../modes/wasm/browser-area-finder';
+import { AreasFindRequest, CoreModule } from '../modes/wasm/core-module';
 import {
   builtInKinds,
   editKinds,
@@ -18,6 +29,36 @@ const NAME = 'Air - 1 - 2026.10.01-16.23.03.mp4';
 const OTHER_NAME = 'Air - 1 - 2026.10.02-09.00.00.mp4';
 const WEBCAM: AreaBox = [0.75, 0.7, 1, 1, 'webcam'];
 const DRAWN: AreaBox = [0.1, 0.1, 0.2, 0.2, 'other'];
+/** The finder's proposal: the webcam. */
+const PROPOSAL: FoundAreas = {
+  boxes: [WEBCAM],
+  examples: 3,
+  recordings: 1,
+  copied: null,
+  by: { learned: 1, rule: 0 },
+};
+/** What the browser's area finder read in a recording: the webcam. */
+const FOUND: FinderResult = {
+  frames: 90,
+  areas: [{ box: [0.75, 0.7, 1, 1], feat: [], rule: 'webcam' }],
+  maps: null,
+};
+
+/**
+ * The browser's area finder and core, standing in for its worker and the WebAssembly as the fake server does for the
+ * review server: the finder reads FOUND in any recording, and the core proposes the areas it is given.
+ */
+function browserFinder(): Provider[] {
+  const propose = (r: AreasFindRequest): Promise<FoundAreas> =>
+    Promise.resolve({
+      ...PROPOSAL,
+      boxes: r.found.map(({ box: [x0, y0, x1, y1], rule }): AreaBox => [x0, y0, x1, y1, rule]),
+    });
+  return [
+    { provide: BrowserAreaFinder, useValue: { result: () => Promise.resolve(FOUND) } },
+    { provide: CoreModule, useValue: { areasFind: propose } },
+  ];
+}
 
 /** KovOBS's layout as python/server.py gives it for ?layout=kovobs: its kinds by name (review.OVERLAY_SHARES). */
 function layoutByName(kinds: AreaKind[]): AreaBox[] {
@@ -68,13 +109,7 @@ function fakeServer(): ApiRoutes {
         return fail(e instanceof Error ? e.message : String(e));
       }
     },
-    '/api/find_areas': () => ({
-      boxes: [WEBCAM],
-      examples: 3,
-      recordings: 1,
-      copied: null,
-      by: { learned: 1, rule: 0 },
-    }),
+    '/api/find_areas': () => PROPOSAL,
   };
 }
 
@@ -173,18 +208,13 @@ for (const mode of MODE_CASES) {
       expect(why).toBe('there is a type called timer already');
     });
 
-    it('proposes areas, or says what it needs first (the browser finds them during a review)', async () => {
-      const service = labels();
+    it('proposes areas for a recording not reviewed (the browser reads its frames first)', async () => {
+      const extra = mode.name === 'browser' ? browserFinder() : [];
+      TestBed.configureTestingModule({ providers: [...mode.providers(), ...extra] });
+      const service = TestBed.inject(AreaLabels);
       const id = await open();
-      const outcome = await mode.finish(
-        service.find(id, true).then(
-          (found) => found.boxes,
-          (e: unknown) => errorMessage(e),
-        ),
-        routes,
-      );
-      if (typeof outcome === 'string') expect(outcome).toContain('Review the recording first');
-      else expect(outcome).toEqual([WEBCAM]);
+      const found = await mode.finish(service.find(id, true), routes);
+      expect(found.boxes).toEqual([WEBCAM]);
     });
   });
 }

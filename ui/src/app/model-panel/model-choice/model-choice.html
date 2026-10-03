@@ -1,0 +1,133 @@
+@if (models.current(); as m) {
+  @if (m.devices && m.devices.length > 1) {
+    <div class="runs-on">
+      <span id="runs-on-label">Runs on</span>
+      <div class="segmented" role="group" aria-labelledby="runs-on-label">
+        @for (d of m.devices; track d) {
+          <button
+            type="button"
+            class="segmented-option"
+            [attr.aria-pressed]="m.device === d"
+            (click)="useDevice(d)"
+          >
+            {{ runsOn[d] }}
+          </button>
+        }
+      </div>
+      <span class="runs-on-note">New reviews run the detector here. The GPU is faster.</span>
+    </div>
+  }
+  @if (m.batches && m.batches.length > 1) {
+    <div class="runs-on">
+      <span id="batch-label">Frames at once</span>
+      <div class="segmented" role="group" aria-labelledby="batch-label">
+        @for (b of m.batches; track b) {
+          <button
+            type="button"
+            class="segmented-option"
+            [attr.aria-pressed]="m.batch === b"
+            (click)="useBatch(b)"
+          >
+            {{ b }}
+          </button>
+        }
+      </div>
+      <span class="runs-on-note">
+        How many frames the detector takes in one go, kept for each of GPU and CPU. More is faster
+        on most GPUs and slower on the CPU; the boxes are the same.
+      </span>
+    </div>
+  }
+}
+@if (table(); as t) {
+  <div class="scroll">
+    <table class="model-panel-table">
+      <thead>
+        <tr>
+          <td></td>
+          @for (c of t.columns; track c.name) {
+            <th class="column" scope="col">
+              {{ c.label }}
+              @if (c.isDefault) {
+                <span appBadge>default</span>
+              }
+              @if (c.inUse) {
+                <span appBadge tone="good">in use</span>
+              }
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of t.rows; track row.label) {
+          <tr>
+            <th class="row-head" scope="row">
+              {{ row.label }}
+              @if (row.about) {
+                <span class="about">{{ row.about }}</span>
+              }
+            </th>
+            @for (cell of row.cells; track $index) {
+              <td [class]="row.prose ? 'prose' : cell.best ? 'best' : 'cell'">
+                @if (cell.text === null) {
+                  <span class="muted">–</span>
+                } @else {
+                  {{ cell.text }}
+                  @if (cell.detail) {
+                    <span class="muted">· {{ cell.detail }}</span>
+                  }
+                  @if (cell.best) {
+                    <span class="sr-only">(best)</span>
+                  }
+                }
+              </td>
+            }
+          </tr>
+        }
+        <tr>
+          <th scope="row"><span class="sr-only">Pick</span></th>
+          @for (c of t.columns; track c.name) {
+            <td class="cell">
+              @if (c.inUse) {
+                <span class="muted">In use</span>
+              } @else if (c.available) {
+                <button type="button" appButton [disabled]="switching()" (click)="use(c.name)">
+                  Use {{ c.useLabel }}
+                </button>
+              } @else {
+                <span class="muted">{{ t.unavailable }}</span>
+              }
+            </td>
+          }
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="section-note">{{ t.notes }}</p>
+  @if (t.older.length) {
+    <details class="older">
+      <summary class="summary">Older models</summary>
+      <p class="section-note">
+        Each one was replaced by a newer model. python/model/MODEL_STATUS.md says why.
+      </p>
+      <ul class="older-list">
+        @for (c of t.older; track c.name) {
+          <li class="older-row">
+            <span>{{ c.name }}</span>
+            <span class="muted">{{ c.size }}</span>
+            @if (c.inUse) {
+              <span class="muted">In use</span>
+            } @else if (c.available) {
+              <button type="button" appButton [disabled]="switching()" (click)="use(c.name)">
+                Use {{ c.useLabel }}
+              </button>
+            } @else {
+              <span class="muted">{{ t.unavailable }}</span>
+            }
+          </li>
+        }
+      </ul>
+    </details>
+  }
+}
+<p class="status" role="status">{{ status() }}</p>

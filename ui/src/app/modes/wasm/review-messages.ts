@@ -1,4 +1,4 @@
-import { AreaBox, AreaRect, JobStage, TimeWindow } from '../../api';
+import { AreaBox, JobStage, TimeWindow } from '../../api';
 
 /** Where the browser runs the detector: the GPU (WebGPU) or the CPU (WebAssembly). */
 export type BrowserDevice = 'webgpu' | 'wasm';
@@ -57,8 +57,6 @@ export interface CameraStart {
   fixed: Uint8Array;
   skip: number;
   areas: AreaBox[];
-  /** Send back KovaaK's session box as the HUD watch finds it in the key frames (CameraSession), for the area finder. */
-  session: boolean;
 }
 
 /**
@@ -88,12 +86,6 @@ export interface CameraFree {
 export interface WatchParts {
   camera: string;
   hud: string;
-}
-
-/** KovaaK's session box as the HUD watch finds it in the key frames (src/wasm.rs: hud_session_box's JSON). */
-export interface CameraSession {
-  kind: 'session';
-  session: string;
 }
 
 /** The watches' parts, once every frame is read. */
@@ -153,8 +145,6 @@ export interface HudReading {
  * detector ran and the key frames read.
  */
 export interface RunPart {
-  /** The area finder's result (FinderResult's JSON), from the first run; null from the others. */
-  found: string | null;
   frames: number;
   track: string;
   camera: string;
@@ -181,21 +171,4 @@ export interface ReviewFailed {
 export type ReviewMessage = ReviewProgress | ReviewPart | ReviewFailed;
 
 /** What the camera worker says back. */
-export type CameraReply = CameraFree | CameraSession | CameraDone | ReviewFailed;
-
-/** An area the finder found (src/areas.rs: Area): its box (shares of the frame), its features, and the rules' kind. */
-export interface FoundArea {
-  box: AreaRect;
-  feat: number[];
-  rule: string;
-}
-
-/**
- * What the area finder found in a recording (src/areas.rs: Found): the frames it read, the areas, and the maps they
- * came from (packed, as its JSON gives them), which describe any area the user draws when the finder learns.
- */
-export interface FinderResult {
-  frames: number;
-  areas: FoundArea[];
-  maps: unknown;
-}
+export type CameraReply = CameraFree | CameraDone | ReviewFailed;

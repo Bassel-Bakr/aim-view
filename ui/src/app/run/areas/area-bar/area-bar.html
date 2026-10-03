@@ -50,7 +50,9 @@
       Remove
     </button>
     @if (kindForm(); as f) {
-      <app-kind-form [kind]="f.kind" (closed)="closeKindForm()" />
+      @defer (on immediate) {
+        <app-kind-form [kind]="f.kind" (closed)="closeKindForm()" />
+      }
     }
   </div>
   <div class="actions">

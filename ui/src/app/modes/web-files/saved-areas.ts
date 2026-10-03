@@ -1,6 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { AreaBox, AreaSet } from '../../api';
-import { FoundArea } from '../wasm/review-messages';
+import { FoundArea } from '../wasm/area-finder-messages';
 import { kovobsLayout } from './area-kinds';
 import { BrowserStore, StoreEntry } from './browser-store';
 import { fingerprint } from './saved-reviews';

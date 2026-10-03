@@ -67,7 +67,8 @@ export function markPositions(report: Report | null, duration: number): number[]
  * The video with the review drawn over it, the seek bar and the playback controls, and the panels that work on the
  * video above it (projected with the `panel` attribute). The overlay, the clock and the seek bar follow every frame
  * through the video's frame callback, outside change detection. Full screen (the button, or F) fills the screen with
- * the video, its timeline and the controls, and puts the panels below them.
+ * the video, its timeline and the controls, and puts the panels below them; where the browser refuses full screen, the
+ * player fills the window the same way.
  */
 @Component({
   selector: 'app-player',
@@ -102,8 +103,12 @@ export class Player {
   protected readonly showOverlay = signal(localStorage.getItem(OVERLAY_KEY) !== '0');
   protected readonly showFastest = signal(localStorage.getItem(FASTEST_KEY) === '1');
   protected readonly showMine = signal(localStorage.getItem(MINE_KEY) !== '0');
-  /** The player fills the screen. */
-  protected readonly full = signal(false);
+  /** The browser shows the player full screen. */
+  private readonly screen = signal(false);
+  /** The browser refused full screen, so the player fills the window instead. */
+  private readonly windowed = signal(false);
+  /** The player fills the screen, or the window. */
+  protected readonly full = computed(() => this.screen() || this.windowed());
   protected readonly clicking = computed(() => isClickReport(this.report()));
   protected readonly marks = computed(() => markPositions(this.report(), this.playback.duration()));
   /** The video's length, in whole seconds: the seek bar's end. */
@@ -265,14 +270,20 @@ export class Player {
     localStorage.setItem(MINE_KEY, this.showMine() ? '1' : '0');
   }
 
-  /** Fills the screen with the player, or leaves full screen. Where the browser refuses, nothing changes. */
+  /** Fills the screen with the player, or leaves full screen. Where the browser refuses, the player fills the window. */
   protected toggleFullScreen(): void {
-    if (this.full()) {
+    if (this.windowed()) {
+      this.leaveWindow();
+      return;
+    }
+    if (this.screen()) {
       void document.exitFullscreen().catch(() => undefined);
       return;
     }
     const host: Partial<HTMLElement> = this.host.nativeElement;
-    void host.requestFullscreen?.().catch(() => undefined);
+    const asked = host.requestFullscreen?.();
+    if (asked) void asked.catch(() => this.fillWindow());
+    else this.fillWindow();
   }
 
   /**
@@ -281,14 +292,35 @@ export class Player {
    */
   protected followFullScreen(): void {
     const host = this.host.nativeElement;
-    this.full.set(document.fullscreenElement === host);
-    if (this.full()) host.scrollTop = 0;
+    this.screen.set(document.fullscreenElement === host);
+    if (this.screen()) host.scrollTop = 0;
+  }
+
+  /**
+   * The player fills the window, laid out as in full screen. It goes into the page's top layer as a popover, which
+   * no container of the page holds in (the main area measures its width, so it would hold a fixed layer in it).
+   */
+  private fillWindow(): void {
+    const host = this.host.nativeElement;
+    const optional: Partial<HTMLElement> = host;
+    if (!optional.showPopover) return;
+    host.setAttribute('popover', 'manual');
+    host.showPopover();
+    host.scrollTop = 0;
+    this.windowed.set(true);
+  }
+
+  private leaveWindow(): void {
+    const host = this.host.nativeElement;
+    host.hidePopover();
+    host.removeAttribute('popover');
+    this.windowed.set(false);
   }
 
   /**
    * Space plays or pauses; Left and Right step one frame; Shift with Left or Right replays the previous or next flick
    * (a tracking run: goes to the previous or next bot's death); F goes full screen or leaves it, and so does Escape
-   * where the browser leaves it to the page. Keys typed into a field, and Space and the arrows used by a list or a
+   * where the browser leaves it to the page (always, when the player fills the window). Keys typed into a field, and Space and the arrows used by a list or a
    * slider, are theirs.
    */
   protected handleKeydown(e: KeyboardEvent): void {

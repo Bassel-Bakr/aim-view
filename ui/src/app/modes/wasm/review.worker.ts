@@ -5,22 +5,16 @@
 // pop-ups). python/review.py's track_model, step by step: the fixed map from the key frames, then every frame. Frames
 // before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each key frame and each frame
 // also goes to the camera worker (the camera's turn and KovaaK's countdown bar, which a tracking run's review reads,
-// and the HUD, which a review without a stats file reads).
-import {
-  ALL_FORMATS,
-  BlobSource,
-  EncodedPacketSink,
-  Input,
-  InputVideoTrack,
-  VideoSample,
-  VideoSampleSink,
-  VideoSinkDecoderOptions,
-} from 'mediabunny';
+// and the HUD, which a review without a stats file reads). The area finder has a worker of its own
+// (area-finder.worker.ts), which decodes the frames it reads as this one does (video-frames.ts, frame-converter.ts).
+import { VideoSample } from 'mediabunny';
 import type { InferenceSession } from 'onnxruntime-web/wasm';
 import { CameraLink } from './camera-link';
-import { Core, CoreBlock, matrixNumber } from './core';
-import { BrowserDevice, FrameFormat, ReviewMessage, ReviewRequest } from './review-messages';
+import { Core } from './core';
+import { FrameConverter } from './frame-converter';
+import { BrowserDevice, ReviewMessage, ReviewRequest } from './review-messages';
 import { splitRuns, windowFrames } from './split-runs';
+import { VideoFrames } from './video-frames';
 
 /** WebGPU's flag constants, which TypeScript's worker library leaves out (it has WebGPU's types). */
 declare const GPUBufferUsage: Readonly<
@@ -71,12 +65,6 @@ const PROGRESS_EVERY = 60;
 /** The fewest frames a run has (10 s at 60 frames a second): a shorter recording is one run. */
 const LEAST_RUN = 600;
 
-/** Every frame's time from 0 on, in order, and the key frames' times. */
-interface FrameTimes {
-  times: number[];
-  keys: number[];
-}
-
 const say = (m: ReviewMessage) => postMessage(m);
 
 addEventListener('message', (e: MessageEvent<ReviewRequest>) => {
@@ -85,77 +73,9 @@ addEventListener('message', (e: MessageEvent<ReviewRequest>) => {
   );
 });
 
-/**
- * A frame's planes written into the core's memory as YUV 4:2:0 (Y, U, V), whatever layout the decoder gave. An I420
- * frame (the software decoder's) is copied by the decoder straight into place, packed; another, through scratch.
- */
-async function writeI420(
-  sample: VideoSample,
-  core: Core,
-  block: CoreBlock,
-  scratch: Uint8Array,
-): Promise<void> {
-  const { width: w, height: h } = sample.visibleRect;
-  if (sample.format === 'I420') {
-    const [cw, ch] = [w >> 1, h >> 1];
-    const packed: PlaneLayout[] = [
-      { offset: 0, stride: w },
-      { offset: w * h, stride: cw },
-      { offset: w * h + cw * ch, stride: cw },
-    ];
-    // the core's memory can grow while the copy waits (the tracker takes a call's maps meanwhile): copy again then
-    for (;;) {
-      const memory = core.x.memory.buffer;
-      try {
-        await sample.copyTo(core.bytes(block), { layout: packed, rect: sample.visibleRect });
-      } catch (e) {
-        if (core.x.memory.buffer === memory) throw e;
-      }
-      if (core.x.memory.buffer === memory) return;
-    }
-  }
-  if (sample.format !== 'NV12') {
-    throw new Error(
-      `The decoder gave ${sample.format ?? 'an unknown'} frames; the review reads 8-bit YUV 4:2:0`,
-    );
-  }
-  // NV12 (a hardware decoder's): the luma as it is, the chroma's interleaved U and V apart
-  const [yp, up] = await sample.copyTo(scratch);
-  const out = core.bytes(block);
-  for (let r = 0; r < h; r++)
-    out.set(scratch.subarray(yp.offset + r * yp.stride, yp.offset + r * yp.stride + w), r * w);
-  const cw = w >> 1;
-  const ch = h >> 1;
-  const u0 = w * h;
-  const v0 = u0 + cw * ch;
-  for (let r = 0; r < ch; r++) {
-    const row = up.offset + r * up.stride;
-    for (let c = 0; c < cw; c++) {
-      out[u0 + r * cw + c] = scratch[row + 2 * c];
-      out[v0 + r * cw + c] = scratch[row + 2 * c + 1];
-    }
-  }
-}
-
 /** The recording's frame rate as ffprobe gives a constant one (OBS records whole frame rates). */
 function frameRate(rate: number): number {
   return Math.abs(rate - Math.round(rate)) < 0.01 ? Math.round(rate) : rate;
-}
-
-/**
- * The decoder to ask for: the browser's software decoder, where it has one for the video. A hardware decoder's frames
- * are on the GPU, and copying each one back takes longer than the software decoder does, while the detector waits for
- * the GPU (av1 at 2560x1440: 50 frames a second with the hardware decoder, 76 with the software one). Both give the
- * same bytes. Chrome has no software decoder for HEVC: there, the hardware one.
- */
-async function decoderOptions(track: InputVideoTrack): Promise<VideoSinkDecoderOptions> {
-  const config = await track.getDecoderConfig();
-  if (!config) return {};
-  const software = await VideoDecoder.isConfigSupported({
-    ...config,
-    hardwareAcceleration: 'prefer-software',
-  }).catch(() => null);
-  return software?.supported ? { hardwareAcceleration: 'prefer-software' } : {};
 }
 
 /** onnxruntime-web's build for the device, loading its WebAssembly from ortPath. */
@@ -171,33 +91,6 @@ async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
       ? 1
       : Math.min(8, navigator.hardwareConcurrency);
   return ort;
-}
-
-/** The recording's frame times, from its packets alone (none decoded). */
-/**
- * The frames the area finder reads (src/areas.rs: sample_frames): null for every key frame, when the recording has
- * enough; else the indexes of frames spread over it.
- */
-function finderPicks(core: Core, keys: number, times: number[], duration: number): number[] | null {
-  const request = JSON.stringify({ keys, times, duration });
-  const answer: unknown = JSON.parse(
-    core.takeText(core.textIn(request, (p, n) => core.x.areas_sample(p, n))),
-  );
-  return Array.isArray(answer) ? (answer as number[]) : null;
-}
-
-async function frameTimes(track: InputVideoTrack): Promise<FrameTimes> {
-  const packets = new EncodedPacketSink(track);
-  const only = { metadataOnly: true };
-  const times: number[] = [];
-  const keys: number[] = [];
-  for (let p = await packets.getFirstPacket(only); p; p = await packets.getNextPacket(p, only)) {
-    if (p.timestamp < 0) continue;
-    times.push(p.timestamp);
-    if (p.type === 'key') keys.push(p.timestamp);
-  }
-  times.sort((a, b) => a - b);
-  return { times, keys };
 }
 
 /**
@@ -275,11 +168,9 @@ async function startCapture(
  * the other runs'. A run but the last also reads the next run's first frame, for the camera's turn into it.
  */
 async function review(req: ReviewRequest): Promise<void> {
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(req.file) });
-  const track = await input.getPrimaryVideoTrack();
-  if (!track) throw new Error('The file has no video');
-  const fps = frameRate((await track.computePacketStats(240)).averagePacketRate);
-  const { times, keys } = await frameTimes(track);
+  const video = await VideoFrames.open(req.file, 'software');
+  const fps = frameRate((await video.track.computePacketStats(240)).averagePacketRate);
+  const { times, keys } = await video.frameTimes();
   const runs = splitRuns(times, keys, req.runs, LEAST_RUN, windowFrames(times, req.window));
   const total = runs.reduce((a, r) => a + r.frames, 0);
   const run = runs[req.run];
@@ -291,65 +182,37 @@ async function review(req: ReviewRequest): Promise<void> {
   const detector = await startDetector(req);
   const { ort, device } = detector;
   let session = detector.session;
-  const samples = new VideoSampleSink(track, await decoderOptions(track));
   const camera = new CameraLink(req.camera);
   // the rows of a frame's RGB the countdown test reads, which go to the camera worker after its Y plane
   const rows = core.x.camera_rgb_rows();
   const [rowsStart, rowsEnd] = [(rows & 0xffff) * W * 3, (rows >> 16) * W * 3];
 
-  // the converter, made for the first frame's size and colours (the camera worker opens with them); the buffers it
-  // reads and fills, and the camera worker's (a frame's Y plane and countdown rows; a key frame's Y plane)
-  let converter = 0;
-  // set inside prepare(): "as" keeps TypeScript from taking it for null for good
-  let format = null as FrameFormat | null;
-  let size = 0;
-  let yuv: CoreBlock | null = null;
-  let scratch = new Uint8Array(0);
+  // the converter, made for the first frame's size and colors (the camera worker opens with them); the buffers it
+  // fills, and the camera worker's (a frame's Y plane and countdown rows; a key frame's Y plane)
+  const frames = new FrameConverter(core);
   let lumaBytes = 0;
   let cameraBytes = 0;
   const yuv720 = core.reserve((W * H * 3) / 2);
   const rgb = core.reserve(W * H * 3);
-  const prepare = (s: VideoSample) => {
-    const { width: w, height: h } = s.visibleRect;
-    if (!converter) {
-      format = {
-        width: w,
-        height: h,
-        matrix: matrixNumber(s.colorSpace.matrix),
-        full: s.colorSpace.fullRange ? 1 : 0,
-      };
-      converter = core.x.converter_new(w, h, format.matrix, format.full);
-      size = (w * h * 3) / 2;
-      yuv = core.reserve(size);
-      lumaBytes = w * h;
+  /** A decoded frame into the core's memory, closed; the first one opens the camera worker with the frames' format. */
+  const write = async (s: VideoSample) => {
+    const block = await frames.write(s);
+    if (!lumaBytes && frames.format) {
+      lumaBytes = frames.format.width * frames.format.height;
       cameraBytes = lumaBytes + rowsEnd - rowsStart;
-      camera.open({ kind: 'open', coreUrl: req.coreUrl, ...format });
+      camera.open({ kind: 'open', coreUrl: req.coreUrl, ...frames.format });
     }
-    if (scratch.length < s.allocationSize()) scratch = new Uint8Array(s.allocationSize());
-    return yuv as CoreBlock;
+    return block;
   };
 
-  // 1. the fixed map, from the key frames (ffmpeg -skip_frame nokey); each key frame's Y plane to the HUD watch. The
-  // first run's area finder (src/areas.rs) reads the key frames too, or frames spread over the recording when it has
-  // few (picks).
+  // 1. the fixed map, from the key frames (ffmpeg -skip_frame nokey); each key frame's Y plane to the HUD watch
   say({ kind: 'progress', stage: 'looking', done: 0, total });
-  const finder = req.run === 0 ? core.x.areas_new() : 0;
-  const picks = finder
-    ? finderPicks(core, keys.length, times, await input.computeDuration())
-    : null;
-  const packets = new EncodedPacketSink(track);
   const fixedBuilder = core.x.fixed_new();
   let keyFrames = 0;
-  for (let p = await packets.getFirstKeyPacket(); p; p = await packets.getNextKeyPacket(p)) {
-    if (p.timestamp < 0) continue;
-    const s = await samples.getSample(p.timestamp);
-    if (!s) continue;
-    const block = prepare(s);
-    await writeI420(s, core, block, scratch);
-    s.close();
-    core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
+  for await (const s of video.keySamples()) {
+    const block = await write(s);
+    frames.yuv720(block, yuv720);
     core.x.fixed_add(fixedBuilder, yuv720.ptr);
-    if (finder && !picks) core.x.areas_add(finder, yuv720.ptr);
     const key = await camera.take(cameraBytes);
     new Uint8Array(key).set(core.bytes(block).subarray(0, lumaBytes));
     camera.sendKey(key);
@@ -359,25 +222,11 @@ async function review(req: ReviewRequest): Promise<void> {
   core.x.fixed_finish(fixedBuilder, fixedBlock.ptr);
   const fixed = core.bytes(fixedBlock).slice();
   core.free(fixedBlock);
+  const format = frames.format;
   if (!format) throw new Error('The video has no frames');
-  for (const i of picks ?? []) {
-    const s = await samples.getSample(times[i]);
-    if (!s) continue;
-    const block = prepare(s);
-    await writeI420(s, core, block, scratch);
-    s.close();
-    core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
-    core.x.areas_add(finder, yuv720.ptr);
-  }
   // a review from part way in: the first run's watches have nothing before its first frame
   const skip = req.run === 0 ? run.first : 0;
-  camera.start({ kind: 'start', fixed, skip, areas: req.areas, session: finder !== 0 });
-  // the areas found, with KovaaK's session box as the HUD watch finds it (the finder's frames freed before tracking)
-  const found = finder
-    ? core.takeText(
-        core.textIn(await camera.session(), (p, n) => core.x.areas_finish(finder, p, n)),
-      )
-    : null;
+  camera.start({ kind: 'start', fixed, skip, areas: req.areas });
   // the fixed map once for each frame of a call: the detector takes up to req.batch frames at once
   const fixedAll = (k: number) => {
     const all = new Uint8Array(k * W * H);
@@ -481,10 +330,8 @@ async function review(req: ReviewRequest): Promise<void> {
   };
   /** A frame to RGB, and to the camera worker: its Y plane, and the rows of the RGB the countdown test reads. */
   const convert = async (s: VideoSample) => {
-    const block = prepare(s);
-    await writeI420(s, core, block, scratch);
-    s.close();
-    core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
+    const block = await write(s);
+    frames.rgb(block, rgb);
     const copy = await camera.take(cameraBytes);
     new Uint8Array(copy).set(core.bytes(block).subarray(0, lumaBytes));
     new Uint8Array(copy).set(core.bytes(rgb).subarray(rowsStart, rowsEnd), lumaBytes);
@@ -495,7 +342,7 @@ async function review(req: ReviewRequest): Promise<void> {
   // the run's frames, then (but for the last run) the next run's first; decoding stops at the frame after them
   const half = 0.5 / fps;
   const after = times[run.first + run.frames + (run.to === null ? 0 : 1)];
-  const videoFrames = samples
+  const videoFrames = video.samples
     .samples(run.from, after === undefined ? Infinity : after - half)
     [Symbol.asyncIterator]();
   let next = videoFrames.next();
@@ -543,9 +390,9 @@ async function review(req: ReviewRequest): Promise<void> {
   }
   const trackPart = core.takeText(core.x.tracker_part(tracker));
   const watched = await camera.finish();
-  if (converter) core.x.converter_free(converter);
+  frames.free();
   say({
     kind: 'part',
-    part: { found, frames: n, track: trackPart, ...watched, fps, fixed, format, device, keyFrames },
+    part: { frames: n, track: trackPart, ...watched, fps, fixed, format, device, keyFrames },
   });
 }

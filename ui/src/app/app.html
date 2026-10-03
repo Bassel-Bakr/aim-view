@@ -20,7 +20,10 @@
 <app-recordings />
 <main class="main">
   @if (library.selected(); as r) {
-    <app-run [recording]="r" />
+    <!-- The run page and everything on it load when a recording is first opened, not with the list -->
+    @defer (on immediate) {
+      <app-run [recording]="r" />
+    }
   } @else {
     <section class="empty">
       <h2 class="empty-title">Pick a recording</h2>

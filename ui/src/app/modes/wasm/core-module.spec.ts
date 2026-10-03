@@ -104,7 +104,6 @@ function part(first: number, frames: number, camera: number, hud: number): RunPa
   };
   const watch = (n: number): WatchPart => ({ frames: n });
   return {
-    found: null,
     frames,
     track: JSON.stringify(track),
     camera: JSON.stringify(watch(camera)),

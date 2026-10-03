@@ -52,9 +52,6 @@ function serve(port: MessagePort): void {
           say({ kind: 'free', frame: task.frame }, [task.frame]);
         } else if (task.kind === 'start') {
           start(w, task);
-          if (task.session) {
-            say({ kind: 'session', session: w.core.takeText(w.core.x.hud_session_box(w.hud)) });
-          }
         } else if (task.kind === 'frame') {
           read(w, task.frame);
           say({ kind: 'free', frame: task.frame }, [task.frame]);

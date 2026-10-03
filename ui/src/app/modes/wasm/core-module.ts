@@ -15,7 +15,8 @@ import {
 import { CutoffRow } from '../web-files/cutoff-labels';
 import { Core } from './core';
 import { LabelledRecording } from '../web-files/saved-areas';
-import { CameraReading, FoundArea, HudReading, RunPart, VideoReadings } from './review-messages';
+import { FoundArea } from './area-finder-messages';
+import { CameraReading, HudReading, RunPart, VideoReadings } from './review-messages';
 
 /**
  * What the area finder proposes from (src/areas.rs: find_json): the areas found in the recording, the examples it

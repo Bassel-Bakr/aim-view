@@ -16,9 +16,9 @@
     box-shadow: p.$shadow;
   }
 
-  // Full screen: the timeline and the controls keep their height, and the video takes the rest of the screen, as large
-  // as its shape allows; the panels come after them
-  :host(:fullscreen) {
+  // Full screen, or the window where the browser refuses it: the timeline and the controls keep their height, and the
+  // video takes the rest of the screen, as large as its shape allows; the panels come after them
+  :host(:is(:fullscreen, :popover-open)) {
     .frame {
       min-height: p.$full-min-height;
       container-type: size;
@@ -29,8 +29,27 @@
     }
   }
 
+  // The window filled: the popover's own box (the browser's small framed box in the middle) becomes the whole window
+  :host(:popover-open) {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    color: inherit;
+  }
+
   .seek-wrap {
     height: p.$seek-height;
+  }
+
+  // Figures of one width, so the clock and the speeds do not jump
+  .seek-row,
+  .rate {
+    font-variant-numeric: tabular-nums;
   }
 
   .mark {
@@ -42,7 +61,7 @@
 }
 
 @layer components {
-  :host(:fullscreen) {
+  :host(:is(:fullscreen, :popover-open)) {
     @apply flex flex-col overflow-y-auto bg-surface-0 px-7 py-4;
 
     .view {
@@ -76,7 +95,7 @@
   }
 
   .seek-row {
-    @apply mt-4 flex items-center gap-5 text-xs tabular-nums;
+    @apply mt-4 flex items-center gap-5 text-xs;
   }
 
   .time {
@@ -112,7 +131,7 @@
   }
 
   .rate {
-    @apply rounded-md border border-border-strong bg-surface-2 px-5.5 py-2 font-medium text-primary tabular-nums transition-colors hover:bg-surface-3;
+    @apply rounded-md border border-border-strong bg-surface-2 px-5.5 py-2 font-medium text-primary transition-colors hover:bg-surface-3;
 
     &[aria-pressed='true'] {
       @apply border-accent bg-accent-pressed;
