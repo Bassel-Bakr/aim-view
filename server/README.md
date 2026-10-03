@@ -52,8 +52,8 @@ token = "a-long-random-string"
 `aimview-server --help` lists every flag.
 
 The data folder holds what the server writes: each recording's reviews and marks (`vod_app/`), uploads
-(`vod_uploads/`), the detector labels of submitted cut-offs (`vod_model/hand/cutoff/`), the raw mouse logs (`mouse/`)
-and ffmpeg (`ffmpeg/`). The Python server used the same layout in `test_out/`, so the reviews and marks it kept are
+(`vod_uploads/`), the detector labels of submitted cut-offs (`vod_model/hand/cutoff/`), the raw mouse logs (`mouse/`),
+ffmpeg (`ffmpeg/`) and yt-dlp (`yt-dlp/`). The Python server used the same layout in `test_out/`, so the reviews and marks it kept are
 read as they are. Python's scripts open the same library through `aimview-tool` (`python/aimview_tools.py`). An
 upload is written into the uploads folder as it arrives, so it takes little memory however large it is.
 
@@ -64,6 +64,29 @@ ffmpeg and ffprobe, when both run; else the ones in `ffmpeg/` in the data folder
 the first review: BtbN's build, which decodes AV1 with dav1d. gyan.dev's essentials build decodes AV1 with libaom, 2.5
 times slower, and ignores `-skip_frame nokey`. `--ffmpeg <folder>` uses the ffmpeg in that folder (when it has none,
 the PATH's, else a download into it). `--ffmpeg path` uses the PATH's only. The start-up log says which one it uses.
+
+## Links
+
+The UI's From a link (beside Upload) adds a recording from a link: a video's page on any site yt-dlp reads (YouTube,
+Twitch VODs and clips, Medal, Streamable, X, Reddit, Vimeo, Google Drive, Dropbox...), or a video file's address.
+
+- `POST /api/link/formats` with `{"url": ...}` answers `{title, duration, formats}`: the qualities, best first (the
+  most pixels, then the highest frame rate), one for each frame size and frame rate, each with its `id`, `width`,
+  `height`, `fps`, `codec` and `size` in bytes where yt-dlp knows it. Nothing is downloaded.
+- `POST /api/link` with `{"url": ..., "format": <an id, or null for the best>}` answers at once with the new
+  recording's `id`, its file name (`saved`) and its row. The file is named from the title: a KovOBS name
+  (`<scenario> - <score> - <stamp>`) is kept, any other title becomes `<title> - <upload time>`.
+- The download runs as the recording's job: `/api/job?id=` answers stage `downloading`, with `done` and `total` in
+  megabytes (`yt-dlp` or `ffmpeg` while the server fetches them). The chosen quality's video and the best audio are
+  merged into one MP4 with the review's ffmpeg, in a folder of its own (`.link-*` in the uploads folder), and moved
+  into place when it is complete: the list never shows half a file. Then the job is gone (stage `none`). A failure ends
+  it with stage `error` and yt-dlp's reason.
+
+yt-dlp is found as ffmpeg is: the PATH's when it runs, else the official release from GitHub, downloaded once into
+`yt-dlp/` beside ffmpeg's folder. Sites' terms may limit downloading their videos: add only videos you may download.
+
+The UI in browser mode cannot read most sites' videos itself (the browser blocks it), so it asks this server: start it
+with `bun run server`. The UI's Server for links setting holds its address (`http://127.0.0.1:8770` by default).
 
 ## The device
 
@@ -80,7 +103,8 @@ The server logs the model and the device when it starts.
 
 On a loopback address (`127.0.0.1`, `localhost`, `::1`) and with no token, only this machine gets in. The server
 also refuses requests from web sites' pages: a request must name a loopback host, and come from a page on this
-machine.
+machine. A page on this machine on another port (the UI in browser mode, `http://localhost:4200`) may also read the
+API's answers: they carry `Access-Control-Allow-Origin` for that page alone, never for another site's.
 
 Any other address (`0.0.0.0`, a network address) needs a token. Without one, the server refuses to start. With a token,
 every request must carry it:

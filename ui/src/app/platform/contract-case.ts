@@ -1,11 +1,13 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { EnvironmentProviders, Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { answer, ApiRoutes, serverMode } from '../fake-api';
 import { MODE as BROWSER } from '../modes/mode.browser';
 
 /**
- * A mode a contract spec runs against: its providers, and how to let a call finish (the server mode's calls wait
- * for the fake review server's answers; the browser mode's need none).
+ * A mode a contract spec runs against: its providers, and how to let a call finish (its calls wait for the fake
+ * review server's answers: the browser mode's only for links).
  */
 export interface ModeCase {
   name: string;
@@ -24,7 +26,12 @@ async function served<T>(call: Promise<T>, routes: ApiRoutes): Promise<T> {
 
 /** The modes every contract spec runs against. Desktop runs the browser mode's services until desktop/ exists. */
 export const MODE_CASES: ModeCase[] = [
-  { name: 'browser', providers: () => BROWSER.providers, finish: (call) => call },
+  // the browser mode asks the Aim View server on this computer for links only (BrowserLinks)
+  {
+    name: 'browser',
+    providers: () => [provideHttpClient(), provideHttpClientTesting(), ...BROWSER.providers],
+    finish: served,
+  },
   { name: 'server', providers: serverMode, finish: served },
 ];
 

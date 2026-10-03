@@ -1,12 +1,13 @@
 //! Who may use the server. With no token (only on a loopback address), anyone on this machine: requests must name a
 //! loopback host and come from a loopback page, so a web site cannot reach the server through the browser (no DNS
-//! rebinding, no cross-site requests). With a token, every request carries it: `Authorization: Bearer <token>`, or the
+//! rebinding, no cross-site requests but a loopback page's: the UI in browser mode, on http://localhost:4200, asks
+//! the server to download a link, and may read the answers: `loopback_caller`). With a token, every request carries it: `Authorization: Bearer <token>`, or the
 //! cookie that visiting `/?token=<token>` once sets (SameSite=Strict, so other sites' requests do not carry it).
 
 use std::net::{IpAddr, SocketAddr};
 
 use axum::http::header::{AUTHORIZATION, COOKIE, HOST, ORIGIN};
-use axum::http::{HeaderMap, Method, StatusCode, Uri};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri};
 
 /// The cookie that holds the token.
 pub const COOKIE_NAME: &str = "aimview_token";
@@ -52,6 +53,12 @@ fn is_loopback_origin(origin: &str) -> bool {
         .is_some_and(|(scheme, host)| matches!(scheme, "http" | "https") && is_loopback_host(host))
 }
 
+/// The Origin of a page on this machine (http://localhost:4200, the UI in browser mode), which may read the API's
+/// answers (Access-Control-Allow-Origin); None for any other page, and for a request that names none.
+pub fn loopback_caller(headers: &HeaderMap) -> Option<HeaderValue> {
+    headers.get(ORIGIN).filter(|o| o.to_str().is_ok_and(is_loopback_origin)).cloned()
+}
+
 /// Whether every address the server listens on stays on this machine.
 pub fn all_loopback(addrs: &[SocketAddr]) -> bool {
     !addrs.is_empty() && addrs.iter().all(|a| a.ip().to_canonical().is_loopback())
@@ -92,12 +99,12 @@ impl Access {
 
     /// Whether a request may go on.
     pub fn check(&self, method: &Method, uri: &Uri, headers: &HeaderMap) -> Verdict {
-        // a page of another site (a link, a form, a script) never gets in
-        if header(headers, "sec-fetch-site") == Some("cross-site") {
-            return Verdict::Refuse { status: StatusCode::FORBIDDEN, reason: "a request from another site" };
-        }
         let host = header(headers, HOST).or_else(|| uri.authority().map(|a| a.as_str()));
         let origin = header(headers, ORIGIN);
+        // a page of another site (a link, a form, a script) never gets in; a page on this machine may
+        if header(headers, "sec-fetch-site") == Some("cross-site") && !origin.is_some_and(is_loopback_origin) {
+            return Verdict::Refuse { status: StatusCode::FORBIDDEN, reason: "a request from another site" };
+        }
         let Some(token) = &self.token else {
             if !host.is_some_and(is_loopback_host) {
                 return Verdict::Refuse { status: StatusCode::FORBIDDEN, reason: "open the server as localhost or 127.0.0.1" };
@@ -204,6 +211,27 @@ mod tests {
         assert_eq!(refused(&check(&a, Method::GET, "/video?id=x", &cross)), Some(StatusCode::FORBIDDEN));
         let null = [("host", "127.0.0.1:8770"), ("origin", "null")];
         assert!(refused(&check(&a, Method::POST, "/api/run?id=x", &null)).is_some());
+        // the UI in browser mode, on another port of this machine: a cross-site request, from a loopback page
+        let browser = [("host", "127.0.0.1:8770"), ("origin", "http://localhost:4200"), ("sec-fetch-site", "cross-site")];
+        assert_eq!(check(&a, Method::POST, "/api/link", &browser), Verdict::Pass);
+        assert_eq!(check(&a, Method::OPTIONS, "/api/link", &browser), Verdict::Pass);
+        let cross = [("host", "127.0.0.1:8770"), ("origin", "https://evil.example"), ("sec-fetch-site", "cross-site")];
+        assert_eq!(refused(&check(&a, Method::POST, "/api/link", &cross)), Some(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn only_loopback_pages_read_the_answers() {
+        let caller = |origin: &str| {
+            let mut map = HeaderMap::new();
+            map.insert(ORIGIN, origin.parse().unwrap());
+            loopback_caller(&map)
+        };
+        assert_eq!(caller("http://localhost:4200").unwrap(), "http://localhost:4200");
+        assert_eq!(caller("http://127.0.0.1:4200").unwrap(), "http://127.0.0.1:4200");
+        for origin in ["https://evil.example", "null", "http://localhost.evil.example"] {
+            assert!(caller(origin).is_none(), "{origin}");
+        }
+        assert!(loopback_caller(&HeaderMap::new()).is_none());
     }
 
     #[test]

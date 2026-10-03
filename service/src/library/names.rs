@@ -24,6 +24,14 @@ pub(crate) fn parse_video(video: &Path) -> Option<(String, f64, String)> {
     parse_name(&video.with_extension("mp4").file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
 }
 
+/// A video's name of a title and a time stamp, as a recording added from a link is named: "<title> - <stamp>.mp4":
+/// (title, stamp).
+pub(crate) fn parse_titled(video: &Path) -> Option<(String, String)> {
+    let stem = video.file_stem()?.to_string_lossy().into_owned();
+    let (title, stamp) = stem.rsplit_once(" - ")?;
+    (!title.is_empty() && stamp_seconds(stamp).is_some()).then(|| (title.to_string(), stamp.to_string()))
+}
+
 /// A stats file's name as KovaaK writes it: "<scenario> - Challenge - <stamp> Stats.csv": (scenario, stamp).
 pub fn parse_stats_name(name: &str) -> Option<(String, String)> {
     let rest = name.strip_suffix(" Stats.csv")?;
@@ -175,5 +183,10 @@ mod tests {
         assert_eq!(stamp_seconds("0026.06.01-00.00.00"), stamp_seconds("2026.06.01-00.00.00"));
         assert_eq!(local_stamp(946_684_800.0 - offset_at(946_684_800.0) as f64), "2000.01.01-00.00.00");
         assert_eq!(slug("a/1wall - x (2).mp4"), "1wall_-_x_2_");
+        assert_eq!(
+            parse_titled(Path::new("Air 1wall - a run - 2026.10.01-00.00.00.mp4")),
+            Some(("Air 1wall - a run".into(), "2026.10.01-00.00.00".into()))
+        );
+        assert_eq!(parse_titled(Path::new("clip - 2026.mp4")), None);
     }
 }

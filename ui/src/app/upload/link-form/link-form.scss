@@ -1,0 +1,31 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  .dialog {
+    @apply m-auto max-h-(--dialog-max-height) w-(--link-dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+  }
+
+  .head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .link-form {
+    @apply flex items-center gap-3;
+  }
+
+  .field {
+    @apply w-full min-w-0 rounded-md border border-border-strong bg-surface-0 px-5 py-3 text-primary placeholder:text-muted;
+  }
+
+  .quality {
+    @apply flex flex-col gap-2 text-sm text-secondary;
+  }
+
+  .status {
+    @apply flex items-center gap-3 text-sm text-secondary;
+  }
+
+  .failed {
+    @apply text-sm text-warning;
+  }
+}

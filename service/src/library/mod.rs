@@ -5,9 +5,10 @@
 //! settings.rs: what the user set, the models and the model pick. recordings.rs: the recordings list, a recording's
 //! video and folder, uploads, the scenarios' facts. stats.rs: KovaaK's stats files and each recording's pairing with
 //! one. reviews.rs: the review jobs, the review on show, the run window and the report. names.rs: file names and time
-//! stamps. The areas (areas.rs), the faint-target cut-off (faint.rs), labelling (labels.rs) and the mouse logs'
+//! stamps. links.rs: recordings added from a link (yt-dlp). The areas (areas.rs), the faint-target cut-off (faint.rs), labelling (labels.rs) and the mouse logs'
 //! measures (mouse.rs) are kept beside it.
 
+mod links;
 mod names;
 mod recordings;
 mod reviews;
@@ -68,6 +69,8 @@ pub struct Library {
     stats: Mutex<StatsIndex>,
     facts: Mutex<Option<Arc<HashMap<String, Facts>>>>,
     jobs: Mutex<HashMap<String, Arc<Mutex<Job>>>>,
+    /// What links' qualities were read (links.rs), by link, kept for their download.
+    links: Mutex<HashMap<String, crate::ytdlp::LinkInfo>>,
 }
 
 pub(crate) fn modified(p: &Path) -> f64 {
@@ -106,6 +109,7 @@ impl Library {
             stats: Mutex::default(),
             facts: Mutex::default(),
             jobs: Mutex::default(),
+            links: Mutex::default(),
         });
         recordings::remove_stale_spools(&lib.uploads(), std::process::id());
         if let Err(e) = lib.fix_examples() {

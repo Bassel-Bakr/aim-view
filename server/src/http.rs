@@ -10,13 +10,16 @@ use std::time::Instant;
 use axum::Router;
 use axum::body::{Body, Bytes, HttpBody};
 use axum::extract::{DefaultBodyLimit, Request, State};
-use axum::http::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE, SET_COOKIE};
-use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
+use axum::http::header::{
+    ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS,
+    ACCESS_CONTROL_MAX_AGE, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE, SET_COOKIE, VARY,
+};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio_util::io::ReaderStream;
 
-use crate::access::{Access, Verdict};
+use crate::access::{Access, Verdict, loopback_caller};
 use crate::files::{self, Found};
 
 /// One request to the review API.
@@ -87,7 +90,24 @@ async fn route(app: &App, req: Request) -> Response {
         Verdict::Refuse { status, reason } => return text(status, format!("Aim View: {reason}\n")),
     }
     if files::is_api(req.uri().path()) {
-        return call_api(app, req).await;
+        // a page on this machine other than the server's (the UI in browser mode) may read the answers
+        let caller = loopback_caller(req.headers());
+        if req.method() == Method::OPTIONS {
+            let mut r = StatusCode::NO_CONTENT.into_response();
+            if let Some(origin) = caller {
+                let h = r.headers_mut();
+                h.insert(ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, POST"));
+                h.insert(ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("content-type, range"));
+                h.insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
+                allow(h, origin);
+            }
+            return r;
+        }
+        let mut r = call_api(app, req).await;
+        if let Some(origin) = caller {
+            allow(r.headers_mut(), origin);
+        }
+        return r;
     }
     if !matches!(*req.method(), Method::GET | Method::HEAD) {
         return text(StatusCode::METHOD_NOT_ALLOWED, "the UI's files are read with GET\n");
@@ -152,6 +172,13 @@ async fn call_api(app: &App, req: Request) -> Response {
         }
     }
     response
+}
+
+/// Lets the page at `origin` read the answer, and the video's ranges.
+fn allow(headers: &mut HeaderMap, origin: HeaderValue) {
+    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    headers.insert(ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static("content-range"));
+    headers.append(VARY, HeaderValue::from_static("origin"));
 }
 
 /// Writes a request's body to `file` as it arrives, so an upload of any size takes little memory; on failure, the
@@ -347,10 +374,21 @@ mod tests {
         assert_eq!(r.headers()["content-range"], "bytes 0-1/10");
         let (status, _) = send(&router, Request::get("/api/nothing"), b"").await;
         assert_eq!(status, StatusCode::OK, "the API answers its own unknown paths");
+        // the UI in browser mode, on another port of this machine, reads the answers and the video's ranges
+        let page = |r: axum::http::request::Builder| r.header("origin", "http://localhost:4200").header("sec-fetch-site", "cross-site");
+        let (status, r) = send(&router, page(Request::options("/api/link")), b"").await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(r.headers()["access-control-allow-origin"], "http://localhost:4200");
+        assert_eq!(r.headers()["access-control-allow-headers"], "content-type, range");
+        let (status, r) = send(&router, page(Request::get("/video?id=x").header(RANGE, "bytes=0-1")), b"").await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+        assert_eq!(r.headers()["access-control-allow-origin"], "http://localhost:4200");
+        assert_eq!(r.headers()["access-control-expose-headers"], "content-range");
         let calls = echo.calls.lock().unwrap();
         assert_eq!(calls[0], ("POST".into(), "/api/run?id=a%20b".into(), Some("bytes=5-".into()), b"{\"start\":1}".to_vec()));
         assert_eq!(calls[1].1, "/video?id=x");
         assert_eq!(calls[2].1, "/api/nothing");
+        assert_eq!(calls.len(), 4, "a preflight never reaches the API");
     }
 
     #[tokio::test]

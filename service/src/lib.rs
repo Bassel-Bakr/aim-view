@@ -7,7 +7,8 @@
 //! settings and models, the reviews and their reports. areas.rs, finder.rs: the areas a review leaves out and the area
 //! finder. faint.rs: the faint-target cut-off. labels.rs: the labelling queues. mouse.rs: the mouse logs' measures.
 //! review.rs, detector.rs, video.rs, ffmpeg.rs: the native review. report.rs: the report the core works out.
-//! run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them.
+//! run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them. ytdlp.rs: yt-dlp, for
+//! recordings added from a link.
 
 pub mod api;
 pub mod areas;
@@ -25,6 +26,7 @@ pub mod report;
 pub mod review;
 pub mod run_window;
 pub mod video;
+pub mod ytdlp;
 
 pub use api::{ApiRequest, ApiResponse, handle};
 pub use config::{Config, Device, Ffmpeg, Folders, Layout};

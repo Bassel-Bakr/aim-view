@@ -9,6 +9,11 @@ function markedOrNull(m: RunMarks | null): RunMarks | null {
   return m && (m.start != null || m.end != null || m.length != null) ? m : null;
 }
 
+/** A link's download is a job of the recording's too: it is the recording source's to follow, not a review. */
+function reviewOnly(job: Job): Job {
+  return job.link ? { stage: 'none' } : job;
+}
+
 /** The review server reviews its recordings (python/review.py), with the model picked there. */
 @Injectable({ providedIn: 'root' })
 export class ServerReview implements ReviewEngine {
@@ -38,11 +43,11 @@ export class ServerReview implements ReviewEngine {
 
   start(id: string, again: boolean): Promise<Job> {
     const params: Record<string, string> = again ? { id, again: '1' } : { id };
-    return firstValueFrom(this.http.post<Job>('/api/analyse', null, { params }));
+    return firstValueFrom(this.http.post<Job>('/api/analyse', null, { params })).then(reviewOnly);
   }
 
   job(id: string): Promise<Job> {
-    return firstValueFrom(this.http.get<Job>('/api/job', { params: { id } }));
+    return firstValueFrom(this.http.get<Job>('/api/job', { params: { id } })).then(reviewOnly);
   }
 
   /** The window the server keeps (run.json): all three null when none is marked. */

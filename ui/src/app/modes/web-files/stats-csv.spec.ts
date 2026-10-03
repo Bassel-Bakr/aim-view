@@ -1,5 +1,6 @@
 import {
   parseStatsCsv,
+  parseTitledName,
   parseVodName,
   stampSeconds,
   statsForVideo,
@@ -69,6 +70,11 @@ describe('parseVodName and stampSeconds', () => {
       stamp: '2026.10.01-16.23.03',
     });
     expect(parseVodName('Replay 2026-10-02 14-28-02.mp4')).toBeNull();
+    expect(parseTitledName('Best flicks - 2026.10.04-12.00.00.mp4')).toEqual({
+      title: 'Best flicks',
+      stamp: '2026.10.04-12.00.00',
+    });
+    expect(parseTitledName('Best flicks.mp4')).toBeNull();
   });
 
   it('reads the year 0026 as 2026', () => {

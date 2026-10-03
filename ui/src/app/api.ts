@@ -569,10 +569,15 @@ export type JobStage =
   | 'reading the HUD'
   | 'camera'
   | 'measuring'
+  | 'downloading'
+  | 'yt-dlp'
   | 'done'
   | 'error';
 
-/** A review in progress, or its end (/api/job). */
+/**
+ * A review in progress, or its end (/api/job). A link's download is a job too (link): its stage is downloading
+ * (megabytes done of total), or ffmpeg or yt-dlp while the server fetches them; it is gone (none) once the video is in.
+ */
 export interface Job {
   stage: JobStage;
   done?: number;
@@ -581,6 +586,32 @@ export interface Job {
   error?: string;
   /** The device the detector runs on, once it has loaded ("DirectML", "DirectML and CPU"); the browser's job has none. */
   device?: string;
+  link?: boolean;
+}
+
+/** A quality a link offers (/api/link/formats): its frame size, frame rate, codec and size in bytes, where known. */
+export interface LinkFormat {
+  id: string;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  codec: string | null;
+  size: number | null;
+}
+
+/** What a link offers: its title, its length in seconds, and the qualities to choose from, best first. */
+export interface LinkInfo {
+  title: string;
+  duration: number | null;
+  formats: LinkFormat[];
+}
+
+/** The answer to POST /api/link: the new recording's id, its file name, and its row while it downloads. */
+export interface LinkAdded {
+  id: string;
+  saved: string;
+  title: string;
+  recording: Recording;
 }
 
 /**

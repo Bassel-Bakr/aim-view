@@ -1,5 +1,5 @@
-import { Signal } from '@angular/core';
-import { Recording } from '../api';
+import { Signal, WritableSignal } from '@angular/core';
+import { LinkInfo, Recording } from '../api';
 
 /** A video being remuxed into MP4 so the browser can play it; progress is the share done, 0 to 1. */
 export interface VideoRemuxing {
@@ -21,7 +21,25 @@ export interface VideoFailed {
   error: string;
 }
 
-export type VideoState = VideoRemuxing | VideoReady | VideoFailed;
+/**
+ * A video added from a link, on its way: what is being done (downloading it, copying it into this browser), and the
+ * megabytes done of total (total 0 while it is not known).
+ */
+export interface VideoDownloading {
+  state: 'downloading';
+  label: string;
+  done: number;
+  total: number;
+}
+
+/** A video added from a link that could not be downloaded: why, in plain words. */
+export interface VideoNotDownloaded {
+  state: 'not-downloaded';
+  error: string;
+}
+
+export type VideoState =
+  VideoRemuxing | VideoReady | VideoFailed | VideoDownloading | VideoNotDownloaded;
 
 /** What adding files did: the recordings added, and the .csv files that are not KovaaK's stats files. */
 export interface AddResult {
@@ -74,6 +92,11 @@ export abstract class RecordingSource {
   abstract readonly folder: Signal<FolderAction | null>;
   /** Whether the list can be cleared (recordings opened in this browser); the server's library cannot. */
   abstract readonly clearable: boolean;
+  /**
+   * The address of the Aim View server on this computer that downloads links for this browser, which the user can
+   * change; null where the mode downloads them itself.
+   */
+  abstract readonly linkServer: WritableSignal<string> | null;
 
   /** A recording's video, or null when the recording is not one of these. */
   abstract video(id: string): VideoState | null;
@@ -81,6 +104,17 @@ export abstract class RecordingSource {
   abstract lasting(id: string): boolean;
   /** Adds recordings from this computer, each with its stats .csv when one is among the files. */
   abstract add(files: readonly File[]): Promise<AddResult>;
+  /**
+   * What a link offers (a video's page on YouTube, Twitch, Medal and the other sites yt-dlp reads, or a video file's
+   * address): its title and the qualities to choose from, best first; none for a plain video file.
+   */
+  abstract linkInfo(url: string): Promise<LinkInfo>;
+  /**
+   * Adds a recording from a link in the chosen quality (a format's id from linkInfo; null: the best). It resolves
+   * with the new recording's id as soon as the download starts: the recording is listed at once, and its video is
+   * downloading until it is in.
+   */
+  abstract addLink(url: string, format: string | null): Promise<string>;
   /** Changes a recording's row after a change made elsewhere (it was reviewed, it has a stats file). */
   abstract patch(id: string, change: Partial<Recording>): void;
   /** Empties the list, and forgets the recordings folder: the files themselves stay where they are. */

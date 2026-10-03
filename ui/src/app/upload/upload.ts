@@ -5,6 +5,7 @@ import { formatCount, formatPercent } from '../format';
 import { FolderAction } from '../platform/recording-source';
 import { StatsFiles } from '../platform/stats-files';
 import { Library } from '../services/library';
+import { LinkForm } from './link-form/link-form';
 
 /** What the last upload did, in words; failed for a file that could not be used. */
 export interface UploadNote {
@@ -21,11 +22,12 @@ export interface BusyNote {
 }
 
 /**
- * Upload: recordings from this computer, by the button or dropped anywhere on the page, with their stats .csv files.
+ * Upload: recordings from this computer, by the button or dropped anywhere on the page, with their stats .csv files,
+ * or from a link (LinkForm).
  * Where they go is the mode's (RecordingSource). A stats file dropped alone pairs with the open recording.
  */
 @Component({
-  imports: [Button],
+  imports: [Button, LinkForm],
   selector: 'app-upload',
   templateUrl: './upload.html',
   styleUrl: './upload.scss',

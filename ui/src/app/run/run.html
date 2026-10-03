@@ -17,7 +17,7 @@
         type="button"
         appButton
         [intent]="recording().analysed ? 'normal' : 'primary'"
-        [disabled]="review.running()"
+        [disabled]="review.running() || notHere()"
         (click)="startReview()"
       >
         {{ actionLabel() }}
@@ -79,6 +79,16 @@
         <span aria-hidden="true">{{ remuxShare() }}</span>
       </span>
     </div>
+  } @else if (v.state === 'downloading') {
+    <div class="progress">
+      <div class="fill" [style.width.%]="v.total ? (100 * v.done) / v.total : 0"></div>
+      <span class="progress-text">
+        <span role="status">{{ v.label || 'Downloading the video' }}</span>
+        <span aria-hidden="true">{{ v.total ? v.done + ' / ' + v.total + ' MB' : '' }}</span>
+      </span>
+    </div>
+  } @else if (v.state === 'not-downloaded') {
+    <p class="note" role="alert">Could not download the video: {{ v.error }}</p>
   } @else if (v.state === 'failed') {
     <p class="note" role="alert">
       Could not remux it into MP4 ({{ v.error }}). It plays as it is, if the browser can play it.

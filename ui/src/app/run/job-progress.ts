@@ -18,6 +18,9 @@ const STAGES: Record<JobStage, string> = {
   'reading the HUD': 'Reading the session HUD',
   camera: "Reading the camera's turn",
   measuring: 'Measuring',
+  // a link's download: the video's own progress shows it (RecordingSource), not the review's
+  downloading: 'Downloading the video',
+  'yt-dlp': 'Getting yt-dlp (once)',
   done: 'Reviewed',
   error: 'The review failed',
 };

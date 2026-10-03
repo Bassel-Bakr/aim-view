@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { FolderAction, VideoState } from '../../platform/recording-source';
+import { FolderAction } from '../../platform/recording-source';
 import { ServerRecordings } from '../http/server-recordings';
 import { DESKTOP_API } from './desktop-api';
 
@@ -25,12 +25,8 @@ export class DesktopRecordings extends ServerRecordings {
     files: null,
   }));
 
-  override video(id: string): VideoState {
-    return {
-      state: 'ready',
-      url: `${DESKTOP_API}/video?id=${encodeURIComponent(id)}`,
-      remuxed: false,
-    };
+  protected override streamUrl(id: string): string {
+    return `${DESKTOP_API}/video?id=${encodeURIComponent(id)}`;
   }
 
   /** The system's folder dialog; the list follows the folder chosen. */

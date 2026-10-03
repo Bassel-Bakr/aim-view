@@ -148,6 +148,9 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   facts. The stats folder lets each run find its stats file by name and time. The scenario folders
   give each scenario's kind, time limit and target count: the review waits for them unless the scenario is in neither
   folder.
+  From a link (beside Upload; `RecordingSource.linkInfo`, `addLink`): the service downloads it with yt-dlp
+  (service/src/ytdlp.rs, library/links.rs; /api/link/formats, /api/link, job stage `downloading`); browser mode
+  fetches a video file's address itself when the host allows it, else asks the local server (server/README.md).
   Server mode: files added are sent to the server, and the stats file panel lists KovaaK's stats files (`/api/stats`).
 - The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
   (review.worker.ts): decode (Mediabunny and the browser's decoder, its software one where it has one: the same YUV

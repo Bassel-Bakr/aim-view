@@ -91,6 +91,8 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
                 None => lib.upload(&name, of.as_deref(), req.body),
             }
         }
+        (true, "/api/link/formats") => lib.link_formats(&body()),
+        (true, "/api/link") => lib.add_link(&body()),
         (false, "/api/mouse") => id().and_then(|id| lib.mouse_measures(&id)),
         (false, "/api/info") => Ok(json!({ "detector": lib.model(), "device": lib.config().device.name() })),
         (false, "/api/exclude") => lib.exclude_answer(query("id").as_deref(), query("layout").as_deref() == Some("kovobs")),

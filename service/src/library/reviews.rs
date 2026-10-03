@@ -15,24 +15,33 @@ use crate::review::{Request, TimeWindow, add_device, review};
 use crate::run_window::{RunMarks, covers};
 
 /// A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded ("DirectML",
-/// "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error.
+/// "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error. A link's download
+/// (links.rs) is a job too, marked `link`: its stage is "downloading" (megabytes), or "ffmpeg" or "yt-dlp" while they
+/// are fetched.
 #[derive(Clone, Serialize)]
 pub struct Job {
-    stage: String,
-    done: usize,
-    total: usize,
+    pub(super) stage: String,
+    pub(super) done: usize,
+    pub(super) total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     seconds: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
+    pub(super) error: Option<String>,
     model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     device: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) link: bool,
 }
 
 impl Job {
     pub(crate) fn new(stage: &str, model: &str) -> Job {
-        Job { stage: stage.into(), done: 0, total: 1, seconds: None, error: None, model: model.into(), device: None }
+        Job { stage: stage.into(), done: 0, total: 1, seconds: None, error: None, model: model.into(), device: None, link: false }
+    }
+
+    /// A link's download, starting.
+    pub(super) fn download() -> Job {
+        Job { link: true, ..Job::new("downloading", "") }
     }
 }
 

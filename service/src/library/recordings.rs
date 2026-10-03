@@ -9,26 +9,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use aimview::scenario::Facts;
 use serde_json::{Value, json};
 
-use super::names::{free_name, local_stamp, parse_name, parse_video, slug};
+use super::names::{free_name, local_stamp, parse_name, parse_titled, parse_video, slug};
 use super::{Answer, Failure, Library, modified};
 
 pub(crate) const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];
 
-/// Removes the upload bodies (`spool`'s ".incoming-<pid>-<n>.part" files) that a process other than `pid` left in
-/// `dir`: a server that stopped mid-upload never moved them into place. Every other file stays.
+/// Removes the upload bodies (`spool`'s ".incoming-<pid>-<n>.part" files) and the links' download folders
+/// (links.rs: ".link-<pid>-<n>") that a process other than `pid` left in `dir`: a server that stopped mid-upload or
+/// mid-download never moved them into place. Every other file stays.
 pub(super) fn remove_stale_spools(dir: &Path, pid: u32) {
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        let owner = name
-            .strip_prefix(".incoming-")
-            .and_then(|r| r.strip_suffix(".part"))
-            .and_then(|r| r.split_once('-'))
-            .filter(|(_, n)| n.parse::<u64>().is_ok())
-            .and_then(|(p, _)| p.parse::<u32>().ok());
-        if owner.is_some_and(|p| p != pid)
-            && e.path().is_file()
-            && let Err(err) = std::fs::remove_file(e.path())
-        {
+        let owner = |rest: Option<&str>| {
+            rest.and_then(|r| r.split_once('-'))
+                .filter(|(_, n)| n.parse::<u64>().is_ok())
+                .and_then(|(p, _)| p.parse::<u32>().ok())
+                .is_some_and(|p| p != pid)
+        };
+        let removed = if owner(name.strip_prefix(".incoming-").and_then(|r| r.strip_suffix(".part"))) && e.path().is_file() {
+            std::fs::remove_file(e.path())
+        } else if owner(name.strip_prefix(".link-")) && e.path().is_dir() {
+            std::fs::remove_dir_all(e.path())
+        } else {
+            continue;
+        };
+        if let Err(err) = removed {
             eprintln!("{}: {err}", e.path().display());
         }
     }
@@ -131,21 +136,27 @@ impl Library {
             if !p.is_file() || !VIDEO_TYPES.contains(&ext.as_str()) {
                 continue;
             }
-            let name = e.file_name().to_string_lossy().into_owned();
-            let id = format!("uploads/{name}");
-            let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            let (scenario, score, stamp) = match parse_video(&p) {
-                Some((s, score, stamp)) => (s, Some(score), stamp),
-                None => (stem, None, local_stamp(modified(&p))),
-            };
-            out.push(json!({
-                "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
-                "mtime": modified(&p), "size": p.metadata().map_or(0, |m| m.len()),
-                "stats": self.stats_of(&id, &p).is_some(), "uploaded": true, "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
-            }));
+            out.push(self.upload_row(&p, &not_aim));
         }
         out.sort_by(|a, b| b["mtime"].as_f64().unwrap_or(0.0).total_cmp(&a["mtime"].as_f64().unwrap_or(0.0)));
         Ok(Value::Array(out))
+    }
+
+    /// An upload's row of the list: named as KovOBS names a recording, or "<title> - <stamp>" (a link's), or anyhow.
+    pub(super) fn upload_row(&self, p: &Path, not_aim: &std::collections::BTreeSet<String>) -> Value {
+        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let id = format!("uploads/{name}");
+        let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let (scenario, score, stamp) = match (parse_video(p), parse_titled(p)) {
+            (Some((s, score, stamp)), _) => (s, Some(score), stamp),
+            (None, Some((title, stamp))) => (title, None, stamp),
+            (None, None) => (stem, None, local_stamp(modified(p))),
+        };
+        json!({
+            "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
+            "mtime": modified(p), "size": p.metadata().map_or(0, |m| m.len()),
+            "stats": self.stats_of(&id, p).is_some(), "uploaded": true, "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
+        })
     }
 
     /// A video added from this computer (kept in the uploads), or a stats file for a recording (`id`), which it is then
@@ -215,13 +226,18 @@ mod tests {
         for name in kept.iter().copied().chain([format!(".incoming-{other}-3.part").as_str()]) {
             std::fs::write(uploads.join(name), b"x").unwrap();
         }
+        // a link's download folder: another process's goes, this one's stays
+        std::fs::create_dir_all(uploads.join(format!(".link-{other}-0"))).unwrap();
+        std::fs::write(uploads.join(format!(".link-{other}-0")).join("video.mp4.part"), b"x").unwrap();
+        let link = format!(".link-{}-0", std::process::id());
+        std::fs::create_dir_all(uploads.join(&link)).unwrap();
         let lib = Library::open(config).unwrap();
         let mut left: Vec<String> = std::fs::read_dir(lib.uploads())
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         left.sort();
-        let mut want: Vec<String> = kept.iter().map(|s| s.to_string()).collect();
+        let mut want: Vec<String> = kept.iter().map(|s| s.to_string()).chain([link]).collect();
         want.sort();
         assert_eq!(left, want);
         let _ = std::fs::remove_dir_all(&dir);

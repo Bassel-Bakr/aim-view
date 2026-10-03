@@ -1,6 +1,7 @@
 import { HttpRequest } from '@angular/common/http';
-import { Recording } from '../api';
-import { ApiRoutes, recording } from '../fake-api';
+import { LinkInfo, Recording } from '../api';
+import { answer, ApiRoutes, NO_SERVER, recording, Refused } from '../fake-api';
+import { DEFAULT_LINK_SERVER, NO_LINK_SERVER } from '../modes/web-files/browser-links';
 import { MODE_CASES, setUp } from './contract-case';
 import { RecordingSource } from './recording-source';
 
@@ -25,6 +26,59 @@ function fakeServer(): ApiRoutes {
       return { id: added, saved: name };
     },
   };
+}
+
+const LINK = 'https://www.youtube.com/watch?v=abc';
+const LINK_NAME = 'Air - 1 - 2026.10.01-16.23.03.mp4';
+const LINK_INFO: LinkInfo = {
+  title: 'Air - 1 - 2026.10.01-16.23.03',
+  duration: 3,
+  formats: [
+    { id: '400', width: 2560, height: 1440, fps: 60, codec: 'AV1', size: 4e8 },
+    { id: '136', width: 1280, height: 720, fps: 30, codec: 'H.264', size: null },
+  ],
+};
+
+/** Each route at its path, and at the link server's address too (the browser mode asks it there). */
+function anywhere(routes: ApiRoutes): ApiRoutes {
+  const out: ApiRoutes = { ...routes };
+  for (const [path, route] of Object.entries(routes)) out[`${DEFAULT_LINK_SERVER}${path}`] = route;
+  return out;
+}
+
+/**
+ * A review server that downloads links: it names the recording from the title, answers its id at once, says the
+ * download is half done when first asked and done when asked again, then lists the video and streams it. `asked`
+ * keeps the bodies of /api/link.
+ */
+function linkServer(asked: unknown[]): ApiRoutes {
+  const id = `uploads/${LINK_NAME}`;
+  let list: Recording[] = [];
+  let polls = 0;
+  const row = recording({ id, scenario: 'Air', stats: false, analysed: false });
+  return anywhere({
+    '/api/vods': () => list,
+    '/api/link/formats': LINK_INFO,
+    '/api/link': (req: HttpRequest<unknown>) => {
+      asked.push(req.body);
+      return { id, saved: LINK_NAME, title: LINK_INFO.title, recording: row };
+    },
+    '/api/job': () => {
+      if (!polls++) return { stage: 'downloading', done: 1, total: 2, link: true };
+      list = [row];
+      return { stage: 'none' };
+    },
+    '/video': () => new Blob(['video']),
+  });
+}
+
+/** Answers the fake server until the recording's video is in (ready) or failed: it asks again every half second. */
+async function untilIn(source: RecordingSource, id: string, routes: ApiRoutes): Promise<void> {
+  const end = Date.now() + 3000;
+  while (source.video(id)?.state === 'downloading' && Date.now() < end) {
+    await answer(routes);
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 for (const mode of MODE_CASES) {
@@ -72,6 +126,51 @@ for (const mode of MODE_CASES) {
       const [id] = (await mode.finish(source.add([new File(['v'], NAME)]), fakeServer())).ids;
       source.patch(id, { analysed: true });
       expect(source.recordings().find((r) => r.id === id)?.analysed).toBe(true);
+    });
+
+    it("reads a link's qualities, and lists the recording at once while its video downloads", async () => {
+      const source = setUp(mode, RecordingSource);
+      const asked: unknown[] = [];
+      const routes = linkServer(asked);
+      const info = await mode.finish(source.linkInfo(LINK), routes);
+      expect(info.formats.map((f) => f.id)).toEqual(['400', '136']);
+      const id = await mode.finish(source.addLink(LINK, '400'), routes);
+      expect(asked).toEqual([{ url: LINK, format: '400' }]);
+      expect(source.recordings()[0]).toMatchObject({ id, scenario: 'Air' });
+      expect(source.video(id)).toMatchObject({ state: 'downloading', done: 1, total: 2 });
+      await untilIn(source, id, routes);
+      expect(source.video(id)?.state).toBe('ready');
+      expect(source.recordings().filter((r) => r.id === id)).toHaveLength(1);
+    });
+
+    it('says why a link cannot be read', async () => {
+      const source = setUp(mode, RecordingSource);
+      const why = 'yt-dlp cannot read this link: Private video';
+      const routes = anywhere({ '/api/link/formats': new Refused(why) });
+      await expect(mode.finish(source.linkInfo(LINK), routes)).rejects.toMatchObject({
+        error: { error: why },
+      });
+    });
+
+    it('in the browser, reads a video file itself, or says to start the server for other links', async () => {
+      const source = setUp(mode, RecordingSource);
+      if (mode.name !== 'browser') {
+        expect(source.linkServer).toBeNull();
+        return;
+      }
+      expect(source.linkServer?.()).toBe(DEFAULT_LINK_SERVER);
+      const file = 'https://cdn.example.com/clips/Air%20-%201%20-%202026.10.01-16.23.03.mp4';
+      const routes: ApiRoutes = {
+        [file]: (req: HttpRequest<unknown>) => (req.method === 'HEAD' ? null : new Blob(['video'])),
+      };
+      const info = await mode.finish(source.linkInfo(file), routes);
+      expect(info).toEqual({ title: LINK_NAME, duration: null, formats: [] });
+      const id = await mode.finish(source.addLink(file, null), routes);
+      await untilIn(source, id, routes);
+      expect(source.video(id)?.state).toBe('ready');
+      expect(source.recordings()[0]).toMatchObject({ id, scenario: 'Air', score: 1 });
+      const none = anywhere({ '/api/link/formats': NO_SERVER });
+      await expect(mode.finish(source.linkInfo(LINK), none)).rejects.toThrow(NO_LINK_SERVER);
     });
   });
 }

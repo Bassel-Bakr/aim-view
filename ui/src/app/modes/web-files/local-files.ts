@@ -1,5 +1,5 @@
 import { computed, inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { errorMessage, Kind, Recording, StatsHow } from '../../api';
+import { errorMessage, Kind, LinkInfo, Recording, StatsHow } from '../../api';
 import {
   AddResult,
   FolderAction,
@@ -10,6 +10,7 @@ import {
 } from '../../platform/recording-source';
 import {
   parseStatsCsv,
+  parseTitledName,
   parseVodName,
   stampSeconds,
   statsForVideo,
@@ -17,6 +18,7 @@ import {
   statsSummary,
 } from './stats-csv';
 import { exampleRec } from './area-examples';
+import { BrowserLinks } from './browser-links';
 import { BrowserStore } from './browser-store';
 import { KovaakFolders } from './kovaak-folders';
 import { LabelMarks } from './label-marks';
@@ -68,10 +70,12 @@ export function localRecording(
   kindOf: (scenario: string) => Kind | null = () => null,
 ): Recording {
   const vod = parseVodName(f.file.name);
+  const titled = vod ? null : parseTitledName(f.file.name);
   const stats = f.stats && statsSummary(f.stats);
   const stamp = new Date(f.file.lastModified);
   const pad = (n: number) => String(n).padStart(2, '0');
-  const scenario = vod?.scenario ?? stats?.scenario ?? f.file.name.replace(/\.\w+$/, '');
+  const scenario =
+    vod?.scenario ?? stats?.scenario ?? titled?.title ?? f.file.name.replace(/\.\w+$/, '');
   return {
     id: f.id,
     scenario,
@@ -80,6 +84,7 @@ export function localRecording(
     stamp:
       vod?.stamp ??
       stats?.stamp ??
+      titled?.stamp ??
       `${stamp.getFullYear()}.${pad(stamp.getMonth() + 1)}.${pad(stamp.getDate())}-` +
         `${pad(stamp.getHours())}.${pad(stamp.getMinutes())}.${pad(stamp.getSeconds())}`,
     mtime: f.added / 1000,
@@ -139,6 +144,8 @@ export class LocalFiles implements RecordingSource {
   private readonly store = inject(BrowserStore);
   private readonly saved = inject(SavedReviews);
   private readonly marks = inject(LabelMarks);
+  private readonly links = inject(BrowserLinks);
+  readonly linkServer = this.links.server;
   private kept: KeptPairs = {};
   readonly files = signal<LocalFile[]>([]);
   readonly recordings = computed<Recording[]>(() => {
@@ -229,7 +236,7 @@ export class LocalFiles implements RecordingSource {
   async clear(): Promise<void> {
     for (const f of this.files()) {
       const v = f.video();
-      if (v.state !== 'remuxing') URL.revokeObjectURL(v.url);
+      if (v.state === 'ready' || v.state === 'failed') URL.revokeObjectURL(v.url);
     }
     this.files.set([]);
     this.queued.clear();
@@ -262,6 +269,46 @@ export class LocalFiles implements RecordingSource {
       ids: added.map((f) => f.id),
       notStats: csvs.filter((_, i) => read[i] === null).map((f) => f.name),
     };
+  }
+
+  linkInfo(url: string): Promise<LinkInfo> {
+    return this.links.info(url);
+  }
+
+  /**
+   * Adds a link's video as a file added from this computer: listed at once, with an empty file while it downloads
+   * (BrowserLinks), which the video takes the place of when it is all here.
+   */
+  async addLink(url: string, format: string | null): Promise<string> {
+    const video = signal<VideoState>({ state: 'downloading', label: '', done: 0, total: 0 });
+    const started = await this.links.start(url, format, (label, done, total) =>
+      video.set({ state: 'downloading', label, done, total }),
+    );
+    const f: LocalFile = {
+      id: `${LOCAL}${++this.count}/${started.name}`,
+      file: new File([], started.name),
+      video,
+      stats: null,
+      statsHow: 'missing',
+      added: Date.now(),
+      changes: {},
+    };
+    this.files.update((list) => [f, ...list]);
+    started.file.then(
+      (file) => this.fill(f.id, file),
+      (e: unknown) => video.set({ state: 'not-downloaded', error: errorMessage(e) }),
+    );
+    return f.id;
+  }
+
+  /** A link's video, all here, in place of its empty file: then as a file added from this computer. */
+  private async fill(id: string, file: File): Promise<void> {
+    const f = this.find(id);
+    if (!f) return;
+    const filled: LocalFile = { ...localFile(id, file, f.added), changes: f.changes };
+    this.update(id, () => filled);
+    if (filled.video().state === 'remuxing') this.queue(filled);
+    await this.findStats(id);
   }
 
   patch(id: string, change: Partial<Recording>): void {
@@ -312,7 +359,8 @@ export class LocalFiles implements RecordingSource {
       .sort((a, b) => b.added - a.added);
     for (const f of this.files()) {
       const v = f.video();
-      if (f.id.startsWith(FOLDER) && v.state !== 'remuxing') URL.revokeObjectURL(v.url);
+      if (f.id.startsWith(FOLDER) && (v.state === 'ready' || v.state === 'failed'))
+        URL.revokeObjectURL(v.url);
     }
     this.files.update((list) => [...list.filter((f) => !f.id.startsWith(FOLDER)), ...added]);
     await this.findAllStats();

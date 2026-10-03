@@ -79,6 +79,18 @@ export function parseVodName(name: string): VodName | null {
   return m ? { scenario: m[1], score: Number(m[2]), stamp: m[3] } : null;
 }
 
+/** A video's name of a title and a time stamp, as a recording added from a link is named. */
+export interface TitledName {
+  title: string;
+  stamp: string;
+}
+
+/** "<title> - <stamp>.<ext>" (a link's name: the review server names it so): the title and the stamp. */
+export function parseTitledName(name: string): TitledName | null {
+  const m = /^(.+) - (\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2})\.\w+$/.exec(name);
+  return m && stampSeconds(m[2]) !== null ? { title: m[1], stamp: m[2] } : null;
+}
+
 /** A file-name time stamp as seconds on one clock (both sides use the same one). The year 0026 reads as 2026. */
 export function stampSeconds(stamp: string): number | null {
   const m = STAMP.exec(stamp);

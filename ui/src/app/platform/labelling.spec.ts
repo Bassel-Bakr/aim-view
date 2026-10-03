@@ -90,6 +90,8 @@ for (const mode of MODE_CASES) {
 
 describe('Labelling: the area examples the browser keeps', () => {
   const [browser] = MODE_CASES;
+  // the bundled examples are asked for, and not found
+  const served = <T>(call: Promise<T>) => browser.finish(call, {});
 
   it('loads the review server’s files, and downloads them as it wrote them', async () => {
     const store = setUp(browser, Labelling).examples;
@@ -98,7 +100,7 @@ describe('Labelling: the area examples the browser keeps', () => {
       new File([EXAMPLES], 'area_examples.jsonl'),
       new File([KINDS], 'area_kinds.json'),
     ];
-    expect(await store.load(files)).toEqual({ examples: 2, kinds: 2, refused: [] });
+    expect(await served(store.load(files))).toEqual({ examples: 2, kinds: 2, refused: [] });
     expect(store.count()).toEqual({ examples: 2, recordings: 1, kinds: 2 });
     expect(store.fileNames).toEqual(['area_examples.jsonl', 'area_kinds.json']);
     expect(await store.file('area_examples.jsonl').text()).toBe(EXAMPLES);
@@ -109,19 +111,21 @@ describe('Labelling: the area examples the browser keeps', () => {
     const store = setUp(browser, Labelling).examples;
     if (!store) throw new Error('the browser keeps the examples');
     const other = '{"rec": "Air/a.mp4", "feat": [0.5], "kind": "timer"}\n';
-    await store.load([new File([EXAMPLES + other], 'area_examples.jsonl')]);
-    await store.load([new File([EXAMPLES.split('\n')[0]], 'area_examples.jsonl')]);
+    await served(store.load([new File([EXAMPLES + other], 'area_examples.jsonl')]));
+    await served(store.load([new File([EXAMPLES.split('\n')[0]], 'area_examples.jsonl')]));
     expect(store.count()).toMatchObject({ examples: 2, recordings: 2 });
   });
 
   it('turns down a file that is not one of the review server’s', async () => {
     const store = setUp(browser, Labelling).examples;
     if (!store) throw new Error('the browser keeps the examples');
-    const done = await store.load([
-      new File(['{"rec": 1}\n'], 'area_examples.jsonl'),
-      new File(['{}'], 'area_kinds.json'),
-      new File(['x'], 'notes.txt'),
-    ]);
+    const done = await served(
+      store.load([
+        new File(['{"rec": 1}\n'], 'area_examples.jsonl'),
+        new File(['{}'], 'area_kinds.json'),
+        new File(['x'], 'notes.txt'),
+      ]),
+    );
     expect(done.examples + done.kinds).toBe(0);
     expect(done.refused).toEqual([
       'area_examples.jsonl (line 1 is not an area example)',
@@ -132,10 +136,12 @@ describe('Labelling: the area examples the browser keeps', () => {
 
   it('leaves out of the queue a recording whose examples were loaded: its areas were saved', async () => {
     const source = setUp(browser, RecordingSource);
-    const { ids } = await source.add([new File(['v'], AIR), new File(['v'], BOUNCE)]);
+    const { ids } = await served(source.add([new File(['v'], AIR), new File(['v'], BOUNCE)]));
     const labelling = TestBed.inject(Labelling);
     const line = `{"rec": "uploads/${AIR}", "feat": [0.5], "kind": "timer"}\n`;
-    await labelling.examples?.load([new File([line], 'area_examples.jsonl')]);
-    expect(await labelling.queue()).toEqual([ids[1]]);
+    const store = labelling.examples;
+    if (!store) throw new Error('the browser keeps the examples');
+    await served(store.load([new File([line], 'area_examples.jsonl')]));
+    expect(await served(labelling.queue())).toEqual([ids[1]]);
   });
 });

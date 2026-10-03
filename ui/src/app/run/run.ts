@@ -116,14 +116,19 @@ export class Run {
   });
   /** The recording's video, which may still be being remuxed into MP4. */
   protected readonly video = computed(() => this.library.source.video(this.recording().id));
-  /** Where the player reads the video; null while it is being remuxed. */
+  /** Where the player reads the video; null while it is being remuxed or downloaded. */
   protected readonly videoUrl = computed<string | null>(() => {
     const v = this.video();
-    return !v || v.state === 'remuxing' ? null : v.url;
+    return v?.state === 'ready' || v?.state === 'failed' ? v.url : null;
   });
   protected readonly remuxShare = computed(() => {
     const v = this.video();
     return v?.state === 'remuxing' ? formatPercent(v.progress) : '';
+  });
+  /** A video from a link that is not here yet (downloading, or the download failed): nothing to review. */
+  protected readonly notHere = computed(() => {
+    const state = this.video()?.state;
+    return state === 'downloading' || state === 'not-downloaded';
   });
   /** Reviewed, but its report is gone (a new stats file): measured again on its tracks, not reviewed again. */
   private readonly unmeasured = computed(
