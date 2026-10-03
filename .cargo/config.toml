@@ -1,0 +1,4 @@
+# The core as WebAssembly uses SIMD, which every browser the app supports has: the same results to the bit
+# (test_out/browser_check/same-result.html), and the loops that can use it run on four or more values at once.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
