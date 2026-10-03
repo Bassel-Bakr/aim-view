@@ -18,9 +18,9 @@ use serde::{Deserialize, Serialize};
 
 /// Where KovaaK's box can be, as shares of the frame (x0, y0, x1, y1): it grows to fit its widest number. The region
 /// is scaled to BW x BH (a 2560 x 1440 frame's pixels).
-const BOX: [f64; 4] = [0.0, 0.0, 900.0 / 2560.0, 330.0 / 1440.0];
-const BW: usize = 900;
-const BH: usize = 330;
+pub(crate) const BOX: [f64; 4] = [0.0, 0.0, 900.0 / 2560.0, 330.0 / 1440.0];
+pub(crate) const BW: usize = 900;
+pub(crate) const BH: usize = 330;
 /// A patch inside the box's left edge, between the header and Kill Count (x, y).
 const SEED: (usize, usize) = (49, 100);
 /// Glyphs are compared at GW x GH.
@@ -33,11 +33,11 @@ const SAME: f64 = 0.97;
 const PAD: usize = 3;
 /// Aim Lab's POINTS and TIME value line, as shares of a 16:9 frame, scaled to AW x AH (twice 720p), and the two
 /// values' columns in it.
-const AIM_BAND: [f64; 4] = [0.30, 40.0 / 720.0, 0.565, 63.0 / 720.0];
-const AW: usize = 678;
+pub(crate) const AIM_BAND: [f64; 4] = [0.30, 40.0 / 720.0, 0.565, 63.0 / 720.0];
+pub(crate) const AW: usize = 678;
 const AH: usize = 46;
-const AIM_POINTS: (usize, usize) = (26, 356);
-const AIM_TIME: (usize, usize) = (368, 656);
+pub(crate) const AIM_POINTS: (usize, usize) = (26, 356);
+pub(crate) const AIM_TIME: (usize, usize) = (368, 656);
 /// The most key frames kept for the box's layout: past it every other one is dropped (a median needs no more).
 const KEYS: usize = 64;
 /// A row's glyphs are the ones before while every glyph has the same ink size and differs from the kept image by at
@@ -98,7 +98,7 @@ enum Filter {
     Cubic,
 }
 
-fn bilinear(x: f64) -> f64 {
+pub(crate) fn bilinear(x: f64) -> f64 {
     let x = x.abs();
     if x < 1.0 { 1.0 - x } else { 0.0 }
 }
@@ -116,7 +116,7 @@ fn bicubic(x: f64) -> f64 {
 
 /// Pillow's resampling weights (precompute_coeffs) for `len` pixels scaled to `out`: each output pixel's first source
 /// pixel and weights.
-fn taps(len: usize, out: usize, support: f64, filter: fn(f64) -> f64) -> Vec<(usize, Vec<f64>)> {
+pub(crate) fn taps(len: usize, out: usize, support: f64, filter: fn(f64) -> f64) -> Vec<(usize, Vec<f64>)> {
     let scale = len as f64 / out as f64;
     let fs = scale.max(1.0);
     let (support, ss) = (support * fs, 1.0 / fs);
@@ -342,6 +342,17 @@ struct Layout {
     accuracy: Row,
 }
 
+/// KovaaK's session box as python/hud.py's layout finds it, for the area finder (src/areas.rs): the columns of its text
+/// rows and the top of the first row and the bottom of the last, in the scaled region (BW x BH: the pixels of a
+/// 2560 x 1440 frame, from its top left corner).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionRows {
+    pub x0: usize,
+    pub y0: usize,
+    pub x1: usize,
+    pub y1: usize,
+}
+
 /// The column just past the first colon in a row of text (`w` wide): a narrow glyph made of dots only (an i has a
 /// stem; the colon's upper dot can fade in a blurred recording).
 fn label_end(ink: &[bool], w: usize) -> Option<usize> {
@@ -355,10 +366,12 @@ fn label_end(ink: &[bool], w: usize) -> Option<usize> {
 }
 
 /// The box's value rows from the key frames' median (BW x BH), or None without a box (python/hud.py: layout, and
-/// read's choice of rows). The median keeps the box and its labels and washes out the moving scene and the changing
-/// numbers. The box is the area at the level of a patch inside its left edge; other players' HUDs are smaller or
-/// placed elsewhere, so other patches are tried until one gives a box.
-fn layout(med: &[f64]) -> Option<Layout> {
+/// read's choice of rows), and the box's text rows (None without a box). The median keeps the box and its labels and
+/// washes out the moving scene and the changing numbers. The box is the area at the level of a patch inside its left
+/// edge; other players' HUDs are smaller or placed elsewhere, so other patches are tried until one gives a box. A
+/// compact box whose labels' colons are not found has text rows but no value rows (python/hud.py's layout gives its
+/// rows; its read then reads the rightmost glyphs, which this reading does not).
+fn layout(med: &[f64]) -> (Option<Layout>, Option<SessionRows>) {
     let seeds =
         std::iter::once(SEED).chain((40..240).step_by(12).flat_map(|y| (20..320).step_by(12).map(move |x| (x, y))));
     let mut tried = Vec::new();
@@ -445,6 +458,7 @@ fn layout(med: &[f64]) -> Option<Layout> {
         // The compact HUD has four rows in two columns (Kill Count and SPM, Accuracy, Damage, Avg TTK and KPS), each
         // value just after its label's colon
         if rows.len() >= 4 {
+            let session = Some(SessionRows { x0, y0: rows[0].0, x1, y1: rows[rows.len() - 1].1 });
             let compact = rows.len() == 5;
             let (k, a) = if compact { (rows[1], rows[2]) } else { (rows[1], rows[3]) };
             let start = |(r0, r1): (usize, usize)| {
@@ -452,14 +466,14 @@ fn layout(med: &[f64]) -> Option<Layout> {
             };
             let (ks, accs) = (start(k), start(a));
             if compact && (ks.is_none() || accs.is_none()) {
-                return None;
+                return (None, session);
             }
             let row =
                 |(r0, r1): (usize, usize), start| Row { y0: r0.saturating_sub(PAD), y1: (r1 + PAD).min(BH), start };
-            return Some(Layout { x0, x1, kills: row(k, ks), accuracy: row(a, accs) });
+            return (Some(Layout { x0, x1, kills: row(k, ks), accuracy: row(a, accs) }), session);
         }
     }
-    None
+    (None, None)
 }
 
 /// A glyph cut from a frame: its strength image, and its ink's height and width in pixels.
@@ -722,6 +736,8 @@ pub struct HudPart {
     frames: usize,
     /// KovaaK's box, None without one (each run's watch works it out from the same key frames).
     layout: Option<Layout>,
+    /// The box's text rows, None without a box.
+    session: Option<SessionRows>,
     store: Store,
 }
 
@@ -730,6 +746,8 @@ pub struct HudPart {
 struct PartText {
     frames: usize,
     layout: Option<Layout>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session: Option<SessionRows>,
     /// The glyph images, GLYPH bytes each, as hex.
     images: String,
     /// Each line's glyphs after the empty line 0: [image, ink height, ink width].
@@ -743,6 +761,7 @@ impl From<HudPart> for PartText {
         PartText {
             frames: p.frames,
             layout: p.layout,
+            session: p.session,
             images: p.store.images.iter().map(|b| format!("{b:02x}")).collect(),
             lines: p.store.lines[1..]
                 .iter()
@@ -788,7 +807,7 @@ impl TryFrom<PartText> for HudPart {
             }
             *row = runs.into_iter().map(|[l, n]| (l, n)).collect();
         }
-        Ok(HudPart { frames: t.frames, layout: t.layout, store: Store { images, lines, rows } })
+        Ok(HudPart { frames: t.frames, layout: t.layout, session: t.session, store: Store { images, lines, rows } })
     }
 }
 
@@ -809,6 +828,8 @@ pub struct HudWatch {
     key_step: usize,
     /// KovaaK's box: None until worked out (at the first frame), then Some(None) when there is none.
     layout: Option<Option<Layout>>,
+    /// The box's text rows, worked out with `layout`.
+    session: Option<SessionRows>,
     frames: usize,
     store: Store,
     /// Each row's latest new glyphs, whose images a new line can reuse.
@@ -832,6 +853,7 @@ impl HudWatch {
             keys_seen: 0,
             key_step: 1,
             layout: None,
+            session: None,
             frames: 0,
             store: Store::default(),
             recent: Default::default(),
@@ -864,8 +886,8 @@ impl HudWatch {
             return;
         }
         let keys = std::mem::take(&mut self.keys);
-        self.layout = Some(if keys.len() < 3 {
-            None
+        let (layout, session) = if keys.len() < 3 {
+            (None, None)
         } else {
             let mut px = vec![0u8; keys.len()];
             let med: Vec<f64> = (0..BW * BH)
@@ -877,7 +899,16 @@ impl HudWatch {
                 })
                 .collect();
             layout(&med)
-        });
+        };
+        self.layout = Some(layout);
+        self.session = session;
+    }
+
+    /// KovaaK's session box's text rows from the key frames (python/hud.py's layout, as src/areas.rs needs it), or None
+    /// without a box. Call it after the last key frame: the box is worked out from the key frames added so far.
+    pub fn session_box(&mut self) -> Option<SessionRows> {
+        self.work_out_layout();
+        self.session
     }
 
     /// Frames not reviewed before the first one added (a review from part way in, the user's run window).
@@ -917,7 +948,7 @@ impl HudWatch {
     /// The run's part of the watch.
     pub fn part(mut self) -> HudPart {
         self.work_out_layout();
-        HudPart { frames: self.frames, layout: self.layout.flatten(), store: self.store }
+        HudPart { frames: self.frames, layout: self.layout.flatten(), session: self.session, store: self.store }
     }
 
     /// The next run's part. Each run but the last also reads the next run's first frame, so when the watch already has
@@ -925,6 +956,7 @@ impl HudWatch {
     pub fn join(&mut self, next: HudPart) {
         if self.layout.is_none() {
             self.layout = Some(next.layout);
+            self.session = next.session;
         }
         let drop = usize::from(self.frames > 0);
         self.store.append(next.store, drop);
@@ -1633,8 +1665,12 @@ mod tests {
     #[test]
     fn parts_join_as_one_watch() {
         let (whole, layout) = counting(0..430);
-        let part =
-            |frames: Range<usize>| HudPart { frames: frames.len(), layout: Some(layout), store: counting(frames).0 };
+        let part = |frames: Range<usize>| HudPart {
+            frames: frames.len(),
+            layout: Some(layout),
+            session: None,
+            store: counting(frames).0,
+        };
         // each run but the last also reads the next run's first frame
         let parts = [part(0..201), part(200..301), part(300..430)];
         let mut watch = HudWatch::new(0, 0, true);
@@ -1660,7 +1696,8 @@ mod tests {
     #[test]
     fn a_part_that_does_not_add_up_is_refused() {
         let (store, layout) = counting(0..50);
-        let mut text = serde_json::to_value(HudPart { frames: 50, layout: Some(layout), store }).unwrap();
+        let mut text =
+            serde_json::to_value(HudPart { frames: 50, layout: Some(layout), session: None, store }).unwrap();
         text["frames"] = 51.into();
         assert!(serde_json::from_value::<HudPart>(text).is_err());
     }

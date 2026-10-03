@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::faint::{FaintSetting, without_faint};
 use crate::geometry::{CX, CY, H, K, W};
 use crate::hud::{HudGame, HudReading};
 use crate::matching::{
@@ -16,7 +17,7 @@ use crate::measure::{choices, measure, target_radius, Measure};
 use crate::stats_file::StatsFile;
 use crate::summary::{judge, summarize, Issue, Mode, Summary};
 use crate::track::{REVIEW_VERSION, Tracks};
-use crate::tracking::{CameraReading, TrackSummary, countdown_end, stats_length, track_summary};
+use crate::tracking::{CameraReading, FaintCut, TrackSummary, countdown_end, stats_length, track_summary};
 
 /// The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees come from.
 #[derive(Clone, Debug, Serialize)]
@@ -224,7 +225,8 @@ pub struct VideoReadings<'a> {
 }
 
 /// Reviews a tracking run from its tracks, its kill times (bots that die) and its video's readings. `limit`: the
-/// scenario's time limit (seconds), which the stats file's own length overrides.
+/// scenario's time limit (seconds), which the stats file's own length overrides. `faint`: the user's faint-target
+/// cut-off; when on, the measures leave out the tracks it cuts (the kills are still matched on every track).
 pub fn review_tracking(
     tracks: &Tracks,
     kills: KillTimes,
@@ -232,6 +234,7 @@ pub fn review_tracking(
     limit: Option<f64>,
     readings: VideoReadings,
     run: Option<serde_json::Value>,
+    faint: Option<FaintSetting>,
 ) -> Result<TrackReport, String> {
     let fps = tracks.fps;
     let (mut deaths, mut start, mut limit) = (Vec::new(), None, limit);
@@ -276,7 +279,17 @@ pub fn review_tracking(
         start = first.or(start);
         limit = length;
     }
-    let summary = track_summary(tracks, &meta, limit, Some(readings.camera), &deaths, start, source);
+    let cut_tracks: Tracks;
+    let (measured, cut) = match faint.filter(|f| f.on) {
+        Some(f) => {
+            let c = without_faint(&tracks.frames, f.offset, 0.0);
+            cut_tracks = Tracks { fps, frames: c.frames, version: tracks.version };
+            (&cut_tracks, Some(FaintCut { offset: f.offset, cut: c.cut, tracks: c.gone }))
+        }
+        None => (tracks, None),
+    };
+    let mut summary = track_summary(measured, &meta, limit, Some(readings.camera), &deaths, start, source);
+    summary.faint = cut;
     Ok(TrackReport {
         video: video.into(),
         stats: stats.map(Into::into),
@@ -316,8 +329,8 @@ pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (O
 }
 
 /// What the page asks the core to review: the tracks, the video's name, the stats file's name and text (empty without
-/// one), what the HUD read, the user's run marks; for a tracking run also the scenario's time limit and the video's
-/// readings.
+/// one), what the HUD read, the user's run marks; for a tracking run also the scenario's time limit, the video's
+/// readings and the user's faint-target cut-off ({on, offset}; null or missing: none).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
@@ -339,6 +352,8 @@ pub struct ReviewRequest {
     pub camera: Vec<CameraReading>,
     #[serde(default)]
     pub countdown: Vec<bool>,
+    #[serde(default)]
+    pub faint: Option<FaintSetting>,
 }
 
 /// A clicking run's report or a tracking run's.
@@ -366,7 +381,7 @@ fn review_request(r: ReviewRequest) -> Result<AnyReport, String> {
     let outdated = r.tracks.version < REVIEW_VERSION;
     if r.tracking {
         let readings = VideoReadings { camera: &r.camera, countdown: &r.countdown };
-        let t = review_tracking(&r.tracks, kills, &r.video, r.limit, readings, r.run)?;
+        let t = review_tracking(&r.tracks, kills, &r.video, r.limit, readings, r.run, r.faint)?;
         Ok(AnyReport::Track(Box::new(TrackReport { outdated, ..t })))
     } else {
         let c = review_clicks(&r.tracks, kills, &r.video, r.run)?;

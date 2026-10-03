@@ -40,7 +40,7 @@ fn tracking_review_matches_python() {
         let scenario = name.rsplitn(3, " - ").last().unwrap().to_lowercase();
         let limit = facts["facts"][&scenario]["limit"].as_f64();
         let readings = VideoReadings { camera: &camera, countdown: &countdown };
-        let got = review_tracking(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, video, limit, readings, None).unwrap();
+        let got = review_tracking(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, video, limit, readings, None, None).unwrap();
         let mut diff = Diff::default();
         compare("report.json", &serde_json::to_value(&got).unwrap(), &want, &mut diff);
         eprintln!("{case}: {} numbers equal within 1e-9, not to the bit", diff.close);

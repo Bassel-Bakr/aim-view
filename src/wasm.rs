@@ -396,3 +396,214 @@ pub unsafe extern "C" fn hud_finish(hud: *mut crate::hud::HudWatch) -> *mut u8 {
     let hud = unsafe { Box::from_raw(hud) };
     bytes_out(serde_json::to_vec(&hud.finish()).unwrap_or_default())
 }
+
+/// A raw mouse log read (src/mouse.rs): the log's bytes, and the request as JSON (`mouse::ReadRequest`: the run's
+/// stats file, the options, the UTC offset). The outcome as JSON ({run}, {summary} or {error}); free it as
+/// `tracker_finish`'s.
+///
+/// # Safety
+/// `log` must hold `log_len` bytes and `request` `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mouse_read(log: *const u8, log_len: usize, request: *const u8, len: usize) -> *mut u8 {
+    let log = unsafe { std::slice::from_raw_parts(log, log_len) };
+    bytes_out(crate::mouse::read_json(log, unsafe { std::slice::from_raw_parts(request, len) }))
+}
+
+/// The crops a submitted faint-target cut-off gives as detector labels: the request as JSON (src/faint.rs:
+/// `CutoffRequest`), the crops as JSON (an array of `CutoffCrop`, or {error}). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `request` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cutoff_crops(request: *const u8, len: usize) -> *mut u8 {
+    bytes_out(crate::faint::cutoff_json(unsafe { std::slice::from_raw_parts(request, len) }))
+}
+
+/// A camera watch for a recording (src/camera.rs), its tiles kept clear of the recording's excluded areas and of the
+/// fixed map: `areas_len` boxes as shares of the frame, [x0, y0, x1, y1] each (f64), KovOBS's layout when there are
+/// none (python/review.py's camera mask); `fixed`: 1280 * 720 bytes, 1 fixed.
+///
+/// # Safety
+/// `areas` must point to `4 * areas_len` f64s; `fixed` must hold 1280 * 720 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_new_areas(
+    areas: *const f64,
+    areas_len: usize,
+    fixed: *const u8,
+) -> *mut crate::camera::CameraWatch {
+    let flat = unsafe { std::slice::from_raw_parts(areas, 4 * areas_len) };
+    let mut rects: Vec<[f64; 4]> = flat.chunks_exact(4).map(|b| [b[0], b[1], b[2], b[3]]).collect();
+    if rects.is_empty() {
+        rects = crate::geometry::overlay_shares();
+    }
+    let fixed = unsafe { std::slice::from_raw_parts(fixed, DST_W * DST_H) };
+    let keep = crate::track::Mask::without(&rects);
+    Box::into_raw(Box::new(crate::camera::CameraWatch::new(&crate::camera::excluded(keep.kept(), fixed))))
+}
+
+// ---- the area finder (src/areas.rs) ---------------------------------------------------------------------------------
+
+/// An area finder (`areas::AreaFinder`). Give it the frames `areas_sample` picks, then `areas_finish`.
+#[unsafe(no_mangle)]
+pub extern "C" fn areas_new() -> *mut crate::areas::AreaFinder {
+    Box::into_raw(Box::new(crate::areas::AreaFinder::new()))
+}
+
+/// One frame as YUV 4:2:0 at 1280 x 720 (`convert_yuv420p`'s output).
+///
+/// # Safety
+/// `finder` from `areas_new`; `yuv` must hold 1280 * 720 * 3 / 2 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_add(finder: *mut crate::areas::AreaFinder, yuv: *const u8) {
+    unsafe { &mut *finder }.add(unsafe { std::slice::from_raw_parts(yuv, crate::areas::FRAME) });
+}
+
+/// The frames added so far.
+///
+/// # Safety
+/// `finder` from `areas_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_frames(finder: *const crate::areas::AreaFinder) -> usize {
+    unsafe { &*finder }.frames()
+}
+
+/// Whether a box ([x0, y0, x1, y1] as shares of the frame, JSON) is a crosshair zoom over the frames added: 1 or 0.
+///
+/// # Safety
+/// `finder` from `areas_new`; `bounds` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_zoomed(finder: *const crate::areas::AreaFinder, bounds: *const u8, len: usize) -> u32 {
+    let b = serde_json::from_slice::<[f64; 4]>(unsafe { std::slice::from_raw_parts(bounds, len) });
+    b.is_ok_and(|b| unsafe { &*finder }.zoomed(&b)) as u32
+}
+
+/// The found areas and their maps as JSON (`areas::Found`: {frames, areas: [{box, feat, rule}, ...], maps}), and
+/// frees the finder. `session`: `hud_session_box`'s JSON, or no bytes (or null) without a session box. Free the result
+/// as `tracker_finish`'s.
+///
+/// # Safety
+/// `finder` from `areas_new`, not used again; `session` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_finish(
+    finder: *mut crate::areas::AreaFinder,
+    session: *const u8,
+    len: usize,
+) -> *mut u8 {
+    let finder = unsafe { Box::from_raw(finder) };
+    let session = if len == 0 {
+        None
+    } else {
+        serde_json::from_slice(unsafe { std::slice::from_raw_parts(session, len) }).ok().flatten()
+    };
+    bytes_out(serde_json::to_vec(&finder.finish(session)).unwrap_or_default())
+}
+
+/// KovaaK's session box as the HUD watch finds it in its key frames (`hud::SessionRows` as JSON, or null), for
+/// `areas_finish`. Call it after the watch's last key frame. Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `hud` from `hud_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_session_box(hud: *mut crate::hud::HudWatch) -> *mut u8 {
+    bytes_out(serde_json::to_vec(&unsafe { &mut *hud }.session_box()).unwrap_or_default())
+}
+
+/// A JSON call: the request's text to the function, its answer (or {"error": ...}) handed to the page.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+unsafe fn areas_call(input: *const u8, len: usize, f: fn(&str) -> Result<String, String>) -> *mut u8 {
+    let text = std::str::from_utf8(unsafe { std::slice::from_raw_parts(input, len) }).map_err(|e| e.to_string());
+    let out = text.and_then(f).unwrap_or_else(|e| serde_json::json!({ "error": e }).to_string());
+    bytes_out(out.into_bytes())
+}
+
+/// Which frames the area finder reads: {keys, times, duration} -> null (the key frames) or [frame index, ...]
+/// (`areas::sample_json`). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_sample(input: *const u8, len: usize) -> *mut u8 {
+    unsafe { areas_call(input, len, crate::areas::sample_json) }
+}
+
+/// The areas to propose: {found, examples, labelled, kinds?} -> {boxes, copied, by, examples, recordings}
+/// (`areas::find_json`). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_find(input: *const u8, len: usize) -> *mut u8 {
+    unsafe { areas_call(input, len, crate::areas::find_json) }
+}
+
+/// Learning from saved areas: {rec, found, saved, maps?, examples?, kinds?} -> {examples: the new
+/// area_examples.jsonl text, added} (`areas::learn_json`). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_learn(input: *const u8, len: usize) -> *mut u8 {
+    unsafe { areas_call(input, len, crate::areas::learn_json) }
+}
+
+/// Found areas named: {found, examples, k?} -> [{box, feat, rule, kind, by}, ...] (`areas::predict_json`). Free the
+/// result as `tracker_finish`'s.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_predict(input: *const u8, len: usize) -> *mut u8 {
+    unsafe { areas_call(input, len, crate::areas::predict_json) }
+}
+
+/// How alike two recordings' overlays are: {found, other} -> a number (`areas::same_layout_json`). Free the result as
+/// `tracker_finish`'s.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_same_layout(input: *const u8, len: usize) -> *mut u8 {
+    unsafe { areas_call(input, len, crate::areas::same_layout_json) }
+}
+
+/// Leave one recording out: {examples} -> {sure, right, count, wrong: [[truth, guess, n], ...]}
+/// (`areas::check_json`). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `input` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_check(input: *const u8, len: usize) -> *mut u8 {
+    unsafe { areas_call(input, len, crate::areas::check_json) }
+}
+
+/// The maps of `areas_finish`'s JSON (its `maps` object) as bytes: the stand-out map, then the change map, 1280 * 720
+/// bytes each, row by row; no bytes when they cannot be read. Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `maps` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn areas_maps(maps: *const u8, len: usize) -> *mut u8 {
+    let maps = serde_json::from_slice::<crate::areas::Maps>(unsafe { std::slice::from_raw_parts(maps, len) });
+    bytes_out(maps.map(|m| [m.stand(), m.change()].concat()).unwrap_or_default())
+}
+
+/// A tracker for a recording, as `tracker_new` makes it, that also knows which excluded areas are the challenge's end
+/// screen (src/popup.rs: `END_SCREEN`): `ends` holds one byte per area, 1 for an end screen, which is excluded only
+/// while it shows. cap: the scenario's target count, 0 for none.
+///
+/// # Safety
+/// `areas` must point to `4 * areas_len` f64s and `ends` to `areas_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracker_new_ends(
+    areas: *const f64,
+    ends: *const u8,
+    areas_len: usize,
+    cap: usize,
+) -> *mut Tracker {
+    let flat = unsafe { std::slice::from_raw_parts(areas, 4 * areas_len) };
+    let boxes: Vec<[f64; 4]> = flat.chunks_exact(4).map(|b| [b[0], b[1], b[2], b[3]]).collect();
+    let which: Vec<bool> = unsafe { std::slice::from_raw_parts(ends, areas_len) }.iter().map(|&e| e != 0).collect();
+    Box::into_raw(Box::new(Tracker::new(boxes, cap).end_screens(&which)))
+}

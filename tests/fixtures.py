@@ -7,7 +7,9 @@ Usage: python tests/fixtures.py <video> [--name NAME] [--model full_v3] [--areas
        python tests/fixtures.py --scenarios   (every scenario file's facts, for the core's scenario reader)
        python tests/fixtures.py --review <name>   (Python's review of a fixture's tracks, with its stats file)
        python tests/fixtures.py --from-cache <review cache folder> <name>   (the same from the review app's cached
-           tracks and camera readings, for runs no fixture covers)"""
+           tracks and camera readings, for runs no fixture covers)
+       python tests/fixtures.py --faint   (the faint-target cut-off: tracking reviews with it on, and the scores, cut and
+           labels of every recording the user set one for)"""
 import argparse
 import json
 import sys
@@ -120,7 +122,92 @@ def track_inputs(video, out, n, pairs=40):
     json.dump(dict(frames=sorted(want), picks=picks), open(out / "gray.json", "w"))
 
 
+FAINT_CASES = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol"]
+FAINT_OFFSETS = [0.2, 0.3, 0.45]
+
+
+def faint_cases():
+    """The faint-target cut-off in Python, for the core's checks (tests/faint_parity.rs). For each tracking case's
+    tracks and camera readings (test_out/parity/<case>/review/), review.review with the cut-off on at each offset:
+    test_out/parity/<case>/faint/<offset>/report.json. For each recording the user set a cut-off for (the review app's
+    faint.json in test_out/vod_app/, read only), the scores, the cut and the labels a submit writes with the user's
+    offset (hand_crops.cutoff_crops, with ffmpeg and the fixed map stood in for: each label's crop corner is read back
+    from a frame whose pixels give their own place): test_out/parity/faint/<folder>.json."""
+    import glob
+    import shutil
+    import tempfile
+    import hand_crops
+    root = ROOT / "test_out" / "parity"
+    for case in FAINT_CASES:
+        src = root / case / "review"
+        if not (src / "report.json").exists():
+            print(f"{case}: no review")
+            continue
+        old = json.load(open(src / "report.json"))
+        for offset in FAINT_OFFSETS:
+            out = root / case / "faint" / f"{offset}"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "report.json").unlink(missing_ok=True)
+            shutil.copyfile(src / "tracks.json", out / "tracks.json")
+            shutil.copyfile(src / "camera.json", out / "camera.json")     # newer than the tracks: review() reuses it
+            r = review.review(old["video"], old["stats"], out, faint=dict(on=True, offset=offset))
+            (out / "tracks.json").unlink()
+            (out / "camera.json").unlink()
+            print(f"{case} {offset}: {r['summary']['faint']}, on target {r['summary']['on_target']}")
+    W, H = review.W, review.H
+    yy, xx = np.mgrid[0:H, 0:W]
+    place = np.stack([xx & 255, yy & 255, (xx >> 8) | ((yy >> 8) << 4)], -1).astype(np.uint8).tobytes()
+    saved = {}
+    stand_ins = dict(run=(hand_crops.subprocess, "run",
+                          lambda *a, **k: type("Done", (), dict(stdout=place))()),
+                     savez=(hand_crops.np, "savez_compressed",
+                            lambda path, rgb, boxes, **k: saved.__setitem__(Path(path).name, (rgb[0, 0], boxes))),
+                     fixed=(review, "fixed_map", lambda frames: np.zeros((H, W))),
+                     frames=(review, "_frames", lambda video, keyframes=False: iter([])))
+    real = {k: getattr(m, n) for k, (m, n, _) in stand_ins.items()}
+    (root / "faint").mkdir(parents=True, exist_ok=True)
+    try:
+        for k, (m, n, f) in stand_ins.items():
+            setattr(m, n, f)
+        for fp in sorted(glob.glob(str(ROOT / "test_out" / "vod_app" / "*" / "faint.json"))):
+            d = Path(fp).parent
+            faint = json.load(open(fp))
+            rep = json.load(open(d / "report.json"))
+            tracks = json.load(open(d / "tracks.json"))
+            frames = tracks["frames"]
+            track = rep.get("mode") == "track"
+            near = 0.0 if track else 2.0
+            fl, sm = rep.get("flicks") or [], rep.get("summary") or {}
+            span = (sm.get("start"), sm.get("end")) if track else                 ((min(m["start_frame"] for m in fl), max(m["kill_frame"] for m in fl)) if fl else (None, None))
+            exclude = [b[:4] for b in json.load(open(d / "exclude.json"))] if (d / "exclude.json").exists() else None
+            offset = float(faint.get("offset", 0.3))
+            q, n, level = review.faint_scores(frames, near)
+            kept, cut, gone = review.without_faint(frames, offset, near)
+            saved.clear()
+            with tempfile.TemporaryDirectory() as tmp:
+                count = hand_crops.cutoff_crops(rep["video"], frames, tracks["fps"], span[0], span[1],
+                                                exclude if exclude is not None else review.OVERLAY_SHARES, offset,
+                                                tmp, near=near) if span[0] is not None else 0
+                rows = [json.loads(line) for line in open(Path(tmp) / "checked.jsonl", encoding="utf-8")]                     if count else []
+            crops = []
+            for r in rows:
+                rgb, boxes = saved[Path(r["file"]).name]
+                crops.append(dict(frame=int(r["file"][-10:-4]), x0=int(rgb[0]) + 256 * int(rgb[2] & 15),
+                                  y0=int(rgb[1]) + 256 * int(rgb[2] >> 4), boxes=boxes.tolist(), row=r))
+            json.dump(dict(tracks=str(d / "tracks.json"), video=rep["video"], near=near, offset=offset,
+                           start=span[0], end=span[1], exclude=exclude,
+                           scores=[[t, q[t], n[t]] for t in q], level=level, cut=cut, gone=gone,
+                           points=sum(len(f["t"]) for f in kept), crops=crops),
+                      open(root / "faint" / f"{d.name}.json", "w"))
+            print(f"{d.name}: level {level}, cut {cut}, {gone} of {len(q)} tracks cut, {len(crops)} crops")
+    finally:
+        for k, (m, n, _) in stand_ins.items():
+            setattr(m, n, real[k])
+
+
 def main():
+    if sys.argv[1:] == ["--faint"]:
+        return faint_cases()
     if sys.argv[1:2] == ["--review"]:
         return review_case(sys.argv[2])
     if sys.argv[1:2] == ["--from-cache"]:
