@@ -21,6 +21,11 @@
   --chart-line-width: 2;
   --chart-dash: 3 3;
   --chart-marker: 4px;
+  --chart-dot: 3px;
+  --chart-dot-selected: 5px;
+  --chart-faint-opacity: 0.18;
+  --chart-hover-opacity: 0.75;
+  --charts-columns: repeat(auto-fit, minmax(420px, 1fr));
   --issue-attention: var(--warning);
   --issue-fine: var(--good-text);
 }
@@ -42,3 +47,7 @@ $speed-chart-height: var(--speed-chart-height);
 $chart-line-width: var(--chart-line-width);
 $chart-dash: var(--chart-dash);
 $chart-marker: var(--chart-marker);
+$chart-dot: var(--chart-dot);
+$chart-dot-selected: var(--chart-dot-selected);
+$chart-faint-opacity: var(--chart-faint-opacity);
+$chart-hover-opacity: var(--chart-hover-opacity);

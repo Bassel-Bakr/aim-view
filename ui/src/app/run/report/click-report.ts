@@ -3,6 +3,7 @@ import { ClickReport as ClickReportData } from '../../api';
 import { extraShots, pathing, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
+import { RunCharts } from '../run-charts/run-charts';
 import { budget } from './budget';
 import {
   directionRows,
@@ -19,6 +20,7 @@ import {
  * goes, the checks (Pathing among them once the tracks are in), and the kills by distance and by direction.
  */
 @Component({
+  imports: [RunCharts],
   selector: 'app-click-report',
   templateUrl: './click-report.html',
   styleUrl: './click-report.scss',

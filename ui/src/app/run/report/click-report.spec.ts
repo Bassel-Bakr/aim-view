@@ -38,8 +38,10 @@ describe('ClickReport', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const heading = () => el.querySelector('section')?.textContent;
+    const titles = () => [...el.querySelectorAll('h3')].map((h) => h.textContent);
     expect(heading()).toContain('Whole run');
-    expect(el.querySelectorAll('h3')[1].textContent).toBe('What to look at');
+    expect(titles()).toContain('The run at a glance');
+    expect(titles()).toContain('What to look at');
     expect(el.textContent?.indexOf('Stopped short')).toBeLessThan(
       el.textContent?.indexOf('Slow start') ?? 0,
     );
@@ -47,7 +49,7 @@ describe('ClickReport', () => {
     TestBed.inject(FlickFocus).selected.set(FLICK);
     await fixture.whenStable();
     expect(heading()).toContain('Kill 4');
-    expect(el.querySelector('h3')?.textContent).toBe("Where kill 4's 400 ms goes");
+    expect(titles()).toContain("Where kill 4's 400 ms goes");
 
     (el.querySelector('section button') as HTMLButtonElement).click();
     await fixture.whenStable();

@@ -1,0 +1,241 @@
+<div class="charts">
+  @let kt = killTimes();
+  <figure class="chart">
+    <figcaption class="chart-title">Kill times through the run</figcaption>
+    <svg
+      class="svg"
+      role="img"
+      aria-label="Each kill's time, in its five parts, in the order of the run"
+      [attr.viewBox]="'0 0 ' + kt.box.width + ' ' + kt.box.height"
+    >
+      @for (t of kt.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="kt.box.left"
+          [attr.x2]="kt.box.width - kt.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="kt.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of kt.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="kt.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @for (b of kt.bars; track b.flick.n) {
+        <g
+          class="bar"
+          [attr.data-selected]="b.flick === focus.selected() ? '' : null"
+          (click)="focus.play(b.flick)"
+        >
+          <title>{{ b.title }}</title>
+          @for (s of b.segments; track $index) {
+            <rect
+              [attr.x]="b.x"
+              [attr.y]="s.y"
+              [attr.width]="b.width"
+              [attr.height]="s.height"
+              [style.fill]="s.color"
+            />
+          }
+          <rect
+            class="mark"
+            [attr.x]="b.x - 1"
+            [attr.y]="b.top - 1"
+            [attr.width]="b.width + 2"
+            [attr.height]="kt.box.height - kt.box.bottom - b.top + 2"
+          />
+        </g>
+      }
+      @if (kt.median; as m) {
+        <line
+          class="median"
+          [attr.x1]="kt.box.left"
+          [attr.x2]="kt.box.width - kt.box.right"
+          [attr.y1]="m.at"
+          [attr.y2]="m.at"
+        />
+        <text
+          class="median-label"
+          text-anchor="end"
+          [attr.x]="kt.box.width - kt.box.right"
+          [attr.y]="m.at - 4"
+        >
+          {{ m.label }}
+        </text>
+      }
+    </svg>
+    <p class="chart-note">
+      Each kill in its five parts, as in the time budget below. Click one to play it.
+    </p>
+  </figure>
+
+  @let ft = fitts();
+  <figure class="chart">
+    <figcaption class="chart-title">Distance and kill time</figcaption>
+    <svg
+      class="svg"
+      role="img"
+      aria-label="Each kill's time against its distance, with the time the run's own curve gives for each distance"
+      [attr.viewBox]="'0 0 ' + ft.box.width + ' ' + ft.box.height"
+    >
+      @for (t of ft.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="ft.box.left"
+          [attr.x2]="ft.box.width - ft.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="ft.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of ft.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="ft.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @for (d of ft.dots; track d.flick.n) {
+        <circle
+          class="dot"
+          [attr.data-selected]="d.flick === focus.selected() ? '' : null"
+          [attr.cx]="d.x"
+          [attr.cy]="d.y"
+          (click)="focus.play(d.flick)"
+        >
+          <title>{{ d.title }}</title>
+        </circle>
+      }
+      <path class="curve" [attr.d]="ft.curve" />
+    </svg>
+    <p class="chart-note">
+      The line is the time Fitts' law, fitted to this run, gives for each distance: kills above it
+      were slow for their distance.
+    </p>
+  </figure>
+
+  @let cg = clicks();
+  <figure class="chart">
+    <figcaption class="chart-title">Where the clicks landed</figcaption>
+    <svg
+      class="svg"
+      role="img"
+      aria-label="Where each click landed on its target, every flick turned to come from the left"
+      [attr.viewBox]="'0 0 ' + cg.box.width + ' ' + cg.box.height"
+    >
+      <line
+        class="grid"
+        [attr.x1]="cg.box.left"
+        [attr.x2]="cg.box.width - cg.box.right"
+        [attr.y1]="cg.center.y"
+        [attr.y2]="cg.center.y"
+      />
+      <line
+        class="grid"
+        [attr.x1]="cg.center.x"
+        [attr.x2]="cg.center.x"
+        [attr.y1]="cg.box.top"
+        [attr.y2]="cg.box.height - cg.box.bottom"
+      />
+      <circle class="target" [attr.cx]="cg.center.x" [attr.cy]="cg.center.y" [attr.r]="cg.radius" />
+      <text class="label" text-anchor="start" [attr.x]="cg.box.left" [attr.y]="cg.center.y - 6">
+        short
+      </text>
+      <text
+        class="label"
+        text-anchor="end"
+        [attr.x]="cg.box.width - cg.box.right"
+        [attr.y]="cg.center.y - 6"
+      >
+        past
+      </text>
+      <text class="label" text-anchor="start" [attr.x]="cg.box.left" [attr.y]="cg.box.height - 6">
+        the flick comes from the left · target edge {{ cg.scale.label }}
+      </text>
+      @for (d of cg.dots; track d.flick.n) {
+        <circle
+          class="dot"
+          [attr.data-missed]="d.missed ? '' : null"
+          [attr.data-selected]="d.flick === focus.selected() ? '' : null"
+          [attr.cx]="d.x"
+          [attr.cy]="d.y"
+          (click)="focus.play(d.flick)"
+        >
+          <title>{{ d.title }}</title>
+        </circle>
+      }
+      @if (cg.average; as a) {
+        <path
+          class="average"
+          [attr.d]="'M' + (a.x - 6) + ',' + a.y + 'h12M' + a.x + ',' + (a.y - 6) + 'v12'"
+        />
+      }
+    </svg>
+    <p class="chart-note">
+      Each click's place on its target. Yellow: the kill took more than one shot. The cross is the
+      clicks' average.
+    </p>
+  </figure>
+
+  @let sp = speeds();
+  <figure class="chart">
+    <figcaption class="chart-title">Every flick's speed, °/s</figcaption>
+    <svg
+      class="svg"
+      role="img"
+      aria-label="Every flick's speed, lined up at the end of its main flick, with their median"
+      [attr.viewBox]="'0 0 ' + sp.box.width + ' ' + sp.box.height"
+    >
+      @for (t of sp.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="sp.box.left"
+          [attr.x2]="sp.box.width - sp.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="sp.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of sp.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="sp.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      <line
+        class="zero"
+        [attr.x1]="sp.zero"
+        [attr.x2]="sp.zero"
+        [attr.y1]="sp.box.top"
+        [attr.y2]="sp.box.height - sp.box.bottom"
+      />
+      <!-- the curves faster than the scale's top run off the plot, cut at its edge -->
+      <clipPath id="run-speeds-plot">
+        <rect
+          [attr.x]="sp.box.left"
+          [attr.y]="sp.box.top"
+          [attr.width]="sp.box.width - sp.box.left - sp.box.right"
+          [attr.height]="sp.box.height - sp.box.top - sp.box.bottom"
+        />
+      </clipPath>
+      <g clip-path="url(#run-speeds-plot)">
+        @for (l of sp.lines; track l.flick.n) {
+          <path class="flick-line" [attr.d]="l.path" />
+        }
+        <path class="median-line" [attr.d]="sp.median" />
+        @if (focusedSpeed(); as f) {
+          <path class="focused-line" [attr.d]="f.path" />
+        }
+      </g>
+    </svg>
+    <p class="chart-note">
+      Milliseconds from the end of each main flick. The bold line is the median; the picked kill is
+      in yellow.
+    </p>
+  </figure>
+</div>

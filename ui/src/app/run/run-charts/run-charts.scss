@@ -1,0 +1,115 @@
+@use 'themes/theme' as t;
+@use 'themes/report' as r;
+@reference '../../../tailwind.css';
+
+// The drawings' lines, dots and labels: SVG strokes and fills, which utilities do not reach inside the drawing
+@layer components {
+  .grid {
+    stroke: t.$grid;
+  }
+
+  .zero {
+    stroke: t.$axis;
+    stroke-dasharray: r.$chart-dash;
+  }
+
+  .label {
+    fill: t.$text-muted;
+    font-size: t.$font-size-xs;
+  }
+
+  .bar {
+    cursor: pointer;
+
+    &:hover rect {
+      opacity: r.$chart-hover-opacity;
+    }
+  }
+
+  .mark {
+    fill: none;
+    stroke: none;
+  }
+
+  .bar[data-selected] .mark {
+    stroke: t.$warning;
+    stroke-width: r.$chart-line-width;
+  }
+
+  .median {
+    stroke: t.$text-primary;
+    stroke-dasharray: r.$chart-dash;
+  }
+
+  .median-label {
+    fill: t.$text-secondary;
+    font-size: t.$font-size-xs;
+  }
+
+  .dot {
+    r: r.$chart-dot;
+    fill: t.$series-1;
+    cursor: pointer;
+
+    &[data-missed] {
+      fill: t.$warning;
+    }
+
+    &[data-selected] {
+      r: r.$chart-dot-selected;
+      stroke: t.$text-primary;
+      stroke-width: r.$chart-line-width;
+    }
+  }
+
+  .curve,
+  .median-line {
+    fill: none;
+    stroke: t.$text-primary;
+    stroke-width: r.$chart-line-width;
+  }
+
+  .target {
+    fill: none;
+    stroke: t.$text-muted;
+  }
+
+  .average {
+    stroke: t.$text-primary;
+    stroke-width: r.$chart-line-width;
+  }
+
+  .flick-line {
+    fill: none;
+    stroke: t.$series-1;
+    stroke-opacity: r.$chart-faint-opacity;
+  }
+
+  .focused-line {
+    fill: none;
+    stroke: t.$warning;
+    stroke-width: r.$chart-line-width;
+  }
+}
+
+@layer components {
+  .charts {
+    @apply grid grid-cols-(--charts-columns) gap-5;
+  }
+
+  .chart {
+    @apply rounded-lg border border-border bg-surface-1 px-7 py-6;
+  }
+
+  .chart-title {
+    @apply text-sm font-strong;
+  }
+
+  .svg {
+    @apply mt-2 block w-full;
+  }
+
+  .chart-note {
+    @apply mt-2 text-xs text-muted;
+  }
+}

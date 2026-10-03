@@ -21,6 +21,11 @@
   <p class="section-note">{{ source() }}</p>
 </section>
 
+<section aria-label="The run at a glance">
+  <h3>The run at a glance</h3>
+  <app-run-charts [report]="report()" />
+</section>
+
 @if (budget(); as b) {
   <section class="budget-box" aria-label="Where the time goes">
     <h3>{{ b.title }}</h3>
