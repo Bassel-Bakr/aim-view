@@ -1,4 +1,4 @@
-import { JobStage, TimeWindow } from '../../api';
+import { AreaBox, AreaRect, JobStage, TimeWindow } from '../../api';
 
 /** Where the browser runs the detector: the GPU (WebGPU) or the CPU (WebAssembly). */
 export type BrowserDevice = 'webgpu' | 'wasm';
@@ -7,7 +7,7 @@ export type BrowserDevice = 'webgpu' | 'wasm';
  * What the review worker is asked: a recording's file, which of its runs to review (`run` of `runs`: split-runs.ts;
  * each run has a worker of its own) and the part of it to review (null: all of it), where the core, the detector
  * runtime and the model are, where to run the detector and how many frames it takes at once, the scenario's target
- * count (null: not known), and the port to the camera worker.
+ * count (null: not known), the areas the review ignores, and the port to the camera worker.
  */
 export interface ReviewRequest {
   file: Blob;
@@ -20,6 +20,7 @@ export interface ReviewRequest {
   device: BrowserDevice;
   batch: number;
   cap: number | null;
+  areas: AreaBox[];
   camera: MessagePort;
 }
 
@@ -47,13 +48,17 @@ export interface KeyFrame {
 }
 
 /**
- * The camera watch's start, after the key frames: the fixed map (1280 x 720), and the frames before the review's first,
- * which neither watch sees (a review from part way in; 0 but for the first run of such a review).
+ * The camera watch's start, after the key frames: the fixed map (1280 x 720), the frames before the review's first,
+ * which neither watch sees (a review from part way in; 0 but for the first run of such a review), and the recording's
+ * excluded areas, which the camera's tiles keep clear of.
  */
 export interface CameraStart {
   kind: 'start';
   fixed: Uint8Array;
   skip: number;
+  areas: AreaBox[];
+  /** Send back KovaaK's session box as the HUD watch finds it in the key frames (CameraSession), for the area finder. */
+  session: boolean;
 }
 
 /**
@@ -83,6 +88,12 @@ export interface CameraFree {
 export interface WatchParts {
   camera: string;
   hud: string;
+}
+
+/** KovaaK's session box as the HUD watch finds it in the key frames (src/wasm.rs: hud_session_box's JSON). */
+export interface CameraSession {
+  kind: 'session';
+  session: string;
 }
 
 /** The watches' parts, once every frame is read. */
@@ -142,6 +153,8 @@ export interface HudReading {
  * detector ran and the key frames read.
  */
 export interface RunPart {
+  /** The area finder's result (FinderResult's JSON), from the first run; null from the others. */
+  found: string | null;
   frames: number;
   track: string;
   camera: string;
@@ -168,4 +181,21 @@ export interface ReviewFailed {
 export type ReviewMessage = ReviewProgress | ReviewPart | ReviewFailed;
 
 /** What the camera worker says back. */
-export type CameraReply = CameraFree | CameraDone | ReviewFailed;
+export type CameraReply = CameraFree | CameraSession | CameraDone | ReviewFailed;
+
+/** An area the finder found (src/areas.rs: Area): its box (shares of the frame), its features, and the rules' kind. */
+export interface FoundArea {
+  box: AreaRect;
+  feat: number[];
+  rule: string;
+}
+
+/**
+ * What the area finder found in a recording (src/areas.rs: Found): the frames it read, the areas, and the maps they
+ * came from (packed, as its JSON gives them), which describe any area the user draws when the finder learns.
+ */
+export interface FinderResult {
+  frames: number;
+  areas: FoundArea[];
+  maps: unknown;
+}

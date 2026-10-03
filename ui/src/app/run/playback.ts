@@ -16,6 +16,11 @@ export class Playback {
   readonly rate = signal(0.25);
   readonly duration = signal(0);
   time = 0;
+  /**
+   * Where the next video to load starts, in seconds (the labelling queue shows a frame from the run, not the
+   * countdown); null: at its start.
+   */
+  startAt: number | null = null;
   private video: HTMLVideoElement | null = null;
   private stopAt: number | null = null;
   private readonly listeners = new Set<FrameListener>();

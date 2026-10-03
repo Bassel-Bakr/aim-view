@@ -126,7 +126,9 @@ export function trackNote(s: TrackSummary): string {
         'accuracy does.'
       : '') +
     (s.faint
-      ? ` The faint-target cut-off is on: ${s.faint.tracks} tracks scoring under ${s.faint.cut} are left out of every measure here.`
+      ? s.faint.cut === null
+        ? ' The faint-target cut-off is on, but this review has no detector scores: nothing is left out.'
+        : ` The faint-target cut-off is on: ${s.faint.tracks} tracks scoring under ${s.faint.cut} are left out of every measure here.`
       : '')
   );
 }

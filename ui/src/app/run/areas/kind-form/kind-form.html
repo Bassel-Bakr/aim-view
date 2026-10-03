@@ -1,0 +1,16 @@
+<form class="kind-form" aria-label="Area type" (submit)="saveKind($event)">
+  <input
+    class="kind-name"
+    aria-label="Type name"
+    placeholder="Type name, e.g. Kill feed"
+    [formField]="fields.name"
+  />
+  <input
+    class="kind-about"
+    aria-label="What it is"
+    placeholder="What it is (optional)"
+    [formField]="fields.about"
+  />
+  <button type="submit" appButton [disabled]="fields().invalid() || saving()">Save type</button>
+  <button type="button" appButton (click)="closed.emit()">Cancel</button>
+</form>

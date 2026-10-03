@@ -35,6 +35,15 @@ describe('track stats', () => {
     expect(trackNote({ ...SUMMARY, bots: 12 })).toContain('Bots die here');
   });
 
+  it('says what the faint-target cut-off left out', () => {
+    expect(trackNote({ ...SUMMARY, faint: { offset: 0.3, cut: 0.565, tracks: 13 } })).toContain(
+      '13 tracks scoring under 0.565 are left out',
+    );
+    expect(trackNote({ ...SUMMARY, faint: { offset: 0.3, cut: null, tracks: 0 } })).toContain(
+      'no detector scores',
+    );
+  });
+
   it('says why the following was not measured', () => {
     const m = motionView({ reason: 'the bot barely moved', seconds: 3.2, camera: 0.5 } as Motion);
     expect(m?.reason).toBe(

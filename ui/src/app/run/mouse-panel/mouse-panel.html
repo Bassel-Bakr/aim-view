@@ -1,0 +1,98 @@
+@if (visible()) {
+  <section class="mouse" aria-labelledby="mouse-title">
+    <div class="head">
+      <h3 class="title" id="mouse-title">From the mouse log</h3>
+      <div class="actions">
+        @if (logs.adds) {
+          <button type="button" appButton [disabled]="busy()" (click)="file.click()">
+            {{ shown() ? 'Add another log' : 'Add the mouse log' }}
+          </button>
+          @if (shown()) {
+            <button type="button" appButton [disabled]="busy()" (click)="forgetLog()">
+              Forget the log
+            </button>
+          }
+        }
+        @if (logs.logs) {
+          <button type="button" appButton [disabled]="measures.isLoading()" (click)="readAgain()">
+            Read again
+          </button>
+        }
+      </div>
+    </div>
+    <input #file type="file" accept=".bin" hidden (change)="addLog(file)" />
+
+    @if (measures.isLoading()) {
+      <p class="hint" role="status">Reading the mouse log…</p>
+    } @else if (measures.error(); as e) {
+      <p class="failed" role="alert">Could not read the mouse log: {{ e.message }}</p>
+    } @else if (run(); as r) {
+      <p class="source">{{ source() }}</p>
+      @if (r.log.throttled) {
+        <p class="warning">
+          Windows throttled the logger: its events came about
+          {{ gapMs() }} ms apart, so these times are only good to about that (speeds were taken over
+          {{ r.window_ms }} ms). To log at the full rate, set the DWORD RawMouseThrottleEnabled to 0
+          under HKEY_CURRENT_USER\Control Panel\Mouse, then sign out and back in; delete it after
+          logging (python/README.md, "Raw mouse log").
+        </p>
+      }
+      <div class="cards">
+        @for (c of cards(); track c.key) {
+          <div class="card" [title]="c.why">
+            <span class="card-value">{{ c.value }}</span>
+            <span class="card-label">{{ c.label }}</span>
+            <span class="card-detail">{{ c.detail }}</span>
+          </div>
+        }
+      </div>
+      <p class="section-note">{{ notes() }}</p>
+      <details class="each">
+        <summary class="each-toggle">Each kill</summary>
+        <div class="kills">
+          <table>
+            <thead>
+              <tr>
+                <th>Kill</th>
+                <th>Click at</th>
+                @for (c of columns; track c) {
+                  <th>{{ c }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows(); track row.n) {
+                <tr>
+                  <td>{{ row.n }}</td>
+                  <td>{{ row.at }}</td>
+                  @for (cell of row.cells; track $index) {
+                    <td>{{ cell }}</td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </details>
+    } @else if (shown(); as s) {
+      <p class="failed" role="alert">{{ s.file ?? 'The mouse log' }}: {{ s.error }}</p>
+    } @else if (logs.adds) {
+      <p class="hint">
+        No mouse log for this run. A raw mouse log (python/mouse_log.py, or the desktop app's Mouse
+        log) shows when each flick starts and stops, its peak speed, and how long the crosshair sits
+        still before each click, to the millisecond. Add the log made while you played this run; the
+        browser reads it here, with the run's stats file, and keeps it.
+      </p>
+    } @else if (logs.logs) {
+      <p class="hint">
+        No mouse log covers this run. Turn on Mouse log at the top before you play: the app logs the
+        raw mouse in the background, and each run it covers is measured here.
+      </p>
+    }
+    @if (message(); as m) {
+      <p [class]="m.failed ? 'failed' : 'hint'" [attr.role]="m.failed ? 'alert' : 'status'">
+        {{ m.text }}
+      </p>
+    }
+  </section>
+}

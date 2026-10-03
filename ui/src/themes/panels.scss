@@ -3,6 +3,7 @@
 @mixin tokens {
   --dialog-width: 1040px;
   --dialog-max-height: 88vh;
+  --examples-dialog-width: 640px;
   --model-prose-width: 240px;
   --candidates-height: 280px;
   --stamp-width: 120px;
@@ -10,6 +11,7 @@
 
 $dialog-width: var(--dialog-width);
 $dialog-max-height: var(--dialog-max-height);
+$examples-dialog-width: var(--examples-dialog-width);
 $model-prose-width: var(--model-prose-width);
 $candidates-height: var(--candidates-height);
 $stamp-width: var(--stamp-width);

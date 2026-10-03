@@ -5,6 +5,8 @@
 @use 'themes/timeline';
 @use 'themes/report';
 @use 'themes/panels';
+@use 'themes/areas';
+@use 'themes/faint';
 
 // The tokens' values. Unlayered, so they win over anything Tailwind sets on :root.
 :root {
@@ -15,6 +17,8 @@
   @include timeline.tokens;
   @include report.tokens;
   @include panels.tokens;
+  @include areas.tokens;
+  @include faint.tokens;
 }
 
 // Page-wide element styles go in Tailwind's base layer and component styles in its components layer, so a utility

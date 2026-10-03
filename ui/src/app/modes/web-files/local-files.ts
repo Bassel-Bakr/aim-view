@@ -16,8 +16,10 @@ import {
   StatsCsv,
   statsSummary,
 } from './stats-csv';
+import { exampleRec } from './area-examples';
 import { BrowserStore } from './browser-store';
 import { KovaakFolders } from './kovaak-folders';
+import { LabelMarks } from './label-marks';
 import { FolderEntry, RecordingsFolder } from './recordings-folder';
 import { SavedReviews } from './saved-reviews';
 import { ScenarioFacts } from './scenario-facts';
@@ -136,13 +138,15 @@ export class LocalFiles implements RecordingSource {
   private readonly kovaak = inject(KovaakFolders);
   private readonly store = inject(BrowserStore);
   private readonly saved = inject(SavedReviews);
+  private readonly marks = inject(LabelMarks);
   private kept: KeptPairs = {};
   readonly files = signal<LocalFile[]>([]);
   readonly recordings = computed<Recording[]>(() => {
     const facts = this.scenarios.byName();
     const kindOf = (s: string) => facts.get(s.toLowerCase())?.kind ?? null;
+    const notAim = this.marks.notAim();
     return this.files().map((f) => {
-      const r = localRecording(f, kindOf);
+      const r = { ...localRecording(f, kindOf), not_aim: notAim.has(exampleRec(f.id)) };
       return r.analysed || !this.saved.has(f.file) ? r : { ...r, analysed: true };
     });
   });

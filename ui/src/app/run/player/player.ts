@@ -16,6 +16,8 @@ import { Playback, RATES } from '../playback';
 import { FlickFocus } from '../flick-focus';
 import { clock } from '../track';
 import { PathCost } from '../fastest-path/path-cost';
+import { FaintCutoff } from '../../services/faint-cutoff';
+import { drawFaint, FaintStyle, pointedTrack, readFaintStyle } from '../faint-cutoff/faint-overlay';
 import { drawClick, drawPaths, drawTrack, OverlayStyle, readOverlayStyle } from './overlay';
 
 const OVERLAY_KEY = 'aimview-overlay';
@@ -70,9 +72,12 @@ export class Player {
   readonly src = input.required<string>();
   readonly report = input<Report | null>(null);
   readonly tracks = input<Tracks | null>(null);
+  /** Something is edited on the video (the excluded areas, projected with the `screen` attribute): no overlay. */
+  readonly editing = input(false);
   protected readonly playback = inject(Playback);
   protected readonly focus = inject(FlickFocus);
   private readonly paths = inject(PathCost);
+  private readonly faint = inject(FaintCutoff);
   private readonly destroyRef = inject(DestroyRef);
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('overlay');
@@ -92,6 +97,7 @@ export class Player {
     clock(this.playback.duration() || 0).replace(/\.\d$/, ''),
   );
   private style: OverlayStyle | null = null;
+  private faintStyle: FaintStyle | null = null;
   private seeking = false;
 
   constructor() {
@@ -103,6 +109,11 @@ export class Player {
       this.showFastest();
       this.showMine();
       this.paths.analysis();
+      this.editing();
+      this.faint.dropped();
+      this.faint.highlight();
+      this.faint.showScores();
+      this.faint.hover();
       untracked(() => this.draw(this.playback.time));
     });
   }
@@ -139,7 +150,7 @@ export class Player {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
     const r = this.report();
-    if (!r) return;
+    if (!r || this.editing()) return;
     this.style ??= readOverlayStyle(canvas);
     const frame = Math.round(t * r.fps);
     const scale = w / r.geometry.W;
@@ -154,12 +165,58 @@ export class Player {
     } else if (tracks && this.showOverlay()) {
       drawTrack(c, r, tracks, frame, scale, this.style);
     }
+    this.drawCutoff(c, frame, scale);
+  }
+
+  /** What the faint-target cut-off leaves out, dimmed, and the scores when asked for (faint-overlay.ts). */
+  private drawCutoff(c: CanvasRenderingContext2D, frame: number, scale: number): void {
+    const r = this.report();
+    const all = this.faint.allTracks();
+    const sc = this.faint.scores();
+    if (!r || !all || !sc || !this.faint.has()) return;
+    this.faintStyle ??= readFaintStyle(this.canvas().nativeElement);
+    drawFaint(c, r, all, frame, scale, this.faintStyle, {
+      scores: sc.scores,
+      dropped: this.faint.dropped(),
+      highlight: this.faint.highlight(),
+      showScores: this.faint.showScores(),
+      hover: this.faint.hover(),
+    });
+  }
+
+  /** The track under the mouse, with its scores, for the cut-off. */
+  protected pointAt(e: MouseEvent): void {
+    const r = this.report();
+    const all = this.faint.allTracks();
+    const sc = this.faint.scores();
+    if (!r || !all || !sc || !this.faint.has() || this.editing()) return;
+    const box = this.canvas().nativeElement.getBoundingClientRect();
+    const frame = Math.round(this.playback.time * r.fps);
+    const scale = box.width / r.geometry.W;
+    const hover = pointedTrack(
+      r,
+      all,
+      frame,
+      scale,
+      e.clientX - box.left,
+      e.clientY - box.top,
+      sc.scores,
+    );
+    if ((hover?.text ?? null) !== (this.faint.hover()?.text ?? null)) this.faint.hover.set(hover);
+  }
+
+  protected stopPointing(): void {
+    if (this.faint.hover()) this.faint.hover.set(null);
   }
 
   protected loadedMetadata(): void {
     const v = this.video().nativeElement;
     this.playback.duration.set(v.duration);
     if (v.videoWidth && v.videoHeight) this.aspect.set(`${v.videoWidth} / ${v.videoHeight}`);
+    if (this.playback.startAt !== null) {
+      this.playback.seek(this.playback.startAt);
+      this.playback.startAt = null;
+    }
     this.playback.frame(v.currentTime);
   }
 

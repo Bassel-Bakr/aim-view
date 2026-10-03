@@ -2,13 +2,19 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { Button } from '../controls/button';
 import { JobStage, Recording } from '../api';
 import { formatPercent } from '../format';
+import { QueueBar } from '../labelling/queue-bar/queue-bar';
+import { FaintCutoff } from '../services/faint-cutoff';
 import { Library } from '../services/library';
 import { modelName, Models } from '../services/models';
+import { AreaBar } from './areas/area-bar/area-bar';
+import { AreaCanvas } from './areas/area-canvas/area-canvas';
+import { AreaDraft } from './areas/area-draft';
 import { ClickSide } from './click-side/click-side';
 import { FlickList } from './flick-list/flick-list';
 import { Headline } from './headline/headline';
 import { scoreChange } from './score-change';
 import { KillLanes } from './kill-lanes/kill-lanes';
+import { MousePanel } from './mouse-panel/mouse-panel';
 import { Player } from './player/player';
 import { ClickReport } from './report/click-report';
 import { HeadlineTile, runHeadline } from './report/click-stats';
@@ -16,6 +22,7 @@ import { HEADLINE_TILES, trackStats } from './report/track-stats';
 import { TrackReport } from './report/track-report';
 import { Review } from '../services/review';
 import { RunHeader } from './run-header/run-header';
+import { FaintCutoffPanel } from './faint-cutoff/faint-cutoff-panel';
 import { formatClock, RunWindow } from './run-window/run-window';
 import { SpeedChart } from './speed-chart/speed-chart';
 import { StatsFile } from './stats-file/stats-file';
@@ -59,8 +66,13 @@ const STAGES: Record<JobStage, string> = {
     Headline,
     KillLanes,
     RunWindow,
+    FaintCutoffPanel,
     TrackReport,
+    MousePanel,
     Button,
+    QueueBar,
+    AreaBar,
+    AreaCanvas,
   ],
   templateUrl: './run.html',
   styleUrl: './run.scss',
@@ -68,15 +80,18 @@ const STAGES: Record<JobStage, string> = {
 export class Run {
   readonly recording = input.required<Recording>();
   protected readonly review = inject(Review);
+  /** The excluded areas editor: its bar above the video, the areas over it. */
+  protected readonly areas = inject(AreaDraft);
   private readonly models = inject(Models);
   private readonly library = inject(Library);
 
   protected readonly report = computed(() =>
     this.review.report.hasValue() ? this.review.report.value() : null,
   );
-  protected readonly tracks = computed(() =>
-    this.review.tracks.hasValue() ? this.review.tracks.value() : null,
-  );
+  /** The faint-target cut-off: its panel, and the tracks without those it leaves out. */
+  protected readonly faint = inject(FaintCutoff);
+  /** The tracks the page shows: without those the faint-target cut-off leaves out. */
+  protected readonly tracks = this.faint.tracks;
   protected readonly trackReport = computed(() => {
     const r = this.report();
     return r?.mode === 'track' ? r : null;
@@ -183,7 +198,17 @@ export class Run {
     this.windowOpen.update((open) => !open);
   }
 
+  /** Opens the cut-off's panel, or closes it (it stays while the cut-off is on). */
+  protected toggleCutoff(): void {
+    this.faint.asked.update((open) => !open);
+  }
+
   protected toggleStats(): void {
     this.statsOpen.update((open) => !open);
+  }
+
+  protected toggleAreas(): void {
+    if (this.areas.open()) this.areas.stop();
+    else this.areas.start(this.recording().id);
   }
 }

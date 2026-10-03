@@ -1,0 +1,149 @@
+<section class="panel" id="faint-cutoff" aria-labelledby="faint-cutoff-title">
+  <header class="head">
+    <h3 class="title" id="faint-cutoff-title">Faint-target cut-off</h3>
+    @if (!inQueue()) {
+      <button type="button" appButton (click)="close()">Close</button>
+    }
+  </header>
+  <p class="intro">
+    Leave out the tracks the detector is far less sure of than of this recording's targets: wall
+    seams and tiles. A track is left out when its score lies more than the offset below the
+    recording's targets. A tracking run's numbers are measured again without them; the video, the
+    timeline and a clicking run's fastest paths leave them out at once. Submit keeps the cut and
+    writes it as labels for the detector: the tracks it leaves out are not targets, the ones it
+    keeps are.
+  </p>
+  <div class="fields">
+    <button
+      type="button"
+      class="switch"
+      role="switch"
+      title="Leave out tracks the model is far less sure of than of this recording's targets: wall seams and tiles"
+      [attr.aria-checked]="faint.on()"
+      [disabled]="!faint.has()"
+      (click)="toggleOn()"
+    >
+      <span class="switch-knob" aria-hidden="true"></span>
+      Leave out faint targets
+    </button>
+    <label class="field">
+      <span class="field-label">Offset below the targets</span>
+      <input
+        class="offset"
+        #range
+        type="range"
+        [min]="lowest"
+        [max]="highest"
+        [step]="step"
+        [value]="faint.offset()"
+        [disabled]="!faint.has()"
+        (input)="setOffset(range.valueAsNumber)"
+      />
+    </label>
+    <button
+      type="button"
+      class="switch"
+      role="switch"
+      title="Write each track's score beside it on the video; point at one for that frame's own score"
+      [attr.aria-checked]="faint.showScores()"
+      (click)="toggleScores()"
+    >
+      <span class="switch-knob" aria-hidden="true"></span>
+      Show scores
+    </button>
+  </div>
+  <p class="info" role="status">{{ info() }}</p>
+  @if (strip(); as s) {
+    <svg
+      class="strip"
+      role="img"
+      aria-label="Every track's score, with the cut"
+      [attr.viewBox]="'0 0 ' + width + ' ' + height"
+    >
+      <line class="axis" x1="8" [attr.x2]="width - 8" y1="38" y2="38" />
+      @for (t of s.ticks; track t.text) {
+        <text class="tick" [attr.x]="t.x" [attr.y]="height - 2">{{ t.text }}</text>
+      }
+      @for (d of s.dots; track d.id) {
+        <circle
+          class="dot"
+          [attr.data-out]="d.out ? '' : null"
+          [attr.data-picked]="faint.highlight() === d.id ? '' : null"
+          [attr.cx]="d.x"
+          [attr.cy]="d.y"
+          [attr.r]="d.r"
+          (click)="showTrack(d.id)"
+        >
+          <title>{{ d.title }}</title>
+        </circle>
+      }
+      <line class="cut" [attr.x1]="s.cutX" [attr.x2]="s.cutX" y1="2" y2="40">
+        <title>The cut: {{ faint.cut().toFixed(2) }}</title>
+      </line>
+    </svg>
+  }
+  <div class="actions">
+    @if (inQueue()) {
+      <span class="position" role="status">
+        Recording {{ queue.position() + 1 }} of {{ queue.length() }}
+      </span>
+      <button
+        type="button"
+        appButton
+        intent="primary"
+        [disabled]="!faint.has() || faint.submitting()"
+        (click)="submitAndNext()"
+      >
+        Submit and next
+      </button>
+      <button
+        type="button"
+        appButton
+        title="Leave this recording out of the queue from now on, and open the next"
+        (click)="skipRecording()"
+      >
+        Skip
+      </button>
+      <button
+        type="button"
+        appButton
+        title="End the queue; this recording stays open"
+        (click)="stopQueue()"
+      >
+        Stop
+      </button>
+    } @else {
+      <button
+        type="button"
+        appButton
+        title="Save this cut-off and write it as labels for the detector: the tracks it leaves out are not targets, the ones it keeps are"
+        [disabled]="!faint.has() || faint.submitting()"
+        (click)="submitCutoff()"
+      >
+        Submit
+      </button>
+    }
+  </div>
+  @if (labels; as store) {
+    <div class="labels">
+      <span class="labels-count">{{ labelsText() }}</span>
+      <button
+        type="button"
+        appButton
+        title="A zip of checked.jsonl and train/, as the review server writes them in test_out/vod_model/hand/cutoff/: unzip it into a folder of its own there, and training reads it as it reads the server's"
+        [disabled]="zipping() || !store.count().crops"
+        (click)="downloadLabels()"
+      >
+        Download {{ store.fileName }}
+      </button>
+    </div>
+    @if (zipFailed(); as why) {
+      <p class="failed" role="alert">{{ why }}</p>
+    }
+  }
+  @if (faint.note(); as n) {
+    <p [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">
+      {{ n.text }}
+    </p>
+  }
+</section>

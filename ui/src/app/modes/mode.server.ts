@@ -1,10 +1,18 @@
 import { withXhr } from '@angular/common/http';
+import { AreaLabels } from '../platform/area-labels';
+import { FaintCutoffs } from '../platform/faint-cutoffs';
 import { Mode } from '../platform/mode';
+import { Labelling } from '../platform/labelling';
 import { ModelCatalog } from '../platform/model-catalog';
+import { MouseLogs } from '../platform/mouse-logs';
 import { RecordingSource } from '../platform/recording-source';
 import { ReviewEngine } from '../platform/review-engine';
 import { StatsFiles } from '../platform/stats-files';
+import { ServerAreaLabels } from './http/server-area-labels';
+import { ServerFaintCutoffs } from './http/server-faint-cutoffs';
+import { ServerLabelling } from './http/server-labelling';
 import { ServerModels } from './http/server-models';
+import { ServerMouseLogs } from './http/server-mouse-logs';
 import { ServerRecordings } from './http/server-recordings';
 import { ServerReview } from './http/server-review';
 import { ServerStatsFiles } from './http/server-stats-files';
@@ -21,5 +29,9 @@ export const MODE: Mode = {
     { provide: StatsFiles, useExisting: ServerStatsFiles },
     { provide: ReviewEngine, useExisting: ServerReview },
     { provide: ModelCatalog, useExisting: ServerModels },
+    { provide: MouseLogs, useExisting: ServerMouseLogs },
+    { provide: Labelling, useExisting: ServerLabelling },
+    { provide: AreaLabels, useExisting: ServerAreaLabels },
+    { provide: FaintCutoffs, useExisting: ServerFaintCutoffs },
   ],
 };

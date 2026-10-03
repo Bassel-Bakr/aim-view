@@ -1,12 +1,62 @@
 import { Injectable } from '@angular/core';
-import { Report, RunMarks, ScenarioInfo, TrackFrame, Tracks } from '../../api';
+import {
+  AreaBox,
+  AreaExample,
+  AreaKind,
+  AreaRect,
+  FaintChoice,
+  FoundAreas,
+  Report,
+  RunMarks,
+  ScenarioInfo,
+  TrackFrame,
+  Tracks,
+} from '../../api';
+import { CutoffRow } from '../web-files/cutoff-labels';
 import { Core } from './core';
-import { CameraReading, HudReading, RunPart, VideoReadings } from './review-messages';
+import { LabelledRecording } from '../web-files/saved-areas';
+import { CameraReading, FoundArea, HudReading, RunPart, VideoReadings } from './review-messages';
+
+/**
+ * What the area finder proposes from (src/areas.rs: find_json): the areas found in the recording, the examples it
+ * learned, the recordings the user saved areas for (to copy one with the same layout; none for Detect fresh), and the
+ * kinds (they turn the proposal's kinds into ids).
+ */
+export interface AreasFindRequest {
+  found: FoundArea[];
+  examples: readonly AreaExample[];
+  labelled: LabelledRecording[];
+  kinds: AreaKind[];
+}
+
+/**
+ * What the area finder learns from (src/areas.rs: learn_json): the recording's name in the examples, the areas found
+ * in it and their maps (FinderResult), the areas the user saved, and the kinds.
+ */
+export interface AreasLearnRequest {
+  rec: string;
+  found: FoundArea[];
+  maps: unknown;
+  saved: AreaBox[];
+  kinds: AreaKind[];
+}
+
+/** learn_json's answer: the examples as the lines of area_examples.jsonl, and how many were added. */
+interface AreasLearned {
+  examples: string;
+  added: number;
+}
+
+/** A finder call the core refused, and why. */
+interface CoreRefusal {
+  error: string;
+}
 
 /**
  * What the core reviews a run from (src/review.rs: `ReviewRequest`): its tracks, its video's and stats file's names,
  * the stats file's text (both '' for a run without one), the user's run marks and what the HUD read (null: nothing);
- * for a tracking run also the scenario's time limit and the video's readings.
+ * for a tracking run also the scenario's time limit, the video's readings and the user's faint-target cut-off (null:
+ * none), whose cut its measures leave out.
  */
 export interface ReportRequest {
   tracks: Tracks;
@@ -19,6 +69,35 @@ export interface ReportRequest {
   camera: CameraReading[];
   countdown: boolean[];
   hud: HudReading | null;
+  faint: FaintChoice | null;
+}
+
+/**
+ * What the labels of a submitted cut-off are made from (src/faint.rs: `CutoffRequest`): the tracks' frames, the
+ * recording's name, the run's first and last frames (null: not known, no labels), the excluded areas (null: KovOBS's
+ * layout), the cut-off's offset, and how near the crosshair a score is not counted (a tracking run 0, a clicking run 2
+ * degrees).
+ */
+export interface CutoffRequest {
+  frames: TrackFrame[];
+  video: string;
+  start: number | null;
+  end: number | null;
+  exclude: AreaRect[] | null;
+  offset: number;
+  near: number;
+}
+
+/**
+ * A label's crop (src/faint.rs: `CutoffCrop`): its frame and corner (pixels at 1280 x 720), the boxes it keeps (crop
+ * pixels: center and size, written as float32) and its row in checked.jsonl.
+ */
+export interface CutoffCrop {
+  frame: number;
+  x0: number;
+  y0: number;
+  boxes: number[][];
+  row: CutoffRow;
 }
 
 /** The core's report. */
@@ -68,17 +147,46 @@ export class CoreModule {
     return core.takeText(out);
   }
 
+  /** The area finder's proposal (src/areas.rs: find_json). */
+  async areasFind(request: AreasFindRequest): Promise<FoundAreas> {
+    const text = await this.call((c, p, n) => c.x.areas_find(p, n), JSON.stringify(request));
+    const out = JSON.parse(text) as FoundAreas | CoreRefusal;
+    if ('error' in out) throw new Error(out.error);
+    return out;
+  }
+
+  /** The examples the area finder learns from a recording's saved areas (src/areas.rs: learn_json). */
+  async areasLearn(request: AreasLearnRequest): Promise<AreaExample[]> {
+    const text = await this.call((c, p, n) => c.x.areas_learn(p, n), JSON.stringify(request));
+    const out = JSON.parse(text) as AreasLearned | CoreRefusal;
+    if ('error' in out) throw new Error(out.error);
+    return out.examples
+      .split(/\r?\n/)
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line) as AreaExample);
+  }
+
   /** What a scenario file says (its text, at least up to "[Map Data]"): src/scenario.rs. */
   async scenarioFacts(text: string): Promise<ScenarioInfo> {
     return JSON.parse(await this.call((c, p, n) => c.x.scenario_facts(p, n), text)) as ScenarioInfo;
   }
 
+  /** A raw mouse log read (src/mouse.rs): its bytes and the request (MouseReadRequest); the answer as JSON. */
+  async mouseRead(log: Uint8Array, request: string): Promise<string> {
+    const core = await this.load();
+    const block = core.reserve(log.length);
+    core.bytes(block).set(log);
+    const out = await this.call((c, p, n) => c.x.mouse_read(block.ptr, block.len, p, n), request);
+    core.free(block);
+    return out;
+  }
+
   /**
    * The parts of a recording's runs (one per review worker: split-runs.ts), joined in order (src/wasm.rs:
    * tracker_add_part, camera_add_part, hud_add_part): the frames linked, then the camera's readings, which need the
-   * tracks, and the HUD's. `cap`: the scenario's target count, 0 for none.
+   * tracks, and the HUD's. `cap`: the scenario's target count, 0 for none; `areas`: the areas the runs ignored.
    */
-  async joinRuns(parts: RunPart[], cap: number): Promise<JoinedRuns> {
+  async joinRuns(parts: RunPart[], cap: number, areas: readonly AreaBox[]): Promise<JoinedRuns> {
     const core = await this.load();
     const withText = (text: string, use: (ptr: number, len: number) => number) => {
       const bytes = new TextEncoder().encode(text);
@@ -88,10 +196,10 @@ export class CoreModule {
       core.free(block);
       return out;
     };
-    const tracker = core.x.tracker_new_kovobs(cap);
+    const tracker = core.tracker(areas, cap);
     const fixed = core.reserve(parts[0].fixed.length);
     core.bytes(fixed).set(parts[0].fixed);
-    const camera = core.x.camera_new(fixed.ptr);
+    const camera = core.camera(areas, fixed.ptr);
     core.free(fixed);
     const { width, height, full } = parts[0].format;
     const hud = core.x.hud_new(width, height, full);
@@ -123,6 +231,14 @@ export class CoreModule {
   }
 
   /** A run's report from its tracks and stats file, or without one from the HUD or the video alone: src/review.rs. */
+  /** The crops a submitted cut-off's labels take, as Python's hand_crops.py picks them: src/faint.rs. */
+  async cutoffCrops(request: CutoffRequest): Promise<CutoffCrop[]> {
+    const text = await this.call((c, p, n) => c.x.cutoff_crops(p, n), JSON.stringify(request));
+    const out = JSON.parse(text) as CutoffCrop[] | ReportRefused;
+    if ('error' in out) throw new Error(out.error);
+    return out;
+  }
+
   async report(request: ReportRequest): Promise<Report> {
     const text = await this.call((c, p, n) => c.x.review_report(p, n), JSON.stringify(request));
     const outcome = JSON.parse(text) as ReportOutcome;

@@ -1,0 +1,30 @@
+@if (shown()) {
+  <section class="queue-bar" aria-label="Area labelling queue">
+    <div class="text">
+      <span class="position" role="status">
+        Labelling areas: recording {{ queue.position() + 1 }} of {{ queue.length() }}
+      </span>
+      <span class="hint">
+        Check the areas found in it, fix them, then Save and next: the area finder learns from them.
+      </span>
+    </div>
+    <div class="actions">
+      <button
+        type="button"
+        appButton
+        title="Leave this recording out of the queue from now on, and open the next"
+        (click)="skipRecording()"
+      >
+        Skip
+      </button>
+      <button
+        type="button"
+        appButton
+        title="End the queue; this recording stays open"
+        (click)="stopQueue()"
+      >
+        Stop
+      </button>
+    </div>
+  </section>
+}

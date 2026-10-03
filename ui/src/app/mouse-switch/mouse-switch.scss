@@ -1,0 +1,15 @@
+@reference '../../tailwind.css';
+
+@layer components {
+  .logger {
+    @apply flex min-w-0 items-center gap-4;
+  }
+
+  .status {
+    @apply truncate text-xs text-muted;
+  }
+
+  .failed {
+    @apply truncate text-xs text-warning;
+  }
+}

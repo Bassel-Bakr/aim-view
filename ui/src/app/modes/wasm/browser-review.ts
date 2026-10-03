@@ -1,15 +1,23 @@
 import { computed, inject, Injectable, resource, ResourceRef, signal } from '@angular/core';
-import { Job, Report, RunMarks, Tracks } from '../../api';
+import { FaintChoice, Job, Report, RunMarks, Tracks } from '../../api';
 import { ModelCatalog } from '../../platform/model-catalog';
 import { ReviewEngine } from '../../platform/review-engine';
 import { LocalFile, LocalFiles, localRecording } from '../web-files/local-files';
+import { SavedFaint } from '../web-files/saved-faint';
 import { SavedMarks } from '../web-files/saved-marks';
 import { fingerprint, SavedReview, SavedReviews } from '../web-files/saved-reviews';
 import { ScenarioFacts } from '../web-files/scenario-facts';
 import { StatsCsv } from '../web-files/stats-csv';
 import { StatsFolder } from '../web-files/stats-folder';
 import { CoreModule } from './core-module';
-import { BrowserDevice, ReviewMessage, ReviewRequest, RunPart } from './review-messages';
+import { SavedAreas } from '../web-files/saved-areas';
+import {
+  BrowserDevice,
+  FinderResult,
+  ReviewMessage,
+  ReviewRequest,
+  RunPart,
+} from './review-messages';
 import { covers, trackedWindow } from './split-runs';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
@@ -46,21 +54,38 @@ export interface ShownReview {
 
 /**
  * What a report is worked out from: the review shown, the video's and scenario's names, the stats file (null: none),
- * and the user's run window.
+ * the user's run window, and the user's faint-target cut-off when it is on (null: off).
  */
 export interface ReportParams extends ShownReview {
   video: string;
   scenario: string;
   stats: StatsCsv | null;
   marks: RunMarks | null;
+  faint: FaintChoice | null;
 }
 
 function sameShown(a: ShownReview | undefined, b: ShownReview | undefined): boolean {
   return a?.id === b?.id && a?.model === b?.model && a?.found === b?.found;
 }
 
+function sameFaint(a: FaintChoice | null | undefined, b: FaintChoice | null | undefined): boolean {
+  return a?.on === b?.on && a?.offset === b?.offset;
+}
+
 function sameParams(a: ReportParams | undefined, b: ReportParams | undefined): boolean {
-  return sameShown(a, b) && a?.stats === b?.stats && a?.marks === b?.marks;
+  return (
+    sameShown(a, b) &&
+    a?.stats === b?.stats &&
+    a?.marks === b?.marks &&
+    sameFaint(a?.faint, b?.faint)
+  );
+}
+
+/** The review a recording shows, the file it is of, and its report. */
+export interface ReviewShown {
+  file: File;
+  review: SavedReview;
+  report: Report;
 }
 
 /** A review in memory: the recording's and the model's. */
@@ -81,7 +106,9 @@ export class BrowserReview implements ReviewEngine {
   private readonly core = inject(CoreModule);
   private readonly saved = inject(SavedReviews);
   private readonly savedMarks = inject(SavedMarks);
+  private readonly savedFaint = inject(SavedFaint);
   private readonly statsFolder = inject(StatsFolder);
+  private readonly savedAreas = inject(SavedAreas);
   private readonly runs = new Map<string, BrowserRun>();
   /** The reviews in memory, by foundKey: made here, or read from the saved reviews. */
   private readonly found = signal<ReadonlyMap<string, SavedReview>>(new Map());
@@ -113,38 +140,55 @@ export class BrowserReview implements ReviewEngine {
       () => {
         const at = id();
         const f = at === undefined ? null : this.local.find(at);
-        if (!f) return undefined;
-        return {
-          ...this.shown(f),
-          video: f.file.name,
-          scenario: localRecording(f).scenario,
-          stats: f.stats,
-          marks: this.savedMarks.all().get(fingerprint(f.file)) ?? null,
-        };
+        return f ? this.reportParams(f) : undefined;
       },
       { equal: sameParams },
     );
-    return resource({
-      params,
-      loader: async ({ params: p }) => {
-        if (!p.model) return null;
-        const found = p.found ?? (await this.restore(p.id, p.model));
-        if (!found) return null;
-        const facts = this.scenarios.get(p.scenario);
-        const report = await this.core.report({
-          tracks: found.tracks,
-          statsText: p.stats?.text ?? '',
-          video: p.video,
-          stats: p.stats?.name ?? '',
-          run: p.marks,
-          tracking: facts?.kind === 'tracking',
-          limit: facts?.limit ?? null,
-          ...found.readings,
-          hud: found.hud ?? null,
-        });
-        return { ...report, review_model: found.model };
-      },
+    return resource({ params, loader: ({ params: p }) => this.workOut(p) });
+  }
+
+  /** What the recording's report is worked out from. */
+  private reportParams(f: LocalFile): ReportParams {
+    const faint = this.savedFaint.all().get(fingerprint(f.file));
+    return {
+      ...this.shown(f),
+      video: f.file.name,
+      scenario: localRecording(f).scenario,
+      stats: f.stats,
+      marks: this.savedMarks.all().get(fingerprint(f.file)) ?? null,
+      faint: faint?.on ? { on: true, offset: faint.offset } : null,
+    };
+  }
+
+  /** The report, worked out by the core from the review shown; null when there is no review. */
+  private async workOut(p: ReportParams): Promise<Report | null> {
+    if (!p.model) return null;
+    const found = p.found ?? (await this.restore(p.id, p.model));
+    if (!found) return null;
+    const facts = this.scenarios.get(p.scenario);
+    const report = await this.core.report({
+      tracks: found.tracks,
+      statsText: p.stats?.text ?? '',
+      video: p.video,
+      stats: p.stats?.name ?? '',
+      run: p.marks,
+      tracking: facts?.kind === 'tracking',
+      limit: facts?.limit ?? null,
+      ...found.readings,
+      hud: found.hud ?? null,
+      faint: p.faint,
     });
+    return { ...report, review_model: found.model };
+  }
+
+  /** The review the recording shows, with its report as it stands; null when it has none (or is not open here). */
+  async shownReview(id: string): Promise<ReviewShown | null> {
+    const f = this.local.find(id);
+    if (!f) return null;
+    const p = this.reportParams(f);
+    const review = p.found ?? (p.model ? await this.restore(id, p.model) : null);
+    const report = review ? await this.workOut({ ...p, found: review }) : null;
+    return review && report ? { file: f.file, review, report } : null;
   }
 
   tracks(id: () => string | undefined): ResourceRef<Tracks | null | undefined> {
@@ -206,6 +250,8 @@ export class BrowserReview implements ReviewEngine {
     const cap = facts?.targets ?? null;
     // the user's run window: only its part of the video is tracked
     const window = trackedWindow(await this.savedMarks.load(local.file), facts?.limit ?? null);
+    // the user's excluded areas (else KovOBS's layout): targets there are not tracked
+    const areas = (await this.savedAreas.areasOf(local.file, !this.local.lasting(id))).boxes;
     const list = this.models.list.hasValue() ? this.models.list.value() : undefined;
     const model = this.chosenModel();
     const device: BrowserDevice = list?.device === 'wasm' ? 'wasm' : 'webgpu';
@@ -229,7 +275,7 @@ export class BrowserReview implements ReviewEngine {
     const join = async () => {
       run.job = { stage: 'linking', done: total, total };
       const got = parts.filter((p): p is RunPart => !!p);
-      const joined = await this.core.joinRuns(got, cap ?? 0);
+      const joined = await this.core.joinRuns(got, cap ?? 0, areas);
       const first = got[0];
       const tracks: Tracks = {
         fps: first.fps,
@@ -238,8 +284,17 @@ export class BrowserReview implements ReviewEngine {
         detector: `onnxruntime-web (${DEVICE_NAMES[first.device]})`,
         window,
         version: joined.version,
+        areas,
       };
-      const review: SavedReview = { tracks, readings: joined.readings, hud: joined.hud, model };
+      const finder = got.find((p) => p.found)?.found;
+      const found = finder ? (JSON.parse(finder) as FinderResult) : null;
+      const review: SavedReview = {
+        tracks,
+        readings: joined.readings,
+        hud: joined.hud,
+        model,
+        found,
+      };
       this.found.update((all) => new Map(all).set(foundKey(id, model), review));
       // kept for the next visit; a browser that cannot keep it still shows it now
       this.saved.save(local.file, review).catch((err: unknown) => console.warn(err));
@@ -264,6 +319,7 @@ export class BrowserReview implements ReviewEngine {
         device,
         batch: list?.batch ?? 1,
         cap,
+        areas,
         camera: channel.port1,
       };
       worker.onmessage = (e: MessageEvent<ReviewMessage>) => {
@@ -316,6 +372,15 @@ export class BrowserReview implements ReviewEngine {
     return covers(review.tracks.window ?? null, trackedWindow(marks, limit))
       ? { stage: 'done' }
       : this.start(id);
+  }
+
+  /** What the area finder found in the frames of the recording's shown review; null when it has none. */
+  async finderResult(id: string): Promise<FinderResult | null> {
+    const f = this.local.find(id);
+    if (!f) return null;
+    const { model, found } = this.shown(f);
+    const review = found ?? (model ? await this.restore(id, model) : null);
+    return review?.found ?? null;
   }
 
   async job(id: string): Promise<Job> {

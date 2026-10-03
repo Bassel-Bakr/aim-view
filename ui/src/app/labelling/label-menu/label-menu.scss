@@ -1,0 +1,35 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply flex min-w-0 items-center gap-5;
+  }
+
+  .note {
+    @apply truncate text-xs text-secondary;
+  }
+
+  .failed {
+    @apply truncate text-xs text-warning;
+  }
+
+  .dialog {
+    @apply m-auto max-h-(--dialog-max-height) w-(--examples-dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+  }
+
+  .head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  .count {
+    @apply text-sm text-primary tabular-nums;
+  }
+
+  .actions {
+    @apply flex flex-wrap gap-4;
+  }
+}

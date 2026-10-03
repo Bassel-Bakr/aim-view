@@ -52,6 +52,9 @@ function serve(port: MessagePort): void {
           say({ kind: 'free', frame: task.frame }, [task.frame]);
         } else if (task.kind === 'start') {
           start(w, task);
+          if (task.session) {
+            say({ kind: 'session', session: w.core.takeText(w.core.x.hud_session_box(w.hud)) });
+          }
         } else if (task.kind === 'frame') {
           read(w, task.frame);
           say({ kind: 'free', frame: task.frame }, [task.frame]);
@@ -86,11 +89,11 @@ function readKey(w: Watch, frame: ArrayBuffer): void {
   w.core.x.hud_add_key(w.hud, w.source.ptr, w.source.len);
 }
 
-/** The camera watch, from the fixed map; both watches skip the frames before the review's first. */
+/** The camera watch, from the fixed map and the excluded areas; both watches skip the frames before the review's first. */
 function start(w: Watch, t: CameraStart): void {
   const fixed = w.core.reserve(W * H);
   w.core.bytes(fixed).set(t.fixed);
-  w.camera = w.core.x.camera_new(fixed.ptr);
+  w.camera = w.core.camera(t.areas, fixed.ptr);
   w.core.free(fixed);
   if (t.skip) {
     w.core.x.camera_skip(w.camera, t.skip);

@@ -264,10 +264,32 @@ export interface WhatIf {
   how: string;
 }
 
-/** The faint-target cut-off a tracking run was measured with. */
+/**
+ * The faint-target cut-off a tracking run was measured with: the user's offset, the score it cut at (null: the tracks
+ * have no scores, so nothing was cut) and how many tracks it left out.
+ */
 export interface FaintCut {
+  offset: number;
+  cut: number | null;
   tracks: number;
-  cut: number;
+}
+
+/**
+ * The user's faint-target cut-off for a recording (/api/faint, faint.json): on or off, and how far below the
+ * recording's level a track may score (0.2 to 0.6). Once submitted: when, and how many labels it wrote (null while
+ * they are being written).
+ */
+export interface FaintSetting {
+  on: boolean;
+  offset: number;
+  submitted?: string;
+  labels?: number | null;
+}
+
+/** The body of POST /api/faint. */
+export interface FaintChoice {
+  on: boolean;
+  offset: number;
 }
 
 export interface TrackSummary {
@@ -365,12 +387,77 @@ export interface Tracks {
   window?: TimeWindow | null;
   /** The review's version (src/track.rs: `REVIEW_VERSION`); none from Python, or from before reviews kept it. */
   version?: number;
+  /** The excluded areas it was tracked with, where the review keeps them (the browser); none: not known. */
+  areas?: AreaBox[];
 }
 
 /** A part of a video, in seconds. */
 export interface TimeWindow {
   start: number;
   end: number;
+}
+
+/** A part of the frame, as shares of its width and height: x0, y0, x1, y1. */
+export type AreaRect = [x0: number, y0: number, x1: number, y1: number];
+
+/**
+ * An excluded area (/api/exclude): a part of the frame the review ignores (a webcam, an overlay), as shares of the
+ * frame, and the id of its kind.
+ */
+export type AreaBox = [x0: number, y0: number, x1: number, y1: number, kind: string];
+
+/** Where a recording's areas come from: saved for it, the last added recording's, or KovOBS's layout (the default). */
+export type AreaSource = 'saved' | 'last upload' | 'kovobs';
+
+/** A recording's excluded areas, and where they come from. */
+export interface AreaSet {
+  boxes: AreaBox[];
+  source: AreaSource;
+}
+
+/**
+ * A recording's areas as kept (POST /api/exclude), and the review the keeping started where the mode tracks again by
+ * itself (the desktop app: the shown review was tracked with other areas); without it, the page decides.
+ */
+export interface KeptAreas extends AreaSet {
+  job?: Job;
+}
+
+/** What an area can be (/api/area_kinds): its id never changes; its name and what it is can. */
+export interface AreaKind {
+  id: string;
+  name: string;
+  about: string;
+}
+
+/** A recording's excluded areas, with every kind an area can be. */
+export interface RecordingAreas extends AreaSet {
+  kinds: AreaKind[];
+}
+
+/** How many of the found areas were named from what the user taught, and how many by rules. */
+export interface FoundBy {
+  learned?: number;
+  rule?: number;
+}
+
+/**
+ * The area finder's proposal (/api/find_areas): the areas, how many examples and recordings it learned from, the
+ * recording whose areas it copied (null: none, the areas were found in this one), and how the found ones were named.
+ */
+export interface FoundAreas {
+  boxes: AreaBox[];
+  examples: number;
+  recordings: number;
+  copied: string | null;
+  by: FoundBy;
+}
+
+/** A new kind (id null), or a kind's new name and what it is. */
+export interface KindEdit {
+  id: string | null;
+  name: string;
+  about: string;
 }
 
 export type JobStage =
@@ -460,6 +547,22 @@ export interface Uploaded {
   saved: string;
   job?: Job;
   stats?: boolean;
+}
+
+/** The answer to marking a recording as another game, or as an aim trainer again (/api/not_aim). */
+export interface NotAimMark {
+  id: string;
+  not_aim: boolean;
+}
+
+/**
+ * One example the area finder learns from (a line of area_examples.jsonl, python/areas.py `learn`): the recording it
+ * comes from, the area's features, and its type's id ("none": an area found there that the user removed).
+ */
+export interface AreaExample {
+  rec: string;
+  feat: number[];
+  kind: string;
 }
 
 /** The body of an error response. */

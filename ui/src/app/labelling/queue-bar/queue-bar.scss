@@ -1,0 +1,23 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  .queue-bar {
+    @apply mb-7 flex flex-wrap items-center gap-x-7 gap-y-3 rounded-lg border border-accent bg-accent-soft px-9 py-5;
+  }
+
+  .text {
+    @apply flex min-w-0 flex-1 flex-col gap-1;
+  }
+
+  .position {
+    @apply font-strong text-primary;
+  }
+
+  .hint {
+    @apply text-sm text-secondary;
+  }
+
+  .actions {
+    @apply flex gap-4;
+  }
+}

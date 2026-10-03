@@ -174,6 +174,18 @@ async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
 }
 
 /** The recording's frame times, from its packets alone (none decoded). */
+/**
+ * The frames the area finder reads (src/areas.rs: sample_frames): null for every key frame, when the recording has
+ * enough; else the indexes of frames spread over it.
+ */
+function finderPicks(core: Core, keys: number, times: number[], duration: number): number[] | null {
+  const request = JSON.stringify({ keys, times, duration });
+  const answer: unknown = JSON.parse(
+    core.takeText(core.textIn(request, (p, n) => core.x.areas_sample(p, n))),
+  );
+  return Array.isArray(answer) ? (answer as number[]) : null;
+}
+
 async function frameTimes(track: InputVideoTrack): Promise<FrameTimes> {
   const packets = new EncodedPacketSink(track);
   const only = { metadataOnly: true };
@@ -317,8 +329,14 @@ async function review(req: ReviewRequest): Promise<void> {
     return yuv as CoreBlock;
   };
 
-  // 1. the fixed map, from the key frames (ffmpeg -skip_frame nokey); each key frame's Y plane to the HUD watch
+  // 1. the fixed map, from the key frames (ffmpeg -skip_frame nokey); each key frame's Y plane to the HUD watch. The
+  // first run's area finder (src/areas.rs) reads the key frames too, or frames spread over the recording when it has
+  // few (picks).
   say({ kind: 'progress', stage: 'looking', done: 0, total });
+  const finder = req.run === 0 ? core.x.areas_new() : 0;
+  const picks = finder
+    ? finderPicks(core, keys.length, times, await input.computeDuration())
+    : null;
   const packets = new EncodedPacketSink(track);
   const fixedBuilder = core.x.fixed_new();
   let keyFrames = 0;
@@ -331,6 +349,7 @@ async function review(req: ReviewRequest): Promise<void> {
     s.close();
     core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
     core.x.fixed_add(fixedBuilder, yuv720.ptr);
+    if (finder && !picks) core.x.areas_add(finder, yuv720.ptr);
     const key = await camera.take(cameraBytes);
     new Uint8Array(key).set(core.bytes(block).subarray(0, lumaBytes));
     camera.sendKey(key);
@@ -341,9 +360,24 @@ async function review(req: ReviewRequest): Promise<void> {
   const fixed = core.bytes(fixedBlock).slice();
   core.free(fixedBlock);
   if (!format) throw new Error('The video has no frames');
+  for (const i of picks ?? []) {
+    const s = await samples.getSample(times[i]);
+    if (!s) continue;
+    const block = prepare(s);
+    await writeI420(s, core, block, scratch);
+    s.close();
+    core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
+    core.x.areas_add(finder, yuv720.ptr);
+  }
   // a review from part way in: the first run's watches have nothing before its first frame
   const skip = req.run === 0 ? run.first : 0;
-  camera.start({ kind: 'start', fixed, skip });
+  camera.start({ kind: 'start', fixed, skip, areas: req.areas, session: finder !== 0 });
+  // the areas found, with KovaaK's session box as the HUD watch finds it (the finder's frames freed before tracking)
+  const found = finder
+    ? core.takeText(
+        core.textIn(await camera.session(), (p, n) => core.x.areas_finish(finder, p, n)),
+      )
+    : null;
   // the fixed map once for each frame of a call: the detector takes up to req.batch frames at once
   const fixedAll = (k: number) => {
     const all = new Uint8Array(k * W * H);
@@ -379,7 +413,7 @@ async function review(req: ReviewRequest): Promise<void> {
   const gh = H / 4;
   const score = core.reserve(gw * gh * 4);
   const reg = core.reserve(4 * gw * gh * 4);
-  const tracker = core.x.tracker_new_kovobs(req.cap ?? 0);
+  const tracker = core.tracker(req.areas, req.cap ?? 0);
   core.x.tracker_start_at(tracker, run.first);
   let n = 0;
   const frameBytes = W * H * 3;
@@ -512,6 +546,6 @@ async function review(req: ReviewRequest): Promise<void> {
   if (converter) core.x.converter_free(converter);
   say({
     kind: 'part',
-    part: { frames: n, track: trackPart, ...watched, fps, fixed, format, device, keyFrames },
+    part: { found, frames: n, track: trackPart, ...watched, fps, fixed, format, device, keyFrames },
   });
 }

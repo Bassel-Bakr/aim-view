@@ -34,6 +34,26 @@
       >
         {{ windowLabel() }}
       </button>
+      <button
+        type="button"
+        aria-controls="area-editor"
+        appButton
+        title="The parts of the screen the review ignores (a webcam, an overlay) and what each is. Save, and a reviewed run is tracked again with them; the area finder learns from them"
+        [attr.aria-expanded]="areas.open()"
+        (click)="toggleAreas()"
+      >
+        Excluded areas
+      </button>
+      <button
+        type="button"
+        aria-controls="faint-cutoff"
+        appButton
+        title="This recording's faint-target cut-off: leave out the tracks the model is far less sure of (wall seams), and Submit it as labels for the detector"
+        [attr.aria-expanded]="faint.shown()"
+        (click)="toggleCutoff()"
+      >
+        Cut-off
+      </button>
     }
     <button
       type="button"
@@ -46,6 +66,7 @@
     </button>
   </div>
 </div>
+<app-queue-bar [recording]="recording()" />
 @if (review.unavailable() ?? review.caveat(); as why) {
   <p class="note">{{ why }}</p>
 }
@@ -75,6 +96,9 @@
 @if (windowOpen()) {
   <app-run-window (closed)="toggleWindow()" />
 }
+@if (faint.shown() && (report() || faint.queued())) {
+  <app-faint-cutoff />
+}
 @if (progress(); as p) {
   <div class="progress">
     <div class="fill" [style.width.%]="100 * p.fraction"></div>
@@ -87,11 +111,17 @@
 @if (headline(); as h) {
   <app-headline [tiles]="h" />
 }
+@if (areas.open()) {
+  <app-area-bar [recording]="recording()" />
+}
 <!-- The player keeps its place whatever the report, so the video never reloads when the report arrives -->
 <div class="stage">
   <div class="player-column">
     @if (videoUrl(); as src) {
-      <app-player [src]="src" [report]="report()" [tracks]="tracks()">
+      <app-player [src]="src" [report]="report()" [tracks]="tracks()" [editing]="areas.open()">
+        @if (areas.open()) {
+          <app-area-canvas screen />
+        }
         @if (trackReport(); as tr) {
           @if (tracks(); as t) {
             <app-timeline [report]="tr" [tracks]="t" />
@@ -115,3 +145,4 @@
 } @else if (trackReport(); as tr) {
   <app-track-report class="report" [report]="tr" [tracks]="tracks()" />
 }
+<app-mouse-panel [recording]="recording()" />

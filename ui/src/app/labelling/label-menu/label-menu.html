@@ -1,0 +1,67 @@
+<button
+  type="button"
+  appButton
+  title="A queue: go through recordings one by one, check the areas found in each, fix them, Save and next. The area finder learns from them."
+  [disabled]="queue.loading()"
+  (click)="startQueue()"
+>
+  Label areas queue
+</button>
+@if (store) {
+  <button
+    type="button"
+    appButton
+    aria-haspopup="dialog"
+    title="The examples the area finder learns from: download them, or load the review server's"
+    (click)="openExamples()"
+  >
+    Area examples
+  </button>
+}
+@if (queue.note(); as n) {
+  <span [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">{{
+    n.text
+  }}</span>
+}
+
+@if (store) {
+  <dialog class="dialog" #dialog aria-labelledby="examples-title">
+    <header class="head">
+      <h2 id="examples-title">Area examples</h2>
+      <button type="button" appButton (click)="closeExamples()">Close</button>
+    </header>
+    <p class="intro">
+      The area finder learns from the areas you save: each saved area is an example of its type, and
+      each area it found that you removed is an example of none. Here they stay in this browser.
+      Download them as the review server's files to keep them or to use them there
+      (test_out/vod_app/), or load the server's files to start from what you labelled there.
+    </p>
+    @if (count(); as c) {
+      <p class="count">
+        {{ c.examples | number }} examples from {{ c.recordings | number }} recordings,
+        {{ c.kinds }} area types
+      </p>
+    }
+    <div class="actions">
+      @for (name of store.fileNames; track name) {
+        <button type="button" appButton (click)="downloadFile(name)">Download {{ name }}</button>
+      }
+      <button
+        type="button"
+        appButton
+        intent="primary"
+        title="Choose area_examples.jsonl and area_kinds.json (test_out/vod_app/): each recording's examples and each area type in them replace the ones kept here"
+        [disabled]="loading()"
+        (click)="files.click()"
+      >
+        Load files
+      </button>
+      <input #files type="file" multiple hidden accept=".jsonl,.json" (change)="loadFiles(files)" />
+    </div>
+    @if (status(); as s) {
+      <p [class]="s.failed ? 'failed' : 'note'" [attr.role]="s.failed ? 'alert' : 'status'">
+        {{ s.text }}
+      </p>
+    }
+  </dialog>
+}

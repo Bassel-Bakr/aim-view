@@ -1,0 +1,16 @@
+@reference '../../tailwind.css';
+
+@layer components {
+  // not below its button's width: the note shrinks, the button never runs into the next one
+  :host {
+    @apply flex items-center gap-5;
+  }
+
+  .note {
+    @apply min-w-0 truncate text-xs text-secondary;
+  }
+
+  .failed {
+    @apply min-w-0 truncate text-xs text-warning;
+  }
+}

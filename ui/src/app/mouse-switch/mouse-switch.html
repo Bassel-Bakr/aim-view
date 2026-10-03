@@ -1,0 +1,21 @@
+@if (logs.logs && current()?.available) {
+  <div class="logger">
+    <button
+      type="button"
+      role="switch"
+      class="switch"
+      [attr.aria-checked]="on()"
+      [disabled]="busy()"
+      [title]="hint()"
+      (click)="toggle()"
+    >
+      <span class="switch-knob" aria-hidden="true"></span>
+      Mouse log
+    </button>
+    @if (status(); as s) {
+      <span [class]="s.failed ? 'failed' : 'status'" [attr.role]="s.failed ? 'alert' : 'status'">
+        {{ s.text }}
+      </span>
+    }
+  </div>
+}

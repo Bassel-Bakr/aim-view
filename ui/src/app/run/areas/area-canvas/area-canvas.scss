@@ -1,0 +1,12 @@
+@reference '../../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply absolute inset-0;
+  }
+
+  // Over the video and the review's overlay; the pointer draws, moves and resizes the areas
+  .areas {
+    @apply block size-full cursor-crosshair touch-none;
+  }
+}

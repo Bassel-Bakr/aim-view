@@ -1,4 +1,9 @@
-<div class="screen" [style.aspect-ratio]="aspect()">
+<div
+  class="screen"
+  [style.aspect-ratio]="aspect()"
+  (mousemove)="pointAt($event)"
+  (mouseleave)="stopPointing()"
+>
   <video
     class="video"
     #video
@@ -13,6 +18,7 @@
     (seeked)="showSeekedFrame()"
   ></video>
   <canvas class="canvas" #overlay aria-hidden="true"></canvas>
+  <ng-content select="[screen]" />
 </div>
 
 <ng-content />

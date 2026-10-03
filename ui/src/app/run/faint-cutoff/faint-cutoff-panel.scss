@@ -1,0 +1,100 @@
+@use 'themes/theme' as t;
+@use 'themes/faint';
+@reference '../../../tailwind.css';
+
+@layer components {
+  .panel {
+    @apply mb-7 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
+  }
+
+  .head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .title {
+    @apply m-0;
+  }
+
+  .intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  .fields {
+    @apply flex flex-wrap items-end gap-7;
+  }
+
+  .field {
+    @apply flex flex-col gap-1;
+  }
+
+  .field-label {
+    @apply text-xs text-muted;
+  }
+
+  .offset {
+    @apply w-(--faint-offset-width) accent-accent;
+  }
+
+  .info {
+    @apply text-sm text-secondary tabular-nums;
+  }
+
+  .strip {
+    @apply block w-full;
+  }
+
+  .axis {
+    stroke: t.$grid;
+  }
+
+  .tick {
+    fill: t.$text-muted;
+    font-size: faint.$tick-size;
+    text-anchor: middle;
+  }
+
+  .dot {
+    @apply cursor-pointer;
+    fill: faint.$kept;
+    fill-opacity: faint.$kept-opacity;
+
+    &[data-out] {
+      fill: faint.$left-out;
+      fill-opacity: faint.$left-out-opacity;
+    }
+
+    &[data-picked] {
+      stroke: faint.$picked;
+      stroke-width: faint.$picked-width;
+    }
+  }
+
+  .cut {
+    stroke: faint.$cut;
+    stroke-width: faint.$cut-width;
+  }
+
+  .actions {
+    @apply flex flex-wrap items-center gap-4;
+  }
+
+  .labels {
+    @apply flex flex-wrap items-center gap-4;
+  }
+
+  .labels-count {
+    @apply text-sm text-secondary tabular-nums;
+  }
+
+  .position {
+    @apply text-sm text-secondary;
+  }
+
+  .note {
+    @apply text-sm text-secondary;
+  }
+
+  .failed {
+    @apply text-sm text-attention-text;
+  }
+}

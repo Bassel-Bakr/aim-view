@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { TrackFrame } from '../../api';
+import { AreaBox, TrackFrame } from '../../api';
 import { Core, CoreExports } from './core';
 import { CoreModule } from './core-module';
 import { FrameFormat, HudReading, RunPart } from './review-messages';
@@ -14,12 +14,15 @@ interface TrackerPart {
   frames: TrackFrame[];
 }
 
-/** What the stand-in core was asked: the HUD watch's size and range. */
+/** What the stand-in core was asked: the HUD watch's size and range, and the areas the tracker ignores. */
 interface CoreCalls {
   hudNew: number[];
+  areas?: number[];
+  ends?: number[];
 }
 
 const FORMAT: FrameFormat = { width: 2560, height: 1440, matrix: 0, full: 0 };
+const AREA: AreaBox = [0.75, 0, 1, 0.25, 'challenge_results'];
 
 const READING: HudReading = {
   game: 'kovaak',
@@ -63,14 +66,18 @@ function standInCore(reading: HudReading | null, calls: CoreCalls): Core {
     memory,
     alloc,
     dealloc: () => undefined,
-    tracker_new_kovobs: () => 1,
+    tracker_new_ends: (areas, ends, count) => {
+      calls.areas = [...new Float64Array(memory.buffer, areas, 4 * count)];
+      calls.ends = [...new Uint8Array(memory.buffer, ends, count)];
+      return 1;
+    },
     tracker_add_part: (_t, ptr, len) => {
       const part = JSON.parse(read(ptr, len)) as TrackerPart;
       tracked.push(...part.frames);
       return part.frames.length;
     },
     tracker_finish: () => out(JSON.stringify(tracked)),
-    camera_new: () => 2,
+    camera_new_areas: () => 2,
     camera_add_part: (_c, ptr, len) => join(0, ptr, len),
     camera_finish: () =>
       out(
@@ -97,6 +104,7 @@ function part(first: number, frames: number, camera: number, hud: number): RunPa
   };
   const watch = (n: number): WatchPart => ({ frames: n });
   return {
+    found: null,
     frames,
     track: JSON.stringify(track),
     camera: JSON.stringify(watch(camera)),
@@ -111,7 +119,7 @@ function part(first: number, frames: number, camera: number, hud: number): RunPa
 
 function joinWith(reading: HudReading | null, calls: CoreCalls, parts: RunPart[]) {
   vi.spyOn(Core, 'load').mockResolvedValue(standInCore(reading, calls));
-  return TestBed.inject(CoreModule).joinRuns(parts, 0);
+  return TestBed.inject(CoreModule).joinRuns(parts, 0, [AREA]);
 }
 
 describe('CoreModule', () => {
@@ -126,6 +134,10 @@ describe('CoreModule', () => {
     expect(joined.hud).toEqual(READING);
     expect(joined.version).toBe(2);
     expect(calls.hudNew).toEqual([2560, 1440, 0]);
+    // the joined tracker ignores the areas the runs ignored
+    expect(calls.areas).toEqual(AREA.slice(0, 4));
+    // and knows the challenge's end screen, which is left out only while it shows
+    expect(calls.ends).toEqual([1]);
   });
 
   it('gives no HUD reading when the HUD could not be read', async () => {

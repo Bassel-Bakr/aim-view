@@ -1,0 +1,35 @@
+// Module tokens: the faint-target cut-off: its strip of track scores (an SVG) and what it draws on the video (the
+// player's canvas, which reads these variables when it draws).
+
+@mixin tokens {
+  // The strip: every track at its score, the cut as a line
+  --faint-kept: var(--series-3);
+  --faint-kept-opacity: 0.85;
+  --faint-left-out: var(--text-muted);
+  --faint-left-out-opacity: 0.6;
+  --faint-picked: var(--text-primary);
+  --faint-picked-width: 2px;
+  --faint-cut: var(--warning);
+  --faint-cut-width: 2px;
+  --faint-tick-size: 10px;
+  --faint-offset-width: 160px;
+  // On the video: a left-out track's dashed ring, the picked track, and the scores' labels
+  --overlay-faint-ring: rgba(255, 255, 255, 0.6);
+  --overlay-faint-picked: var(--warning);
+  --overlay-faint-ring-radius: 9;
+  --overlay-faint-label-bg: rgba(0, 0, 0, 0.55);
+  --overlay-faint-hover-bg: rgba(0, 0, 0, 0.75);
+  --overlay-faint-text: #fff;
+  --overlay-faint-text-out: rgba(255, 255, 255, 0.6);
+}
+
+$kept: var(--faint-kept);
+$kept-opacity: var(--faint-kept-opacity);
+$left-out: var(--faint-left-out);
+$left-out-opacity: var(--faint-left-out-opacity);
+$picked: var(--faint-picked);
+$picked-width: var(--faint-picked-width);
+$cut: var(--faint-cut);
+$cut-width: var(--faint-cut-width);
+$tick-size: var(--faint-tick-size);
+$offset-width: var(--faint-offset-width);

@@ -21,6 +21,11 @@ type Body = Parameters<TestRequest['flush']>[0];
 /** An answer meaning the server is not there: the request fails without a response. */
 export const NO_SERVER = Symbol('no server');
 
+/** An answer refusing the request, as the review server does a request it cannot carry out: 400 and why. */
+export class Refused {
+  constructor(readonly error: string) {}
+}
+
 const settle = () => new Promise((r) => setTimeout(r));
 
 /**
@@ -42,7 +47,9 @@ export async function answer(routes: ApiRoutes): Promise<void> {
       const route = routes[path];
       const body = typeof route === 'function' ? (route as RouteHandler)(req.request) : route;
       if (body === NO_SERVER) req.error(new ProgressEvent('error'));
-      else req.flush(body as Body);
+      else if (body instanceof Refused) {
+        req.flush({ error: body.error }, { status: 400, statusText: 'Bad Request' });
+      } else req.flush(body as Body);
     }
     await settle();
   }

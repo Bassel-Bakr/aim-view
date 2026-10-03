@@ -1,0 +1,13 @@
+<button
+  type="button"
+  appButton
+  [title]="
+    recording().not_aim
+      ? 'Marked as another game. This recording is an aim trainer: label it and learn from it again'
+      : 'This recording is another game: leave it out of labelling and learning'
+  "
+  [disabled]="saving()"
+  (click)="toggleNotAim()"
+>
+  {{ recording().not_aim ? 'It is an aim trainer' : 'Not an aim trainer' }}
+</button>

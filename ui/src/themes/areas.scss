@@ -1,0 +1,19 @@
+// Module tokens: the excluded areas editor. The areas are drawn over the video on a canvas, which reads these
+// variables when it draws.
+
+@mixin tokens {
+  --area-fill: rgba(217, 89, 38, 0.28);
+  --area-fill-selected: rgba(217, 89, 38, 0.42);
+  --area-line: rgba(217, 89, 38, 0.9);
+  --area-line-selected: #fff;
+  --area-line-width: 1.5;
+  --area-line-width-selected: 2;
+  --area-label-font: var(--font-weight-strong) var(--font-size-2xs) var(--font-family);
+  --area-label-bg: rgba(14, 15, 17, 0.75);
+  --area-label-text: #fff;
+  --area-label-text-selected: rgba(255, 255, 255, 0.55);
+
+  // The kind form's fields
+  --kind-name-width: 170px;
+  --kind-about-width: 230px;
+}

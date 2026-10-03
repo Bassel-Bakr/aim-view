@@ -1,10 +1,17 @@
 /** The review core as WebAssembly (src/wasm.rs): its exports, and the copying in and out of its memory. */
 
+import { AreaBox } from '../../api';
+
+/** The kind of the challenge's end screen (src/popup.rs: END_SCREEN): excluded only while it shows. */
+export const END_SCREEN = 'challenge_results';
+
 /** The core module's exports. Pointers and sizes are byte offsets and counts in its memory. */
 export interface CoreExports {
   memory: WebAssembly.Memory;
   alloc(len: number): number;
   dealloc(ptr: number, len: number): void;
+  tracker_new(areas: number, count: number, cap: number): number;
+  tracker_new_ends(areas: number, ends: number, count: number, cap: number): number;
   tracker_new_kovobs(cap: number): number;
   tracker_watch(tracker: number, rgb: number): void;
   tracker_push_maps(tracker: number, score: number, reg: number, gw: number, gh: number): number;
@@ -24,7 +31,9 @@ export interface CoreExports {
   fixed_finish(fixed: number, out: number): void;
   scenario_facts(text: number, len: number): number;
   review_report(request: number, len: number): number;
+  cutoff_crops(request: number, len: number): number;
   camera_new(fixed: number): number;
+  camera_new_areas(areas: number, count: number, fixed: number): number;
   camera_add(camera: number, yuv: number, rgb: number): void;
   camera_finish(camera: number, frames: number, len: number): number;
   camera_part(camera: number): number;
@@ -37,6 +46,14 @@ export interface CoreExports {
   hud_part(hud: number): number;
   hud_add_part(hud: number, part: number, len: number): number;
   hud_finish(hud: number): number;
+  mouse_read(log: number, logLen: number, request: number, len: number): number;
+  areas_new(): number;
+  areas_add(finder: number, yuv: number): void;
+  areas_finish(finder: number, session: number, len: number): number;
+  hud_session_box(hud: number): number;
+  areas_sample(input: number, len: number): number;
+  areas_find(input: number, len: number): number;
+  areas_learn(input: number, len: number): number;
 }
 
 /** A block of the core's memory, reserved until freed. */
@@ -83,6 +100,51 @@ export class Core {
 
   floats(block: CoreBlock): Float32Array {
     return new Float32Array(this.x.memory.buffer, block.ptr, block.len / 4);
+  }
+
+  /**
+   * A tracker that ignores these areas (shares of the frame; the challenge's end screen only while it shows); cap: the
+   * scenario's target count, 0 for none.
+   */
+  tracker(areas: readonly AreaBox[], cap: number): number {
+    const ends = this.reserve(areas.length);
+    this.bytes(ends).set(areas.map((a) => (a[4] === END_SCREEN ? 1 : 0)));
+    const tracker = this.withAreas(areas, (ptr, count) =>
+      this.x.tracker_new_ends(ptr, ends.ptr, count, cap),
+    );
+    this.free(ends);
+    return tracker;
+  }
+
+  /**
+   * A camera watch whose tiles keep clear of these areas (KovOBS's layout when there are none) and of the fixed map
+   * (1280 x 720, at `fixed` in the core's memory).
+   */
+  camera(areas: readonly AreaBox[], fixed: number): number {
+    return this.withAreas(areas, (ptr, count) => this.x.camera_new_areas(ptr, count, fixed));
+  }
+
+  /** A text in the core's memory (UTF-8) for one call: its place and length. */
+  textIn(text: string, use: (ptr: number, len: number) => number): number {
+    const bytes = new TextEncoder().encode(text);
+    const block = this.reserve(bytes.length);
+    this.bytes(block).set(bytes);
+    const out = use(block.ptr, bytes.length);
+    this.free(block);
+    return out;
+  }
+
+  /** The areas as the core takes them (4 f64s each), for one call. */
+  private withAreas(
+    areas: readonly AreaBox[],
+    use: (ptr: number, count: number) => number,
+  ): number {
+    const block = this.reserve(areas.length * 4 * 8);
+    const bounds = new Float64Array(this.x.memory.buffer, block.ptr, areas.length * 4);
+    areas.forEach(([x0, y0, x1, y1], i) => bounds.set([x0, y0, x1, y1], i * 4));
+    const made = use(block.ptr, areas.length);
+    this.free(block);
+    return made;
   }
 
   /** A result the core hands back: its length (u32), then its bytes, read as text and freed. */

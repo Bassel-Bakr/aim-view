@@ -1,10 +1,18 @@
+import { AreaLabels } from '../platform/area-labels';
+import { FaintCutoffs } from '../platform/faint-cutoffs';
 import { Mode } from '../platform/mode';
+import { Labelling } from '../platform/labelling';
 import { ModelCatalog } from '../platform/model-catalog';
+import { MouseLogs } from '../platform/mouse-logs';
 import { RecordingSource } from '../platform/recording-source';
 import { ReviewEngine } from '../platform/review-engine';
 import { StatsFiles } from '../platform/stats-files';
+import { BrowserAreaLabels } from './wasm/browser-area-labels';
+import { BrowserFaintCutoffs } from './wasm/browser-faint-cutoffs';
 import { BrowserModels } from './wasm/browser-models';
+import { BrowserMouseLogs } from './wasm/browser-mouse-logs';
 import { BrowserReview } from './wasm/browser-review';
+import { BrowserLabelling } from './web-files/browser-labelling';
 import { LocalFiles } from './web-files/local-files';
 import { LocalStatsFiles } from './web-files/local-stats-files';
 
@@ -17,5 +25,9 @@ export const MODE: Mode = {
     { provide: StatsFiles, useExisting: LocalStatsFiles },
     { provide: ReviewEngine, useExisting: BrowserReview },
     { provide: ModelCatalog, useExisting: BrowserModels },
+    { provide: MouseLogs, useExisting: BrowserMouseLogs },
+    { provide: Labelling, useExisting: BrowserLabelling },
+    { provide: AreaLabels, useExisting: BrowserAreaLabels },
+    { provide: FaintCutoffs, useExisting: BrowserFaintCutoffs },
   ],
 };

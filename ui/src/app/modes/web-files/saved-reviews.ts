@@ -1,20 +1,22 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { Tracks } from '../../api';
-import { HudReading, VideoReadings } from '../wasm/review-messages';
+import { FinderResult, HudReading, VideoReadings } from '../wasm/review-messages';
 import { BrowserStore } from './browser-store';
 
 const INDEX = 'review-index';
 const KEY = 'review:';
 
 /**
- * A recording's tracks, video readings and what its HUD read (null: nothing), as the browser review found them, and the
- * model that found them. A review saved before the HUD was read has no `hud`: it reads as null.
+ * A recording's tracks, video readings and what its HUD read (null: nothing), as the browser review found them, the
+ * model that found them, and what the area finder found in its frames. A review saved before the HUD was read has no
+ * `hud`: it reads as null; one saved before the area finder ran has no `found`.
  */
 export interface SavedReview {
   tracks: Tracks;
   readings: VideoReadings;
   hud?: HudReading | null;
   model: string;
+  found?: FinderResult | null;
 }
 
 /** When each model's review of a recording was saved (milliseconds since 1970), by model. */
