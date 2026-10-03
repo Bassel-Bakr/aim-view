@@ -144,7 +144,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   to float before its Unsqueeze (onnxruntime's WebGPU build has none for uint8). The model panel lets the user pick the frames at once (1, 2,
   4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml); the 2:1 RGB conversion takes 16 pixels at a time
   there (0.93 ms a frame, the same bytes: test_out/browser_check/rgb-bench.html), and 32 at a time natively where
-  the CPU has AVX2 (0.29 ms; `avx2_rows_give_the_tables` checks every value against the tables).
+  the CPU has AVX2 (0.29 ms; `avx2_rows_give_the_tables` checks every value against the tables). Other sizes go through
+  swscale's full pipeline, its buffers kept from frame to frame and its kernel picked once a row: 1080p to RGB in 3.3
+  ms natively (8.5 ms before), h264_1920_tv's review 14.0 s in the browser (24.5 s before), the same bytes
+  (`convert_parity`).
   The clicking
   review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
   gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number

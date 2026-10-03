@@ -59,17 +59,52 @@ fn local_pos(chr_subsample: i64, pos: i64) -> i64 {
     (pos + 128) >> chr_subsample
 }
 
-/// One direction's filter: per output sample, the first input sample and the coefficients (`size` of them).
+/// One direction's filter: per output sample, the first input sample and the coefficients (`size` of them). Worked
+/// out once for a frame size: each output's taps (`taps[tap_at[i]..tap_at[i + 1]]`), the input sample clamped to the
+/// line as ffmpeg reads it and the zero coefficients left out, and each tap's input clamped (`at`).
 #[derive(Clone, Debug)]
 struct Filter {
     pos: Vec<i64>,
     coef: Vec<i64>,
     size: usize,
+    taps: Vec<(u32, i32)>,
+    tap_at: Vec<u32>,
+    /// The input samples in the line.
+    src: usize,
 }
 
 impl Filter {
+    fn new(pos: Vec<i64>, coef: Vec<i64>, size: usize, src: usize) -> Filter {
+        // the coefficients are shares of one (1 << 14 at most), a few to a sample: 15-bit samples and their sums fit in
+        // 32 bits
+        assert!(size < 16 && coef.iter().all(|c| c.abs() <= 1 << 14), "a filter too large for 32-bit sums");
+        let mut taps = Vec::new();
+        let mut tap_at = vec![0];
+        for (i, &p) in pos.iter().enumerate() {
+            for (j, &c) in coef[i * size..(i + 1) * size].iter().enumerate() {
+                if c != 0 {
+                    taps.push((((p + j as i64) as usize).min(src - 1) as u32, c as i32));
+                }
+            }
+            tap_at.push(taps.len() as u32);
+        }
+        Filter { pos, coef, size, taps, tap_at, src }
+    }
+
     fn row(&self, i: usize) -> &[i64] {
         &self.coef[i * self.size..(i + 1) * self.size]
+    }
+
+    /// Output `i` of a line through its clamped taps, as a 15-bit sample.
+    fn tap_sum(&self, line: &[u8], i: usize) -> i32 {
+        let taps = &self.taps[self.tap_at[i] as usize..self.tap_at[i + 1] as usize];
+        let acc: i32 = taps.iter().map(|&(at, c)| line[at as usize] as i32 * c).sum();
+        (acc >> 7).min(32767)
+    }
+
+    /// Where output `i`'s tap `j` reads, clamped to the line.
+    fn at(&self, i: usize, j: usize) -> usize {
+        ((self.pos[i] + j as i64) as usize).min(self.src - 1)
     }
 }
 
@@ -203,24 +238,61 @@ fn init_filter(x_inc: i64, src_w: usize, dst_w: usize, align: usize, one: i64, s
             err = v - iv * s;
         }
     }
-    Filter { pos, coef, size }
+    Filter::new(pos, coef, size, src_w)
 }
 
-/// hScale8To15_c: one plane's rows, 8-bit samples to 15-bit.
-fn hscale(src: &[u8], w: usize, h: usize, f: &Filter) -> Vec<i64> {
-    let dw = f.pos.len();
-    let mut out = vec![0i64; h * dw];
-    for r in 0..h {
-        let row = &src[r * w..(r + 1) * w];
-        for i in 0..dw {
-            let mut acc = 0i64;
-            for (j, c) in f.row(i).iter().enumerate() {
-                acc += row[((f.pos[i] + j as i64) as usize).min(w - 1)] as i64 * c;
+/// hScale8To15_c: one plane's rows, 8-bit samples to 15-bit, into `out` (kept from frame to frame).
+fn hscale(src: &[u8], w: usize, h: usize, f: &Filter, out: &mut Vec<i32>) {
+    out.resize(h * f.pos.len(), 0);
+    match f.size {
+        1 => hscale_n::<1>(src, w, h, f, out),
+        2 => hscale_n::<2>(src, w, h, f, out),
+        3 => hscale_n::<3>(src, w, h, f, out),
+        4 => hscale_n::<4>(src, w, h, f, out),
+        _ => {
+            for (row, o) in src.chunks_exact(w).take(h).zip(out.chunks_exact_mut(f.pos.len())) {
+                for (i, o) in o.iter_mut().enumerate() {
+                    *o = f.tap_sum(row, i);
+                }
             }
-            out[r * dw + i] = (acc >> 7).min(32767);
         }
     }
-    out
+}
+
+/// `hscale` for a filter of N coefficients: an output whose N samples all lie in the line reads them at once (the
+/// same sum, in an order the compiler can run side by side), one at the edge through its clamped taps.
+fn hscale_n<const N: usize>(src: &[u8], w: usize, h: usize, f: &Filter, out: &mut [i32]) {
+    let coefs: Vec<[i32; N]> =
+        f.coef.chunks_exact(N).map(|c| std::array::from_fn(|j| c[j] as i32)).collect();
+    for (row, o) in src.chunks_exact(w).take(h).zip(out.chunks_exact_mut(f.pos.len())) {
+        for (i, (o, c)) in o.iter_mut().zip(&coefs).enumerate() {
+            let p = f.pos[i];
+            *o = if p >= 0 && p as usize + N <= w {
+                let x: &[u8; N] = row[p as usize..p as usize + N].try_into().unwrap();
+                let acc: i32 = (0..N).map(|j| x[j] as i32 * c[j]).sum();
+                (acc >> 7).min(32767)
+            } else {
+                f.tap_sum(row, i)
+            };
+        }
+    }
+}
+
+/// The rounded 8-bit sample of a 19-bit sum.
+fn to_u8(v: i32) -> u8 {
+    v.clamp(0, 255) as u8
+}
+
+/// A vertical filter's rows for output row `r` (`taps`: its input rows, clamped, with their coefficients, zeros left
+/// out) summed into `acc` (`width` samples, each started at `start`), from the horizontally scaled plane `hs`.
+fn vsum(hs: &[i32], width: usize, f: &Filter, r: usize, start: i32, acc: &mut [i32]) {
+    acc.fill(start);
+    for &(at, c) in &f.taps[f.tap_at[r] as usize..f.tap_at[r + 1] as usize] {
+        let line = &hs[at as usize * width..][..width];
+        for (a, &v) in acc.iter_mut().zip(line) {
+            *a += v * c;
+        }
+    }
 }
 
 /// ff_yuv2rgb_c_init_tables() for 24 bits, no brightness, contrast and saturation 1: for 8-bit Y, U, V,
@@ -375,6 +447,7 @@ pub struct Converter {
     shortcut: bool,
     rgb_filters: Option<Filters>,
     yuv_filters: Option<Filters>,
+    scratch: Scratch,
 }
 
 impl Converter {
@@ -394,6 +467,7 @@ impl Converter {
             shortcut: true,
             rgb_filters: None,
             yuv_filters: None,
+            scratch: Scratch::default(),
         }
     }
 
@@ -423,60 +497,67 @@ impl Converter {
             return self.half_rgb24(y, u, v, out);
         }
         let f = self.rgb_filters.get_or_insert_with(|| filters(self.w, self.h, true, self.x86));
+        let s = &mut self.scratch;
         let (cw, ch) = (self.w.div_ceil(2), self.h.div_ceil(2));
-        let yh = hscale(y, self.w, self.h, &f.lh);
-        let uh = hscale(u, cw, ch, &f.ch);
-        let vh = hscale(v, cw, ch, &f.ch);
+        hscale(y, self.w, self.h, &f.lh, &mut s.y);
+        hscale(u, cw, ch, &f.ch, &mut s.u);
+        hscale(v, cw, ch, &f.ch, &mut s.v);
         let cdw = f.ch.pos.len();
         let (lfs, cfs) = (f.lv.size, f.cv.size);
-        let mut ys = vec![0u8; DST_W];
-        let mut us = vec![0u8; cdw];
-        let mut vs = vec![0u8; cdw];
-        let line = |width: usize, rows: usize, at: i64| (at as usize).min(rows - 1) * width;
+        s.ys.resize(DST_W, 0);
+        s.us.resize(cdw, 0);
+        s.vs.resize(cdw, 0);
+        s.acc.resize(DST_W.max(cdw), 0);
+        // the vertical pass: swscale picks its kernel per row (yuv2rgb24_1/2/X), and so does this, then runs it over
+        // the row; the same integer arithmetic, so the same bytes
         for r in 0..DST_H {
             let (l, c) = (f.lv.row(r), f.cv.row(r));
-            let (lp, cp) = (f.lv.pos[r], f.cv.pos[r]);
             let two_c = cfs == 2 && c[0] + c[1] == 4096 && (0..=4096).contains(&c[1]);
-            let lrow = |j: usize| line(DST_W, self.h, lp + j as i64);
-            let crow = |j: usize| line(cdw, ch, cp + j as i64);
-            for i in 0..DST_W {
-                let yv = if lfs == 1 && (cfs == 1 || two_c) {
-                    (yh[lrow(0) + i] + 64) >> 7
-                } else if lfs == 2 && two_c && l[0] + l[1] == 4096 && (0..=4096).contains(&l[1]) {
-                    (yh[lrow(0) + i] * (4096 - l[1]) + yh[lrow(1) + i] * l[1]) >> 19
-                } else {
-                    ((1 << 18) + (0..lfs).map(|j| yh[lrow(j) + i] * l[j]).sum::<i64>()) >> 19
-                };
-                ys[i] = yv.clamp(0, 255) as u8;
-            }
-            for (k, (us, vs)) in us.iter_mut().zip(vs.iter_mut()).enumerate() {
-                let (uv, vv) = if lfs == 1 && (cfs == 1 || two_c) {
-                    let a = if cfs == 2 { c[1] } else { 0 };
+            let lrow = |j: usize| &s.y[f.lv.at(r, j) * DST_W..][..DST_W];
+            let crow = |j: usize| f.cv.at(r, j) * cdw;
+            let two_l = lfs == 2 && two_c && l[0] + l[1] == 4096 && (0..=4096).contains(&l[1]);
+            if lfs == 1 && (cfs == 1 || two_c) {
+                for (o, &a) in s.ys.iter_mut().zip(lrow(0)) {
+                    *o = to_u8((a + 64) >> 7);
+                }
+                let a = if cfs == 2 { c[1] as i32 } else { 0 };
+                for (p, out) in [(&s.u, &mut s.us), (&s.v, &mut s.vs)] {
                     if a == 0 {
-                        ((uh[crow(0) + k] + 64) >> 7, (vh[crow(0) + k] + 64) >> 7)
+                        for (o, &x) in out.iter_mut().zip(&p[crow(0)..][..cdw]) {
+                            *o = to_u8((x + 64) >> 7);
+                        }
                     } else {
-                        (
-                            (uh[crow(0) + k] * (4096 - a) + uh[crow(1) + k] * a + (128 << 11)) >> 19,
-                            (vh[crow(0) + k] * (4096 - a) + vh[crow(1) + k] * a + (128 << 11)) >> 19,
-                        )
+                        for ((o, &x0), &x1) in out.iter_mut().zip(&p[crow(0)..][..cdw]).zip(&p[crow(1)..][..cdw]) {
+                            *o = to_u8((x0 * (4096 - a) + x1 * a + (128 << 11)) >> 19);
+                        }
                     }
-                } else if lfs == 2 && two_c && l[0] + l[1] == 4096 && (0..=4096).contains(&l[1]) {
-                    (
-                        (uh[crow(0) + k] * (4096 - c[1]) + uh[crow(1) + k] * c[1]) >> 19,
-                        (vh[crow(0) + k] * (4096 - c[1]) + vh[crow(1) + k] * c[1]) >> 19,
-                    )
-                } else {
-                    (
-                        ((1 << 18) + (0..cfs).map(|j| uh[crow(j) + k] * c[j]).sum::<i64>()) >> 19,
-                        ((1 << 18) + (0..cfs).map(|j| vh[crow(j) + k] * c[j]).sum::<i64>()) >> 19,
-                    )
-                };
-                *us = uv.clamp(0, 255) as u8;
-                *vs = vv.clamp(0, 255) as u8;
+                }
+            } else if two_l {
+                let b = l[1] as i32;
+                for ((o, &a0), &a1) in s.ys.iter_mut().zip(lrow(0)).zip(lrow(1)) {
+                    *o = to_u8((a0 * (4096 - b) + a1 * b) >> 19);
+                }
+                let b = c[1] as i32;
+                for (p, out) in [(&s.u, &mut s.us), (&s.v, &mut s.vs)] {
+                    for ((o, &x0), &x1) in out.iter_mut().zip(&p[crow(0)..][..cdw]).zip(&p[crow(1)..][..cdw]) {
+                        *o = to_u8((x0 * (4096 - b) + x1 * b) >> 19);
+                    }
+                }
+            } else {
+                vsum(&s.y, DST_W, &f.lv, r, 1 << 18, &mut s.acc[..DST_W]);
+                for (o, &a) in s.ys.iter_mut().zip(&s.acc) {
+                    *o = to_u8(a >> 19);
+                }
+                for (p, out) in [(&s.u, &mut s.us), (&s.v, &mut s.vs)] {
+                    vsum(p, cdw, &f.cv, r, 1 << 18, &mut s.acc[..cdw]);
+                    for (o, &a) in out.iter_mut().zip(&s.acc) {
+                        *o = to_u8(a >> 19);
+                    }
+                }
             }
             let row = &mut out[r * DST_W * 3..(r + 1) * DST_W * 3];
-            for i in 0..DST_W {
-                self.tables.rgb(ys[i], us[i / 2], vs[i / 2], &mut row[i * 3..i * 3 + 3]);
+            for (i, px) in row.chunks_exact_mut(3).enumerate() {
+                self.tables.rgb(s.ys[i], s.us[i / 2], s.vs[i / 2], px);
             }
         }
     }
@@ -533,11 +614,11 @@ impl Converter {
             mean2x2(v, cw, ov, ocw, och);
             return;
         }
-        self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
-        let f = self.yuv_filters.as_ref().unwrap();
-        self.scale_plane(y, self.w, self.h, &f.lh, &f.lv, oy, DST_W, DST_H, true);
-        self.scale_plane(u, cw, ch, &f.ch, &f.cv, ou, ocw, och, false);
-        self.scale_plane(v, cw, ch, &f.ch, &f.cv, ov, ocw, och, false);
+        let f = self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
+        let s = &mut self.scratch;
+        scale_plane(self.x86, s, y, self.w, self.h, &f.lh, &f.lv, oy, DST_W, DST_H, true);
+        scale_plane(self.x86, s, u, cw, ch, &f.ch, &f.cv, ou, ocw, och, false);
+        scale_plane(self.x86, s, v, cw, ch, &f.ch, &f.cv, ov, ocw, och, false);
     }
 
     /// The frame's luma at 1280 x 720 from its Y plane alone (`y`: w x h bytes), into `out` (DST_W * DST_H bytes):
@@ -551,40 +632,68 @@ impl Converter {
             mean2x2(y, self.w, out, DST_W, DST_H);
             return;
         }
-        self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
-        let f = self.yuv_filters.as_ref().unwrap();
-        self.scale_plane(y, self.w, self.h, &f.lh, &f.lv, out, DST_W, DST_H, true);
+        let f = self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
+        scale_plane(self.x86, &mut self.scratch, y, self.w, self.h, &f.lh, &f.lv, out, DST_W, DST_H, true);
     }
 
-    /// One plane scaled to dw x dh as yuv420p scales it (`luma`: the Y plane, else U or V).
-    #[allow(clippy::too_many_arguments)]
-    fn scale_plane(&self, src: &[u8], w: usize, h: usize, hf: &Filter, vf: &Filter, dst: &mut [u8], dw: usize, dh: usize, luma: bool) {
-        let hs = hscale(src, w, h, hf);
-        // the x86 vertical kernel (ff_yuv2yuvX) runs on every row but the last two luma rows and last chroma row
-        let simd_rows = if luma { DST_H - 2 } else { (DST_H - 1) / 2 };
-        for r in 0..dh {
-            let c = vf.row(r);
-            let at = |j: usize| ((vf.pos[r] + j as i64) as usize).min(h - 1) * dw;
-            for i in 0..dw {
-                let o = if vf.size == 1 {
-                    (hs[at(0) + i] + 64) >> 7
-                } else if self.x86 && r < simd_rows {
-                    let mut acc = (64 + 8 * (vf.size as i64 - 1)) >> 4;
-                    for (j, cj) in c.iter().enumerate() {
-                        acc += (hs[at(j) + i] * cj) >> 16;
-                    }
-                    wrap16(acc) >> 3
-                } else {
-                    let mut acc = 64i64 << 12;
-                    for (j, cj) in c.iter().enumerate() {
-                        acc += hs[at(j) + i] * cj;
-                    }
-                    acc >> 19
-                };
-                dst[r * dw + i] = o.clamp(0, 255) as u8;
+}
+
+/// One plane scaled to dw x dh as yuv420p scales it (`luma`: the Y plane, else U or V), with `x86` kernels or ffmpeg's
+/// plain C code.
+#[allow(clippy::too_many_arguments)]
+fn scale_plane(
+    x86: bool,
+    s: &mut Scratch,
+    src: &[u8],
+    w: usize,
+    h: usize,
+    hf: &Filter,
+    vf: &Filter,
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    luma: bool,
+) {
+    hscale(src, w, h, hf, &mut s.y);
+    s.acc.resize(dw, 0);
+    // the x86 vertical kernel (ff_yuv2yuvX) runs on every row but the last two luma rows and last chroma row
+    let simd_rows = if luma { DST_H - 2 } else { (DST_H - 1) / 2 };
+    for (r, out) in dst.chunks_exact_mut(dw).take(dh).enumerate() {
+        if vf.size == 1 {
+            for (o, &a) in out.iter_mut().zip(&s.y[vf.at(r, 0) * dw..][..dw]) {
+                *o = to_u8((a + 64) >> 7);
+            }
+        } else if x86 && r < simd_rows {
+            // each tap's product is shifted down before the sum, as the SIMD kernel's 16-bit multiplies do
+            s.acc.fill((64 + 8 * (vf.size as i32 - 1)) >> 4);
+            for &(at, c) in &vf.taps[vf.tap_at[r] as usize..vf.tap_at[r + 1] as usize] {
+                for (a, &v) in s.acc.iter_mut().zip(&s.y[at as usize * dw..][..dw]) {
+                    *a += (v * c) >> 16;
+                }
+            }
+            for (o, &a) in out.iter_mut().zip(&s.acc) {
+                *o = to_u8((((a + 32768) & 0xffff) - 32768) >> 3);
+            }
+        } else {
+            vsum(&s.y, dw, vf, r, 64 << 12, &mut s.acc);
+            for (o, &a) in out.iter_mut().zip(&s.acc) {
+                *o = to_u8(a >> 19);
             }
         }
     }
+}
+
+/// The buffers a conversion through the full pipeline fills, kept from frame to frame: the planes scaled across
+/// (15-bit), a row's 8-bit Y, U and V, and a row's sums.
+#[derive(Default)]
+struct Scratch {
+    y: Vec<i32>,
+    u: Vec<i32>,
+    v: Vec<i32>,
+    ys: Vec<u8>,
+    us: Vec<u8>,
+    vs: Vec<u8>,
+    acc: Vec<i32>,
 }
 
 /// One row of the 2:1 conversion: each output pixel the rounded mean of a 2 x 2 luma block, each pair of pixels the
