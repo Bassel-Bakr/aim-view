@@ -27,6 +27,7 @@ bun run format                                 # Prettier, over ui/
 cargo test --profile quick                     # the Rust core, checked against Python's results (test_out/parity/)
                                                # (--release gives the same results; its builds take 40 s, quick's 3 s)
 python tests/fixtures.py <video> [--areas exclude.json]   # Python's results stage by stage, for those checks
+python tests/fixtures.py --faint                          # the faint-target cut-off in Python (--test faint_parity)
 bun run assets                                 # the core as WebAssembly and the models, into ui/generated/
 ```
 
@@ -179,7 +180,26 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
   `REVIEW_VERSION`, 2 since the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.
-  Not in the browser yet: the user's other marks (faint cut-off, areas).
+  The faint-target cut-off (the run page's Cut-off and the top bar's Cut-off queue; platform/faint-cutoffs.ts, the
+  core's src/faint.rs) works in every mode: the browser keeps it as SavedFaint, and the core measures a tracking run
+  without the tracks it cuts (`faint` in the review request: equal to Python's on 5 tracking runs at 3 offsets,
+  `--test faint_parity`). A submit's labels in the browser are the crops Python picks (its random numbers, seeded
+  alike: the same files, boxes and rows), each read from its own frame (Python's ffmpeg -ss lands a frame late on 6 of
+  flower's 20), kept in the browser and downloaded as cutoff.zip (checked.jsonl and train/).
+  The excluded areas (the run page's Excluded areas editor: draw, move, type; Find areas and Detect fresh; KovOBS's
+  layout; area types; platform/area-labels.ts) work in every mode, and a review tracks with the recording's areas
+  (tracked again when they change). The area finder (src/areas.rs, python/areas.py's port) reads the key frames the
+  review decodes for the fixed map (90 frames over the run when it has fewer than 24), and learns from saved areas:
+  equal to Python's on 17 recordings (every area, map and kind) and on the 1,788 examples' leave-one-out. An area of
+  type challenge_results (the end screen, at the end or between runs) is left out only while it shows (src/popup.rs
+  `END_SCREEN`; left out all the time it hid VT FlyTS: 0 of 5 kills, now 5 of 5). The labelling tools (the area queue,
+  Skip, Not an aim trainer; platform/labelling.ts) too; in the browser the examples and types are kept there and load
+  from and download to area_examples.jsonl and area_kinds.json. The raw mouse log (src/mouse.rs, mouse_read.py's port,
+  equal to it on 31 logs, `--test mouse_parity`): the browser reads a log the user adds; the desktop app logs in the
+  background (a switch in the top bar; desktop/src/mouse.rs, Windows raw input) and finds a run's log itself; the run
+  page shows the measures. Windows throttles a background logger to about 125 events a second unless
+  RawMouseThrottleEnabled is 0. Measured (stats files): the user's areas against KovOBS's change nothing on 14 of 15
+  runs; no exclusion is worse on uploads; the cut-off does not improve accuracy.
 - The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
   (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
   (desktop/src/api.rs over a custom protocol: no network port, nothing outside the app reaches it; library.rs: the VODs
@@ -193,8 +213,9 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
   python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
-  DirectML.dll in the installer, the user's other marks (faint cut-off, areas).
-- The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
+  DirectML.dll in the installer.
+- The old page (`python/app/`) and python/server.py: the Angular app does everything they do but the player's Full
+  screen (F, Escape). They retire, with server mode, once that is ported. Training (`python/model/`) stays in Python.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
   Rust prototype in `python/model/rust/` becomes the start of the core's detector).
