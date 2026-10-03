@@ -12,7 +12,7 @@ changes, and when a target sits under the crosshair (Pokeball scenarios).
   0 elsewhere. The fixed map comes from the run's key frames (`review.fixed_map`).
 - **Output:** one box per target: centre x, centre y, width, height (frame pixels) and a score from 0 to 1.
 - **Where it plugs in:** `python/review.py` links the boxes into tracks, matches the kills with the stats file and
-  measures each flick. The review app (`python/server.py`) uses the model on its own when the export exists.
+  measures each flick. The review app (`bun run server`, or the desktop app) uses the model on its own when the export exists.
 - **Not a chatbot.** The model only detects. The review's text, numbers and issue rules stay ordinary code.
 
 Boxes, not a fixed "static" label, so tracking scenarios can be added later by fine-tuning on more data, without

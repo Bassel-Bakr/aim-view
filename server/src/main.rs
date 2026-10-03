@@ -83,6 +83,9 @@ async fn run(settings: config::Settings, file: Option<PathBuf>) -> ExitCode {
     if !settings.ui.join("index.html").is_file() {
         println!("no UI build in {} (bun run build:server): only the API answers", settings.ui.display());
     }
+    if settings.old.join("index.html").is_file() {
+        println!("the old page: {}old/", settings.url());
+    }
     let access_note = if access.has_token() { "with its token" } else { "this machine only" };
     println!("Aim View: {} ({access_note}; Ctrl+C stops it)", settings.url());
 
@@ -93,7 +96,7 @@ async fn run(settings: config::Settings, file: Option<PathBuf>) -> ExitCode {
         let list = http::Call { method: "GET".into(), path_and_query: "/api/vods".into(), range: None, body: Default::default() };
         warm.handle(&list);
     });
-    let app = Arc::new(http::App { api, access, ui: settings.ui.clone() });
+    let app = Arc::new(http::App { api, access, ui: settings.ui.clone(), old: settings.old.clone() });
     let (stop, stopping) = tokio::sync::watch::channel(false);
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_err() {

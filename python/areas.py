@@ -335,14 +335,14 @@ if __name__ == "__main__":
     import argparse
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import server
+    import aimview_tools
     ap = argparse.ArgumentParser(description="bootstrap: learn the user's KovOBS layout from N of their recordings "
                                              "(one per scenario); check: leave-one-recording-out accuracy")
     ap.add_argument("what", choices=("bootstrap", "check"))
     ap.add_argument("--n", type=int, default=30)
     a = ap.parse_args()
     if a.what == "bootstrap":
-        lib = server.Library(r"E:\OBS\KovOBS", server.STATS_DEFAULT)
+        lib = aimview_tools.Library(r"E:\OBS\KovOBS", aimview_tools.STATS_DEFAULT)
         seen, picked = set(), []
         for v in lib.list():
             sc = v["id"].split("/")[0]
@@ -353,9 +353,9 @@ if __name__ == "__main__":
             if len(picked) >= a.n:
                 break
         for i, vid in enumerate(picked):
-            found = find(str(lib.resolve(vid)), server.Library.cache_dir(vid), server.AREA_EXAMPLES)[1]  # noqa
-            n = learn(server.AREA_EXAMPLES, "kovobs:" + vid, found, review.OVERLAY_SHARES)
+            found = find(str(lib.resolve(vid)), lib.cache_dir(vid), aimview_tools.AREA_EXAMPLES)[1]  # noqa
+            n = learn(aimview_tools.AREA_EXAMPLES, "kovobs:" + vid, found, review.OVERLAY_SHARES)
             print(f"[{i + 1}/{len(picked)}] {vid[:60]}: {n} examples", flush=True)
-    sure, acc, n, wrong = check(server.AREA_EXAMPLES)
+    sure, acc, n, wrong = check(aimview_tools.AREA_EXAMPLES)
     print(f"leave one recording out, {n} examples: the learner names {sure:.0%}, {acc:.0%} of those right; "
           f"wrong (truth, guess): {wrong}")

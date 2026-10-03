@@ -1,7 +1,8 @@
 # Aim View: agent guide
 
 Aim View reviews aim trainer recordings. The review core is Rust (`src/`), the shared service that answers the review
-API is `service/` (the desktop app, the Rust server and the Python server all serve it), the UI is Angular (`ui/`), and
+API is `service/` (the desktop app and the Rust server serve it; Python's scripts reach it through its `aimview-tool`),
+the UI is Angular (`ui/`), and
 `python/model/` trains the target detector. `python/review.py` is the old Python pipeline, kept as the parity tests'
 reference. Read `README.md` first, then `python/README.md` (how the review works) and
 `python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
@@ -14,12 +15,11 @@ are in `README.md` ("Where it's going").
 ## Commands
 
 ```bash
-python -m pip install --force-reinstall ./python-bindings   # the aimview module (python-bindings/): the service for
-                                               # Python, built by maturin as release; python/server.py needs it
-bun run server                                 # the Rust review server (server/, aimview-server), http://127.0.0.1:8770/
-                                               # (bun run build:server first; flags or aimview-server.toml: server/README.md)
-python python/server.py --port 8770            # the same API from Python (the aimview module over HTTP)
-                                               # (the server-mode build at /, the old page at /old/)
+bun run server                                 # the review server (server/, aimview-server), http://127.0.0.1:8770/: the
+                                               # server-mode build at /, the old page at /old/ (bun run build:server
+                                               # first; flags or aimview-server.toml: server/README.md)
+cargo run -q --release -p aimview-service --bin aimview-tool -- help   # the library and the native review for
+                                               # scripts, JSON on stdout (python/aimview_tools.py runs it)
 python python/model/test_model.py              # the detector's tests
 python python/model/eval_vods.py <model>       # static runs against their stats files (the app's native review of the
                                                # model's _u8in export; --python: python/review.py with a .pt or .onnx)
@@ -73,7 +73,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   config warns on the older forms. Anything that changes every frame (the video overlay,
   timelines) is drawn on a canvas in `requestAnimationFrame` or `requestVideoFrameCallback`, never through a template.
   A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
-- **Three modes, one app.** The UI runs in browser mode (everything in the browser), server mode (the Python server
+- **Three modes, one app.** The UI runs in browser mode (everything in the browser), server mode (the review server
   does the work) or desktop mode (Tauri 2; the browser mode's services until `desktop/` exists). Features and
   `services/` inject only the contracts in `ui/src/app/platform/` (`RecordingSource`, `StatsFiles`, `ReviewEngine`,
   `ModelCatalog`), never `/api` or a mode's class. The implementations are in `ui/src/app/modes/`, in folders named
@@ -119,12 +119,12 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 ## State (2026-10-02)
 
 - The detector is full_v3 (`infer.BEST`), trained on every scenario kind; small_v13 is the small one for speed.
-- The plan: the app runs three ways from one code base (browser only, browser with the Python server, desktop). The UI
+- The plan: the app runs three ways from one code base (browser only, browser with the review server, desktop). The UI
   is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
   desktop app (Tauri 2) and as WebAssembly for the browser. The ground truth is KovaaK's stats files, not Python: a
   new feature is checked against them (for a run without one, on runs that have one, with the file left out). Python's
-  review stays a cross-check while it lasts; `python/model/` stays for training the detector. The Python server and
-  the old page retire once the Angular app does what they do.
+  review stays a cross-check while it lasts; `python/model/` stays for training the detector. The Python server has
+  retired (the Rust server serves server mode); the old page retires once the Angular app does what it does.
 - Done: the layout (`python/`, the Rust crate at the root, `ui/`). In `ui/`: the recordings list, and the run page
   (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline),
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
@@ -222,11 +222,16 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   runs; no exclusion is worse on uploads; the cut-off does not improve accuracy.
 - The service (service/, aimview-service): the review server's API without Tauri, `api::handle` over a `Library`
   opened with a `Config` (the data folder in the app's layout or Python's test_out/ layout, the VODs, stats and
-  scenario folders, the models, the device: DirectML, CUDA behind the `cuda` feature, or the CPU). Three servers serve
-  it: the desktop app over its own protocol, server/ (aimview-server: HTTP, the server-mode UI build, a token for
-  anything beyond this machine) and python/server.py through the Python bindings (python-bindings/, PyO3, the `aimview`
-  module, which training's scripts also use; the old Python server is python/retired/server.py). Checked against the
-  old Python server on a copy of test_out: the same answers and byte-equal files (scratchpad apicheck scripts).
+  scenario folders, the models, the device: DirectML, CUDA behind the `cuda` feature, or the CPU). Two servers serve
+  it: the desktop app over its own protocol, and server/ (aimview-server: HTTP, the server-mode UI build, the old page
+  at /old/, a token for anything beyond this machine). Python's scripts (areas.py, model/build_kills.py, eval_vods.py,
+  eval_moving.py, tests/find_popups.py, tests/fixtures.py) use it through its command-line tool, aimview-tool
+  (service/src/bin/: `recordings`, `lookup`, `review`, JSON on stdout), which python/aimview_tools.py runs (cargo run
+  --release, so a Rust change is built first). The Python bindings and the thin Python server over them retired
+  (retired/python-bindings/, python/retired/server_thin.py; the old Python server is python/retired/server.py); the
+  tool gives what the bindings gave, checked on every recording's pairing and on two native reviews, byte for byte.
+  Checked against the old Python server on a copy of test_out: the same answers and byte-equal files (scratchpad
+  apicheck scripts).
 - The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
   (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
   (desktop/src/protocol.rs over a custom protocol, to the service: no network port, nothing outside the app reaches
@@ -241,7 +246,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
   python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
   DirectML.dll in the installer.
-- The Angular app does everything the old page (`python/app/`, now at /old/ on python/server.py) did, the player's
+- The Angular app does everything the old page (`python/app/`, now at /old/ on the Rust server) did, the player's
   full screen (F, Escape) included; the old page stays until the user retires it. Server mode stays (a stronger
   machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review
   through the app's native pipeline by default (--python: the old one).

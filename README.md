@@ -12,7 +12,7 @@ Aim View started inside the Flow Fix project (`D:\Projects\flowfix`, folder `vod
 Aim View will run three ways from one code base:
 
 1. As a web app, with the detector and the review running in the browser.
-2. As a web app with the Python server doing some of the work.
+2. As a web app with the review server doing some of the work.
 3. As a desktop app.
 
 The parts:
@@ -54,8 +54,7 @@ JavaScript package (the core's WebAssembly build).
 | Path | What it holds |
 | --- | --- |
 | `python/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
-| `python/server.py` | The review API from Python (port 8770), a thin layer over the Rust service through the `aimview` module. |
-| `service/`, `server/`, `python-bindings/` | The review API in Rust (shared by every server), the Rust HTTP server, and its Python bindings. |
+| `service/`, `server/` | The review API in Rust (shared by every server) and the HTTP server (port 8770). The service's `aimview-tool` gives Python's scripts the library and the native review (`python/aimview_tools.py`). |
 | `python/app/` | The web app: `index.html`, `style.css`, `app.js` (plain HTML, CSS and JavaScript, no build step). |
 | `python/hud.py`, `python/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
 | `python/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
@@ -74,8 +73,7 @@ bun run build:server
 bun run server
 ```
 
-Then open http://127.0.0.1:8770/ (`python python/server.py --port 8770` serves the same, from Python, once the
-`aimview` module is installed: `python -m pip install ./python-bindings`). It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
+Then open http://127.0.0.1:8770/ (the old page is at http://127.0.0.1:8770/old/). It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
 `stats` folder. The detector runs through ONNX Runtime: DirectML on Windows, CUDA on Linux (the `cuda` feature), or the CPU.
 
 The new Angular app runs in browser mode (everything in the browser) or in server mode (its data from that server):

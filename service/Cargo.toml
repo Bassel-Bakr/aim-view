@@ -5,6 +5,11 @@ edition = "2024"
 description = "Aim View's review service: the review server's API (python/server.py) over a library of recordings, with the review run natively. The desktop app and the HTTP server both serve it."
 publish = false
 
+# the library and the native review from the command line, for the Python scripts (python/aimview_tools.py)
+[[bin]]
+name = "aimview-tool"
+path = "src/bin/aimview-tool.rs"
+
 [features]
 # the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
 cuda = ["ort/cuda"]

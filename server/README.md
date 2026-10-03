@@ -1,8 +1,8 @@
 # aimview-server
 
-Aim View's review server, in Rust. It serves the UI's server-mode build and the review server's API, the one
-`python/server.py` serves. The review runs natively, as in the desktop app: both use the `aimview-service` crate
-(`service/`). It replaces `python/server.py` as the server the UI's server mode talks to.
+Aim View's review server, in Rust. It serves the UI's server-mode build, the old page (`python/app/`) at /old/, and
+the review server's API, the one the Python server served (`python/retired/`). The review runs natively, as in the
+desktop app: both use the `aimview-service` crate (`service/`). It is the server the UI's server mode talks to.
 
 ## Run it
 
@@ -24,7 +24,7 @@ With no settings, the server runs on the machine Aim View is made on:
 | --- | --- | --- |
 | Address | `--host` | `127.0.0.1` |
 | Port | `--port` | `8770` |
-| Data folder | `--data` | the repo's `test_out/`, in `python/server.py`'s layout |
+| Data folder | `--data` | the repo's `test_out/`, in the Python server's layout |
 | Recordings | `--vods` | `E:\OBS\KovOBS` (`--vods=` for the folder last chosen in the app) |
 | KovaaK's stats files | `--stats` | `...\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats` |
 | Scenario folders | `--scenarios` (several) | KovaaK's `Saved\SaveGames\Scenarios` and `steamapps\workshop\content\824270` |
@@ -32,6 +32,7 @@ With no settings, the server runs on the machine Aim View is made on:
 | Device | `--device` | `auto`; also `directml`, `cuda`, `cpu` |
 | ffmpeg | `--ffmpeg` | `ffmpeg/` in the data folder; `path` for the PATH's |
 | UI build | `--ui` | the repo's `ui/dist/server/browser` |
+| The old page, at /old/ | `--old` | the repo's `python/app` |
 | Token | `--token` | none |
 
 The same settings can go in a TOML file: `--config <file>`, or `aimview-server.toml` in the current folder. A flag
@@ -52,8 +53,8 @@ token = "a-long-random-string"
 
 The data folder holds what the server writes: each recording's reviews and marks (`vod_app/`), uploads
 (`vod_uploads/`), the detector labels of submitted cut-offs (`vod_model/hand/cutoff/`), the raw mouse logs (`mouse/`)
-and ffmpeg (`ffmpeg/`). `python/server.py` uses the same layout in `test_out/`, so both servers read the same reviews
-and marks.
+and ffmpeg (`ffmpeg/`). The Python server used the same layout in `test_out/`, so the reviews and marks it kept are
+read as they are. Python's scripts open the same library through `aimview-tool` (`python/aimview_tools.py`).
 
 ## ffmpeg
 

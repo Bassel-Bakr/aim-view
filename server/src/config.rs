@@ -83,6 +83,9 @@ pub struct Flags {
     /// The server-mode UI build (`bun run build:server`) [default: the repo's ui/dist/server/browser]
     #[arg(long, value_name = "FOLDER")]
     pub ui: Option<PathBuf>,
+    /// The old page, served at /old/ until the Angular app replaces it [default: the repo's python/app]
+    #[arg(long, value_name = "FOLDER")]
+    pub old: Option<PathBuf>,
     /// The access token: letters, digits and - . _ ~. Prefer the settings file: a flag shows in the process list
     #[arg(long)]
     pub token: Option<String>,
@@ -108,6 +111,7 @@ pub struct FileSettings {
     pub device: Option<Device>,
     pub ffmpeg: Option<PathBuf>,
     pub ui: Option<PathBuf>,
+    pub old: Option<PathBuf>,
     pub token: Option<String>,
 }
 
@@ -124,6 +128,7 @@ pub struct Settings {
     pub device: Device,
     pub ffmpeg: FfmpegChoice,
     pub ui: PathBuf,
+    pub old: PathBuf,
     pub token: Option<String>,
 }
 
@@ -162,6 +167,7 @@ impl Settings {
             device: Device::Auto,
             ffmpeg: FfmpegChoice::Folder(repo.join("test_out").join("ffmpeg")),
             ui: repo.join("ui").join("dist").join("server").join("browser"),
+            old: repo.join("python").join("app"),
             token: None,
         }
     }
@@ -234,6 +240,7 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
         device: flags.device.or(file.device).unwrap_or(defaults.device),
         ffmpeg,
         ui: path(flags.ui, file.ui).unwrap_or(defaults.ui),
+        old: path(flags.old, file.old).unwrap_or(defaults.old),
         token,
     })
 }
@@ -269,6 +276,7 @@ mod tests {
         assert_eq!((s.host.as_str(), s.port), ("127.0.0.1", 8770));
         assert!(s.data.ends_with("test_out"));
         assert!(s.ui.ends_with(Path::new("ui").join("dist").join("server").join("browser")));
+        assert!(s.old.ends_with(Path::new("python").join("app")));
         assert_eq!(s.scenarios.len(), 2);
         assert_eq!(s.device, Device::Auto);
         assert_eq!(s.token, None);
@@ -286,6 +294,7 @@ mod tests {
             device = "directml"
             token = "abc-123"
             ffmpeg = "tools"
+            old = "old-page"
             "#,
         )
         .unwrap();
@@ -298,6 +307,7 @@ mod tests {
         assert_eq!(s.device, Device::DirectMl);
         assert_eq!(s.token.as_deref(), Some("abc-123"));
         assert_eq!(s.ffmpeg, FfmpegChoice::Folder(base.join("tools")));
+        assert_eq!(s.old, base.join("old-page"));
         // the settings the file leaves out stay the defaults
         assert_eq!(s.stats, Settings::defaults().stats);
     }

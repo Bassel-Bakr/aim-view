@@ -209,7 +209,7 @@ boxes = dets[0][dets[0][:, 4] > 0.3]
 The whole review with the model (the review app picks the model on its own when the exports exist):
 
 ```bash
-python python/server.py
+bun run server
 ```
 
 ## 7. Benchmarks and tests

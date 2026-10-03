@@ -8,7 +8,7 @@
 Clicking kinds (static, dynamic, switching): kills matched to a target and flicks measured (review.match, measure).
 Tracking: the review's time on the target (review.track_summary) against the stats file's accuracy, hits over hits
 and misses: the game's own measure of the same thing.
-The tracks come from the app's native review (the review service through the aimview module, python-bindings/: the
+The tracks come from the app's native review (the review service's aimview-tool, through python/aimview_tools.py: the
 model's _u8in export, see eval_vods.u8in, and the app's areas for each recording); with --python, from
 review.track_model as before. They are cached per model name in test_out/vod_model/eval/moving_<name>_native.pkl
 (--python: moving_<name>.pkl).

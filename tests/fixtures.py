@@ -58,7 +58,7 @@ def scenario_cases():
 def review_case(name):
     """Python's review of a fixture's tracks (frames.json, ONNX Runtime on the CPU) with the recording's stats file:
     flicks.json, measures.json and report.json in test_out/parity/<name>/review/, as review.review writes them."""
-    import server
+    import aimview_tools
     d = ROOT / "test_out" / "parity" / name
     meta = json.load(open(d / "meta.json"))
     out = d / "review"
@@ -68,7 +68,7 @@ def review_case(name):
     tracks = dict(fps=meta["fps"], frames=json.load(open(d / "frames.json")), fixed=meta["fixed_share"],
                   detector="OnnxDetector")
     json.dump(tracks, open(out / "tracks.json", "w"))
-    lib = server.Library(r"E:\OBS\KovOBS", server.STATS_DEFAULT)
+    lib = aimview_tools.Library(r"E:\OBS\KovOBS", aimview_tools.STATS_DEFAULT)
     stats = lib.stats_of(Path(meta["video"]).name, Path(meta["video"]))
     meta["stats"] = str(stats) if stats else None
     json.dump(meta, open(d / "meta.json", "w"))

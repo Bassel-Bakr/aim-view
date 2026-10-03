@@ -35,7 +35,7 @@ sys.path.insert(0, str(HERE.parent))
 import build_data  # noqa: E402
 import infer  # noqa: E402
 import review  # noqa: E402
-import server  # noqa: E402
+import aimview_tools  # noqa: E402
 
 CROP = 256
 BACK = (1, 3, 6, 10, 15, 22, 30)          # frames before the kill used, at 120 fps (scaled for other rates)
@@ -246,7 +246,7 @@ def main():
     KILLS = a.kills
     for s in ("train", "val", "test"):
         (Path(a.out) / s).mkdir(parents=True, exist_ok=True)
-    lib = server.Library(a.vods, server.STATS_DEFAULT)
+    lib = aimview_tools.Library(a.vods, aimview_tools.STATS_DEFAULT)
     lib.load_stats_index()
     static = build_data.static_scenarios()
     COUNTS = build_data.target_counts()
@@ -257,7 +257,7 @@ def main():
             continue
         with_stats = []
         for v in sorted(folder.glob("*.mp4"), key=lambda p: -p.stat().st_mtime):
-            m = server.NAME.match(v.name)
+            m = aimview_tools.NAME.match(v.name)
             s = lib.stats_for(m["scenario"], m["stamp"]) if m else None
             if s:
                 with_stats.append((v, s))

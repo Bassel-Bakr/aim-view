@@ -10,12 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
 
 import review  # noqa: E402
-import server  # noqa: E402
+import aimview_tools  # noqa: E402
 
 
 def main():
-    lib = server.Library(r"E:\OBS\KovOBS", server.STATS_DEFAULT)
-    by_dir = {server.Library.cache_dir(v["id"]).name: v["id"] for v in lib.list()}
+    lib = aimview_tools.Library(r"E:\OBS\KovOBS", aimview_tools.STATS_DEFAULT)
+    by_dir = {lib.cache_dir(v["id"]).name: v["id"] for v in lib.list()}
     for p in sorted((ROOT / "test_out" / "vod_app").glob("*/exclude.json")):
         vid = by_dir.get(p.parent.name)
         if not vid:

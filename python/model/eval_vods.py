@@ -1,7 +1,7 @@
 """End-to-end evaluation on whole held-out KovOBS recordings (REPRODUCE.md step 3b).
 
 Runs the VOD review on each VOD twice, with the hand-written detector (python/review.py) and with the model (the app's
-native review: the review service through the aimview module, python-bindings/; with --python, python/review.py as
+native review: the review service's aimview-tool, through python/aimview_tools.py; with --python, python/review.py as
 before), and scores both against the run's stats file, which is independent ground truth for when each kill happened:
   - kills matched: stats kills found as a tracked target ending at the crosshair within 2.5 frames;
   - flicks measured: kills whose target was tracked from the previous kill;
@@ -52,9 +52,9 @@ def u8in(model):
 
 
 def native_review(lib, video, model, out, stats):
-    """The app's review of a video (aimview: Library.review_video) with the model, and its report, as review.review
-    gives it. The scenario's facts come from its file (review.scenario_facts, target_counts), as review.review takes
-    them."""
+    """The app's review of a video (aimview_tools: Library.review_video) with the model, and its report, as
+    review.review gives it. The scenario's facts come from its file (review.scenario_facts, target_counts), as
+    review.review takes them."""
     scenario = Path(video).stem.rsplit(" - ", 2)[0].lower()
     kind, limit = review.scenario_facts().get(scenario, (None, None))
     return lib.review_video(video, str(model), str(out), stats=stats, kind=kind, limit=limit,
@@ -62,9 +62,9 @@ def native_review(lib, video, model, out, stats):
 
 
 def library():
-    """The review service's library on this computer's data (python/server.py's)."""
-    import server
-    return server.Library()
+    """The review service's library on this computer's data (the repo's test_out/)."""
+    import aimview_tools
+    return aimview_tools.Library()
 
 
 def main():

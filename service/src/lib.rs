@@ -1,7 +1,7 @@
 //! Aim View's review service: the review server's API (python/server.py) over a library of recordings, with the review
-//! run natively (ffmpeg's frames, the core, and the detector on the GPU). The desktop app (desktop/), the HTTP server
-//! (server/) and the Python bindings (python-bindings/) serve it: each opens a `Library` from a `Config` and answers
-//! requests with `api::handle`.
+//! run natively (ffmpeg's frames, the core, and the detector on the GPU). The desktop app (desktop/) and the HTTP
+//! server (server/) serve it: each opens a `Library` from a `Config` and answers requests with `api::handle`. Python's
+//! scripts use the library and the native review through aimview-tool (src/bin/aimview-tool.rs).
 //!
 //! config.rs: what a library needs to know. api.rs: the API's routes. library/: the recordings, their stats files, the
 //! settings and models, the reviews and their reports. areas.rs, finder.rs: the areas a review leaves out and the area

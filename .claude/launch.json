@@ -3,16 +3,6 @@
   "configurations": [
     {
       "name": "vod-review",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [
-        "python/server.py",
-        "--port",
-        "8770"
-      ],
-      "port": 8770
-    },
-    {
-      "name": "rust-server",
       "runtimeExecutable": "cargo",
       "runtimeArgs": [
         "run",

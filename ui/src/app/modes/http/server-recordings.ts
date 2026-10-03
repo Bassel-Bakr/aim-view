@@ -29,9 +29,7 @@ export class ServerRecordings implements RecordingSource {
   );
   readonly loading = computed(() => this.list.isLoading() && !this.list.hasValue());
   readonly problem = computed<string | null>(() =>
-    this.list.error()
-      ? 'The review server is not running. Start it with python python/server.py.'
-      : null,
+    this.list.error() ? 'The review server is not running. Start it with bun run server.' : null,
   );
   readonly addedFilesGo: string = 'They are sent to the review server, which keeps them.';
   readonly transfer = signal<Transfer | null>(null);
