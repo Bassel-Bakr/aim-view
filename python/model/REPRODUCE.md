@@ -198,12 +198,13 @@ python python/model/eval.py python/model/exports/detector_small_v2_fp32.onnx pyt
 ## After a training run: settings file and contract
 
 A new model needs no change to the code. It brings a settings file, and it must meet a contract. After training
-(step 2) and the checks against the stats files (step 3), three commands:
+(step 2) and the checks against the stats files (step 3), four commands:
 
 ```bash
 cp test_out/vod_model/runs/<name>/best.pt python/model/exports/detector_<name>.pt
 python python/model/export.py test_out/vod_model/runs/<name>/best.pt      # the exports, then the settings file
 python python/model/contract.py <name>                                       # the contract
+python python/model/accept.py <name> --list                                  # the acceptance gate (last)
 ```
 
 ### The settings file
@@ -316,6 +317,60 @@ What the results say:
 - small_v13's precision at 0.5 to 0.6 is above full_v3's; with the map `calibrate.py` proposes it passes. Its file
   holds no map today.
 - small_v11 misses moving targets (it never trained on them), as `MODEL_STATUS.md` says.
+
+### The acceptance gate
+
+```bash
+python python/model/accept.py <name> [--list]
+```
+
+The last step: it decides whether the model may reach the app. It runs the contract, then the three checks against
+the stats files (step 3), all through the app's native review, and compares every number with the best model's (the
+model `models.json` marks as default, else `infer.BEST`: full_v3). It prints one table, pass or fail, with the numbers
+that say why. It writes `python/model/reports/accept_<name>.json` and exits with 1 on a fail.
+
+| Check | Data | Limit, against the best model |
+| --- | --- | --- |
+| contract | `contract.py` (its report goes to `test_out/vod_model/accept/<name>/contract.json`) | every check passes |
+| moving: kills matched | `eval_moving.py`'s recordings, per kind: static, dynamic, switching | no drop, by a single kill |
+| moving: flicks measured | the same | lower by at most 2 SD of the best model's share over 400 draws of its kills |
+| moving: tracking | its 12 tracking runs: time on the bot minus the stats file's accuracy, the mean size and the mean's distance from 0 | worse by at most 2 SD of the best model's number over 400 draws of the runs |
+| report: kills matched, flicks measured | `eval_vods.py`'s 4 static recordings, the app's own report | as for moving |
+| video_alone: recall, precision | `eval_video_alone.py`'s 48 runs, overall and per kind | lower by at most 2 SD of the best model's share over 400 draws of its kills (recall: the stats kills; precision: the video's kills) |
+
+Why these limits. Both models are measured on the same recordings, so what makes one recording harder than another
+cancels out. What is left is chance at the level of the kill, the unit these checks count (as `contract.py` draws the
+hand-labelled crops themselves). Today the margins are 5 flicks of 854 on static runs, 12.5 of 707 on dynamic runs, 8.4
+of 405 on switching runs, and 0.5 to 2.6 points of recall and precision. Draws of the recordings (the contract's unit
+for the val crops) would allow 6 to 7 points of flicks on dynamic and switching runs, where one run each (360 Tracking
+OW2 at 5 flicks of 10, Smoothbot Switch Robots at 41 of 56) sets the spread: no small margin. A tracking run gives one
+accuracy, so there the run is the unit: 0.031 on the mean size of the gap, 0.055 on the mean.
+
+The gate reuses the tracks the scripts keep (`moving_<name>_native.pkl`, `video_alone/<name>/`) and tracks only what
+is missing, as the scripts do. A cache made before the export, or before a settings file that changes the scores,
+stops it. It reviews the four report recordings again (`eval_vods.py` keeps nothing), unless it reviewed them with the
+same export, settings and review program before. It builds the review programs once and runs a copy of them
+(`test_out/vod_model/accept/<name>/bin/`), so both models are reviewed by the same code. It writes no script's result
+file.
+
+`--list` adds a model that passes to `models.json`, before "hand", with what the gate measured (parameters, size,
+checks, and where the report is), so `bun run assets` ships it. The speeds and the words about the model are yours to
+add. It never edits `models.json` on a fail, and never changes the default model: on a pass it prints the lines that
+name it (`infer.BEST`, the service's `BEST`, the browser's `DEFAULT_MODEL`).
+
+Results (2026-10-04):
+
+| Check | full_v3 against itself | small_v13 against full_v3 |
+| --- | --- | --- |
+| contract | meets it | **fails**: crosshair (1w4ts 2.8%, allowed 2%), calibrated (0.5 to 0.6: 0.85 against 0.71, allowed gap 0.11) |
+| moving: kills matched, flicks measured | static 854, 848 of 854; dynamic 694, 670 of 707; switching 403, 388 of 405 | static 854, 847; dynamic **693**, 669; switching 403, 380 (8 fewer, allowed 8.4) |
+| moving: tracking, mean size and mean | 0.088, -0.033 | 0.097, -0.046 (pass) |
+| report: kills matched, flicks measured | 496, 494 of 496 | 496, 493 |
+| video_alone: recall, precision | 0.945, 0.955 | **0.909, 0.906** (static and dynamic fail too; switching passes) |
+| **Verdict** | **pass**, no number differs | **fail** |
+
+small_v13's video-alone tracks were made fresh by the gate (about 20 s a run); the finder's rules were tuned on
+full_v3's tracks, so part of that gap may be the finder's tuning rather than the model.
 
 ## 6. Run inference
 

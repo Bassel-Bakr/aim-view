@@ -26,6 +26,8 @@ python python/model/eval_vods.py <model>       # static runs against their stats
 python python/model/eval_moving.py name=<model> ...      # every scenario kind against the stats files (--python too)
 python python/model/eval_video_alone.py [model]  # the video-alone kill finder on 48 runs against their stats files
                                                # (tracks kept per model; --retrack after a change to the tracking)
+python python/model/accept.py <name> [--list]  # the acceptance gate: the contract and the three checks above against
+                                               # the best model's; --list adds a passing model to models.json
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
 bun run build                                  # every mode's build: ui/dist/browser, server, desktop
@@ -130,10 +132,10 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 - Done: the layout (`python/`, the Rust crate at the root, `ui/`). In `ui/`: the recordings list, and the run page
   (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline),
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
-  cards, how the bot was followed, and the what-if estimates; for both, "The run at a glance": a clicking run's kill
-  times, distance against kill time, where the clicks landed and every flick's speed, a tracking run's time on the
+  cards, how the bot was followed, and the what-if estimates; for both, "The run at a glance": a clicking run's TTKs
+  (times to kill), distance against TTK, where the clicks landed and every flick's speed, a tracking run's time on the
   bot 10 s at a time, distance from its center line, and where the crosshair sat around it, from the motion's
-  per-frame `around` offsets), and the fastest-path analysis (path cost per kill, the
+  per-frame `around` offsets), and the fastest-path analysis (Pathing per kill, the
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
   model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
   (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there). The

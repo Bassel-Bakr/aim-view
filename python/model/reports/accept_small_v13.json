@@ -1,0 +1,1333 @@
+{
+ "model": "small_v13",
+ "best": "full_v3",
+ "date": "2026-10-04",
+ "passed": false,
+ "files": {
+  "model": {
+   "export": "e6f080616b46a7785d2f958694f2682129520705752a51f6f78937a1295e7ff6",
+   "settings": "18d801c84c0f8b522d98b5c4679afbc34c688ced430532cb081171eb0f59c7e6"
+  },
+  "best": {
+   "export": "f86cb99314ec83a45a590cdde058c9c0bf1a49f017b33e2bbacd2c29bdc833c7",
+   "settings": "bc558d2379c01e6a378ae5766d09a48b9c39e451bd239894f37d8c60c8889cf6"
+  },
+  "programs": {
+   "tool": "5b8eb0b7df6a948273382dba13d9014a2d62210e50e0f24162c45797f25c2778",
+   "review": "de158cf992a413e32d12973e787a397e587d2d5a014d1a53bd79f19d57be85f1"
+  }
+ },
+ "limits": {
+  "draws": 400,
+  "standard_deviations": 2.0,
+  "seed": 0,
+  "kills_matched": "no drop",
+  "flicks_recall_precision": "2 SD of the best model's share over draws of its kills",
+  "tracking": "2 SD of the best model's number over draws of the runs"
+ },
+ "contract": {
+  "passed": false,
+  "report": "test_out\\vod_model\\accept\\small_v13\\contract.json",
+  "checks": {
+   "export": true,
+   "crosshair": false,
+   "screen_fixed": true,
+   "boxes_per_frame": true,
+   "box_fit": true,
+   "one_box": true,
+   "under_crosshair": true,
+   "calibrated": false,
+   "targets_found": true
+  },
+  "failed": [
+   "crosshair: recordings 1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4: 0.0282 against full_v3's 0.0 (allowed gap 0.02)",
+   "calibrated: bands [0.5, 0.6]: 0.8481 against full_v3's 0.7105 (allowed gap 0.1084)"
+  ]
+ },
+ "checks": [
+  {
+   "check": "contract",
+   "kind": "all",
+   "model": "fails",
+   "best": "",
+   "difference": "",
+   "allowed": "every check",
+   "unit": "",
+   "passed": false
+  },
+  {
+   "check": "moving",
+   "kind": "static",
+   "model": "854/854",
+   "best": "854/854",
+   "difference": 0,
+   "allowed": 0,
+   "unit": "kills matched",
+   "passed": true
+  },
+  {
+   "check": "moving",
+   "kind": "static",
+   "model": "847/854",
+   "best": "848/854",
+   "difference": -1,
+   "allowed": 5.1,
+   "unit": "flicks measured",
+   "passed": true
+  },
+  {
+   "check": "moving",
+   "kind": "dynamic",
+   "model": "693/707",
+   "best": "694/707",
+   "difference": -1,
+   "allowed": 0,
+   "unit": "kills matched",
+   "passed": false
+  },
+  {
+   "check": "moving",
+   "kind": "dynamic",
+   "model": "669/707",
+   "best": "670/707",
+   "difference": -1,
+   "allowed": 12.5,
+   "unit": "flicks measured",
+   "passed": true
+  },
+  {
+   "check": "moving",
+   "kind": "switching",
+   "model": "403/405",
+   "best": "403/405",
+   "difference": 0,
+   "allowed": 0,
+   "unit": "kills matched",
+   "passed": true
+  },
+  {
+   "check": "moving",
+   "kind": "switching",
+   "model": "380/405",
+   "best": "388/405",
+   "difference": -8,
+   "allowed": 8.4,
+   "unit": "flicks measured",
+   "passed": true
+  },
+  {
+   "check": "moving",
+   "kind": "tracking",
+   "model": 0.0974,
+   "best": 0.0875,
+   "difference": 0.01,
+   "allowed": 0.0309,
+   "unit": "mean size of the gap",
+   "passed": true
+  },
+  {
+   "check": "moving",
+   "kind": "tracking",
+   "model": -0.0463,
+   "best": -0.0325,
+   "difference": 0.0137,
+   "allowed": 0.055,
+   "unit": "the mean gap's distance from 0",
+   "passed": true
+  },
+  {
+   "check": "report",
+   "kind": "static",
+   "model": "496/496",
+   "best": "496/496",
+   "difference": 0,
+   "allowed": 0,
+   "unit": "kills matched",
+   "passed": true
+  },
+  {
+   "check": "report",
+   "kind": "static",
+   "model": "493/496",
+   "best": "494/496",
+   "difference": -1,
+   "allowed": 2.9,
+   "unit": "flicks measured",
+   "passed": true
+  },
+  {
+   "check": "video_alone",
+   "kind": "all",
+   "model": 0.9088,
+   "best": 0.9446,
+   "difference": -0.0358,
+   "allowed": 0.0066,
+   "unit": "recall",
+   "passed": false
+  },
+  {
+   "check": "video_alone",
+   "kind": "all",
+   "model": 0.9055,
+   "best": 0.955,
+   "difference": -0.0496,
+   "allowed": 0.0061,
+   "unit": "precision",
+   "passed": false
+  },
+  {
+   "check": "video_alone",
+   "kind": "static",
+   "model": 0.8977,
+   "best": 0.9266,
+   "difference": -0.0289,
+   "allowed": 0.0105,
+   "unit": "recall",
+   "passed": false
+  },
+  {
+   "check": "video_alone",
+   "kind": "static",
+   "model": 0.9048,
+   "best": 0.9472,
+   "difference": -0.0424,
+   "allowed": 0.0089,
+   "unit": "precision",
+   "passed": false
+  },
+  {
+   "check": "video_alone",
+   "kind": "dynamic",
+   "model": 0.9256,
+   "best": 0.9804,
+   "difference": -0.0548,
+   "allowed": 0.0066,
+   "unit": "recall",
+   "passed": false
+  },
+  {
+   "check": "video_alone",
+   "kind": "dynamic",
+   "model": 0.9137,
+   "best": 0.9863,
+   "difference": -0.0727,
+   "allowed": 0.0054,
+   "unit": "precision",
+   "passed": false
+  },
+  {
+   "check": "video_alone",
+   "kind": "switching",
+   "model": 0.905,
+   "best": 0.9114,
+   "difference": -0.0064,
+   "allowed": 0.0246,
+   "unit": "recall",
+   "passed": true
+  },
+  {
+   "check": "video_alone",
+   "kind": "switching",
+   "model": 0.8823,
+   "best": 0.8913,
+   "difference": -0.0091,
+   "allowed": 0.0257,
+   "unit": "precision",
+   "passed": true
+  }
+ ],
+ "model_results": {
+  "moving": {
+   "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4": [
+    "static",
+    143,
+    143,
+    142
+   ],
+   "10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4": [
+    "static",
+    155,
+    155,
+    154
+   ],
+   "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4": [
+    "static",
+    114,
+    114,
+    114
+   ],
+   "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4": [
+    "static",
+    84,
+    84,
+    83
+   ],
+   "1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4": [
+    "static",
+    66,
+    66,
+    64
+   ],
+   "1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4": [
+    "static",
+    98,
+    98,
+    98
+   ],
+   "1wall 6targets extra small - 886.15 - 2026.10.01-16.12.44.mp4": [
+    "static",
+    96,
+    96,
+    96
+   ],
+   "1wall 6targets extra small - 849.91 - 2026.10.01-16.15.22.mp4": [
+    "static",
+    98,
+    98,
+    96
+   ],
+   "1w3ts Pasu Perfected Micro Goated Larger - 1556 - 2026.07.12-07.14.49.mp4": [
+    "dynamic",
+    157,
+    157,
+    157
+   ],
+   "1w3ts Pasu Perfected Micro Goated Larger 80% - 1576 - 2026.05.24-00.02.51.mp4": [
+    "dynamic",
+    160,
+    160,
+    160
+   ],
+   "360 Tracking OW2 - 4389 - 2026.06.30-02.16.50.mp4": [
+    "dynamic",
+    7,
+    10,
+    5
+   ],
+   "Bounce 180 Sparky Jumbo - 107 - 2026.08.01-02.19.54.mp4": [
+    "dynamic",
+    98,
+    107,
+    86
+   ],
+   "Falling Targets - 5940 - 2026.08.13-02.36.48.mp4": [
+    "dynamic",
+    52,
+    54,
+    51
+   ],
+   "Fireworks Flick Easy - 5037 - 2026.08.01-01.56.13.mp4": [
+    "dynamic",
+    219,
+    219,
+    210
+   ],
+   "Smoothbot Switch Robots - 56 - 2026.08.01-02.54.15.mp4": [
+    "switching",
+    54,
+    56,
+    32
+   ],
+   "tamTargetSwitch Smooth Hard 30% Larger - 38 - 2026.07.19-15.58.02.mp4": [
+    "switching",
+    38,
+    38,
+    38
+   ],
+   "VT AvasiveTS Intermediate S5 - 608.75 - 2026.08.17-21.20.02.mp4": [
+    "switching",
+    59,
+    59,
+    59
+   ],
+   "VT ControlTS Novice S5 - 621.400024 - 2026.05.30-15.43.24.mp4": [
+    "switching",
+    62,
+    62,
+    62
+   ],
+   "VT DotTS Advanced S5 Level 2 - 1303 - 2026.07.24-02.05.55.mp4": [
+    "switching",
+    129,
+    129,
+    129
+   ],
+   "VT Penta Bounce Advanced S5 Level 2 - 621 - 2026.07.23-04.29.23.mp4": [
+    "switching",
+    61,
+    61,
+    60
+   ],
+   "AA4V OW Easy - 4476 - 2026.05.25-19.19.46.mp4": [
+    "tracking",
+    0.8120833333333334,
+    0.7464976651100734
+   ],
+   "Aethercontrol Easy - 4500 - 2026.07.26-08.42.00.mp4": [
+    "tracking",
+    0.8472222222222222,
+    0.7498750208298617
+   ],
+   "Air Tracking 180 - 100053 - 2026.09.06-06.46.05.mp4": [
+    "tracking",
+    0.40066425120772947,
+    0.6157718120805369
+   ],
+   "cA FBS Easy S1 - 3998 - 2026.06.30-01.48.48.mp4": [
+    "tracking",
+    0.6298611111111111,
+    0.6663333333333333
+   ],
+   "Centering II 180 No Strafes Fixed - 13824 - 2026.06.22-21.23.25.mp4": [
+    "tracking",
+    0.47555555555555556,
+    0.588957055214724
+   ],
+   "cloverRawControl Big - 14106 - 2026.07.26-19.49.35.mp4": [
+    "tracking",
+    0.8686111111111111,
+    0.7835360773204466
+   ],
+   "Easy Throne Strafe - 3310.11 - 2026.08.20-00.58.45.mp4": [
+    "tracking",
+    0.55,
+    0.5384615384615384
+   ],
+   "Flower 50cm - 3919 - 2026.05.26-01.43.55.mp4": [
+    "tracking",
+    0.5958333333333333,
+    0.6530578236960507
+   ],
+   "Pasu Track Smaller rAim - 76 - 2026.07.02-02.46.21.mp4": [
+    "tracking",
+    0.3478174603174603,
+    0.45606361829025843
+   ],
+   "Plaza Palace Easy - 908.80 - 2026.10.03-23.45.10.mp4": [
+    "tracking",
+    0.3916260602779282,
+    0.5867855885459453
+   ],
+   "Pokeball 1w2ts Pasu Perfected - HigherTTK - 82 - 2026.05.28-20.35.53.mp4": [
+    "tracking",
+    0.48657407407407405,
+    0.6232837528604119
+   ],
+   "Pokeball 1w4ts 30% - 121 - 2026.08.08-20.53.14.mp4": [
+    "tracking",
+    0.28583333333333333,
+    0.23834537097833225
+   ]
+  },
+  "report": {
+   "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4": [
+    143,
+    143,
+    142
+   ],
+   "10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4": [
+    155,
+    155,
+    154
+   ],
+   "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4": [
+    114,
+    114,
+    114
+   ],
+   "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4": [
+    84,
+    84,
+    83
+   ]
+  },
+  "video_alone": {
+   "1w1ts flick pressure/1w1ts flick pressure - 4228 - 2026.07.21-22.58.38.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 87,
+    "video": 107,
+    "found": 87
+   },
+   "1w4t Pasu Raspberry Master 6mag/1w4t Pasu Raspberry Master 6mag - 78 - 2026.07.06-02.29.46.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 78,
+    "video": 86,
+    "found": 69
+   },
+   "Fireworks Flick/Fireworks Flick - 4592.64 - 2026.08.21-03.44.25.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 206,
+    "video": 207,
+    "found": 206
+   },
+   "Floating Heads Timing 400% FIXED/Floating Heads Timing 400% FIXED - 3564 - 2026.06.30-23.20.06.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 99,
+    "video": 100,
+    "found": 99
+   },
+   "Pasu Voltaic Easy/Pasu Voltaic Easy - 94.25 - 2026.08.14-02.06.28.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 103,
+    "video": 102,
+    "found": 101
+   },
+   "RawMouseControlClicking3/RawMouseControlClicking3 - 2470 - 2026.07.21-03.14.40.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 251,
+    "video": 229,
+    "found": 216
+   },
+   "VT Floating Heads Viscose Medium/VT Floating Heads Viscose Medium - 1126 - 2026.07.09-18.23.46.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 116,
+    "video": 115,
+    "found": 115
+   },
+   "VT Frogtagon Advanced S5/VT Frogtagon Advanced S5 - 1150 - 2026.07.24-23.26.56.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 115,
+    "video": 117,
+    "found": 115
+   },
+   "cAt purrClick Hard/cAt purrClick Hard - 657 - 2026.07.03-04.03.35.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 69,
+    "video": 70,
+    "found": 69
+   },
+   "cAt purrClick Normal/cAt purrClick Normal - 830 - 2026.07.03-03.20.04.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 87,
+    "video": 89,
+    "found": 16
+   },
+   "eth Pasu Micro Hard/eth Pasu Micro Hard - 1456 - 2026.06.20-20.13.48.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 149,
+    "video": 154,
+    "found": 148
+   },
+   "1w1t Race WIP Test/1w1t Race WIP Test - 860.17 - 2026.09.25-04.10.37.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 87,
+    "video": 87,
+    "found": 87
+   },
+   "1w2ts reload smaller radius/1w2ts reload smaller radius - 110 - 2026.06.20-13.44.34.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 110,
+    "video": 110,
+    "found": 110
+   },
+   "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 143,
+    "video": 146,
+    "found": 139
+   },
+   "1wall 2targets xsmall - valorant/1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 66,
+    "video": 85,
+    "found": 31
+   },
+   "1wall 6targets extra small/1wall 6targets extra small - 849.91 - 2026.10.01-16.15.22.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 98,
+    "video": 106,
+    "found": 46
+   },
+   "ClickTrack Vertical 2t Short/ClickTrack Vertical 2t Short - 109 - 2026.06.26-22.18.02.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 112,
+    "video": 169,
+    "found": 110
+   },
+   "Flow Fix Pacing Drop/Flow Fix Pacing Drop - 109.50 - 2026.09.24-01.03.49.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 113,
+    "video": 95,
+    "found": 70
+   },
+   "PulseShot Valorant Adapt/PulseShot Valorant Adapt - 1520 - 2026.08.01-03.00.37.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 227,
+    "video": 208,
+    "found": 207
+   },
+   "Reflex Flick - Fair/Reflex Flick - Fair - 6149.31 - 2026.08.13-02.23.46.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 67,
+    "video": 72,
+    "found": 67
+   },
+   "Tile Frenzy 180/Tile Frenzy 180 - 200.64 - 2026.08.12-00.56.42.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 212,
+    "video": 129,
+    "found": 125
+   },
+   "VT ww5t Advanced S5/VT ww5t Advanced S5 - 1520 - 2026.06.28-00.19.06.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 152,
+    "video": 154,
+    "found": 152
+   },
+   "cA 1ts ruohong/cA 1ts ruohong - 834 - 2026.09.21-02.36.39.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 84,
+    "video": 84,
+    "found": 84
+   },
+   "cA 7ts pressure/cA 7ts pressure - 153 - 2026.06.09-04.04.54.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 153,
+    "video": 138,
+    "found": 137
+   },
+   "Pasu Switch Wide/Pasu Switch Wide - 460 - 2026.07.19-16.07.10.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 46,
+    "video": 47,
+    "found": 46
+   },
+   "Pokeball 1w4ts 30% Easy/Pokeball 1w4ts 30% Easy - 137 - 2026.06.15-12.40.20.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 137,
+    "video": 136,
+    "found": 111
+   },
+   "VT DriftTS Advanced S5 Level 1/VT DriftTS Advanced S5 Level 1 - 580 - 2026.07.29-05.46.58.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 58,
+    "video": 61,
+    "found": 51
+   },
+   "VT Penta Bounce Advanced S5/VT Penta Bounce Advanced S5 - 580 - 2026.07.23-22.15.19.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 58,
+    "video": 60,
+    "found": 53
+   },
+   "ww2t Voltaic Pokeball/ww2t Voltaic Pokeball - 125 - 2026.08.18-01.48.08.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 125,
+    "video": 125,
+    "found": 118
+   },
+   "Fireworks Flick Easy/Fireworks Flick Easy - 5037 - 2026.08.01-01.56.13.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 219,
+    "video": 221,
+    "found": 213
+   },
+   "Microshot Avasive/Microshot Avasive - 115.25 - 2026.08.27-01.43.29.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 124,
+    "video": 118,
+    "found": 117
+   },
+   "Popcorn Palace Easier/Popcorn Palace Easier - 930 - 2026.08.23-01.24.29.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 93,
+    "video": 93,
+    "found": 90
+   },
+   "VT Pasu Advanced S5 Level 1/VT Pasu Advanced S5 Level 1 - 944 - 2026.07.26-06.42.03.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 100,
+    "video": 100,
+    "found": 100
+   },
+   "VT Pasu Rasp Advanced/VT Pasu Rasp Advanced - 750 - 2026.07.02-03.50.55.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 75,
+    "video": 76,
+    "found": 75
+   },
+   "mccoyfrozentrack/mccoyfrozentrack - 1735 - 2026.06.30-02.01.52.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 19,
+    "video": 32,
+    "found": 6
+   },
+   "1w2ts Pasu Horizontal/1w2ts Pasu Horizontal - 735 - 2026.07.09-15.09.42.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 76,
+    "video": 82,
+    "found": 74
+   },
+   "1w6ts reload v2/1w6ts reload v2 - 145 - 2026.08.08-19.40.12.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 145,
+    "video": 145,
+    "found": 145
+   },
+   "1wall 1target/1wall 1target - 189.96 - 2026.08.12-01.27.25.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 100,
+    "video": 98,
+    "found": 98
+   },
+   "6 Sphere Hipfire 200% Size/6 Sphere Hipfire 200% Size - 241 - 2026.07.27-19.37.42.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 241,
+    "video": 241,
+    "found": 241
+   },
+   "Flow Fix Slow Start/Flow Fix Slow Start - 59.70 - 2026.09.24-00.51.24.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 125,
+    "video": 131,
+    "found": 121
+   },
+   "Tall Wall 6 (Distance)/Tall Wall 6 (Distance) - 135 - 2026.08.01-02.14.22.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 135,
+    "video": 135,
+    "found": 135
+   },
+   "ben Post-Flick Corrections X/ben Post-Flick Corrections X - 1160 - 2026.08.13-20.10.10.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 116,
+    "video": 130,
+    "found": 115
+   },
+   "eth 1w4tes Micro/eth 1w4tes Micro - 231 - 2026.06.06-16.13.15.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 231,
+    "video": 229,
+    "found": 219
+   },
+   "shimPressure 5s/shimPressure 5s - 13 - 0026.06.14-14.58.48.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 13,
+    "video": 10,
+    "found": 6
+   },
+   "VT DriftTS Advanced S5 Hard/VT DriftTS Advanced S5 Hard - 352.40 - 2026.08.03-22.04.05.mp4": {
+    "set": "held",
+    "kind": "switching",
+    "truth": 34,
+    "video": 44,
+    "found": 27
+   },
+   "VT DriftTS Advanced S5 Level 2/VT DriftTS Advanced S5 Level 2 - 516 - 2026.07.26-23.18.34.mp4": {
+    "set": "held",
+    "kind": "switching",
+    "truth": 50,
+    "video": 55,
+    "found": 48
+   },
+   "waldoTS Perfected/waldoTS Perfected - 113 - 2026.08.18-05.25.12.mp4": {
+    "set": "held",
+    "kind": "switching",
+    "truth": 113,
+    "video": 109,
+    "found": 108
+   }
+  },
+  "video_alone_left_out": {
+   "400ms strafing Reflex Micro++ Horizontalish valorant/400ms strafing Reflex Micro++ Horizontalish valorant - 39 - 2026.08.20-22.47.56.mp4": "the stats review gives no clock offset"
+  },
+  "fresh": {
+   "moving_tracked": [],
+   "report_reviewed": true,
+   "video_alone_tracked": 0
+  },
+  "seconds": 90.6
+ },
+ "best_results": {
+  "moving": {
+   "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4": [
+    "static",
+    143,
+    143,
+    142
+   ],
+   "10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4": [
+    "static",
+    155,
+    155,
+    155
+   ],
+   "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4": [
+    "static",
+    114,
+    114,
+    114
+   ],
+   "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4": [
+    "static",
+    84,
+    84,
+    83
+   ],
+   "1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4": [
+    "static",
+    66,
+    66,
+    64
+   ],
+   "1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4": [
+    "static",
+    98,
+    98,
+    98
+   ],
+   "1wall 6targets extra small - 886.15 - 2026.10.01-16.12.44.mp4": [
+    "static",
+    96,
+    96,
+    96
+   ],
+   "1wall 6targets extra small - 849.91 - 2026.10.01-16.15.22.mp4": [
+    "static",
+    98,
+    98,
+    96
+   ],
+   "1w3ts Pasu Perfected Micro Goated Larger - 1556 - 2026.07.12-07.14.49.mp4": [
+    "dynamic",
+    157,
+    157,
+    157
+   ],
+   "1w3ts Pasu Perfected Micro Goated Larger 80% - 1576 - 2026.05.24-00.02.51.mp4": [
+    "dynamic",
+    160,
+    160,
+    160
+   ],
+   "360 Tracking OW2 - 4389 - 2026.06.30-02.16.50.mp4": [
+    "dynamic",
+    7,
+    10,
+    5
+   ],
+   "Bounce 180 Sparky Jumbo - 107 - 2026.08.01-02.19.54.mp4": [
+    "dynamic",
+    100,
+    107,
+    86
+   ],
+   "Falling Targets - 5940 - 2026.08.13-02.36.48.mp4": [
+    "dynamic",
+    51,
+    54,
+    50
+   ],
+   "Fireworks Flick Easy - 5037 - 2026.08.01-01.56.13.mp4": [
+    "dynamic",
+    219,
+    219,
+    212
+   ],
+   "Smoothbot Switch Robots - 56 - 2026.08.01-02.54.15.mp4": [
+    "switching",
+    54,
+    56,
+    41
+   ],
+   "tamTargetSwitch Smooth Hard 30% Larger - 38 - 2026.07.19-15.58.02.mp4": [
+    "switching",
+    38,
+    38,
+    38
+   ],
+   "VT AvasiveTS Intermediate S5 - 608.75 - 2026.08.17-21.20.02.mp4": [
+    "switching",
+    59,
+    59,
+    59
+   ],
+   "VT ControlTS Novice S5 - 621.400024 - 2026.05.30-15.43.24.mp4": [
+    "switching",
+    62,
+    62,
+    61
+   ],
+   "VT DotTS Advanced S5 Level 2 - 1303 - 2026.07.24-02.05.55.mp4": [
+    "switching",
+    129,
+    129,
+    129
+   ],
+   "VT Penta Bounce Advanced S5 Level 2 - 621 - 2026.07.23-04.29.23.mp4": [
+    "switching",
+    61,
+    61,
+    60
+   ],
+   "AA4V OW Easy - 4476 - 2026.05.25-19.19.46.mp4": [
+    "tracking",
+    0.8058333333333333,
+    0.7464976651100734
+   ],
+   "Aethercontrol Easy - 4500 - 2026.07.26-08.42.00.mp4": [
+    "tracking",
+    0.8411111111111111,
+    0.7498750208298617
+   ],
+   "Air Tracking 180 - 100053 - 2026.09.06-06.46.05.mp4": [
+    "tracking",
+    0.4830917874396135,
+    0.6157718120805369
+   ],
+   "cA FBS Easy S1 - 3998 - 2026.06.30-01.48.48.mp4": [
+    "tracking",
+    0.6866666666666666,
+    0.6663333333333333
+   ],
+   "Centering II 180 No Strafes Fixed - 13824 - 2026.06.22-21.23.25.mp4": [
+    "tracking",
+    0.4265277777777778,
+    0.588957055214724
+   ],
+   "cloverRawControl Big - 14106 - 2026.07.26-19.49.35.mp4": [
+    "tracking",
+    0.8688888888888889,
+    0.7835360773204466
+   ],
+   "Easy Throne Strafe - 3310.11 - 2026.08.20-00.58.45.mp4": [
+    "tracking",
+    0.5512962962962963,
+    0.5384615384615384
+   ],
+   "Flower 50cm - 3919 - 2026.05.26-01.43.55.mp4": [
+    "tracking",
+    0.6784722222222223,
+    0.6530578236960507
+   ],
+   "Pasu Track Smaller rAim - 76 - 2026.07.02-02.46.21.mp4": [
+    "tracking",
+    0.3345238095238095,
+    0.45606361829025843
+   ],
+   "Plaza Palace Easy - 908.80 - 2026.10.03-23.45.10.mp4": [
+    "tracking",
+    0.4211333694279011,
+    0.5867855885459453
+   ],
+   "Pokeball 1w2ts Pasu Perfected - HigherTTK - 82 - 2026.05.28-20.35.53.mp4": [
+    "tracking",
+    0.48564814814814816,
+    0.6232837528604119
+   ],
+   "Pokeball 1w4ts 30% - 121 - 2026.08.08-20.53.14.mp4": [
+    "tracking",
+    0.2733333333333333,
+    0.23834537097833225
+   ]
+  },
+  "report": {
+   "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4": [
+    143,
+    143,
+    142
+   ],
+   "10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4": [
+    155,
+    155,
+    155
+   ],
+   "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4": [
+    114,
+    114,
+    114
+   ],
+   "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4": [
+    84,
+    84,
+    83
+   ]
+  },
+  "video_alone": {
+   "1w1ts flick pressure/1w1ts flick pressure - 4228 - 2026.07.21-22.58.38.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 87,
+    "video": 87,
+    "found": 87
+   },
+   "1w4t Pasu Raspberry Master 6mag/1w4t Pasu Raspberry Master 6mag - 78 - 2026.07.06-02.29.46.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 78,
+    "video": 78,
+    "found": 77
+   },
+   "Fireworks Flick/Fireworks Flick - 4592.64 - 2026.08.21-03.44.25.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 206,
+    "video": 205,
+    "found": 205
+   },
+   "Floating Heads Timing 400% FIXED/Floating Heads Timing 400% FIXED - 3564 - 2026.06.30-23.20.06.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 99,
+    "video": 99,
+    "found": 99
+   },
+   "Pasu Voltaic Easy/Pasu Voltaic Easy - 94.25 - 2026.08.14-02.06.28.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 103,
+    "video": 103,
+    "found": 102
+   },
+   "RawMouseControlClicking3/RawMouseControlClicking3 - 2470 - 2026.07.21-03.14.40.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 251,
+    "video": 236,
+    "found": 236
+   },
+   "VT Floating Heads Viscose Medium/VT Floating Heads Viscose Medium - 1126 - 2026.07.09-18.23.46.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 116,
+    "video": 116,
+    "found": 116
+   },
+   "VT Frogtagon Advanced S5/VT Frogtagon Advanced S5 - 1150 - 2026.07.24-23.26.56.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 115,
+    "video": 115,
+    "found": 115
+   },
+   "cAt purrClick Hard/cAt purrClick Hard - 657 - 2026.07.03-04.03.35.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 69,
+    "video": 69,
+    "found": 69
+   },
+   "cAt purrClick Normal/cAt purrClick Normal - 830 - 2026.07.03-03.20.04.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 87,
+    "video": 88,
+    "found": 87
+   },
+   "eth Pasu Micro Hard/eth Pasu Micro Hard - 1456 - 2026.06.20-20.13.48.mp4": {
+    "set": "dev",
+    "kind": "dynamic",
+    "truth": 149,
+    "video": 149,
+    "found": 149
+   },
+   "1w1t Race WIP Test/1w1t Race WIP Test - 860.17 - 2026.09.25-04.10.37.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 87,
+    "video": 87,
+    "found": 87
+   },
+   "1w2ts reload smaller radius/1w2ts reload smaller radius - 110 - 2026.06.20-13.44.34.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 110,
+    "video": 110,
+    "found": 110
+   },
+   "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 143,
+    "video": 143,
+    "found": 143
+   },
+   "1wall 2targets xsmall - valorant/1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 66,
+    "video": 71,
+    "found": 41
+   },
+   "1wall 6targets extra small/1wall 6targets extra small - 849.91 - 2026.10.01-16.15.22.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 98,
+    "video": 111,
+    "found": 51
+   },
+   "ClickTrack Vertical 2t Short/ClickTrack Vertical 2t Short - 109 - 2026.06.26-22.18.02.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 112,
+    "video": 111,
+    "found": 111
+   },
+   "Flow Fix Pacing Drop/Flow Fix Pacing Drop - 109.50 - 2026.09.24-01.03.49.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 113,
+    "video": 95,
+    "found": 74
+   },
+   "PulseShot Valorant Adapt/PulseShot Valorant Adapt - 1520 - 2026.08.01-03.00.37.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 227,
+    "video": 214,
+    "found": 214
+   },
+   "Reflex Flick - Fair/Reflex Flick - Fair - 6149.31 - 2026.08.13-02.23.46.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 67,
+    "video": 72,
+    "found": 67
+   },
+   "Tile Frenzy 180/Tile Frenzy 180 - 200.64 - 2026.08.12-00.56.42.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 212,
+    "video": 173,
+    "found": 171
+   },
+   "VT ww5t Advanced S5/VT ww5t Advanced S5 - 1520 - 2026.06.28-00.19.06.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 152,
+    "video": 153,
+    "found": 151
+   },
+   "cA 1ts ruohong/cA 1ts ruohong - 834 - 2026.09.21-02.36.39.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 84,
+    "video": 83,
+    "found": 82
+   },
+   "cA 7ts pressure/cA 7ts pressure - 153 - 2026.06.09-04.04.54.mp4": {
+    "set": "dev",
+    "kind": "static",
+    "truth": 153,
+    "video": 138,
+    "found": 137
+   },
+   "Pasu Switch Wide/Pasu Switch Wide - 460 - 2026.07.19-16.07.10.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 46,
+    "video": 47,
+    "found": 46
+   },
+   "Pokeball 1w4ts 30% Easy/Pokeball 1w4ts 30% Easy - 137 - 2026.06.15-12.40.20.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 137,
+    "video": 136,
+    "found": 111
+   },
+   "VT DriftTS Advanced S5 Level 1/VT DriftTS Advanced S5 Level 1 - 580 - 2026.07.29-05.46.58.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 58,
+    "video": 62,
+    "found": 53
+   },
+   "VT Penta Bounce Advanced S5/VT Penta Bounce Advanced S5 - 580 - 2026.07.23-22.15.19.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 58,
+    "video": 61,
+    "found": 54
+   },
+   "ww2t Voltaic Pokeball/ww2t Voltaic Pokeball - 125 - 2026.08.18-01.48.08.mp4": {
+    "set": "dev",
+    "kind": "switching",
+    "truth": 125,
+    "video": 124,
+    "found": 117
+   },
+   "Fireworks Flick Easy/Fireworks Flick Easy - 5037 - 2026.08.01-01.56.13.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 219,
+    "video": 222,
+    "found": 219
+   },
+   "Microshot Avasive/Microshot Avasive - 115.25 - 2026.08.27-01.43.29.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 124,
+    "video": 119,
+    "found": 119
+   },
+   "Popcorn Palace Easier/Popcorn Palace Easier - 930 - 2026.08.23-01.24.29.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 93,
+    "video": 92,
+    "found": 90
+   },
+   "VT Pasu Advanced S5 Level 1/VT Pasu Advanced S5 Level 1 - 944 - 2026.07.26-06.42.03.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 100,
+    "video": 101,
+    "found": 97
+   },
+   "VT Pasu Rasp Advanced/VT Pasu Rasp Advanced - 750 - 2026.07.02-03.50.55.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 75,
+    "video": 76,
+    "found": 74
+   },
+   "mccoyfrozentrack/mccoyfrozentrack - 1735 - 2026.06.30-02.01.52.mp4": {
+    "set": "held",
+    "kind": "dynamic",
+    "truth": 19,
+    "video": 23,
+    "found": 10
+   },
+   "1w2ts Pasu Horizontal/1w2ts Pasu Horizontal - 735 - 2026.07.09-15.09.42.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 76,
+    "video": 76,
+    "found": 75
+   },
+   "1w6ts reload v2/1w6ts reload v2 - 145 - 2026.08.08-19.40.12.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 145,
+    "video": 145,
+    "found": 145
+   },
+   "1wall 1target/1wall 1target - 189.96 - 2026.08.12-01.27.25.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 100,
+    "video": 98,
+    "found": 98
+   },
+   "6 Sphere Hipfire 200% Size/6 Sphere Hipfire 200% Size - 241 - 2026.07.27-19.37.42.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 241,
+    "video": 241,
+    "found": 241
+   },
+   "Flow Fix Slow Start/Flow Fix Slow Start - 59.70 - 2026.09.24-00.51.24.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 125,
+    "video": 127,
+    "found": 120
+   },
+   "Tall Wall 6 (Distance)/Tall Wall 6 (Distance) - 135 - 2026.08.01-02.14.22.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 135,
+    "video": 135,
+    "found": 135
+   },
+   "ben Post-Flick Corrections X/ben Post-Flick Corrections X - 1160 - 2026.08.13-20.10.10.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 116,
+    "video": 116,
+    "found": 116
+   },
+   "eth 1w4tes Micro/eth 1w4tes Micro - 231 - 2026.06.06-16.13.15.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 231,
+    "video": 236,
+    "found": 225
+   },
+   "shimPressure 5s/shimPressure 5s - 13 - 0026.06.14-14.58.48.mp4": {
+    "set": "held",
+    "kind": "static",
+    "truth": 13,
+    "video": 10,
+    "found": 6
+   },
+   "VT DriftTS Advanced S5 Hard/VT DriftTS Advanced S5 Hard - 352.40 - 2026.08.03-22.04.05.mp4": {
+    "set": "held",
+    "kind": "switching",
+    "truth": 34,
+    "video": 42,
+    "found": 31
+   },
+   "VT DriftTS Advanced S5 Level 2/VT DriftTS Advanced S5 Level 2 - 516 - 2026.07.26-23.18.34.mp4": {
+    "set": "held",
+    "kind": "switching",
+    "truth": 50,
+    "video": 54,
+    "found": 46
+   },
+   "waldoTS Perfected/waldoTS Perfected - 113 - 2026.08.18-05.25.12.mp4": {
+    "set": "held",
+    "kind": "switching",
+    "truth": 113,
+    "video": 109,
+    "found": 108
+   }
+  },
+  "video_alone_left_out": {
+   "400ms strafing Reflex Micro++ Horizontalish valorant/400ms strafing Reflex Micro++ Horizontalish valorant - 39 - 2026.08.20-22.47.56.mp4": "the stats review gives no clock offset"
+  },
+  "fresh": {
+   "moving_tracked": [],
+   "report_reviewed": false,
+   "video_alone_tracked": 0
+  },
+  "seconds": 23.5
+ },
+ "listed": null,
+ "default_lines": []
+}
