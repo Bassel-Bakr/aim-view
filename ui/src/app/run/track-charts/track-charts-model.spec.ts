@@ -1,6 +1,6 @@
 import { AroundPoint, Motion, TrackFrame, TrackReport, Tracks } from '../../api';
 import { Timeline, TrackState } from '../track';
-import { aroundMap, distanceSpread, onTargetWindows } from './track-charts-model';
+import { aroundMap, distanceSpread, onTargetWindows, turnsBack } from './track-charts-model';
 
 const FPS = 10;
 
@@ -80,5 +80,41 @@ describe('track charts', () => {
       'Not measured: too little tracking.',
     );
     expect(map({ camera: 1 } as Motion)).toContain('review it again');
+  });
+
+  it('times the way back onto the bot after each turn, with the median and the quick share', () => {
+    // a run from frame 20, 30 s: back after 0.1 s, stayed on, back after 0.3 s, not back before the next turn
+    const turns_back = [
+      { frame: 40, back: 0.1 },
+      { frame: 70, back: 0 },
+      { frame: 120, back: 0.3 },
+      { frame: 200, back: null },
+    ];
+    const motion = { camera: 1, turns_back } as Motion;
+    const tl = { ...timeline(new Array<TrackState>(300).fill(TrackState.On)), start: 20 };
+    const m = turnsBack({ summary: { motion } } as unknown as TrackReport, tl);
+    expect(m.reason).toBeNull();
+    expect(m.dots.map((d) => d.seconds)).toEqual([4, 7, 12, 20]);
+    expect(m.dots[0].x).toBeLessThan(m.dots[1].x);
+    expect(m.dots[1].y).toBe(m.box.height - m.box.bottom);
+    expect(m.dots[0].y).toBeGreaterThan(m.dots[2].y);
+    expect(m.dots[3].lost).toBe(true);
+    expect(m.dots[3].y).toBe(m.box.top);
+    expect(m.dots[0].title).toBe('Turn at 2 s: back on the bot after 100 ms');
+    expect(m.median?.label).toBe('median 100 ms');
+    expect(m.note).toBe(
+      'Back on the bot a median 100 ms after a turn. Back within 200 ms after 50% of the 4 turns. ' +
+        '1 not back before the next turn.',
+    );
+  });
+
+  it('says why there is no turns chart', () => {
+    const reason = (motion: Motion) =>
+      turnsBack({ summary: { motion } } as unknown as TrackReport, timeline([])).reason;
+    expect(reason({ camera: 1, reason: 'too little tracking' } as Motion)).toBe(
+      'Not measured: too little tracking.',
+    );
+    expect(reason({ camera: 1 } as Motion)).toContain('review it again');
+    expect(reason({ camera: 1, turns_back: [] } as Motion)).toContain('did not change direction');
   });
 });

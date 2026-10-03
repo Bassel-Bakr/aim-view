@@ -1,5 +1,5 @@
 import { TrackReport, Tracks } from '../../api';
-import { formatDegrees, formatPercent } from '../../format';
+import { formatDegrees, formatMs, formatPercent, formatSeconds } from '../../format';
 import { median } from '../median';
 import {
   AxisTick,
@@ -75,9 +75,42 @@ export interface AroundModel {
   reason: string | null;
 }
 
+/**
+ * A turn of the bot as a dot: where it starts in the video, its place, whether the crosshair was not back on the bot
+ * before the next turn or the run's end (drawn at the top), and what it says on hover.
+ */
+export interface TurnDot {
+  seconds: number;
+  x: number;
+  y: number;
+  lost: boolean;
+  title: string;
+}
+
+/**
+ * How long the crosshair took to get back on the bot after each of its turns, over the run, with the median and a
+ * line that sums it up. reason: why there is no chart.
+ */
+export interface TurnsBackModel {
+  box: ChartBox;
+  dots: TurnDot[];
+  xTicks: AxisTick[];
+  yTicks: AxisTick[];
+  median: AxisTick | null;
+  note: string;
+  reason: string | null;
+}
+
+/** A turn the crosshair was back on the bot within this many seconds counts as a quick one. */
+export const QUICK_BACK = 0.2;
+/** The turns chart's height reaches at least this many seconds. */
+const TURNS_TOP_MIN = 0.5;
+
 /** The map's cells across its height. */
 const MAP_ROWS = 24;
 const OLD_REVIEW = 'The review of this run is older than this map: review it again to see it.';
+const OLD_REVIEW_CHART =
+  'The review of this run is older than this chart: review it again to see it.';
 
 /** The length of a stretch, in seconds; a last, shorter one is shown when it holds this much of the run. */
 export const WINDOW = 10;
@@ -259,6 +292,71 @@ export function aroundMap(report: TrackReport): AroundModel {
     radius: r * scale,
     usual: usual == null ? null : { x: center.x + usual * scale, y: center.y },
     xTicks,
+    reason: null,
+  };
+}
+
+/**
+ * How long the crosshair took to get back on the bot after each of its direction changes (the motion's turns_back),
+ * at its time in the run: 0 when it stayed on, at the top when it was not back before the next turn or the run's end.
+ */
+export function turnsBack(report: TrackReport, tl: Timeline): TurnsBackModel {
+  const box = BOX;
+  const motion = report.summary.motion;
+  const turns = motion?.turns_back;
+  const empty = (reason: string): TurnsBackModel => ({
+    box,
+    dots: [],
+    xTicks: [],
+    yTicks: [],
+    median: null,
+    note: '',
+    reason,
+  });
+  if (motion?.reason) return empty(`Not measured: ${motion.reason}.`);
+  if (!turns) return empty(OLD_REVIEW_CHART);
+  if (!turns.length) return empty('The bot did not change direction while you tracked it.');
+  const backs = turns.flatMap((t) => (t.back == null ? [] : [t.back]));
+  const sorted = [...backs].sort((a, b) => a - b);
+  const top = Math.max(
+    TURNS_TOP_MIN,
+    sorted.length ? sorted[Math.floor(0.98 * (sorted.length - 1))] : 0,
+  );
+  const runSeconds = tl.n / tl.fps;
+  const x = (seconds: number) =>
+    box.left + (plotWidth(box) * seconds) / Math.max(WINDOW, runSeconds);
+  const y = (seconds: number) => plotBottom(box) - (plotHeight(box) * Math.min(seconds, top)) / top;
+  const dots = turns.map((t): TurnDot => {
+    const at = (t.frame - tl.start) / tl.fps;
+    const when = `Turn at ${Math.round(at)} s`;
+    return {
+      seconds: t.frame / tl.fps,
+      x: x(at),
+      y: t.back == null ? box.top : y(t.back),
+      lost: t.back == null,
+      title:
+        t.back == null
+          ? `${when}: not back on the bot before the next turn`
+          : t.back === 0
+            ? `${when}: you stayed on the bot`
+            : `${when}: back on the bot after ${formatSeconds(t.back)}`,
+    };
+  });
+  const mid = median(backs);
+  const quick = backs.filter((b) => b <= QUICK_BACK + 1e-9).length / turns.length;
+  const lost = turns.length - backs.length;
+  const parts = [
+    mid == null ? null : `Back on the bot a median ${formatSeconds(mid)} after a turn.`,
+    `Back within ${formatMs(QUICK_BACK)} after ${formatPercent(quick)} of the ${turns.length} turns.`,
+    lost ? `${lost} not back before the next turn.` : null,
+  ];
+  return {
+    box,
+    dots,
+    xTicks: ticks(Math.max(WINDOW, runSeconds), x, (s) => `${Math.round(s)} s`),
+    yTicks: ticks(top, y, (s) => formatMs(s)),
+    median: mid == null ? null : { at: y(mid), label: `median ${formatSeconds(mid)}` },
+    note: parts.filter((p) => p != null).join(' '),
     reason: null,
   };
 }

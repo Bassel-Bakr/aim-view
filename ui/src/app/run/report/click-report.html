@@ -13,7 +13,7 @@
     @for (s of stats(); track s.label) {
       <div class="card">
         <span class="card-label">{{ s.label }}</span>
-        <span class="card-value" [title]="s.value">{{ s.value }}</span>
+        <span class="card-value" [title]="s.title ?? s.value">{{ s.value }}</span>
         <span class="card-detail">{{ s.detail }}</span>
       </div>
     }
@@ -24,6 +24,7 @@
 <section aria-label="The run at a glance">
   <h3>The run at a glance</h3>
   <app-run-charts [report]="report()" />
+  <app-flick-profile [report]="report()" />
 </section>
 
 <div class="split">
@@ -34,11 +35,11 @@
         <tr>
           <th>Distance</th>
           <th>Flicks</th>
-          <th>Median kill</th>
+          <th>Median TTK</th>
           <th>Reaction</th>
-          <th>Stopped short</th>
-          <th>Went past</th>
-          <th>Still</th>
+          <th>Underflicks</th>
+          <th>Overflicks</th>
+          <th>Confirmation</th>
         </tr>
       </thead>
       <tbody>
@@ -63,13 +64,13 @@
         <tr>
           <th>Toward</th>
           <th>Flicks</th>
-          <th>Median kill</th>
+          <th>Median TTK</th>
           <th>Distance</th>
           <th title="Median time beyond what the distance predicts (Fitts' law fitted to the run)">
             For its distance
           </th>
-          <th>Stopped short</th>
-          <th>Went past</th>
+          <th>Underflicks</th>
+          <th>Overflicks</th>
         </tr>
       </thead>
       <tbody>

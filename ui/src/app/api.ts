@@ -65,11 +65,29 @@ export interface ModelList {
 /** A scenario's kind, from the game's tags (review.scenario_kinds). */
 export type Kind = 'static' | 'dynamic' | 'tracking' | 'switching';
 
-/** What a scenario's file says about its runs: its kind, time limit (seconds) and targets alive at once. */
+/**
+ * What a scenario's file says about its runs: its kind, time limit (seconds), targets alive at once, and the ammo rules
+ * of the player's weapon (null: its magazine never runs out; missing: read before the core gave them).
+ */
 export interface ScenarioInfo {
   kind: Kind;
   limit: number | null;
   targets: number | null;
+  reload?: AmmoRules | null;
+}
+
+/**
+ * The ammo rules of a weapon whose magazine can run out (src/scenario.rs: `AmmoRules`): the magazine's size, the ammo
+ * a shot uses, the ammo a kill puts back, the reload's time from empty and from part-used (seconds), and the points a
+ * reload takes off.
+ */
+export interface AmmoRules {
+  magazine: number;
+  perShot: number;
+  onKill: number;
+  fromEmpty: number;
+  fromPartial: number;
+  scoreLoss: number;
 }
 
 /** A recording in the list (/api/vods). kind is null for a scenario the game no longer has. */
@@ -149,6 +167,39 @@ export interface Flick {
   off: number;
   /** Where the kill's time went, as KillParts; null when one of its steps was not found. */
   parts: KillParts | null;
+  /** The camera's speed through the main flick (absent without one, and from older cores). */
+  speed?: SpeedCurve;
+  /**
+   * The reloads an empty magazine forced in this kill, and their time in seconds (absent when the scenario's magazine
+   * never runs out, or is not known).
+   */
+  reloads?: number;
+  reload_time?: number;
+}
+
+/**
+ * The camera's speed through a main flick (review.measure SpeedCurve), in °/s: one value a frame from the flick's start,
+ * each over 3 frames, and on past its end for a quarter of its length. end: the index of the flick's last frame.
+ */
+export interface SpeedCurve {
+  v: number[];
+  end: number;
+}
+
+/**
+ * The flick speed profile (summary.flick_profile): each flick's camera speed as a share of its own top speed, against
+ * its time as a share of the flick, at points step apart from 0 (past 1: after the flick's end), averaged over n
+ * flicks (mean), with the 25th and 75th percentiles. peak_at: when the top speed comes, a share of the flick; braking:
+ * how much of the flick the braking takes, from the last frame at 90% of the top speed to the first under 15%.
+ */
+export interface FlickProfile {
+  n: number;
+  step: number;
+  mean: number[];
+  p25: number[];
+  p75: number[];
+  peak_at: number;
+  braking: number;
 }
 
 /** A kill's time in its five steps, in seconds: react, main flick, onto the target, settle, still on the target. */
@@ -214,7 +265,21 @@ export interface ClickSummary {
   by_direction: DirectionBand[];
   /** What would raise the score, biggest first (absent from older cores' reports). */
   what_if?: ClickWhatIf[];
+  /** The camera's speed through the flicks, averaged (absent from older cores' reports, null under 3 flicks). */
+  flick_profile?: FlickProfile | null;
+  /** The reloads an empty magazine forced over the run (absent when the scenario's magazine never runs out). */
+  reloads?: Reloads;
   info: ReportInfo;
+}
+
+/**
+ * The reloads an empty magazine forced over a clicking run (src/reload.rs): how many, their time in seconds, and the
+ * points they took off (null: the scenario takes none). Reloads the player chose don't show in the stats.
+ */
+export interface Reloads {
+  count: number;
+  seconds: number;
+  score_lost: number | null;
 }
 
 /** The part of a clicking run a what-if line is about. */
@@ -245,6 +310,15 @@ export interface MotionBand {
 export type AroundPoint = [along: number, across: number, radius: number];
 
 /**
+ * One of the bot's direction changes (the core's track_motion): its frame, and the seconds until the crosshair was on
+ * the bot again (0: it stayed on; null: not back before the next change or the run's end).
+ */
+export interface TurnBack {
+  frame: number;
+  back: number | null;
+}
+
+/**
  * How the crosshair followed a moving bot (review.track_motion), from the camera's turn read in the video. reason:
  * why it was not measured. Distances in degrees; lag negative behind the bot.
  */
@@ -272,6 +346,8 @@ export interface Motion {
   by_direction?: MotionBand[];
   /** Each frame of the motion measured: where the crosshair sat around the bot. */
   around?: AroundPoint[];
+  /** Each direction change of the bot, and how long you took to get back on it. */
+  turns_back?: TurnBack[];
 }
 
 /** How much the accuracy would rise if one thing changed (review.what_if). gain: a share. */

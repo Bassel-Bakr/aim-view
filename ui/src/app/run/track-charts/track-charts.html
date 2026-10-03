@@ -213,4 +213,69 @@
       </p>
     }
   </figure>
+
+  @let tb = turns();
+  <figure class="chart">
+    <figcaption class="chart-title">Back on the bot after its turns</figcaption>
+    @if (tb.reason) {
+      <p class="chart-note">{{ tb.reason }}</p>
+    } @else {
+      <svg
+        class="chart-svg"
+        role="img"
+        aria-label="How long you took to get back on the bot after each of its direction changes"
+        [attr.viewBox]="'0 0 ' + tb.box.width + ' ' + tb.box.height"
+      >
+        @for (t of tb.yTicks; track t.label) {
+          <line
+            class="grid"
+            [attr.x1]="tb.box.left"
+            [attr.x2]="tb.box.width - tb.box.right"
+            [attr.y1]="t.at"
+            [attr.y2]="t.at"
+          />
+          <text class="label" text-anchor="end" [attr.x]="tb.box.left - 6" [attr.y]="t.at + 4">
+            {{ t.label }}
+          </text>
+        }
+        @for (t of tb.xTicks; track t.label) {
+          <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="tb.box.height - 6">
+            {{ t.label }}
+          </text>
+        }
+        @if (tb.median; as m) {
+          <line
+            class="median"
+            [attr.x1]="tb.box.left"
+            [attr.x2]="tb.box.width - tb.box.right"
+            [attr.y1]="m.at"
+            [attr.y2]="m.at"
+          />
+          <text
+            class="median-label"
+            text-anchor="end"
+            [attr.x]="tb.box.width - tb.box.right"
+            [attr.y]="m.at - 4"
+          >
+            {{ m.label }}
+          </text>
+        }
+        @for (d of tb.dots; track d.seconds) {
+          <circle
+            class="dot"
+            [attr.data-lost]="d.lost ? '' : null"
+            [attr.cx]="d.x"
+            [attr.cy]="d.y"
+            (click)="goTo(d.seconds)"
+          >
+            <title>{{ d.title }}</title>
+          </circle>
+        }
+      </svg>
+      <p class="chart-note">
+        {{ tb.note }} Each dot is a turn of the bot; the ringed ones at the top, turns you were not
+        back from before the next. Click one to go there in the video.
+      </p>
+    }
+  </figure>
 </div>

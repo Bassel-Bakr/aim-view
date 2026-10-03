@@ -1,3 +1,4 @@
+@use 'themes/report' as r;
 @reference '../../../tailwind.css';
 
 @layer components {
@@ -19,6 +20,11 @@
 
   .flick-list-table {
     @apply w-full;
+  }
+
+  th,
+  td {
+    padding: r.$flick-list-cell-padding;
   }
 
   thead th {

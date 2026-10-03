@@ -4,21 +4,30 @@
     <thead>
       <tr>
         <th>Kill</th>
-        <th>Distance</th>
-        <th>Toward</th>
-        <th>Kill time</th>
-        <th>Main flick ended</th>
-        <th>Still</th>
-        <th>Peak</th>
-        <th>Click speed</th>
+        <th title="Distance to the target, and the way it was">Dist</th>
+        <th title="TTK: time to kill">TTK</th>
+        <th
+          title="Flick landed: on target, an underflick (the degrees still to go) or an overflick (the degrees past the far edge)"
+        >
+          Landed
+        </th>
+        <th title="Confirmation: still on the target before the click">Conf</th>
+        <th title="Flick speed: the highest speed in the flick">Speed</th>
+        <th title="Click on the move: the crosshair's speed at the click">On move</th>
         <th>Shots</th>
-        <th title="Time the pick of this target cost against the fastest pick">Path cost</th>
-        <th>Reaction</th>
-        <th>Main flick</th>
-        <th title="From reaching the target until the crosshair was still">Settle</th>
-        <th title="How far the crosshair was from the target's center at the click">Off center</th>
-        <th title="Separate movements after the main flick">Corrections</th>
-        <th title="The target appeared after the flick began">New target</th>
+        <th title="Pathing: what picking this target cost against the fastest pick">Pathing</th>
+        <th title="Reaction">React</th>
+        <th title="Flick: the main movement's time">Flick</th>
+        <th title="Micro: from the flick's end onto the target, then settling (each row splits it)">
+          Micro
+        </th>
+        <th
+          title="Click off center: how far the crosshair was from the target's center at the click"
+        >
+          Off ctr
+        </th>
+        <th title="Micros: separate movements after the flick">Micros</th>
+        <th title="Spawn: the target appeared after the flick began">Spawn</th>
       </tr>
     </thead>
     <tbody>
@@ -40,20 +49,19 @@
             </button>
           </td>
           <td>{{ r.distance }}</td>
-          <td>{{ r.toward }}</td>
-          <td>{{ r.killTime }}</td>
-          <td>{{ r.ended }}</td>
-          <td>{{ r.still }}</td>
-          <td>{{ r.peak }}</td>
-          <td>{{ r.clickSpeed }}</td>
+          <td>{{ r.ttk }}</td>
+          <td>{{ r.landed }}</td>
+          <td>{{ r.confirmation }}</td>
+          <td>{{ r.flickSpeed }}</td>
+          <td>{{ r.onTheMove }}</td>
           <td [class.missed]="r.missed">{{ r.shots }}</td>
-          <td>{{ r.pathCost }}</td>
+          <td>{{ r.pathing }}</td>
           <td>{{ r.reaction }}</td>
-          <td>{{ r.mainFlick }}</td>
-          <td>{{ r.settle }}</td>
+          <td>{{ r.flickTime }}</td>
+          <td [title]="r.microSplit">{{ r.micro }}</td>
           <td>{{ r.offCenter }}</td>
-          <td>{{ r.corrections }}</td>
-          <td>{{ r.newTarget }}</td>
+          <td>{{ r.micros }}</td>
+          <td>{{ r.spawn }}</td>
         </tr>
       }
     </tbody>

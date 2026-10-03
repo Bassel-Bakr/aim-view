@@ -17,6 +17,7 @@ import { scoreChange } from './score-change';
 import { KillLanes } from './kill-lanes/kill-lanes';
 import { MousePanel } from './mouse-panel/mouse-panel';
 import { Player } from './player/player';
+import { ProgressChart } from './progress-chart/progress-chart';
 import { ClickReport } from './report/click-report';
 import { HeadlineTile, runHeadline } from './report/click-stats';
 import { HEADLINE_TILES, trackStats } from './report/track-stats';
@@ -43,6 +44,7 @@ import { Timeline } from './timeline/timeline';
     ClickReport,
     ClickSide,
     Headline,
+    ProgressChart,
     KillLanes,
     RunWindow,
     FaintCutoffPanel,

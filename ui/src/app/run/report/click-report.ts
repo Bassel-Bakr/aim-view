@@ -3,6 +3,7 @@ import { ClickReport as ClickReportData } from '../../api';
 import { extraShots, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
+import { FlickProfileChart } from '../flick-profile/flick-profile';
 import { RunCharts } from '../run-charts/run-charts';
 import { WhatIfSection } from '../what-if-section/what-if-section';
 import {
@@ -21,7 +22,7 @@ import {
  * checks are beside the video (click-side).
  */
 @Component({
-  imports: [RunCharts, WhatIfSection],
+  imports: [FlickProfileChart, RunCharts, WhatIfSection],
   selector: 'app-click-report',
   templateUrl: './click-report.html',
   styleUrl: './click-report.scss',

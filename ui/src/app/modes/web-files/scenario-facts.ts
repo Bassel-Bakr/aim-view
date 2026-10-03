@@ -132,7 +132,11 @@ export class ScenarioFacts {
         const file = await s.file();
         const hit = cache[s.path];
         const facts =
-          hit && hit.size === file.size && hit.modified === file.lastModified
+          // facts kept before the core read the ammo rules are read again
+          hit &&
+          hit.size === file.size &&
+          hit.modified === file.lastModified &&
+          'reload' in hit.facts
             ? hit.facts
             : await this.core.scenarioFacts(await header(file));
         next[s.path] = { size: file.size, modified: file.lastModified, facts };

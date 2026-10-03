@@ -51,6 +51,22 @@
     stroke-width: r.$chart-line-width;
   }
 
+  .dot {
+    r: r.$chart-dot;
+    fill: t.$series-1;
+    cursor: pointer;
+
+    &[data-lost] {
+      fill: transparent;
+      stroke: t.$warning;
+      stroke-width: r.$chart-line-width;
+    }
+
+    &:hover {
+      r: r.$chart-dot-selected;
+    }
+  }
+
   .median-label {
     fill: t.$text-secondary;
     font-size: t.$font-size-xs;

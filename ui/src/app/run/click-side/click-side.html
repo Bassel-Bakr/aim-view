@@ -35,7 +35,7 @@
     }
     <div class="legend">
       @for (item of b.legend; track $index) {
-        <span>
+        <span [title]="item.title">
           <i class="swatch" [style.background]="item.color"></i>
           {{ item.text }}
           @if (item.average && !item.averageHidden) {
@@ -48,10 +48,10 @@
 }
 
 @if (distance().length) {
-  <section class="panel" aria-label="Kill time by distance">
+  <section class="panel" aria-label="TTK by distance">
     <div class="panel-head">
-      <h3 class="panel-title">Kill time by distance</h3>
-      <span class="panel-hint">median · stopped short</span>
+      <h3 class="panel-title">TTK by distance</h3>
+      <span class="panel-hint">median · underflicked</span>
     </div>
     @for (d of distance(); track d.band) {
       <div class="distance">

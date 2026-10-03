@@ -143,6 +143,12 @@
     <app-click-side class="side" [report]="cr" />
   }
 </div>
+<!-- The scenario's past scores load when the page is scrolled to them -->
+@defer (on viewport) {
+  <app-progress-chart [recording]="recording()" />
+} @placeholder {
+  <div></div>
+}
 <!-- The report and the mouse panel load on their own, after the page: the report once there is one -->
 @defer (when report()) {
   @if (clickReport(); as cr) {

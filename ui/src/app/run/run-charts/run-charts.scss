@@ -90,4 +90,86 @@
     stroke: t.$warning;
     stroke-width: r.$chart-line-width;
   }
+
+  .legend {
+    @apply flex flex-wrap gap-x-5 gap-y-1;
+  }
+
+  .legend-item {
+    @apply inline-flex items-center gap-2;
+  }
+
+  // the landing histogram: the target's width, and each flick a block colored by where it stopped
+  .target-band {
+    fill: t.$good-soft;
+  }
+
+  .cell {
+    fill: t.$on-target;
+    cursor: pointer;
+
+    &[data-landing='under'] {
+      fill: t.$series-1;
+    }
+
+    &[data-landing='over'] {
+      fill: t.$series-2;
+    }
+
+    &:hover {
+      opacity: r.$chart-hover-opacity;
+    }
+
+    &[data-selected] {
+      stroke: t.$text-primary;
+      stroke-width: r.$chart-line-width;
+    }
+  }
+
+  // the direction wheel: a wedge for each direction, the run's median as a ring
+  .wedge {
+    fill: t.$series-quiet;
+
+    &[data-mark='best'] {
+      fill: t.$good-text;
+    }
+
+    &[data-mark='weakest'] {
+      fill: t.$attention;
+    }
+
+    &[data-selected] {
+      stroke: t.$warning;
+      stroke-width: r.$chart-line-width;
+    }
+  }
+
+  .ring {
+    fill: none;
+    stroke: t.$text-primary;
+    stroke-dasharray: r.$chart-dash;
+  }
+
+  // the pace chart: the best 10 s, its point, and each kill as a tick along the bottom
+  .best-window {
+    fill: t.$accent-soft;
+  }
+
+  .peak {
+    r: r.$chart-dot-selected;
+    fill: t.$accent;
+  }
+
+  .kill-tick {
+    fill: t.$axis;
+    cursor: pointer;
+
+    &:hover {
+      fill: t.$text-muted;
+    }
+
+    &[data-selected] {
+      fill: t.$warning;
+    }
+  }
 }

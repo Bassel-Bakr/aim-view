@@ -238,4 +238,336 @@
       in yellow.
     </p>
   </figure>
+
+  @let ks = shares();
+  <figure class="chart">
+    <figcaption class="chart-title">Where each kill's time went</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="Each kill's time as shares of its parts, in the order of the run"
+      [attr.viewBox]="'0 0 ' + ks.box.width + ' ' + ks.box.height"
+    >
+      @for (t of ks.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="ks.box.left"
+          [attr.x2]="ks.box.width - ks.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="ks.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of ks.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="ks.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @for (b of ks.bars; track b.flick.n) {
+        <g
+          class="bar"
+          [attr.data-selected]="b.flick === focus.selected() ? '' : null"
+          (click)="focus.play(b.flick)"
+        >
+          <title>{{ b.title }}</title>
+          @for (s of b.segments; track $index) {
+            <rect
+              [attr.x]="b.x"
+              [attr.y]="s.y"
+              [attr.width]="b.width"
+              [attr.height]="s.height"
+              [style.fill]="s.color"
+            />
+          }
+          <rect
+            class="mark"
+            [attr.x]="b.x - 1"
+            [attr.y]="b.top - 1"
+            [attr.width]="b.width + 2"
+            [attr.height]="ks.box.height - ks.box.bottom - b.top + 2"
+          />
+        </g>
+      }
+    </svg>
+    <p class="chart-note legend">
+      @for (s of ks.legend; track s.label) {
+        <span class="legend-item">
+          <span class="color-swatch" [style.background]="s.color"></span>
+          {{ s.label }} {{ s.share }}
+        </span>
+      }
+    </p>
+    <p class="chart-note">
+      Each kill's time as shares of its parts, in the order of the run; beside each name, its share
+      of the whole run. Click a kill to play it.
+    </p>
+  </figure>
+
+  @let ld = landing();
+  <figure class="chart">
+    <figcaption class="chart-title">Where flicks land</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="Where each flick's main movement stopped, from the target's center along the flick"
+      [attr.viewBox]="'0 0 ' + ld.box.width + ' ' + ld.box.height"
+    >
+      <rect
+        class="target-band"
+        [attr.x]="ld.target.from"
+        [attr.y]="ld.box.top"
+        [attr.width]="ld.target.to - ld.target.from"
+        [attr.height]="ld.box.height - ld.box.top - ld.box.bottom"
+      />
+      @for (t of ld.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="ld.box.left"
+          [attr.x2]="ld.box.width - ld.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="ld.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of ld.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="ld.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      <line
+        class="zero"
+        [attr.x1]="ld.zero"
+        [attr.x2]="ld.zero"
+        [attr.y1]="ld.box.top"
+        [attr.y2]="ld.box.height - ld.box.bottom"
+      />
+      @for (c of ld.cells; track c.flick.n) {
+        <rect
+          class="cell"
+          [attr.data-landing]="c.landing"
+          [attr.data-selected]="c.flick === focus.selected() ? '' : null"
+          [attr.x]="c.x"
+          [attr.y]="c.y"
+          [attr.width]="c.width"
+          [attr.height]="c.height"
+          (click)="focus.play(c.flick)"
+        >
+          <title>{{ c.title }}</title>
+        </rect>
+      }
+      @if (ld.median; as m) {
+        <line
+          class="median"
+          [attr.x1]="m.at"
+          [attr.x2]="m.at"
+          [attr.y1]="ld.box.top"
+          [attr.y2]="ld.box.height - ld.box.bottom"
+        />
+        <text
+          class="median-label"
+          text-anchor="start"
+          [attr.x]="m.at + 4"
+          [attr.y]="ld.box.top + 24"
+        >
+          {{ m.label }}
+        </text>
+      }
+      <text class="label" text-anchor="start" [attr.x]="ld.box.left + 4" [attr.y]="ld.box.top + 10">
+        {{ words.underflick }}
+      </text>
+      <text
+        class="label"
+        text-anchor="end"
+        [attr.x]="ld.box.width - ld.box.right - 4"
+        [attr.y]="ld.box.top + 10"
+      >
+        {{ words.overflick }}
+      </text>
+    </svg>
+    <p class="chart-note">
+      Where each flick's main movement stopped, in degrees from the target's center, every flick
+      turned to come from the left. The band is the target: left of it an underflick, right of it an
+      overflick. Click a block to play its kill.
+    </p>
+  </figure>
+
+  @let ftm = flickTime();
+  <figure class="chart">
+    <figcaption class="chart-title">Flick time and distance</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="Each flick's time against its distance, with Fitts' law fitted to the run's flicks"
+      [attr.viewBox]="'0 0 ' + ftm.box.width + ' ' + ftm.box.height"
+    >
+      @for (t of ftm.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="ftm.box.left"
+          [attr.x2]="ftm.box.width - ftm.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="ftm.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of ftm.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="ftm.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @for (d of ftm.dots; track d.flick.n) {
+        <circle
+          class="dot"
+          [attr.data-selected]="d.flick === focus.selected() ? '' : null"
+          [attr.cx]="d.x"
+          [attr.cy]="d.y"
+          (click)="focus.play(d.flick)"
+        >
+          <title>{{ d.title }}</title>
+        </circle>
+      }
+      <path class="curve" [attr.d]="ftm.curve" />
+    </svg>
+    <p class="chart-note">
+      Each flick's time in ms against its distance at the start, and the line Fitts' law fitted to
+      this run's flicks gives: a dot far above the line is a slow flick for its distance.
+    </p>
+    @if (ftm.fit; as f) {
+      <p class="chart-note">The line: {{ f }}, W the target's width.</p>
+    }
+  </figure>
+
+  @let dw = wheel();
+  <figure class="chart">
+    <figcaption class="chart-title">{{ words.flickSpeed }} by direction</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="Flick speed toward each of eight directions, against the run's median for the distance"
+      [attr.viewBox]="'0 0 ' + dw.box.width + ' ' + dw.box.height"
+    >
+      <circle class="target" [attr.cx]="dw.center.x" [attr.cy]="dw.center.y" [attr.r]="dw.outer" />
+      @for (w of dw.wedges; track w.name) {
+        @if (w.path) {
+          <path
+            class="wedge"
+            [attr.data-mark]="w.mark"
+            [attr.data-selected]="$index === selectedSector() ? '' : null"
+            [attr.d]="w.path"
+          >
+            <title>{{ w.title }}</title>
+          </path>
+        }
+        <text class="label" text-anchor="middle" [attr.x]="w.label.x" [attr.y]="w.label.y + 4">
+          {{ w.arrow }}
+          <title>{{ w.title }}</title>
+        </text>
+      }
+      <circle class="ring" [attr.cx]="dw.center.x" [attr.cy]="dw.center.y" [attr.r]="dw.ring" />
+      @if (dw.best; as b) {
+        <text class="label" [attr.x]="dw.box.left - 34" [attr.y]="dw.box.top + 12">Best</text>
+        <text class="median-label" [attr.x]="dw.box.left - 34" [attr.y]="dw.box.top + 28">
+          {{ b.arrow }} {{ b.name }}, {{ b.value }}
+        </text>
+      }
+      @if (dw.weakest; as w) {
+        <text class="label" [attr.x]="dw.box.left - 34" [attr.y]="dw.box.top + 52">Weakest</text>
+        <text class="median-label" [attr.x]="dw.box.left - 34" [attr.y]="dw.box.top + 68">
+          {{ w.arrow }} {{ w.name }}, {{ w.value }}
+        </text>
+      }
+    </svg>
+    <p class="chart-note">
+      Each direction's median flick speed (the way covered over the flick's time), each flick
+      against the median of its distance group, as the what-if line compares directions. The dashed
+      ring is the run's median (1×); the best and weakest directions are colored and named on the
+      left. A direction needs 3 flicks and 5% of them.
+    </p>
+  </figure>
+
+  @let pc = pace();
+  <figure class="chart">
+    <figcaption class="chart-title">Pace through the run</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="The kills in each 10 seconds of the run, with its best 10 seconds"
+      [attr.viewBox]="'0 0 ' + pc.box.width + ' ' + pc.box.height"
+    >
+      @if (pc.best; as b) {
+        <rect
+          class="best-window"
+          [attr.x]="b.x"
+          [attr.y]="pc.box.top"
+          [attr.width]="b.width"
+          [attr.height]="pc.box.height - pc.box.top - pc.box.bottom"
+        />
+      }
+      @for (t of pc.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="pc.box.left"
+          [attr.x2]="pc.box.width - pc.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="pc.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of pc.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="pc.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @if (pc.average; as a) {
+        <line
+          class="median"
+          [attr.x1]="pc.box.left"
+          [attr.x2]="pc.box.width - pc.box.right"
+          [attr.y1]="a.at"
+          [attr.y2]="a.at"
+        />
+        <text
+          class="median-label"
+          text-anchor="end"
+          [attr.x]="pc.box.width - pc.box.right"
+          [attr.y]="a.at - 4"
+        >
+          {{ a.label }}
+        </text>
+      }
+      <path class="curve" [attr.d]="pc.line" />
+      @if (pc.best; as b) {
+        <circle class="peak" [attr.cx]="b.peak.x" [attr.cy]="b.peak.y" />
+        <text class="median-label" text-anchor="middle" [attr.x]="b.peak.x" [attr.y]="b.peak.y - 8">
+          {{ b.label }}
+        </text>
+      }
+      @for (k of pc.kills; track k.flick.n) {
+        <rect
+          class="kill-tick"
+          [attr.data-selected]="k.flick === focus.selected() ? '' : null"
+          [attr.x]="k.x - 1.5"
+          [attr.y]="pc.box.height - pc.box.bottom - 8"
+          width="3"
+          height="8"
+          (click)="focus.play(k.flick)"
+        >
+          <title>Kill {{ k.flick.n }}</title>
+        </rect>
+      }
+    </svg>
+    <p class="chart-note">
+      The kills in each 10 s of the run, by seconds from its first flick; the shaded stretch is the
+      best 10 s, which the what-if line "Keep up your best 10 seconds all run" uses. The dashed line
+      is the run's own rate. The ticks along the bottom are the kills: click one to play it.
+    </p>
+  </figure>
 </div>

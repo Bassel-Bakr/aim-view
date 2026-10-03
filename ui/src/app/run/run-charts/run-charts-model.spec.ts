@@ -1,5 +1,19 @@
 import { ClickReport, Flick, PathPoint } from '../../api';
-import { clickGroup, fittsChart, flickSpeeds, killTimes, niceStep } from './run-charts-model';
+import {
+  BOX,
+  clickGroup,
+  directionWheel,
+  fitFlickTimes,
+  fittsChart,
+  flickSpeeds,
+  flickTimes,
+  killShares,
+  killTimes,
+  landings,
+  niceStep,
+  pace,
+  sector,
+} from './run-charts-model';
 
 const flick = (n: number, more: Partial<Flick>): Flick =>
   ({
@@ -81,5 +95,116 @@ describe('run charts', () => {
     expect(m.lines).toHaveLength(1);
     expect(m.median.startsWith('M')).toBe(true);
     expect(m.zero).toBeGreaterThan(m.box.left);
+  });
+
+  it("splits each kill's time into reaction, flick, micro and confirmation shares", () => {
+    // parts [0.1, 0.2, 0.1, 0.05, 0.05]: reaction 20%, flick 40%, micro (0.1 + 0.05) 30%, confirmation 10%
+    const m = killShares(report([flick(1, {}), flick(2, { parts: null }), flick(3, {})]));
+    expect(m.bars.map((b) => b.flick.n)).toEqual([1, 3]);
+    const plot = BOX.height - BOX.top - BOX.bottom;
+    const heights = m.bars[0].segments.map((s) => s.height / plot);
+    [0.2, 0.4, 0.3, 0.1].forEach((share, i) => expect(heights[i]).toBeCloseTo(share, 9));
+    // the last part reaches the top, whatever the kill's time
+    expect(m.bars[0].segments[3].y).toBeCloseTo(BOX.top, 9);
+    expect(m.legend.map((l) => `${l.label} ${l.share}`)).toEqual([
+      'Reaction 20%',
+      'Flick 40%',
+      'Micro 30%',
+      'Confirmation 10%',
+    ]);
+    expect(m.bars[0].title).toContain('Micro 30% (150 ms)');
+  });
+
+  it('puts underflicks left of the center, overflicks right, stacked in their columns', () => {
+    // radius 0.5: 0.95 and 0.93 degrees short are underflicks, 0.75 past an overflick, the others on the target
+    const m = landings(
+      report([
+        flick(1, { end_left: 0.95 }),
+        flick(2, { end_left: 0.15 }),
+        flick(3, { end_left: -0.75 }),
+        flick(4, { end_left: -0.25 }),
+        flick(5, { end_left: 0.93 }),
+      ]),
+    );
+    expect(m.cells.map((c) => c.landing)).toEqual(['under', 'on', 'over', 'on', 'under']);
+    expect(m.cells[0].x).toBeLessThan(m.target.from);
+    expect(m.cells[2].x).toBeGreaterThan(m.target.to);
+    expect(m.target.from).toBeLessThan(m.zero);
+    // the two underflicks share a column, the later one on top
+    expect(m.cells[4].x).toBe(m.cells[0].x);
+    expect(m.cells[4].y).toBeLessThan(m.cells[0].y);
+    // landings -0.95, -0.15, 0.75, 0.25, -0.93: the median is -0.15
+    expect(m.median?.label).toBe('median -0.15°');
+    expect(m.cells[0].title).toBe('Kill 1: Underflick, 0.95° short of the center');
+    expect(m.cells[2].title).toBe('Kill 3: Overflick, 0.75° past the center');
+  });
+
+  it("fits Fitts' law to the flicks' times, not their TTKs", () => {
+    // W = 1 (radius 0.5); distances 1, 3 and 7 give log2(1 + D) = 1, 2, 3, and flick times 0.1 + 0.05 of that
+    const flicks = [
+      flick(1, { D0: 1, flick: 0.15, total: 0.9 }),
+      flick(2, { D0: 3, flick: 0.2, total: 0.4 }),
+      flick(3, { D0: 7, flick: 0.25, total: 0.7 }),
+      flick(4, { D0: 5, flick: null as unknown as number }),
+    ];
+    const fit = fitFlickTimes(flicks, 0.5);
+    expect(fit?.a).toBeCloseTo(0.1, 9);
+    expect(fit?.b).toBeCloseTo(0.05, 9);
+    const m = flickTimes(report(flicks));
+    expect(m.dots).toHaveLength(3);
+    expect(m.fit).toBe('time = 100 ms + 50 ms × log2(1 + D / 1.00°)');
+    expect(m.curve.startsWith('M')).toBe(true);
+    expect(fitFlickTimes(flicks.slice(0, 2), 0.5)).toBeNull();
+    expect(flickTimes(report(flicks.slice(0, 2))).curve).toBe('');
+  });
+
+  it('turns each direction into one of eight, 0 for right', () => {
+    expect(sector(0)).toBe(0);
+    expect(sector(22)).toBe(0);
+    expect(sector(23)).toBe(1);
+    expect(sector(90)).toBe(2);
+    expect(sector(359)).toBe(0);
+    expect(sector(-45)).toBe(7);
+  });
+
+  it('compares each direction against the median speed for the distance, best and weakest marked', () => {
+    // 8 degrees each: right at 80 °/s, up at 40, left at 60; the distance group's median is 60
+    const toward = (dir: number, time: number, from: number) =>
+      [0, 1, 2].map((i) => flick(from + i, { D0: 8, end_left: 0, dir, flick: time }));
+    const m = directionWheel(
+      report([...toward(0, 0.1, 1), ...toward(90, 0.2, 4), ...toward(180, 8 / 60, 7)]),
+    );
+    const [right, , up, , left, , down] = m.wedges;
+    expect(right.speed).toBeCloseTo(4 / 3, 9);
+    expect(up.speed).toBeCloseTo(2 / 3, 9);
+    expect(left.speed).toBeCloseTo(1, 9);
+    expect(right.mark).toBe('best');
+    expect(up.mark).toBe('weakest');
+    expect(left.mark).toBeNull();
+    expect(m.best?.name).toBe('right');
+    expect(down.path).toBe('');
+    expect(down.value).toBe('too few flicks');
+    // the right wedge reaches out to the right, past the ring
+    expect(right.path).toMatch(/^M260,100L/);
+    expect(right.value).toBe('1.33×');
+  });
+
+  it('counts the kills in each 10 s window and marks the best', () => {
+    // a kill every second for 10 s (TTK 1 s), then one every 3 s up to 28 s (TTK 3 s); the first flick starts at 0
+    const kills = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 16, 19, 22, 25, 28];
+    const flicks = kills.map((t, i) => {
+      const total = i < 10 ? 1 : 3;
+      return flick(i + 1, { total, kill_frame: 60 * t, start_frame: 60 * (t - total) });
+    });
+    const m = pace(report(flicks));
+    // the best window is the first: (0, 10] holds 10 kills
+    expect(m.best?.label).toBe('best 10 s: 10 kills');
+    expect(m.best?.x).toBeCloseTo(BOX.left, 9);
+    expect(m.best?.width).toBeCloseTo(((BOX.width - BOX.left - BOX.right) * 10) / 28, 9);
+    // the run's rate: 16 kills from its first flick (0 s) to its last kill (28 s), per 10 s
+    expect(m.average?.label).toBe('run 5.7');
+    // windows from 0, each kill up to 10 s, 13 and 16 (each must end by the last kill, at 28 s)
+    expect(m.line.split('L')).toHaveLength(13);
+    expect(m.kills).toHaveLength(16);
   });
 });

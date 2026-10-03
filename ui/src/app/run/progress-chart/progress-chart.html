@@ -1,0 +1,21 @@
+<div class="chart-head">
+  Your progress on this scenario
+  <span class="key"><i class="color-swatch" data-series="median"></i>{{ legend }}</span>
+  <span class="key"><i class="color-swatch" data-series="best"></i>Personal best</span>
+  <span class="key"><i class="color-swatch" data-series="this"></i>This run</span>
+</div>
+@if (runs.isLoading() && !count()) {
+  <p class="note" role="status">Reading the scenario's stats files…</p>
+} @else if (runs.hasValue() && !count()) {
+  <p class="note">{{ emptyText }}</p>
+}
+<div #box class="box" [hidden]="!count()">
+  <canvas #chart class="canvas" role="img" [attr.aria-label]="model()?.summary"></canvas>
+  <div #tip class="tip" hidden aria-hidden="true"></div>
+</div>
+@if (model(); as m) {
+  <p class="summary">{{ m.summary }}</p>
+}
+@if (picked(); as p) {
+  <p class="note" role="status">{{ p }}</p>
+}

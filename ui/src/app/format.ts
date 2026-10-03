@@ -97,9 +97,9 @@ export const DIRECTION_ARROWS: Record<Direction, string> = {
   'down-right': '↘',
 };
 
-/** Where a flick's main movement stopped, against a target of radius r: short of it, past it, or on it. */
+/** Where a flick landed, against a target of radius r: on target, an underflick (the degrees still to go) or an overflick (past the far edge). */
 export function formatEnded(endLeft: number, r: number): string {
-  if (endLeft > r) return `short, ${endLeft.toFixed(1)}° to go`;
-  if (endLeft < -r) return `past, by ${(-endLeft - r).toFixed(1)}°`;
-  return 'on the target';
+  if (endLeft > r) return `underflick ${endLeft.toFixed(1)}°`;
+  if (endLeft < -r) return `overflick ${(-endLeft - r).toFixed(1)}°`;
+  return 'on target';
 }

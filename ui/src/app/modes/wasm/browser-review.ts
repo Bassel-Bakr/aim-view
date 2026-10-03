@@ -170,6 +170,7 @@ export class BrowserReview implements ReviewEngine {
       run: p.marks,
       tracking: facts?.kind === 'tracking',
       limit: facts?.limit ?? null,
+      reload: facts?.reload ?? null,
       ...found.readings,
       hud: found.hud ?? null,
       faint: p.faint,

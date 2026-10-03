@@ -1,14 +1,111 @@
-import { Flick, KillParts } from '../../api';
+import { ClickSummary, Flick, KillParts } from '../../api';
 import { formatMs } from '../../format';
 
-/** The five steps of a kill, in order, and the series token each one is drawn in. */
-export const PARTS = [
-  { label: 'React', color: 'var(--series-1)' },
-  { label: 'Main flick', color: 'var(--series-2)' },
-  { label: 'Onto the target', color: 'var(--series-3)' },
-  { label: 'Settle', color: 'var(--series-4)' },
-  { label: 'Still on the target', color: 'var(--series-5)' },
+/** A step of a kill: its name and the series token it is drawn in. */
+export interface KillStep {
+  label: string;
+  color: string;
+}
+
+/**
+ * A kill's five measured parts, in order, and the series token each one is drawn in. The micro's two parts (onto the
+ * target, then settling) share its color.
+ */
+export const PARTS: KillStep[] = [
+  { label: 'Reaction', color: 'var(--series-1)' },
+  { label: 'Flick', color: 'var(--series-2)' },
+  { label: 'Micro onto the target', color: 'var(--series-3)' },
+  { label: 'Micro settling', color: 'var(--series-3)' },
+  { label: 'Confirmation', color: 'var(--series-5)' },
 ];
+
+/** The four steps a kill's time is shown in: Reaction, Flick, Micro (onto the target and settling), Confirmation. */
+export const STEPS: KillStep[] = [
+  PARTS[0],
+  PARTS[1],
+  { label: 'Micro', color: 'var(--series-3)' },
+  PARTS[4],
+];
+
+/** The fifth step, in a scenario whose magazine runs out: the time a forced reload overlapped the kill. */
+export const RELOAD: KillStep = { label: 'Reload', color: 'var(--series-4)' };
+
+/** The indexes of the micro, the confirmation and the reload among the steps. */
+const MICRO = 2;
+const CONFIRMATION = 3;
+const RELOAD_STEP = 4;
+
+/** A kill's time in its four shown steps, in seconds. */
+export type KillSteps = [reaction: number, flick: number, micro: number, confirmation: number];
+
+/** A kill's five parts as its four steps: onto the target and settling make the micro. */
+export function killSteps(p: KillParts): KillSteps {
+  return [p[0], p[1], p[2] + p[3], p[4]];
+}
+
+/**
+ * How a kill's forced reload is shown: the reload's time, and what it took from the confirmation and the micro it
+ * overlapped. It comes out of the confirmation first, then the micro, never below zero, so the kill's time stays its
+ * TTK; `shown` is the part that fits.
+ */
+interface ReloadShare {
+  reload: number;
+  shown: number;
+  fromConfirmation: number;
+  fromMicro: number;
+}
+
+function reloadShare(p: KillParts, reload: number): ReloadShare {
+  const s = killSteps(p);
+  const fromConfirmation = Math.min(reload, s[CONFIRMATION]);
+  const fromMicro = Math.min(reload - fromConfirmation, s[MICRO]);
+  return { reload, shown: fromConfirmation + fromMicro, fromConfirmation, fromMicro };
+}
+
+/** The steps shown: the four, and the reload with them when the scenario's magazine runs out (reload not null). */
+function shownSteps(reload: number | null): KillStep[] {
+  return reload == null ? STEPS : [...STEPS, RELOAD];
+}
+
+/** A kill's time in the steps shown, in seconds: the four, or five with the reload taken out of the others. */
+function shownTimes(p: KillParts, reload: number | null): number[] {
+  const s = killSteps(p);
+  if (reload == null) return s;
+  const r = reloadShare(p, reload);
+  return [s[0], s[1], s[MICRO] - r.fromMicro, s[CONFIRMATION] - r.fromConfirmation, r.shown];
+}
+
+/** A kill's micro (onto the target, then settling), in seconds; null when its steps were not found. */
+export function micro(m: Flick): number | null {
+  return m.parts ? m.parts[2] + m.parts[3] : null;
+}
+
+/** The micro's two parts in words: "120 ms onto the target, 80 ms settling". */
+export function microSplit(parts: KillParts): string {
+  return `${formatMs(parts[2])} onto the target, ${formatMs(parts[3])} settling`;
+}
+
+/**
+ * A step's name and time; the micro's adds its two parts: "Micro 200 ms: 120 ms onto the target, 80 ms settling". With
+ * a forced reload, the micro and the confirmation say what the reload took from them, and the reload says where its
+ * time came from.
+ */
+function stepTitle(parts: KillParts, i: number, reload: number | null): string {
+  const title = `${shownSteps(reload)[i].label} ${formatMs(shownTimes(parts, reload)[i])}`;
+  const r = reload == null ? null : reloadShare(parts, reload);
+  const under = (taken: number) => (taken > 0 ? `, less ${formatMs(taken)} under the reload` : '');
+  if (i === MICRO) return `${title}: ${microSplit(parts)}${under(r?.fromMicro ?? 0)}`;
+  if (r && i === CONFIRMATION && r.fromConfirmation > 0)
+    return `${title}: ${formatMs(killSteps(parts)[CONFIRMATION])}${under(r.fromConfirmation)}`;
+  if (r && i === RELOAD_STEP) {
+    const time =
+      r.shown < r.reload
+        ? `${formatMs(r.reload)}, ${formatMs(r.shown)} of it shown`
+        : formatMs(r.shown);
+    return `Reload ${time} (taken from the confirmation and micro it overlapped)`;
+  }
+  return title;
+}
 
 /** A step's share of a bar. text: its name and time, shown inside the bar when there is room. */
 export interface BudgetSegment {
@@ -28,10 +125,11 @@ export interface BudgetBar {
   segments: BudgetSegment[];
 }
 
-/** A step in the legend: its time, and the average kill's beside it. */
+/** A step in the legend: its time, and the average kill's beside it. title: the micro's two parts. */
 export interface BudgetLegendItem {
   color: string;
   text: string;
+  title: string;
   average: string | null;
   averageHidden: boolean;
 }
@@ -48,50 +146,76 @@ const LABEL_SHARE = 0.12;
 
 const sum = (p: KillParts) => p.reduce((a, b) => a + b, 0);
 
+/** A kill's parts and its forced reload's time (null: the scenario's magazine never runs out, no reload step). */
+interface KillTime {
+  parts: KillParts;
+  reload: number | null;
+}
+
 function bar(
-  parts: KillParts,
+  { parts, reload }: KillTime,
   width: number,
   label: string | null,
   thin = false,
   hidden = false,
 ): BudgetBar {
   const total = sum(parts);
+  const steps = shownSteps(reload);
   return {
     label,
     width,
     thin,
     hidden,
-    segments: parts.map((v, i) => ({
-      color: PARTS[i].color,
+    segments: shownTimes(parts, reload).map((v, i) => ({
+      color: steps[i].color,
       grow: total ? v / total : 0,
-      title: `${PARTS[i].label}: ${formatMs(v)}`,
-      text: !thin && total && v / total > LABEL_SHARE ? `${PARTS[i].label} ${formatMs(v)}` : '',
+      title: stepTitle(parts, i, reload),
+      text: !thin && total && v / total > LABEL_SHARE ? `${steps[i].label} ${formatMs(v)}` : '',
     })),
   };
 }
 
 function legend(
-  parts: KillParts,
-  average: KillParts | null,
+  kill: KillTime,
+  average: KillTime | null,
   averageHidden = false,
 ): BudgetLegendItem[] {
-  return parts.map((v, i) => ({
-    color: PARTS[i].color,
-    text: `${PARTS[i].label} ${formatMs(v)}`,
-    average: average ? `(avg ${formatMs(average[i])})` : null,
+  const steps = shownSteps(kill.reload);
+  const averages = average && shownTimes(average.parts, average.reload);
+  return shownTimes(kill.parts, kill.reload).map((v, i) => ({
+    color: steps[i].color,
+    text: `${steps[i].label} ${formatMs(v)}`,
+    title: stepTitle(kill.parts, i, kill.reload),
+    average: averages ? `(avg ${formatMs(averages[i])})` : null,
     averageHidden,
   }));
 }
 
 /**
- * Where the time goes: the run's average kill, or a picked kill with the average under it on the same time scale. A
- * kill with a step that was not found shows the average with a note.
+ * The average kill's forced reload time, over the kills whose steps were found (as the summary's budget averages
+ * them); null when the scenario's magazine never runs out (the report has no reloads).
  */
-export function budget(average: KillParts | null, flick: Flick | null): Budget | null {
-  if (!average) return null;
+export function averageReload(s: ClickSummary, flicks: Flick[]): number | null {
+  if (!s.reloads) return null;
+  const split = flicks.filter((f) => f.parts);
+  return split.length ? split.reduce((t, f) => t + (f.reload_time ?? 0), 0) / split.length : 0;
+}
+
+/**
+ * Where the time goes: the run's average kill, or a picked kill with the average under it on the same time scale. A
+ * kill with a step that was not found shows the average with a note. `reload`: the average kill's forced reload time
+ * (averageReload), which adds the reload step; null when the scenario's magazine never runs out.
+ */
+export function budget(
+  averageParts: KillParts | null,
+  flick: Flick | null,
+  reload: number | null = null,
+): Budget | null {
+  if (!averageParts) return null;
+  const average: KillTime = { parts: averageParts, reload };
   if (!flick) {
     return {
-      title: `Where an average kill's ${formatMs(sum(average))} goes`,
+      title: `Where an average kill's ${formatMs(sum(averageParts))} goes`,
       note: null,
       bars: [bar(average, 100, null), bar(average, 100, 'Average kill', true, true)],
       legend: legend(average, average, true),
@@ -101,19 +225,28 @@ export function budget(average: KillParts | null, flick: Flick | null): Budget |
   if (!flick.parts) {
     return {
       title,
-      note: "One of this kill's steps (the reaction, the arrival or the stop on the target) was not found, so its time can't be split. The run's average:",
+      note: "One of this kill's steps (the reaction, the arrival or the confirmation) was not found, so its time can't be split. The run's average:",
       bars: [bar(average, 100, null)],
       legend: legend(average, null),
     };
   }
-  const top = Math.max(sum(flick.parts), sum(average));
+  const kill: KillTime = {
+    parts: flick.parts,
+    reload: reload == null ? null : (flick.reload_time ?? 0),
+  };
+  const top = Math.max(sum(flick.parts), sum(averageParts));
   return {
     title,
     note: null,
     bars: [
-      bar(flick.parts, (100 * sum(flick.parts)) / top, null),
-      bar(average, (100 * sum(average)) / top, `Average kill, ${formatMs(sum(average))}`, true),
+      bar(kill, (100 * sum(flick.parts)) / top, null),
+      bar(
+        average,
+        (100 * sum(averageParts)) / top,
+        `Average kill, ${formatMs(sum(averageParts))}`,
+        true,
+      ),
     ],
-    legend: legend(flick.parts, average),
+    legend: legend(kill, average),
   };
 }

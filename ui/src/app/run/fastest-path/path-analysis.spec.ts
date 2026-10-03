@@ -43,7 +43,7 @@ describe('analysePaths', () => {
 
   it('says when there was only one target, or the target was new', () => {
     expect(pickText(a, 2)).toBe('only one');
-    expect(pickText(a, 3)).toBe('new target');
+    expect(pickText(a, 3)).toBe('spawn');
   });
 
   it('flags the costly picks in the Pathing check, costliest first', () => {

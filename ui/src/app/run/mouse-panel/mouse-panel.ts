@@ -50,20 +50,20 @@ export const MEASURES: Record<MouseMeasureKey, MeasureLabel> = {
     why: 'From the start until the mouse stops: its speed stays under the stop speed for the hold time',
     write: ms,
   },
-  peak_dps: { label: 'Peak speed', why: 'The highest speed in the flick', write: speed },
+  peak_dps: { label: 'Flick speed', why: 'The highest speed in the flick', write: speed },
   stop_to_click_ms: {
     label: 'Stop to click',
-    why: 'From the stop to the click, with any corrections after the flick',
+    why: 'From the stop to the click, with any micros after the flick',
     write: ms,
   },
   still_ms: {
-    label: 'Still before the click',
+    label: 'Confirmation',
     why: 'How long the crosshair sat still on the target before the click; 0 when the click came while it moved',
     write: ms,
   },
   click_dps: {
-    label: 'Speed at the click',
-    why: 'The speed over the moments just before the click',
+    label: 'Click on the move',
+    why: 'The speed at the click: over the moments just before it',
     write: speed,
   },
   dist_deg: {
@@ -131,7 +131,7 @@ export function mouseNotes(run: MouseRun): string {
   const n = run.kills.length;
   return (
     `Clicked while moving: ${run.moving_clicks} of ${n}; no stop before the click: ${run.no_stop}; ` +
-    `with corrections: ${run.corrected}. ${formatNumber(run.dpi)} dpi and ${formatNumber(run.cm360)} cm/360 ` +
+    `with micros: ${run.corrected}. ${formatNumber(run.dpi)} dpi and ${formatNumber(run.cm360)} cm/360 ` +
     `(from ${run.sens_from}); speeds over ${formatNumber(run.window_ms)} ms; moving from ` +
     `${formatNumber(run.start_dps)} °/s, still under ${formatNumber(run.stop_dps)} °/s for ` +
     `${formatNumber(run.hold_ms)} ms.`
@@ -155,7 +155,7 @@ export class MousePanel {
   protected readonly measures = this.logs.measures(() => this.recording().id);
   protected readonly busy = signal(false);
   protected readonly message = signal<MouseMessage | null>(null);
-  protected readonly columns = [...KILL_COLUMNS.map((k) => MEASURES[k].label), 'Corrections'];
+  protected readonly columns = [...KILL_COLUMNS.map((k) => MEASURES[k].label), 'Micros'];
 
   protected readonly shown = computed(() =>
     this.measures.hasValue() ? (this.measures.value() ?? null) : null,

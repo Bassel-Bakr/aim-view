@@ -68,6 +68,11 @@ export class StatsFolder {
     this.state.set('ready');
   }
 
+  /** The scenario's stats files (its exact name), in the folder's order. */
+  entries(scenario: string): readonly StatsEntry[] {
+    return this.byScenario.get(scenario) ?? [];
+  }
+
   /** The stats file of the same scenario within five seconds of the time, the nearest (server.py: stats_for). */
   find(scenario: string, seconds: number | null): StatsEntry | null {
     if (seconds === null) return null;

@@ -6,6 +6,7 @@ import {
   DistanceBand,
   Flick,
   Issue,
+  Reloads,
 } from '../../api';
 import { WhatIfTable } from '../what-if-section/what-if-section';
 import {
@@ -16,15 +17,18 @@ import {
   formatEnded,
   formatMs,
   formatPercent,
+  formatSeconds,
   formatSpeed,
 } from '../../format';
 import { median } from '../median';
+import { micro, microSplit } from './budget';
 
-/** A number card: its value, what it is, and a line under it. */
+/** A number card: its value, what it is, and a line under it. title: more about the value, on hover. */
 export interface Stat {
   label: string;
   value: string;
   detail: string;
+  title?: string;
 }
 
 /** The run's picks against the fastest order, for its cards: null while the tracks load. */
@@ -50,8 +54,35 @@ function runMedian(flicks: Flick[], measure: (m: Flick) => number | null): numbe
 }
 
 /**
+ * The run's forced reloads: how many, their time, and its share of the run (from the first flick to the last kill).
+ * Reloads the player chose don't show in the stats.
+ */
+function reloadsCard(r: Reloads, flicks: Flick[], fps: number): Stat {
+  const span =
+    flicks.length >= 2 ? (flicks[flicks.length - 1].kill_frame - flicks[0].start_frame) / fps : 0;
+  const share = span > 0 ? ` · ${formatPercent(r.seconds / span)} of the run` : '';
+  const points = r.score_lost ? ` They took ${formatCount(r.score_lost)} points off.` : '';
+  return {
+    label: 'Reloads',
+    value: formatCount(r.count),
+    detail: `${formatSeconds(r.seconds)}${share}`,
+    title: `Reloads an empty magazine forced; reloads you chose don't show in the stats.${points}`,
+  };
+}
+
+/** A kill's forced reload: its time, or none. */
+function reloadCard(m: Flick): Stat {
+  const n = m.reloads ?? 0;
+  return {
+    label: 'Reload',
+    value: n ? formatMs(m.reload_time) : 'none',
+    detail: n > 1 ? `${n} forced reloads` : n ? 'forced by an empty magazine' : '',
+  };
+}
+
+/**
  * The whole run's cards: the score and kills, then the times and speeds, then the path; sixteen, as many as a kill
- * has, so the rows stay put when a kill is picked.
+ * has, so the rows stay put when a kill is picked. In a scenario whose magazine runs out, both add the reloads.
  */
 export function runStats(
   s: ClickSummary,
@@ -64,16 +95,16 @@ export function runStats(
     { label: 'Score', value: formatCount(s.score), detail: '' },
     { label: 'Kills', value: formatCount(s.kills), detail: '' },
     { label: 'Misses', value: formatCount(s.misses), detail: '' },
-    { label: 'Median kill', value: formatMs(s.median_interval), detail: '' },
-    { label: 'Still before the click', value: formatMs(s.still), detail: '' },
-    { label: 'Peak speed', value: formatSpeed(s.peak), detail: '' },
+    { label: 'Median TTK', value: formatMs(s.median_interval), detail: 'time to kill' },
+    { label: 'Confirmation', value: formatMs(s.still), detail: 'still before the click' },
+    { label: 'Flick speed', value: formatSpeed(s.peak), detail: '' },
     { label: 'Game FPS', value: s.fps_avg ? String(Math.round(s.fps_avg)) : '–', detail: '' },
     {
       label: 'Fastest next target',
       value: paths ? formatPercent(paths.share) : LOADING,
       detail: 'of the picks with a choice',
     },
-    { label: 'Path cost in all', value: paths ? formatMs(paths.total) : LOADING, detail: '' },
+    { label: 'Pathing in all', value: paths ? formatMs(paths.total) : LOADING, detail: '' },
     {
       label: `More ${s.shots == null ? 'kills' : 'shots'} with the best path`,
       value: paths ? `≈ ${paths.extra.toFixed(1)}` : LOADING,
@@ -81,14 +112,15 @@ export function runStats(
     },
     { label: 'Accuracy', value: formatPercent(s.accuracy), detail: '' },
     { label: 'Reaction', value: formatMs(s.react), detail: 'median' },
-    { label: 'Main flick', value: formatMs(s.flick), detail: 'median' },
-    { label: 'Click speed', value: formatSpeed(s.click_speed), detail: 'median' },
-    { label: 'Off center at the click', value: formatDegrees(s.click_off), detail: 'median' },
+    { label: 'Flick', value: formatMs(s.flick), detail: 'median' },
+    { label: 'Click on the move', value: formatSpeed(s.click_speed), detail: 'median' },
+    { label: 'Click off center', value: formatDegrees(s.click_off), detail: 'median' },
     {
       label: 'Kills a minute',
       value: pace == null ? '–' : pace.toFixed(1),
       detail: 'first flick to last kill',
     },
+    ...(s.reloads ? [reloadsCard(s.reloads, flicks, fps)] : []),
   ];
 }
 
@@ -100,41 +132,38 @@ export function killStats(
   flicks: Flick[] = [],
 ): Stat[] {
   const run = (v: string) => `run ${v}`;
-  const corrections = runMedian(flicks, (f) => f.corr);
+  const micros = runMedian(flicks, (f) => f.corr);
   return [
-    { label: 'Distance', value: `${m.D0.toFixed(1)}° ${arrow(m.dir)}`, detail: '' },
-    { label: 'Kill time', value: formatMs(m.total), detail: run(formatMs(s.median_interval)) },
+    { label: 'Distance', value: `${m.D0.toFixed(1)}°`, detail: '' },
+    { label: 'Toward', value: arrow(m.dir), detail: '' },
+    { label: 'TTK', value: formatMs(m.total), detail: run(formatMs(s.median_interval)) },
     { label: 'Reaction', value: formatMs(m.react), detail: run(formatMs(s.react)) },
-    { label: 'Main flick', value: formatMs(m.flick), detail: run(formatMs(s.flick)) },
-    { label: 'Main flick ended', value: formatEnded(m.end_left, s.radius), detail: '' },
-    { label: 'Still before the click', value: formatMs(m.still), detail: run(formatMs(s.still)) },
-    { label: 'Peak speed', value: formatSpeed(m.peak), detail: run(formatSpeed(s.peak)) },
+    { label: 'Flick', value: formatMs(m.flick), detail: run(formatMs(s.flick)) },
+    { label: 'Flick landed', value: formatEnded(m.end_left, s.radius), detail: '' },
+    { label: 'Confirmation', value: formatMs(m.still), detail: run(formatMs(s.still)) },
+    { label: 'Flick speed', value: formatSpeed(m.peak), detail: run(formatSpeed(s.peak)) },
     {
-      label: 'Click speed',
+      label: 'Click on the move',
       value: formatSpeed(m.click_speed),
       detail: run(formatSpeed(s.click_speed)),
     },
     { label: 'Shots', value: formatCount(m.shots), detail: '' },
-    { label: 'Path cost', value: pathCost, detail: 'against the fastest pick' },
+    { label: 'Pathing', value: pathCost, detail: 'against the fastest pick' },
     {
-      label: 'Onto the target',
-      value: formatMs(m.arrive),
-      detail: run(formatMs(runMedian(flicks, (f) => f.arrive))),
+      label: 'Micro',
+      value: formatMs(micro(m)),
+      detail: run(formatMs(runMedian(flicks, micro))),
+      title: m.parts ? microSplit(m.parts) : undefined,
     },
     {
-      label: 'Settle',
-      value: formatMs(m.settle),
-      detail: run(formatMs(runMedian(flicks, (f) => f.settle))),
-    },
-    {
-      label: 'Off center at the click',
+      label: 'Click off center',
       value: formatDegrees(m.click_off),
       detail: run(formatDegrees(s.click_off)),
     },
     {
-      label: 'Corrections',
+      label: 'Micros',
       value: formatCount(m.corr),
-      detail: corrections == null ? '' : run(String(corrections)),
+      detail: micros == null ? '' : run(String(micros)),
     },
     {
       label: 'Went past by',
@@ -142,10 +171,11 @@ export function killStats(
       detail: 'past the far edge',
     },
     {
-      label: 'New target',
+      label: 'Spawn',
       value: m.spawned ? 'yes' : 'no',
       detail: 'it appeared after the flick began',
     },
+    ...(s.reloads ? [reloadCard(m)] : []),
   ];
 }
 
@@ -223,13 +253,13 @@ export function runHeadline(
       ISSUE_MISSES,
     ),
     tile(
-      'Median kill',
+      'Median TTK',
       formatMs(s.median_interval),
       pace == null ? '' : `${pace.toFixed(1)} kills a minute`,
       ISSUE_PACE,
     ),
     tile(
-      'Still before the click',
+      'Confirmation',
       formatMs(s.still),
       stillShare == null ? '' : `${formatPercent(stillShare)} of a kill`,
       ISSUE_WAITING,

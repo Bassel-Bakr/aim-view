@@ -1,0 +1,58 @@
+@use 'themes/progress-chart' as p;
+@reference '../../../tailwind.css';
+
+// The legend's swatches take the chart's colors
+@layer components {
+  .color-swatch {
+    &[data-series='median'] {
+      background: p.$median;
+    }
+
+    &[data-series='best'] {
+      background: p.$best;
+    }
+
+    &[data-series='this'] {
+      background: p.$this;
+    }
+  }
+}
+
+@layer components {
+  :host {
+    @apply mb-6 block rounded-lg border border-border bg-surface-1 px-6 py-5;
+  }
+
+  .chart-head {
+    @apply mb-2 flex flex-wrap items-center gap-x-7 gap-y-1 text-xs text-secondary;
+  }
+
+  .key {
+    @apply flex items-center gap-2 text-muted;
+
+    &:first-of-type {
+      @apply ml-auto;
+    }
+  }
+
+  .box {
+    @apply relative select-none;
+
+    &[data-over] {
+      @apply cursor-pointer;
+    }
+  }
+
+  .canvas {
+    @apply block h-(--progress-chart-height) w-full;
+  }
+
+  .tip {
+    @apply pointer-events-none absolute top-1 rounded-md bg-surface-3 px-4 py-1 text-xs whitespace-nowrap;
+  }
+
+  .summary,
+  .note {
+    @apply mt-2 text-sm text-muted;
+  }
+}

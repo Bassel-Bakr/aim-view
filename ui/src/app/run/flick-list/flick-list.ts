@@ -19,50 +19,53 @@ import {
 import { PathAnalysis, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
+import { micro, microSplit } from '../report/budget';
 
 /** A flick as the list shows it. */
 export interface FlickRow {
   flick: Flick;
   n: number;
+  /** The distance and the way it was: "12.3° ↑". */
   distance: string;
-  toward: string;
-  killTime: string;
-  ended: string;
-  still: string;
-  peak: string;
-  clickSpeed: string;
+  ttk: string;
+  landed: string;
+  confirmation: string;
+  flickSpeed: string;
+  onTheMove: string;
   shots: string;
   missed: boolean;
   /** What picking this target cost against the fastest pick. */
-  pathCost: string;
+  pathing: string;
   reaction: string;
-  mainFlick: string;
-  settle: string;
+  flickTime: string;
+  micro: string;
+  /** The micro's two parts, on hover: "120 ms onto the target, 80 ms settling". */
+  microSplit: string;
   offCenter: string;
-  corrections: string;
-  newTarget: string;
+  micros: string;
+  spawn: string;
 }
 
 export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[] {
   return r.flicks.map((m) => ({
     flick: m,
     n: m.n,
-    distance: `${m.D0.toFixed(1)}°`,
-    toward: arrow(m.dir),
-    killTime: formatMs(m.total),
-    ended: formatEnded(m.end_left, r.summary.radius),
-    still: formatMs(m.still),
-    peak: formatSpeed(m.peak),
-    clickSpeed: formatSpeed(m.click_speed),
+    distance: `${m.D0.toFixed(1)}° ${arrow(m.dir)}`,
+    ttk: formatMs(m.total),
+    landed: formatEnded(m.end_left, r.summary.radius),
+    confirmation: formatMs(m.still),
+    flickSpeed: formatSpeed(m.peak),
+    onTheMove: formatSpeed(m.click_speed),
     shots: formatCount(m.shots),
     missed: m.shots > 1,
-    pathCost: pickText(paths, m.n),
+    pathing: pickText(paths, m.n),
     reaction: formatMs(m.react),
-    mainFlick: formatMs(m.flick),
-    settle: formatMs(m.settle),
+    flickTime: formatMs(m.flick),
+    micro: formatMs(micro(m)),
+    microSplit: m.parts ? microSplit(m.parts) : '',
     offCenter: formatDegrees(m.click_off),
-    corrections: formatCount(m.corr),
-    newTarget: m.spawned ? 'yes' : 'no',
+    micros: formatCount(m.corr),
+    spawn: m.spawned ? 'yes' : 'no',
   }));
 }
 

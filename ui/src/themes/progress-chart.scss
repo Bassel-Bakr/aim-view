@@ -1,0 +1,22 @@
+// Module tokens: the run page's chart of every past score of the run's scenario (a canvas, which reads these variables
+// when it draws).
+
+@mixin tokens {
+  --progress-chart-height: 180px;
+  --progress-chart-font: var(--font-size-xs) var(--font-family);
+  // each run's dot, the run on the page, the ring around the personal best, how near the pointer picks a dot (px)
+  --progress-chart-dot: 2.5;
+  --progress-chart-current: 5;
+  --progress-chart-ring: 7;
+  --progress-chart-reach: 8;
+  --progress-chart-line: 2;
+  --progress-chart-dash: 4;
+  --progress-chart-run: var(--series-quiet);
+  --progress-chart-median: var(--series-1);
+  --progress-chart-best: var(--good-text);
+  --progress-chart-this: var(--text-primary);
+}
+
+$this: var(--progress-chart-this);
+$median: var(--progress-chart-median);
+$best: var(--progress-chart-best);

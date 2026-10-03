@@ -36,18 +36,18 @@ describe('click stats', () => {
       'Score: 889.26',
       'Kills: 98',
       'Misses: 3',
-      'Median kill: 425 ms',
-      'Still before the click: 100 ms',
-      'Peak speed: 480 °/s',
+      'Median TTK: 425 ms',
+      'Confirmation: 100 ms',
+      'Flick speed: 480 °/s',
       'Game FPS: 240',
       'Fastest next target: 80%',
-      'Path cost in all: 1234 ms',
+      'Pathing in all: 1234 ms',
       'More shots with the best path: ≈ 2.0',
       'Accuracy: –',
       'Reaction: 80 ms',
-      'Main flick: 170 ms',
-      'Click speed: 20 °/s',
-      'Off center at the click: –',
+      'Flick: 170 ms',
+      'Click on the move: 20 °/s',
+      'Click off center: –',
       'Kills a minute: –',
     ]);
   });
@@ -74,13 +74,55 @@ describe('click stats', () => {
       peak: 500,
       click_speed: 30,
       shots: 2,
+      parts: [0.1, 0.2, 0.12, 0.08, 0.05],
     } as Flick;
     const s = killStats(m, SUMMARY, '+40 ms');
-    expect(s[0].value).toBe('12.3° ↑');
-    expect(s[1]).toEqual({ label: 'Kill time', value: '500 ms', detail: 'run 425 ms' });
-    expect(s[4].value).toBe('short, 1.2° to go');
-    expect(s[9]).toMatchObject({ label: 'Path cost', value: '+40 ms' });
+    expect(s[0].value).toBe('12.3°');
+    expect(s[1].value).toBe('↑');
+    expect(s[2]).toEqual({ label: 'TTK', value: '500 ms', detail: 'run 425 ms' });
+    expect(s[5]).toMatchObject({ label: 'Flick landed', value: 'underflick 1.2°' });
+    expect(s[10]).toMatchObject({ label: 'Pathing', value: '+40 ms' });
+    expect(s[11]).toMatchObject({
+      label: 'Micro',
+      value: '200 ms',
+      title: '120 ms onto the target, 80 ms settling',
+    });
     expect(s).toHaveLength(16);
+  });
+
+  it('adds the forced reloads to the run and to each kill in a scenario whose magazine runs out', () => {
+    const reloads = {
+      ...SUMMARY,
+      reloads: { count: 2, seconds: 1.6, score_lost: null },
+    } as ClickSummary;
+    // first flick to last kill: 60 s, so 1.6 s is 3% of the run
+    const flicks = [
+      { start_frame: 0, kill_frame: 30 },
+      { start_frame: 40, kill_frame: 3600 },
+    ] as Flick[];
+    expect(runStats(SUMMARY, null)).toHaveLength(16);
+    expect(runStats(reloads, null, flicks, 60)[16]).toMatchObject({
+      label: 'Reloads',
+      value: '2',
+      detail: '1.60 s · 3% of the run',
+    });
+    const kill = {
+      D0: 5,
+      dir: 0,
+      end_left: 0,
+      past: 0,
+      parts: null,
+      reloads: 1,
+      reload_time: 0.8,
+    } as Flick;
+    expect(killStats(kill, SUMMARY, '')).toHaveLength(16);
+    expect(killStats(kill, reloads, '')[16]).toEqual({
+      label: 'Reload',
+      value: '800 ms',
+      detail: 'forced by an empty magazine',
+    });
+    const clean = { ...kill, reloads: 0, reload_time: 0 };
+    expect(killStats(clean, reloads, '')[16]).toMatchObject({ label: 'Reload', value: 'none' });
   });
 
   it('shows the path cards as under way while the tracks load', () => {

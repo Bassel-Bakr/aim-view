@@ -7,6 +7,7 @@ import { ModelCatalog } from '../platform/model-catalog';
 import { MouseLogs } from '../platform/mouse-logs';
 import { RecordingSource } from '../platform/recording-source';
 import { ReviewEngine } from '../platform/review-engine';
+import { ScoreHistory } from '../platform/score-history';
 import { StatsFiles } from '../platform/stats-files';
 import { ServerAreaLabels } from './http/server-area-labels';
 import { ServerFaintCutoffs } from './http/server-faint-cutoffs';
@@ -15,6 +16,7 @@ import { ServerModels } from './http/server-models';
 import { ServerMouseLogs } from './http/server-mouse-logs';
 import { ServerRecordings } from './http/server-recordings';
 import { ServerReview } from './http/server-review';
+import { ServerScoreHistory } from './http/server-score-history';
 import { ServerStatsFiles } from './http/server-stats-files';
 
 /**
@@ -27,6 +29,7 @@ export const MODE: Mode = {
   providers: [
     { provide: RecordingSource, useExisting: ServerRecordings },
     { provide: StatsFiles, useExisting: ServerStatsFiles },
+    { provide: ScoreHistory, useExisting: ServerScoreHistory },
     { provide: ReviewEngine, useExisting: ServerReview },
     { provide: ModelCatalog, useExisting: ServerModels },
     { provide: MouseLogs, useExisting: ServerMouseLogs },

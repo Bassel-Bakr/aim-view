@@ -25,6 +25,8 @@
   --budget-radius: 4px;
   --flick-list-width: 580px;
   --flick-list-stacked-height: 420px;
+  // the flick list's cells: tighter than the page's tables, so its columns fit the player's width
+  --flick-list-cell-padding: 5px 6px 5px 0;
   // the picked flick's row: a bar of the accent at its left edge
   --selected-edge: inset 2px 0 0 var(--accent);
   --speed-chart-height: 150px;
@@ -36,6 +38,8 @@
   --chart-faint-opacity: 0.18;
   --chart-hover-opacity: 0.75;
   --charts-columns: repeat(auto-fit, minmax(420px, 1fr));
+  // the flick speed profile under the charts: in a column as wide as theirs
+  --profile-columns: repeat(auto-fill, minmax(420px, 1fr));
   --issue-attention: var(--warning);
   --issue-fine: var(--good-text);
 }
@@ -52,6 +56,7 @@ $flick-list-width: var(--flick-list-width);
 $side-width: var(--side-width);
 $side-min-width: var(--side-min-width);
 $flick-list-stacked-height: var(--flick-list-stacked-height);
+$flick-list-cell-padding: var(--flick-list-cell-padding);
 // Below this width of the run page the flick list goes under the video. A container query cannot read a CSS
 // variable, so this one value is Sass only.
 $stack-width: 1080px;

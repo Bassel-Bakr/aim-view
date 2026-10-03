@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
+  AmmoRules,
   AreaBox,
   AreaExample,
   AreaKind,
@@ -56,7 +57,8 @@ interface CoreRefusal {
 /**
  * What the core reviews a run from (src/review.rs: `ReviewRequest`): its tracks, its video's and stats file's names,
  * the stats file's text (both '' for a run without one), the user's run marks and what the HUD read (null: nothing);
- * for a tracking run also the scenario's time limit, the video's readings and the user's faint-target cut-off (null:
+ * for a clicking run the ammo rules of the scenario's weapon (null: its magazine never runs out, or not known); for a
+ * tracking run also the scenario's time limit, the video's readings and the user's faint-target cut-off (null:
  * none), whose cut its measures leave out.
  */
 export interface ReportRequest {
@@ -67,6 +69,7 @@ export interface ReportRequest {
   run: RunMarks | null;
   tracking: boolean;
   limit: number | null;
+  reload: AmmoRules | null;
   camera: CameraReading[];
   countdown: boolean[];
   hud: HudReading | null;

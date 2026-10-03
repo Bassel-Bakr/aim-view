@@ -128,12 +128,12 @@ export function analysePaths(r: ClickReport, tracks: Tracks): PathAnalysis | nul
   };
 }
 
-/** A kill's pick in words: fastest, only one, new target, or the time it cost. "…" while the tracks load. */
+/** A kill's pick in words: fastest, only one, spawn (a new target), or the time it cost. "…" while the tracks load. */
 export function pickText(a: PathAnalysis | null, n: number): string {
   if (!a) return '…';
   const o = a.picks.get(n);
   if (!o) return '–';
-  if (o.spawned) return 'new target';
+  if (o.spawned) return 'spawn';
   if (o.choices === 1) return 'only one';
   return o.best ? 'fastest' : `+${Math.round(1000 * o.cost)} ms`;
 }
@@ -161,7 +161,7 @@ export interface Pathing {
   costliest: CostlyPick[];
 }
 
-/** Picks that cost this share of the median kill or more are flagged. */
+/** Picks that cost this share of the median TTK or more are flagged. */
 const FLAG_SHARE = 0.05;
 const COSTLIEST = 3;
 
@@ -186,12 +186,12 @@ export function pathing(a: PathAnalysis | null, r: ClickReport): Pathing | null 
       flag: share >= FLAG_SHARE ? 'attention' : 'fine',
       value:
         `The fastest next target in ${formatPercent(a.share)} of ${picks.length} picks; the others cost about ` +
-        `${formatMs(lost)} in all, ${formatMs(per)} a kill (${formatPercent(share)} of the median kill). With the best ` +
+        `${formatMs(lost)} in all, ${formatMs(per)} a kill (${formatPercent(share)} of the median TTK). With the best ` +
         `picks, about ${extraShots(a, r, lost).toFixed(1)} more ${unit} at your pace`,
       why:
         "Predicted from Fitts' law fitted to this run, for the targets on screen at each pick; targets that appeared " +
         `less than ${NEW_MS} ms before you started moving are left out, since reacting to them costs time of its own. ` +
-        '5% of the median kill or more is flagged.',
+        '5% of the median TTK or more is flagged.',
     },
     costliest,
   };
