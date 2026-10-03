@@ -5,6 +5,7 @@
 use serde::Serialize;
 
 use crate::measure::Measure;
+use crate::reload::ReloadCost;
 use crate::statistics::median;
 use crate::summary::{Mode, Summary, DIRECTIONS, DISTANCES};
 
@@ -41,6 +42,7 @@ enum Line {
     SmallerMicros,
     Miss,
     Slip,
+    Reload,
 }
 
 /// The numbers (and the direction's name) a line's sentence gives.
@@ -49,7 +51,8 @@ struct Facts {
     a: f64,
     b: f64,
     name: &'static str,
-    /// The points hitting every shot would add on its own, in a scenario whose score is scaled by accuracy.
+    /// The points hitting every shot would add on its own, in a scenario whose score is scaled by accuracy; or the
+    /// points the reloads saved would give back, in a scenario that takes points off for a reload.
     points: Option<f64>,
 }
 
@@ -129,6 +132,19 @@ fn words(line: Line, f: &Facts) -> (Group, &'static str, String) {
                 ),
             },
         ),
+        Line::Reload => {
+            let reloads = if f.a == 1.0 { "reload" } else { "reloads" };
+            let given = format!(
+                "Your misses forced {:.0} {reloads} of an empty magazine, {:.1} s in all. Reloads you chose yourself \
+                 don't show in the stats and are not counted.",
+                f.a, f.b
+            );
+            let how = match f.points {
+                Some(p) => format!("{given} Each reload also takes points off: about {p:.0} points back on their own."),
+                None => given,
+            };
+            (Group::Pace, "Reload less: miss less", how)
+        }
         Line::Slip => (
             Group::Micros,
             "Don't slip off the target",
@@ -325,6 +341,23 @@ fn slip(ms: &[Measure]) -> Option<Saving> {
     (!t.is_empty()).then(|| Saving { line: Line::Slip, seconds: t.iter().sum(), facts: Facts::default() })
 }
 
+/// The reload time the misses forced: the run's forced reloads against the same run with each kill's shots cut to its
+/// hits (src/reload.rs).
+fn reload(c: &ReloadCost) -> Option<Saving> {
+    let clean = c.clean.as_ref()?;
+    let saved = c.run.count - clean.count;
+    (saved > 0).then(|| Saving {
+        line: Line::Reload,
+        seconds: c.run.seconds - clean.seconds,
+        facts: Facts {
+            a: saved as f64,
+            b: c.run.seconds - clean.seconds,
+            points: c.run.score_lost.map(|p| p - clean.score_lost.unwrap_or(0.0)),
+            ..Facts::default()
+        },
+    })
+}
+
 /// The points hitting every shot would add, when the stats file shows the score is the kills times whole points
 /// times the accuracy (and not whole points a kill).
 fn accuracy_points(s: &Summary) -> Option<f64> {
@@ -338,8 +371,15 @@ fn accuracy_points(s: &Summary) -> Option<f64> {
 
 /// The run's what-if lines, biggest first, without those under half a kill. A hold-fire run has no click to wait for
 /// or correct before: it gets the time to the next target and the time off it while firing instead of the
-/// confirmation, the micros and the misses.
-pub fn click_what_if(ms: &[Measure], s: &Summary, r: f64, fps: f64, hits_per_kill: Option<f64>) -> Vec<ClickWhatIf> {
+/// confirmation, the micros and the misses. `reload`: what reloading cost the run, when its weapon's magazine runs out.
+pub fn click_what_if(
+    ms: &[Measure],
+    s: &Summary,
+    r: f64,
+    fps: f64,
+    hits_per_kill: Option<f64>,
+    reload: Option<&ReloadCost>,
+) -> Vec<ClickWhatIf> {
     let total: f64 = ms.iter().map(|m| m.total).sum();
     if ms.is_empty() || total <= 0.0 {
         return Vec::new();
@@ -359,6 +399,7 @@ pub fn click_what_if(ms: &[Measure], s: &Summary, r: f64, fps: f64, hits_per_kil
         click.then(|| smaller_micros(ms, r)).flatten(),
         click.then(|| miss(ms, hits_per_kill, accuracy_points(s))).flatten(),
         hold.then(|| slip(ms)).flatten(),
+        reload.and_then(self::reload),
     ];
     let mut out: Vec<ClickWhatIf> = lines
         .into_iter()
@@ -410,6 +451,9 @@ mod tests {
             breaks: 0,
             off: 0.02,
             parts: Some([react, fl, 0.05, settle, still]),
+            speed: None,
+            reloads: None,
+            reload_time: None,
         }
     }
 
@@ -508,5 +552,18 @@ mod tests {
         close(s.seconds, 0.2);
         close(s.facts.a, 0.2 / 3.0);
         close(slip(&ms).unwrap().seconds, 0.16);
+    }
+
+    #[test]
+    fn reload_line() {
+        use crate::reload::Reloads;
+        // 3 forced reloads, 1 without the misses: 2 saved, a second, and 50 of the 75 points they took off
+        let run = Reloads { count: 3, seconds: 1.5, score_lost: Some(75.0) };
+        let clean = Some(Reloads { count: 1, seconds: 0.5, score_lost: Some(25.0) });
+        let s = reload(&ReloadCost { per_kill: Vec::new(), run, clean }).unwrap();
+        close(s.seconds, 1.0);
+        close(s.facts.a, 2.0);
+        assert_eq!(s.facts.points, Some(50.0));
+        assert!(words(s.line, &s.facts).2.contains("2 reloads of an empty magazine, 1.0 s"));
     }
 }

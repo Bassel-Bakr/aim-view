@@ -1,7 +1,8 @@
 //! What a scenario file (.sce) says about a run (python/review.py: `scenario_facts`, `target_counts`): its kind, its
-//! time limit, and how many targets are alive at once. Read from the file's part before "[Map Data]".
+//! time limit, how many targets are alive at once, and the player's weapon's ammo rules. Read from the file's part
+//! before "[Map Data]".
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The kinds of run the review tells apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -13,12 +14,29 @@ pub enum Kind {
     Switching,
 }
 
-/// A scenario's facts: its kind, its time limit in seconds, and its targets alive at once (one per bot added).
+/// A scenario's facts: its kind, its time limit in seconds, its targets alive at once (one per bot added), and the
+/// player's weapon's ammo rules (none when its magazine never runs out).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Facts {
     pub kind: Kind,
     pub limit: Option<f64>,
     pub targets: Option<usize>,
+    pub reload: Option<AmmoRules>,
+}
+
+/// The ammo rules of a weapon whose magazine can run out (KovaaK's weapon profile, and the scenario's points for a
+/// reload): the magazine's size (MagazineMax), the ammo a shot uses (AmmoPerShot), the ammo a kill puts back, up to a
+/// full magazine (AmmoReloadedOnKill), the reload's time in seconds from an empty magazine and from a part-used one
+/// (ReloadTimeFromEmpty, ReloadTimeFromPartial), and the points a reload takes off (ScoreLossPerReload).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AmmoRules {
+    pub magazine: i64,
+    pub per_shot: i64,
+    pub on_kill: i64,
+    pub from_empty: f64,
+    pub from_partial: f64,
+    pub score_loss: f64,
 }
 
 /// The file's part the facts come from: everything before "[Map Data]".
@@ -87,7 +105,44 @@ pub fn facts(text: &str) -> Facts {
     };
     let limit = first_line(t, "Timelimit=", |v| number(v, false));
     let targets = line_value(t, "AddedBots=").map(|v| v.trim().split(';').filter(|b| !b.is_empty()).count());
-    Facts { kind, limit, targets }
+    Facts { kind, limit, targets, reload: ammo_rules(t) }
+}
+
+/// The trimmed value of the first line starting with the key.
+fn value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    line_value(text, key).map(str::trim)
+}
+
+/// The profile under a heading ("Weapon Profile]") with this name (any case), from its heading to the next heading.
+fn profile<'a>(t: &'a str, heading: &str, name: &str) -> Option<&'a str> {
+    t.split("\n[")
+        .filter_map(|p| p.strip_prefix(heading))
+        .find(|p| value(p, "Name=").is_some_and(|n| n.eq_ignore_ascii_case(name)))
+}
+
+/// The ammo rules of the weapon the player holds at the start, as KovaaK picks it: the scenario's PlayerProfile names
+/// the player's character profile (in any case), whose first weapon in WeaponProfileNames is the one held. None when
+/// its magazine never runs out (MagazineMax or AmmoPerShot 0, as in most scenarios), when a profile is missing, or when
+/// the weapon reloads a round at a time (UseIncReload: no scenario here uses it, so its timing is not guessed).
+fn ammo_rules(t: &str) -> Option<AmmoRules> {
+    let top = t.split("\n[").next().unwrap_or("");
+    let character = profile(t, "Character Profile]", value(top, "PlayerProfile=")?)?;
+    let held = value(character, "WeaponProfileNames=")?.split(';').map(str::trim).find(|w| !w.is_empty())?;
+    let weapon = profile(t, "Weapon Profile]", held)?;
+    let read = |text: &str, key: &str| value(text, key).and_then(|v| number(v, true));
+    let (magazine, per_shot) = (read(weapon, "MagazineMax=")? as i64, read(weapon, "AmmoPerShot=")? as i64);
+    if magazine <= 0 || per_shot <= 0 || value(weapon, "UseIncReload=").is_some_and(|v| v.eq_ignore_ascii_case("true")) {
+        return None;
+    }
+    let from_empty = read(weapon, "ReloadTimeFromEmpty=")?;
+    Some(AmmoRules {
+        magazine,
+        per_shot,
+        on_kill: read(weapon, "AmmoReloadedOnKill=").map_or(0, |v| v as i64),
+        from_empty,
+        from_partial: read(weapon, "ReloadTimeFromPartial=").unwrap_or(from_empty),
+        score_loss: read(top, "ScoreLossPerReload=").unwrap_or(0.0),
+    })
 }
 
 /// Python's `re.split(r"\r?\n(?=\[Character Profile\])", t)[1:]`: each character profile, from its heading to the
@@ -119,7 +174,33 @@ mod tests {
     #[test]
     fn reads_the_tags_the_limit_and_the_bots() {
         let text = "Name=x\r\nAimTypeTag=Clicking\r\nAimSubTypeTag=Dynamic\r\nTimelimit=60.0\r\nAddedBots=a;b;c;\r\n[Map Data]\r\nTimelimit=1";
-        assert_eq!(facts(text), Facts { kind: Kind::Dynamic, limit: Some(60.0), targets: Some(3) });
+        assert_eq!(facts(text), Facts { kind: Kind::Dynamic, limit: Some(60.0), targets: Some(3), reload: None });
+    }
+
+    /// An excerpt of "1w2ts reload.sce" (its user's scenarios folder): the player holds BB Gun, a magazine of 3 that a
+    /// kill fills again. Its other weapon, a bot's, never runs out (MagazineMax 0).
+    const RELOAD: &str = "Name=1w2ts reload\r\nPlayerCharacters=Player\r\nTimelimit=60.0\r\nPlayerProfile=Player\r\n\
+        ScoreLossPerMiss=0.0\r\nScoreLossPerReload=0.0\r\nAimTypeTag=Clicking\r\nAimSubTypeTag=Static\r\n\r\n\
+        [Bot Profile]\r\nName=target\r\nWeaponsProfileNames=\r\n\r\n\
+        [Character Profile]\r\nName=Player\r\nMaxHealth=100.0\r\nWeaponProfileNames=BB Gun;;;;;;;\r\nAmmoRegainedOnKill=0\r\n\r\n\
+        [Character Profile]\r\nName=target\r\nWeaponProfileNames=;;;;;;;\r\n\r\n\
+        [Weapon Profile]\r\nName=BB Gun\r\nType=Hitscan\r\nShotsPerClick=1\r\nCategory=SemiAuto\r\nCooldownType=InfiniteUse\r\n\
+        MagazineMax=3\r\nReloadTimeFromEmpty=0.5\r\nReloadTimeFromPartial=0.5\r\nAmmoPerShot=1\r\nAmmoReloadedOnKill=4\r\n\
+        CancelReloadOnKill=false\r\nUseIncReload=false\r\nIncReloadStartupTime=0.1\r\nIncReloadLoopTime=0.1\r\n\r\n\
+        [Weapon Profile]\r\nName=explode250ms\r\nType=Hitscan\r\nMagazineMax=0\r\nReloadTimeFromEmpty=0.5\r\n\
+        ReloadTimeFromPartial=0.5\r\nAmmoPerShot=1\r\nAmmoReloadedOnKill=0\r\nCancelReloadOnKill=false\r\nUseIncReload=false\r\n\r\n\
+        [Map Data]\r\nMagazineMax=9\r\n";
+
+    #[test]
+    fn reads_the_player_weapons_ammo_rules() {
+        let rules = AmmoRules { magazine: 3, per_shot: 1, on_kill: 4, from_empty: 0.5, from_partial: 0.5, score_loss: 0.0 };
+        assert_eq!(facts(RELOAD).reload, Some(rules));
+        // the player's character named in another case still holds it
+        assert!(facts(&RELOAD.replace("PlayerProfile=Player", "PlayerProfile=player")).reload.is_some());
+        // a weapon whose magazine never runs out, one that reloads a round at a time, a missing weapon: none
+        assert_eq!(facts(&RELOAD.replace("BB Gun;", "explode250ms;")).reload, None);
+        assert_eq!(facts(&RELOAD.replace("UseIncReload=false", "UseIncReload=true")).reload, None);
+        assert_eq!(facts(&RELOAD.replace("BB Gun;", "Gone;")).reload, None);
     }
 
     #[test]

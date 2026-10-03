@@ -382,7 +382,7 @@ fn review_video(lib: &Library, line: &Line) -> Result<Value, Failure> {
     };
     let cap: Option<usize> = line.number("cap")?;
     let limit: Option<f64> = line.number("limit")?;
-    let facts = line.one("kind").map(kind).transpose()?.map(|kind| Facts { kind, limit, targets: cap });
+    let facts = line.one("kind").map(kind).transpose()?.map(|kind| Facts { kind, limit, targets: cap, reload: None });
     let window = match line.all("window").last() {
         Some(w) => {
             let at = |s: &str| s.parse::<f64>().map_err(|_| Failure::bad(format!("--window: not a number: {s}")));

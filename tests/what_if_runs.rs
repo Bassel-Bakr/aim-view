@@ -35,7 +35,7 @@ fn what_if_lines_are_plausible_on_real_runs() {
             eprintln!("no {}", path.display());
             continue;
         };
-        let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &text }, report["video"].as_str().unwrap(), None)
+        let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &text }, report["video"].as_str().unwrap(), None, None)
             .unwrap()
             .report;
         let s = &got.summary;

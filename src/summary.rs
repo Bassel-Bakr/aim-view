@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::matching::{KillSource, MatchInfo};
-use crate::measure::{Choice, Measure};
+use crate::measure::{flick_profile, Choice, FlickProfile, Measure};
+use crate::reload::{ReloadCost, Reloads};
 use crate::statistics::{mean, med, median, pstdev};
 use crate::what_if::{click_what_if, ClickWhatIf};
 
@@ -104,6 +105,12 @@ pub struct Summary {
     pub pace: Option<Pace>,
     /// What would raise the score, biggest first (src/what_if.rs; Python's report has none).
     pub what_if: Vec<ClickWhatIf>,
+    /// The camera's speed through the flicks, averaged (src/measure.rs; Python's report has none).
+    pub flick_profile: Option<FlickProfile>,
+    /// The reloads an empty magazine forced over the run (src/reload.rs; Python's report has none; none without the
+    /// scenario's ammo rules or the kills' shots).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reloads: Option<Reloads>,
 }
 
 /// Eight 45-degree sectors, each centered on its direction (0 = right, 90 = up).
@@ -154,6 +161,7 @@ pub fn summarize(
     info: MatchInfo,
     r: f64,
     mode: Mode,
+    reload: Option<&ReloadCost>,
 ) -> Result<Summary, String> {
     let n = ms.len();
     let all: Vec<&Measure> = ms.iter().collect();
@@ -255,9 +263,11 @@ pub fn summarize(
             pace_last: med(totals[n - n / 3..].iter().map(|&t| Some(t))),
         }),
         what_if: Vec::new(),
+        flick_profile: flick_profile(ms),
+        reloads: reload.map(|c| c.run.clone()),
     };
     let hits_per_kill = hit.filter(|_| s.kills > 0).map(|h| h / s.kills as f64);
-    s.what_if = click_what_if(ms, &s, r, s.info.fps, hits_per_kill);
+    s.what_if = click_what_if(ms, &s, r, s.info.fps, hits_per_kill, reload);
     Ok(s)
 }
 
@@ -317,7 +327,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
         add(
             9,
             "Overflick",
-            format!("{}% of main flicks ended past the far edge", fixed(100.0 * past, 0)),
+            format!("{}% of flicks overflicked: they ended past the far edge", fixed(100.0 * past, 0)),
             past > 0.15,
             "Over 15% is flagged.".into(),
         );
@@ -328,11 +338,11 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
             .map_or(String::new(), |c| format!(", covering {}% of the way", fixed(100.0 * c, 0)));
         add(
             10,
-            "Stopping short",
-            format!("{}% of main flicks stopped short{covering}", fixed(100.0 * short, 0)),
+            "Underflick",
+            format!("{}% of flicks underflicked{covering}", fixed(100.0 * short, 0)),
             cost.is_some_and(|c| c > 0.03),
             format!(
-                "Stopping short is normal; it is flagged only when it costs time: for 10-25 deg flicks the short ones \
+                "Underflicking is normal; it is flagged only when it costs time: for 10-25 deg flicks the underflicks \
                  took {} against the ones that landed.",
                 cost.map_or("an unknown time".into(), |c| format!("{:+.0} ms", 1000.0 * c))
             ),
@@ -362,7 +372,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
         let share = still / interval;
         let split = match (truthy(s.still_landed), truthy(s.still_corrected)) {
             (Some(l), Some(c)) => format!(
-                "When the flick landed on the target it waited {} ms; when it was corrected in, {} ms. ",
+                "When the flick landed on the target, the confirmation took {} ms; after micros, {} ms. ",
                 fixed(1000.0 * l, 0),
                 fixed(1000.0 * c, 0)
             ),
@@ -370,9 +380,9 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
         };
         add(
             36,
-            "Waiting on the target",
+            "Long confirmation",
             format!(
-                "{} ms still on the target before the click ({}% of a kill)",
+                "{} ms confirmation: still on the target before the click ({}% of the median TTK)",
                 fixed(1000.0 * still, 0),
                 fixed(100.0 * share, 0)
             ),
@@ -383,8 +393,8 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
     if let (false, Some(moving)) = (hold, s.moving_clicks) {
         add(
             34,
-            "Clicking while still moving",
-            format!("{}% of clicks at over 20 deg/s", fixed(100.0 * moving, 0)),
+            "Click on the move",
+            format!("{}% of clicks on the move, at over 20 deg/s", fixed(100.0 * moving, 0)),
             moving > 0.10,
             "Over 10% is flagged.".into(),
         );
@@ -410,7 +420,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
         add(
             49,
             "Pacing drop",
-            format!("kills took {:+.0}% longer in the last third than in the first", 100.0 * drop),
+            format!("the TTK was {:+.0}% longer in the last third than in the first", 100.0 * drop),
             drop > 0.10,
             "Over 10% slower is flagged.".into(),
         );
@@ -426,7 +436,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
             13,
             "Direction bias",
             format!(
-                "flicks {} took {} more than the other directions for their distance ({}% of the median kill)",
+                "flicks {} took {} more than the other directions for their distance ({}% of the median TTK)",
                 dirs[worst].name,
                 ms(Some(extra)),
                 fixed(100.0 * share, 0)
@@ -434,7 +444,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
             share > 0.15,
             "Each direction is compared with what its distances predict (Fitts' law fitted to the run), so far and \
              near directions compare fairly. Directions with fewer than 10 flicks are left out. Over 15% of the \
-             median kill is flagged."
+             median TTK is flagged."
                 .into(),
         );
     }

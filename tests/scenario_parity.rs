@@ -28,7 +28,9 @@ fn scenario_facts_match_python() {
     assert_eq!(got.len(), want.len(), "scenarios");
     let mut wrong = 0;
     for (name, w) in want {
-        let g = serde_json::to_value(&got[name]).unwrap();
+        let mut g = serde_json::to_value(&got[name]).unwrap();
+        // the ammo rules are the core's own: Python reads none
+        g.as_object_mut().unwrap().remove("reload");
         if &g != w {
             if wrong < 5 {
                 eprintln!("{name}: rust {g} python {w}");

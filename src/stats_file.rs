@@ -91,6 +91,11 @@ impl StatsFile {
             .collect()
     }
 
+    /// The hits each kill took (the table's seventh column), or None when a row lacks them.
+    pub fn hits(&self) -> Option<Vec<i64>> {
+        self.rows.iter().map(|r| r.get(6).and_then(|s| s.trim().parse().ok())).collect()
+    }
+
     /// Each kill's time since the challenge started, and its shots (review.py: `match`).
     pub fn kills(&self) -> Result<StatsKills, String> {
         let start = self.meta.get("Challenge Start").ok_or("no Challenge Start in the stats file")?;
@@ -120,5 +125,6 @@ mod tests {
         let k = s.kills().unwrap();
         assert_eq!(k.times, vec![1.5, 2.25]);
         assert_eq!(k.shots, vec![1, 2]);
+        assert_eq!(s.hits(), Some(vec![1, 1]));
     }
 }

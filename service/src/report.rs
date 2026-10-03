@@ -41,6 +41,7 @@ pub fn work_out(
         "run": run.filter(RunMarks::is_set),
         "tracking": facts.is_some_and(|f| f.kind == Kind::Tracking),
         "limit": facts.and_then(|f| f.limit),
+        "reload": facts.and_then(|f| f.reload.as_ref()),
         "camera": readings["camera"],
         "countdown": readings["countdown"],
         "faint": faint,

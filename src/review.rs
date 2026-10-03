@@ -14,6 +14,8 @@ use crate::matching::{
     appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
 };
 use crate::measure::{choices, measure, target_radius, Measure};
+use crate::reload::reload_cost;
+use crate::scenario::AmmoRules;
 use crate::stats_file::StatsFile;
 use crate::summary::{judge, summarize, Issue, Mode, Summary};
 use crate::track::{REVIEW_VERSION, Tracks};
@@ -111,36 +113,60 @@ fn hud_shots(h: &HudReading) -> Vec<i64> {
     }
 }
 
+/// The run's hits a kill (the Hit Count over the Kills), rounded, at least 1.
+fn hits_per_kill(meta: &HashMap<String, String>) -> Option<i64> {
+    let get = |key: &str| meta.get(key)?.trim().parse::<f64>().ok();
+    let (hits, kills) = (get("Hit Count")?, get("Kills")?);
+    (kills > 0.0).then(|| ((hits / kills).round() as i64).max(1))
+}
+
 /// Reviews a clicking run from its tracks and its kill times. `video` is the recording's name (the report gives it,
-/// and without a stats file the scenario and the score come from it); `run` is the user's run marks, kept as given.
+/// and without a stats file the scenario and the score come from it); `run` is the user's run marks, kept as given;
+/// `reload` the ammo rules of the scenario's weapon, when its magazine runs out (src/reload.rs works out the reloads
+/// it forced from each kill's shots).
 pub fn review_clicks(
     tracks: &Tracks,
     kills: KillTimes,
     video: &str,
     run: Option<serde_json::Value>,
+    reload: Option<&AmmoRules>,
 ) -> Result<Reviewed, String> {
-    let (flicks, info, meta, mut per_kill, stats) = match kills {
+    let (flicks, info, meta, mut per_kill, hits, stats) = match kills {
         KillTimes::Stats { name, text } => {
             let file = StatsFile::parse(text);
             let kills = file.kills()?;
             let (flicks, mut info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
             info.source = Some(KillSource::Stats);
-            (flicks, info, file.meta, kills.shots, Some(name))
+            let hits = file.hits();
+            (flicks, info, file.meta, kills.shots, hits, Some(name))
         }
         KillTimes::Unpaired { hud } => {
             let (flicks, info, meta, per_kill) = unpaired_kills(tracks, hud, video);
-            (flicks, info, meta, per_kill, None)
+            (flicks, info, meta, per_kill, None, None)
         }
     };
+    // each kill's shots in the run's order; its hits from the stats file's kill table, else the run's hits a kill
+    let cost = reload.filter(|_| !per_kill.is_empty()).map(|rules| {
+        let n = per_kill.len();
+        let hits = hits.filter(|h| h.len() == n).or_else(|| hits_per_kill(&meta).map(|h| vec![h; n]));
+        reload_cost(rules, &per_kill, hits.as_deref())
+    });
     per_kill.sort();
     if per_kill.is_empty() {
         per_kill.push(1);
     }
     let r = target_radius(&flicks);
-    let ms = measure(&flicks, tracks.fps, r);
+    let mut ms = measure(&flicks, tracks, r);
+    if let Some(c) = &cost {
+        for m in &mut ms {
+            if let Some(k) = m.n.checked_sub(1).and_then(|i| c.per_kill.get(i)) {
+                (m.reloads, m.reload_time) = (Some(k.reloads), Some(k.seconds));
+            }
+        }
+    }
     let mode = if per_kill[per_kill.len() / 2] > 3 { Mode::Hold } else { Mode::Click };
     let ch = choices(tracks, &flicks);
-    let summary = summarize(&ms, &ch, &meta, info, r, mode)?;
+    let summary = summarize(&ms, &ch, &meta, info, r, mode, cost.as_ref())?;
     let report = Report {
         video: video.into(),
         stats: stats.map(Into::into),
@@ -329,8 +355,9 @@ pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (O
 }
 
 /// What the page asks the core to review: the tracks, the video's name, the stats file's name and text (empty without
-/// one), what the HUD read, the user's run marks; for a tracking run also the scenario's time limit, the video's
-/// readings and the user's faint-target cut-off ({on, offset}; null or missing: none).
+/// one), what the HUD read, the user's run marks; for a clicking run the ammo rules of the scenario's weapon (null or
+/// missing: its magazine never runs out, or the scenario is not known); for a tracking run also the scenario's time
+/// limit, the video's readings and the user's faint-target cut-off ({on, offset}; null or missing: none).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
@@ -348,6 +375,8 @@ pub struct ReviewRequest {
     pub tracking: bool,
     #[serde(default)]
     pub limit: Option<f64>,
+    #[serde(default)]
+    pub reload: Option<AmmoRules>,
     #[serde(default)]
     pub camera: Vec<CameraReading>,
     #[serde(default)]
@@ -384,7 +413,7 @@ fn review_request(r: ReviewRequest) -> Result<AnyReport, String> {
         let t = review_tracking(&r.tracks, kills, &r.video, r.limit, readings, r.run, r.faint)?;
         Ok(AnyReport::Track(Box::new(TrackReport { outdated, ..t })))
     } else {
-        let c = review_clicks(&r.tracks, kills, &r.video, r.run)?;
+        let c = review_clicks(&r.tracks, kills, &r.video, r.run, r.reload.as_ref())?;
         Ok(AnyReport::Click(Box::new(Report { outdated, ..c.report })))
     }
 }

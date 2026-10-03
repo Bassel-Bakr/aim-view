@@ -121,6 +121,33 @@ pub struct MotionCounts {
     pub frames: OffFrames,
 }
 
+/// One of the bot's direction changes: its frame, and the seconds from it until the crosshair was on the bot again
+/// (0 when it stayed on; None when it was not back before the next change or the run's end).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TurnBack {
+    pub frame: usize,
+    pub back: Option<f64>,
+}
+
+/// How long the crosshair took to get back on the bot after each of its direction changes (`turns`: their frames, in
+/// order): from the change to the first frame on it after the crosshair left it within `window` frames of the change.
+/// The search stops at the next change, at a `stop` frame (a bot just died) and at `end`.
+fn turns_back(turns: &[usize], inside: &[bool], stop: &[bool], window: usize, end: usize, fps: f64) -> Vec<TurnBack> {
+    turns
+        .iter()
+        .enumerate()
+        .map(|(k, &j)| {
+            let next = turns.get(k + 1).map_or(end, |&t| t.min(end));
+            let until = (j..next).find(|&t| stop[t]).unwrap_or(next);
+            let back = match (j..until.min(j + window)).find(|&t| !inside[t]) {
+                None => Some(0.0),
+                Some(left) => (left + 1..until).find(|&t| inside[t]).map(|t| (t - j) as f64 / fps),
+            };
+            TurnBack { frame: j, back }
+        })
+        .collect()
+}
+
 /// Tracking diagnostics from the target's own motion and the camera's (see review.py: `track_motion`).
 #[derive(Clone, Debug, Serialize)]
 pub struct Motion {
@@ -147,6 +174,10 @@ pub struct Motion {
     /// radius, in degrees: where the crosshair sat around the target.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub around: Option<Vec<[f64; 3]>>,
+    /// Each direction change of the bot (both axes' together when they fall within 0.2 s), and how long the crosshair
+    /// took to get back on it. Not in Python's review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turns_back: Option<Vec<TurnBack>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<&'static str>,
     #[serde(flatten)]
@@ -214,6 +245,7 @@ pub fn track_motion(
         error_v: med(&near.iter().map(|t| t.ly.abs()).collect::<Vec<_>>()),
         seconds: moving.len() as f64 / fps,
         around: None,
+        turns_back: None,
         reason: None,
         counts: None,
     };
@@ -285,6 +317,10 @@ pub fn track_motion(
         }
     }
     let (half, turn, quarter) = ((0.5 * fps) as usize, (0.4 * fps) as usize, (0.25 * fps) as usize);
+    let mut at: Vec<usize> = revs.iter().map(|r| r.0).collect();
+    at.sort_unstable();
+    at.dedup_by(|a, b| *a - *b < 2 * d);
+    out.turns_back = Some(turns_back(&at, inside, sw, turn, i1, fps));
     let (mut react, mut ov) = (Vec::new(), Vec::new());
     for &(j, ax, sgn) in &revs {
         if let Some(r) = (j..i1.min(j + half)).find(|&t| {
@@ -702,4 +738,26 @@ fn what_if(s: &TrackSummary, tracking: &[bool], on: &[bool], offs: &[usize], fps
     }
     out.sort_by(|a, b| b.gain.total_cmp(&a.gain));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn turns_back_times_the_way_back_onto_the_bot() {
+        // 10 fps: on, then off from frame 3 after the turn at 2, back on at 6; a turn at 10 the crosshair stays on
+        // through; a turn at 15 it leaves and is not back before the turn at 18; one at 18 it is not back by the end
+        let on = |f: &[usize]| (0..22).map(|i| !f.contains(&i)).collect::<Vec<bool>>();
+        let inside = on(&[3, 4, 5, 16, 17, 18, 19, 20, 21]);
+        let stop = vec![false; 22];
+        let got = turns_back(&[2, 10, 15, 18], &inside, &stop, 4, 22, 10.0);
+        let back: Vec<Option<f64>> = got.iter().map(|t| t.back).collect();
+        assert_eq!(back, [Some(0.4), Some(0.0), None, None]);
+        assert_eq!(got.iter().map(|t| t.frame).collect::<Vec<_>>(), [2, 10, 15, 18]);
+        // a bot dying (a stop frame) before the crosshair is back ends the search
+        let mut stop = stop;
+        stop[5] = true;
+        assert_eq!(turns_back(&[2], &inside, &stop, 4, 22, 10.0)[0].back, None);
+    }
 }

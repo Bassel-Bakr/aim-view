@@ -16,6 +16,7 @@ pub mod mouse;
 pub mod popup;
 pub mod py_random;
 pub mod python;
+pub mod reload;
 pub mod review;
 pub mod scenario;
 pub mod scipy;

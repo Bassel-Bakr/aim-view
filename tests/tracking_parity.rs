@@ -42,7 +42,12 @@ fn tracking_review_matches_python() {
         let readings = VideoReadings { camera: &camera, countdown: &countdown };
         let got = review_tracking(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, video, limit, readings, None, None).unwrap();
         let mut diff = Diff::default();
-        compare("report.json", &serde_json::to_value(&got).unwrap(), &want, &mut diff);
+        let mut got = serde_json::to_value(&got).unwrap();
+        // the time back on the bot after each of its turns: the core's own, Python's review has none
+        if let Some(m) = got.pointer_mut("/summary/motion").and_then(|m| m.as_object_mut()) {
+            m.remove("turns_back");
+        }
+        compare("report.json", &got, &want, &mut diff);
         eprintln!("{case}: {} numbers equal within 1e-9, not to the bit", diff.close);
         for w in diff.wrong.iter().take(30) {
             eprintln!("  {w}");

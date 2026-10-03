@@ -81,6 +81,9 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
         (true, "/api/run") => id().and_then(|id| lib.set_marks(&id, &body())),
         (false, "/api/stats") => id().and_then(|id| lib.stats_info(&id, query("q").as_deref())),
         (true, "/api/stats") => id().and_then(|id| lib.set_stats(&id, &body())),
+        (false, "/api/history") => {
+            query("scenario").ok_or_else(|| Failure::bad("scenario= is missing")).and_then(|s| lib.history(&s))
+        }
         (true, "/api/upload") => {
             let (name, of) = (query("name").unwrap_or_default(), query("id"));
             match req.upload {
