@@ -212,7 +212,24 @@ export interface ClickSummary {
   budget: KillParts | null;
   by_distance: DistanceBand[];
   by_direction: DirectionBand[];
+  /** What would raise the score, biggest first (absent from older cores' reports). */
+  what_if?: ClickWhatIf[];
   info: ReportInfo;
+}
+
+/** The part of a clicking run a what-if line is about. */
+export type ClickWhatIfGroup = 'pace' | 'flicks' | 'micros';
+
+/**
+ * How much a clicking run would gain if one thing changed (summary.what_if): extra kills over the run, and extra score
+ * where it is known (null: not known).
+ */
+export interface ClickWhatIf {
+  group: ClickWhatIfGroup;
+  what: string;
+  kills: number;
+  score: number | null;
+  how: string;
 }
 
 /** While the bot moved one way: the share of the time it did, the time on it, the distance and the lag. */
@@ -486,6 +503,8 @@ export interface Job {
   total?: number;
   seconds?: number;
   error?: string;
+  /** The device the detector runs on, once it has loaded ("DirectML", "DirectML and CPU"); the browser's job has none. */
+  device?: string;
 }
 
 /**

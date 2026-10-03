@@ -1,0 +1,27 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply contents;
+  }
+
+  .what-if {
+    @apply w-full;
+  }
+
+  .group {
+    @apply pt-8 text-left text-sm text-primary;
+  }
+
+  .gain {
+    @apply font-strong text-value;
+  }
+
+  td.how {
+    @apply text-muted;
+  }
+
+  .how {
+    @apply text-left whitespace-normal;
+  }
+}

@@ -71,31 +71,8 @@
   </section>
 }
 
-@if (whatIf().length) {
-  <section aria-label="What would raise your accuracy">
-    <h3>What would raise your accuracy</h3>
-    <p class="section-note">
-      Each line is how much more of the time you would have been on the bot if that one thing had
-      been different and everything else the same: the off-target time it accounts for. They
-      overlap, so they do not add up; each is the most that change could give.
-    </p>
-    <table class="what-if">
-      <thead>
-        <tr>
-          <th>Change</th>
-          <th>Accuracy</th>
-          <th class="how">Why</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (r of whatIf(); track r.what) {
-          <tr>
-            <td>{{ r.what }}</td>
-            <td class="gain">{{ r.gain }}</td>
-            <td class="how">{{ r.how }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  </section>
-}
+<app-what-if-section heading="What would raise your accuracy" [table]="whatIf()">
+  Each line is how much more of the time you would have been on the bot if that one thing had been
+  different and everything else the same: the off-target time it accounts for. They overlap, so they
+  do not add up; each is the most that change could give.
+</app-what-if-section>

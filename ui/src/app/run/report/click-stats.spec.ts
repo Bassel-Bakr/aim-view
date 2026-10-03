@@ -1,5 +1,6 @@
-import { ClickSummary, Flick, Issue } from '../../api';
+import { ClickSummary, ClickWhatIf, Flick, Issue } from '../../api';
 import {
+  clickWhatIf,
   directionRows,
   distanceRows,
   killStats,
@@ -143,5 +144,45 @@ describe('click stats', () => {
     const text = [...shown, ...tiles.map((t) => t.note), sourceNote(video)].join(' ');
     expect(text).not.toMatch(/NaN|undefined|null/);
     expect(sourceNote(video)).toContain('40 kills found in the video alone');
+  });
+
+  it('groups the what-if lines under Pace, Flicks and Micros, each biggest first', () => {
+    const line = (group: ClickWhatIf['group'], what: string, kills: number): ClickWhatIf => ({
+      group,
+      what,
+      kills,
+      score: null,
+      how: 'h',
+    });
+    const t = clickWhatIf([
+      line('micros', 'Settle sooner', 6),
+      line('flicks', 'Stop on the target', 4.25),
+      line('pace', 'Start sooner', 3),
+      line('flicks', 'Go straight there', 12.4),
+    ]);
+    expect(t.columns).toEqual(['Kills']);
+    expect(t.groups.map((g) => g.name)).toEqual(['Pace', 'Flicks', 'Micros']);
+    expect(t.groups[1].lines.map((l) => [l.what, ...l.gains])).toEqual([
+      ['Go straight there', '+12 kills'],
+      ['Stop on the target', '+4.3 kills'],
+    ]);
+  });
+
+  it('adds the score column when a line knows its score, and leaves out empty groups', () => {
+    const t = clickWhatIf([
+      { group: 'flicks', what: 'a', kills: 2, score: 31.5, how: 'h' },
+      { group: 'flicks', what: 'b', kills: 1, score: null, how: 'h' },
+    ]);
+    expect(t.columns).toEqual(['Kills', 'Score']);
+    expect(t.groups.map((g) => g.name)).toEqual(['Flicks']);
+    expect(t.groups[0].lines.map((l) => l.gains)).toEqual([
+      ['+2.0 kills', '+32 score'],
+      ['+1.0 kills', ''],
+    ]);
+  });
+
+  it('shows no what-if lines on a report from an older core', () => {
+    expect(clickWhatIf(undefined).groups).toEqual([]);
+    expect(clickWhatIf([]).groups).toEqual([]);
   });
 });

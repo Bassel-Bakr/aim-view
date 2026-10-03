@@ -1,5 +1,5 @@
 import { Motion, TrackSummary } from '../../api';
-import { motionView, trackNote, trackStats, whatIfRows } from './track-stats';
+import { motionView, trackNote, trackStats, whatIfTable } from './track-stats';
 
 const SUMMARY = {
   score: 13278,
@@ -57,7 +57,10 @@ describe('track stats', () => {
   });
 
   it('shows each change as a gain in accuracy', () => {
-    expect(whatIfRows([{ what: "Don't trail", gain: 0.075, how: 'x' }])[0].gain).toBe('+7.5%');
+    expect(
+      whatIfTable([{ what: "Don't trail", gain: 0.075, how: 'x' }]).groups[0].lines[0].gains,
+    ).toEqual(['+7.5%']);
+    expect(whatIfTable([]).groups).toEqual([]);
   });
 
   it('shows a run without a stats file (no score or accuracy) with dashes', () => {

@@ -1,4 +1,5 @@
 import { Motion, TrackSummary, WhatIf } from '../../api';
+import { WhatIfTable } from '../what-if-section/what-if-section';
 import {
   DIRECTION_ARROWS,
   formatCount,
@@ -263,13 +264,12 @@ export function motionView(m: Motion | null): MotionView | null {
   };
 }
 
-/** A row of the what-if table, as shown. */
-export interface WhatIfRow {
-  what: string;
-  gain: string;
-  how: string;
-}
-
-export function whatIfRows(w: WhatIf[]): WhatIfRow[] {
-  return w.map((r) => ({ what: r.what, gain: `+${(100 * r.gain).toFixed(1)}%`, how: r.how }));
+/** The what-if table: the accuracy each change would add. */
+export function whatIfTable(w: WhatIf[]): WhatIfTable {
+  const lines = w.map((r) => ({
+    what: r.what,
+    gains: [`+${(100 * r.gain).toFixed(1)}%`],
+    how: r.how,
+  }));
+  return { columns: ['Accuracy'], groups: lines.length ? [{ name: null, lines }] : [] };
 }

@@ -4,20 +4,4 @@
   .cards {
     @apply mb-2 grid grid-cols-(--cards-columns) gap-5;
   }
-
-  .what-if {
-    @apply w-full;
-  }
-
-  .gain {
-    @apply font-strong text-value;
-  }
-
-  td.how {
-    @apply text-muted;
-  }
-
-  .how {
-    @apply text-left whitespace-normal;
-  }
 }

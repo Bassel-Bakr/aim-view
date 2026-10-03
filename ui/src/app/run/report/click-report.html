@@ -12,8 +12,8 @@
   <div class="cards">
     @for (s of stats(); track s.label) {
       <div class="card">
-        <span class="card-value" [title]="s.value">{{ s.value }}</span>
         <span class="card-label">{{ s.label }}</span>
+        <span class="card-value" [title]="s.value">{{ s.value }}</span>
         <span class="card-detail">{{ s.detail }}</span>
       </div>
     }
@@ -88,3 +88,9 @@
     </table>
   </section>
 </div>
+
+<app-what-if-section heading="What would raise your score" [table]="whatIf()">
+  Each line is how many more kills the run would have had (and how much more score, where it is
+  known) if that one thing had been different and everything else the same. They overlap, so they do
+  not add up; each is the most that change could give.
+</app-what-if-section>

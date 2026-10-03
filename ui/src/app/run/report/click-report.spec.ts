@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ClickReport as ClickReportData, Flick } from '../../api';
+import { ClickReport as ClickReportData, ClickWhatIf, Flick } from '../../api';
 import { answer, serverMode } from '../../fake-api';
 import { FlickFocus } from '../flick-focus';
 import { ClickReport } from './click-report';
@@ -49,5 +49,31 @@ describe('ClickReport', () => {
     (el.querySelector('section button') as HTMLButtonElement).click();
     await fixture.whenStable();
     expect(heading()).toContain('Whole run');
+  });
+
+  it('shows what would raise the score only when the report has the lines', async () => {
+    TestBed.configureTestingModule({ providers: serverMode() });
+    const fixture = TestBed.createComponent(ClickReport);
+    fixture.componentRef.setInput('report', REPORT);
+    await answer({ '/api/vods': [] });
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const section = () => el.querySelector('section[aria-label="What would raise your score"]');
+    expect(section()).toBeNull();
+
+    const line: ClickWhatIf = {
+      group: 'pace',
+      what: 'Start sooner',
+      kills: 3,
+      score: null,
+      how: 'Why.',
+    };
+    fixture.componentRef.setInput('report', {
+      ...REPORT,
+      summary: { ...REPORT.summary, what_if: [line] },
+    });
+    await fixture.whenStable();
+    expect(section()?.textContent).toContain('Pace');
+    expect(section()?.textContent).toContain('+3.0 kills');
   });
 });

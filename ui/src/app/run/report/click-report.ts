@@ -4,7 +4,9 @@ import { extraShots, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
 import { RunCharts } from '../run-charts/run-charts';
+import { WhatIfSection } from '../what-if-section/what-if-section';
 import {
+  clickWhatIf,
   directionRows,
   distanceRows,
   killStats,
@@ -15,11 +17,11 @@ import {
 
 /**
  * A clicking run's report under the video: the whole run's cards (or the picked kill's, with the run's medians), the
- * run at a glance, and the kills by distance and by direction. Where the time goes and the checks are beside the video
- * (click-side).
+ * run at a glance, the kills by distance and by direction, and what would raise the score. Where the time goes and the
+ * checks are beside the video (click-side).
  */
 @Component({
-  imports: [RunCharts],
+  imports: [RunCharts, WhatIfSection],
   selector: 'app-click-report',
   templateUrl: './click-report.html',
   styleUrl: './click-report.scss',
@@ -48,4 +50,5 @@ export class ClickReport {
   protected readonly byDirection = computed(() =>
     directionRows(this.report().summary.by_direction),
   );
+  protected readonly whatIf = computed(() => clickWhatIf(this.report().summary.what_if));
 }

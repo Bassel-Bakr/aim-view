@@ -1,4 +1,13 @@
-import { ClickSummary, DirectionBand, DistanceBand, Flick, Issue } from '../../api';
+import {
+  ClickSummary,
+  ClickWhatIf,
+  ClickWhatIfGroup,
+  DirectionBand,
+  DistanceBand,
+  Flick,
+  Issue,
+} from '../../api';
+import { WhatIfTable } from '../what-if-section/what-if-section';
 import {
   arrow,
   DIRECTION_ARROWS,
@@ -302,4 +311,43 @@ export function directionRows(bands: DirectionBand[]): DirectionRow[] {
     short: formatPercent(b.short),
     past: formatPercent(b.past),
   }));
+}
+
+/** A what-if group and its heading. */
+type WhatIfHeading = [group: ClickWhatIfGroup, name: string];
+
+/** The what-if groups in the order shown, with their headings. */
+const WHAT_IF_GROUPS: WhatIfHeading[] = [
+  ['pace', 'Pace'],
+  ['flicks', 'Flicks'],
+  ['micros', 'Micros'],
+];
+
+/** A gain with its sign: one decimal under 10, whole numbers from there. */
+function plus(n: number): string {
+  return `+${Math.abs(n) < 9.95 ? n.toFixed(1) : n.toFixed(0)}`;
+}
+
+/**
+ * The what-if table: the extra kills each change would give, and the extra score where it is known, under Pace, Flicks
+ * and Micros, each group biggest first. A group with no lines is left out, and so is the table on reports that lack
+ * the lines (older cores).
+ */
+export function clickWhatIf(w: ClickWhatIf[] | undefined): WhatIfTable {
+  const lines = w ?? [];
+  const score = lines.some((l) => l.score !== null);
+  const groups = WHAT_IF_GROUPS.map(([group, name]) => ({
+    name,
+    lines: lines
+      .filter((l) => l.group === group)
+      .sort((a, b) => b.kills - a.kills)
+      .map((l) => ({
+        what: l.what,
+        gains: score
+          ? [`${plus(l.kills)} kills`, l.score === null ? '' : `${plus(l.score)} score`]
+          : [`${plus(l.kills)} kills`],
+        how: l.how,
+      })),
+  })).filter((g) => g.lines.length);
+  return { columns: score ? ['Kills', 'Score'] : ['Kills'], groups };
 }
