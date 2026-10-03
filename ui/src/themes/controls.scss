@@ -30,28 +30,26 @@
     }
   }
 
-  // A number card. A clicking run's: its value, what it is, and a line under it (the run's median, or a detail). A
-  // tracking run's: its title, its reading, a detail, and why it matters.
+  // A number card, in the run page's headline format (run/headline): what it is in small capitals, the value large,
+  // and a line under it. A clicking run's: label, value, detail (the run's median, or a detail). A tracking run's:
+  // title, reading, a detail, and why it matters.
   .card {
-    @apply block min-w-(--card-min-width) rounded-lg border border-border bg-surface-1 px-7 py-6;
+    @apply block min-w-(--card-min-width) rounded-lg border border-border bg-surface-2 px-6 py-5;
   }
 
-  .card-value {
-    @apply block truncate text-xl font-strong tracking-tight tabular-nums;
+  .card-label,
+  .card-title {
+    @apply block truncate text-xs font-strong tracking-wide text-muted uppercase;
+  }
+
+  .card-value,
+  .card-reading {
+    @apply block truncate font-display text-kpi leading-tight font-bold tabular-nums;
   }
 
   // An empty line keeps its height, so every card is as tall as the others
-  .card-label,
   .card-detail {
-    @apply block min-h-lh text-xs text-muted;
-  }
-
-  .card-title {
-    @apply block text-sm leading-(--card-title-leading) font-bold;
-  }
-
-  .card-reading {
-    @apply mt-2 mb-1 block truncate text-(length:--stat-size) font-medium text-value;
+    @apply block min-h-lh truncate text-sm text-muted;
   }
 
   .card-why {

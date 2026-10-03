@@ -40,8 +40,8 @@
       <div class="cards">
         @for (c of cards(); track c.key) {
           <div class="card" [title]="c.why">
-            <span class="card-value">{{ c.value }}</span>
             <span class="card-label">{{ c.label }}</span>
+            <span class="card-value">{{ c.value }}</span>
             <span class="card-detail">{{ c.detail }}</span>
           </div>
         }

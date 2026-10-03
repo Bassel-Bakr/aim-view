@@ -63,9 +63,9 @@ describe('MousePanel', () => {
       [...c.children].map((s) => s.textContent?.trim()).join(' | '),
     );
     expect(cards).toEqual([
-      '163 ms | Reaction | p10 150 ms · p90 170 ms',
-      '383 °/s | Peak speed | p10 300 °/s · p90 400 °/s',
-      '41 ms | Still before the click | p10 0 ms · p90 80 ms',
+      'Reaction | 163 ms | p10 150 ms · p90 170 ms',
+      'Peak speed | 383 °/s | p10 300 °/s · p90 400 °/s',
+      'Still before the click | 41 ms | p10 0 ms · p90 80 ms',
     ]);
     const rows = [...el.querySelectorAll('tbody tr')].map((r) =>
       [...r.children].map((c) => c.textContent?.trim()).join(' | '),
