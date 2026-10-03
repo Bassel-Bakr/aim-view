@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::{H, W, to_deg};
 use crate::python::{hypot, numpy_mean, round};
 
-/// A box from the detector model, in frame pixels, as it gives them (float32): center, size, and score.
+/// A box from the detector model, in frame pixels, as it gives them (float32): center, size, and score (on the reference
+/// model's scale: src/model.rs).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RawBox {
     pub cx: f32,

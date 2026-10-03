@@ -46,6 +46,25 @@ pub extern "C" fn tracker_new_kovobs(cap: usize) -> *mut Tracker {
     Box::into_raw(Box::new(Tracker::kovobs(cap)))
 }
 
+/// The detector model's settings file (detector_<name>.json, UTF-8: src/model.rs) for the tracker, before its first
+/// frame. Returns a text as `tracker_finish` does: empty when the file was read, else why it was not (the tracker then
+/// keeps the settings it had).
+///
+/// # Safety
+/// `tracker` from `tracker_new`; `text` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracker_set_model(tracker: *mut Tracker, text: *const u8, len: usize) -> *mut u8 {
+    let t = unsafe { &mut *tracker };
+    let text = String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(text, len) });
+    match crate::model::ModelSettings::from_json(&text) {
+        Ok(model) => {
+            t.set_model(model);
+            bytes_out(Vec::new())
+        }
+        Err(e) => bytes_out(e.into_bytes()),
+    }
+}
+
 /// The frame the next boxes are from, as RGB24 at 1280 x 720: its excluded areas are watched for pop-ups.
 ///
 /// # Safety

@@ -1,6 +1,7 @@
 // Builds the review core for the browser (WebAssembly) and copies what the UI ships beside it into ui/generated/
 // (not in git): the core's module (core/aimview.wasm), the detector models the browser runs (models/, the _u8in
-// exports) and the user's area finder data (data/), which browser mode starts from. angular.json serves ui/generated/
+// exports, each with its settings file detector_<name>.json: python/model/MODEL_FILE.md) and the user's area finder
+// data (data/), which browser mode starts from. angular.json serves ui/generated/
 // as it is; Angular takes no files from outside ui/.
 //
 // The area finder data names the user's recordings, so a build meant for others leaves it out: it is copied unless
@@ -21,15 +22,24 @@ await $`cargo build --profile ${profile} --target wasm32-unknown-unknown`.cwd(ro
 mkdirSync(join(out, 'core'), { recursive: true });
 copyFileSync(join(root, `target/wasm32-unknown-unknown/${profile}/aimview.wasm`), join(out, 'core/aimview.wasm'));
 
-// the models the model panel offers (python/model/models.json), each as its _u8in export
+// the models the model panel offers (python/model/models.json), each as its _u8in export and its settings file (a
+// model without one takes today's values)
 const exports = join(root, 'python/model/exports');
 const listed = Object.keys(JSON.parse(readFileSync(join(root, 'python/model/models.json'), 'utf8')).models);
 mkdirSync(join(out, 'models'), { recursive: true });
-const models = listed.map((n) => `detector_${n}_u8in.onnx`).filter((f) => existsSync(join(exports, f)));
-for (const f of models) copyFileSync(join(exports, f), join(out, 'models', f));
-const unexported = listed.filter((n) => !models.includes(`detector_${n}_u8in.onnx`));
-console.log(`ui/generated: core/aimview.wasm and ${models.length} models`);
+const exported = listed.filter((n) => existsSync(join(exports, `detector_${n}_u8in.onnx`)));
+const settled = exported.filter((n) => existsSync(join(exports, `detector_${n}.json`)));
+for (const f of [
+  ...exported.map((n) => `detector_${n}_u8in.onnx`),
+  ...settled.map((n) => `detector_${n}.json`),
+]) {
+  copyFileSync(join(exports, f), join(out, 'models', f));
+}
+const unexported = listed.filter((n) => !exported.includes(n));
+const unsettled = exported.filter((n) => !settled.includes(n));
+console.log(`ui/generated: core/aimview.wasm and ${exported.length} models`);
 if (unexported.length) console.log(`  listed with no _u8in export in python/model/exports: ${unexported.join(', ')}`);
+if (unsettled.length) console.log(`  with no settings file (detector_<name>.json): ${unsettled.join(', ')}`);
 
 // the area finder's training data, from python/server.py's data folder (test_out/vod_app/), as it is there
 const from = join(root, 'test_out', 'vod_app');

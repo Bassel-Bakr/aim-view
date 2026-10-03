@@ -14,12 +14,13 @@ use aimview::camera::{COUNTDOWN_ROWS, CameraPart, CameraWatch, VideoReadings, ex
 use aimview::convert::{Converter, DST_H as H, DST_W as W};
 use aimview::fixed::FixedMap;
 use aimview::hud::{HudPart, HudReading, HudWatch};
+use aimview::model::ModelSettings;
 use aimview::track::{Mask, TrackFrame};
 use aimview::tracker::{TrackPart, Tracker};
 use serde::Serialize;
 
 use crate::config::Device;
-use crate::detector::Detector;
+use crate::detector::{Detector, model_settings};
 use crate::video::{Frames, VideoInfo, probe};
 
 /// The fewest frames a run has (10 s at 60 frames a second): a shorter recording is one run.
@@ -164,10 +165,13 @@ impl Request {
         self.areas.iter().map(|a| [a.0, a.1, a.2, a.3]).collect()
     }
 
-    /// The tracker for the areas: the challenge's end screen among them is left out only while it shows.
-    fn tracker(&self) -> Tracker {
+    /// The tracker for the areas and the model's settings: the challenge's end screen among the areas is left out only
+    /// while it shows.
+    fn tracker(&self, model: &ModelSettings) -> Tracker {
         let ends: Vec<bool> = self.areas.iter().map(|a| a.4 == aimview::popup::END_SCREEN).collect();
-        Tracker::new(self.rects(), self.cap).end_screens(&ends)
+        let mut tracker = Tracker::new(self.rects(), self.cap).end_screens(&ends);
+        tracker.set_model(model.clone());
+        tracker
     }
 
     /// The camera watch, its tiles kept clear of the areas (KovOBS's layout when there are none, as python/review.py
@@ -185,6 +189,7 @@ pub(crate) fn frame_bytes(info: &VideoInfo) -> usize {
 
 /// Reviews a recording: its tracks and readings. `on_device` is told where each run's detector runs.
 pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Result<Reviewed, String> {
+    let model = model_settings(&req.model)?;
     let info = probe(&req.video)?;
     if info.times.is_empty() {
         return Err("the video has no frames".into());
@@ -214,14 +219,14 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
             // a review from part way in: the first run's camera and HUD watches have nothing before its first frame
             .map(|(i, (run, hud))| {
                 let skip = if i == 0 { run.first } else { 0 };
-                let (info, fixed, done) = (&info, &fixed, &done);
-                s.spawn(move || review_run(req, info, fixed, run, hud, skip, done, total, progress, on_device))
+                let (model, info, fixed, done) = (&model, &info, &fixed, &done);
+                s.spawn(move || review_run(req, model, info, fixed, run, hud, skip, done, total, progress, on_device))
             })
             .collect();
         running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a run of the review failed".into()))).collect()
     });
     progress("linking", total, total);
-    let mut tracker = req.tracker();
+    let mut tracker = req.tracker(&model);
     let mut camera = req.camera_watch(&fixed);
     let mut hud = HudWatch::new(info.width, info.height, info.full);
     let mut devices = String::new();
@@ -317,6 +322,7 @@ struct RunPart {
 #[allow(clippy::too_many_arguments)]
 fn review_run(
     req: &Request,
+    model: &ModelSettings,
     info: &VideoInfo,
     fixed: &[u8],
     run: &Run,
@@ -334,7 +340,7 @@ fn review_run(
     let mut detector = Detector::new(&req.model, batch, fixed, req.device)?;
     let device = detector.device;
     on_device(device);
-    let mut started = req.tracker();
+    let mut started = req.tracker(model);
     started.start_at(run.first);
     let tracker = Mutex::new(started);
     let (rows_from, rows_to) = (COUNTDOWN_ROWS.0 * W * 3, COUNTDOWN_ROWS.1 * W * 3);

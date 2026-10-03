@@ -54,7 +54,10 @@
       "../python/model/models.json": "models/models.json",
       "../python/model/exports/detector_full_v3_u8in.onnx": "models/detector_full_v3_u8in.onnx",
       "../python/model/exports/detector_small_v13_u8in.onnx": "models/detector_small_v13_u8in.onnx",
-      "../python/model/exports/detector_small_v11_u8in.onnx": "models/detector_small_v11_u8in.onnx"
+      "../python/model/exports/detector_small_v11_u8in.onnx": "models/detector_small_v11_u8in.onnx",
+      "../python/model/exports/detector_full_v3.json": "models/detector_full_v3.json",
+      "../python/model/exports/detector_small_v13.json": "models/detector_small_v13.json",
+      "../python/model/exports/detector_small_v11.json": "models/detector_small_v11.json"
     }
   }
 }

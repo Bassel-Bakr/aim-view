@@ -11,6 +11,7 @@ pub mod geometry;
 pub mod hud;
 pub mod matching;
 pub mod measure;
+pub mod model;
 pub mod mouse;
 pub mod popup;
 pub mod py_random;

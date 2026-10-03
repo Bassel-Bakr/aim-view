@@ -78,6 +78,24 @@ function frameRate(rate: number): number {
   return Math.abs(rate - Math.round(rate)) < 0.01 ? Math.round(rate) : rate;
 }
 
+/**
+ * The model's settings file (python/model/MODEL_FILE.md), beside its export: detector_<name>.json for
+ * detector_<name>_u8in.onnx. Null when the model has none: the tracker then takes today's values.
+ */
+async function modelSettings(modelUrl: string): Promise<string | null> {
+  const url = modelUrl.replace(/_u8in\.onnx$/, '.json');
+  if (url === modelUrl) return null;
+  // asking for JSON: a server would send the app's page for a missing file asked for as any type
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (res.status === 404) {
+    console.warn(`${url} is missing: the detector takes today's values`);
+    return null;
+  }
+  if (!res.ok)
+    throw new Error(`The model's settings file ${url} could not be read (${res.status})`);
+  return res.text();
+}
+
 /** onnxruntime-web's build for the device, loading its WebAssembly from ortPath. */
 async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
   const ort: Ort =
@@ -178,7 +196,7 @@ async function review(req: ReviewRequest): Promise<void> {
     say({ kind: 'part', part: null });
     return;
   }
-  const core = await Core.load(req.coreUrl);
+  const [core, settings] = await Promise.all([Core.load(req.coreUrl), modelSettings(req.modelUrl)]);
   const detector = await startDetector(req);
   const { ort, device } = detector;
   let session = detector.session;
@@ -263,6 +281,7 @@ async function review(req: ReviewRequest): Promise<void> {
   const score = core.reserve(gw * gh * 4);
   const reg = core.reserve(4 * gw * gh * 4);
   const tracker = core.tracker(req.areas, req.cap ?? 0);
+  if (settings !== null) core.setModel(tracker, settings);
   core.x.tracker_start_at(tracker, run.first);
   let n = 0;
   const frameBytes = W * H * 3;

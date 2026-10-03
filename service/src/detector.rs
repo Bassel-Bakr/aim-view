@@ -1,11 +1,13 @@
 //! The detector model on this computer, on the device the configuration says (config.rs: `Device`): ONNX Runtime with
 //! DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature) or on the CPU; `Auto` tries the GPU
 //! first and falls back to the CPU. It takes the _u8in export (python/model/export.py): a batch of 720p RGB frames and
-//! the fixed map, as bytes.
+//! the fixed map, as bytes. The model's settings come from its settings file beside it (`model_settings`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use aimview::convert::{DST_H as H, DST_W as W};
+use aimview::model::{DEFAULT_THRESHOLD, ModelSettings, settings_file};
 use ort::execution_providers::{CPUExecutionProvider, CUDAExecutionProvider, DirectMLExecutionProvider, ExecutionProviderDispatch};
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
@@ -83,5 +85,31 @@ impl Detector {
             Ok(out[name].try_extract_tensor::<f32>().map_err(|e| e.to_string())?.1.to_vec())
         };
         Ok(Maps { score: map("score")?, reg: map("reg")? })
+    }
+}
+
+/// The settings file beside a model's export (detector_<name>.json: src/model.rs). A model with none gets today's
+/// values, said on stderr once a model; a file that cannot be read stops the review.
+pub fn model_settings(model: &Path) -> Result<ModelSettings, String> {
+    let name = model.file_name().and_then(|n| n.to_str()).and_then(settings_file);
+    let path = name.map_or_else(|| model.with_extension("json"), |n| model.with_file_name(n));
+    match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            ModelSettings::from_json(&text).map_err(|e| format!("the model's settings file {}: {e}", path.display()))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            static SAID: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+            if let Ok(mut said) = SAID.lock()
+                && !said.contains(&path)
+            {
+                eprintln!(
+                    "{} is missing: the detector takes today's values (threshold {DEFAULT_THRESHOLD}, no score map)",
+                    path.display()
+                );
+                said.push(path);
+            }
+            Ok(ModelSettings::default())
+        }
+        Err(e) => Err(format!("the model's settings file {} could not be read: {e}", path.display())),
     }
 }

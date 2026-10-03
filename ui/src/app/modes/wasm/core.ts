@@ -13,6 +13,7 @@ export interface CoreExports {
   tracker_new(areas: number, count: number, cap: number): number;
   tracker_new_ends(areas: number, ends: number, count: number, cap: number): number;
   tracker_new_kovobs(cap: number): number;
+  tracker_set_model(tracker: number, text: number, len: number): number;
   tracker_watch(tracker: number, rgb: number): void;
   tracker_push_maps(tracker: number, score: number, reg: number, gw: number, gh: number): number;
   tracker_finish(tracker: number): number;
@@ -114,6 +115,17 @@ export class Core {
     );
     this.free(ends);
     return tracker;
+  }
+
+  /**
+   * The detector model's settings file (detector_<name>.json: python/model/MODEL_FILE.md) for a tracker, before its
+   * first frame. Throws when the core cannot read it.
+   */
+  setModel(tracker: number, settings: string): void {
+    const why = this.takeText(
+      this.textIn(settings, (ptr, len) => this.x.tracker_set_model(tracker, ptr, len)),
+    );
+    if (why) throw new Error(`The model's settings file: ${why}`);
   }
 
   /**
