@@ -1,0 +1,43 @@
+@use 'themes/theme' as t;
+@use 'themes/report' as r;
+@reference '../../../tailwind.css';
+
+// The drawings' lines, bars and labels: SVG strokes and fills, which utilities do not reach inside the drawing
+@layer components {
+  .grid {
+    stroke: t.$grid;
+  }
+
+  .label {
+    fill: t.$text-muted;
+    font-size: t.$font-size-xs;
+  }
+
+  .bar {
+    fill: t.$on-target;
+    cursor: pointer;
+
+    &:hover {
+      opacity: r.$chart-hover-opacity;
+    }
+  }
+
+  .band {
+    fill: t.$series-1;
+  }
+
+  .median {
+    stroke: t.$text-primary;
+    stroke-dasharray: r.$chart-dash;
+  }
+
+  .edge {
+    stroke: t.$on-target;
+    stroke-width: r.$chart-line-width;
+  }
+
+  .median-label {
+    fill: t.$text-secondary;
+    font-size: t.$font-size-xs;
+  }
+}

@@ -91,25 +91,3 @@
     stroke-width: r.$chart-line-width;
   }
 }
-
-@layer components {
-  .charts {
-    @apply grid grid-cols-(--charts-columns) gap-5;
-  }
-
-  .chart {
-    @apply rounded-lg border border-border bg-surface-1 px-7 py-6;
-  }
-
-  .chart-title {
-    @apply text-sm font-strong;
-  }
-
-  .svg {
-    @apply mt-2 block w-full;
-  }
-
-  .chart-note {
-    @apply mt-2 text-xs text-muted;
-  }
-}

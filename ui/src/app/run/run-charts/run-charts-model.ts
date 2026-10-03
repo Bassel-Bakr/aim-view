@@ -110,7 +110,7 @@ export interface SpeedsModel {
   yTicks: AxisTick[];
 }
 
-const BOX: ChartBox = { width: 520, height: 200, left: 44, right: 12, top: 10, bottom: 24 };
+export const BOX: ChartBox = { width: 520, height: 200, left: 44, right: 12, top: 10, bottom: 24 };
 /** A bar fills this share of its slot. */
 const BAR_FILL = 0.7;
 /** The speeds chart's span around the end of the main flick, in seconds. */
@@ -130,7 +130,11 @@ export function niceStep(top: number): number {
 }
 
 /** The ticks from 0 to top, each placed by at() and labelled by label(). */
-function ticks(top: number, at: (v: number) => number, label: (v: number) => string): AxisTick[] {
+export function ticks(
+  top: number,
+  at: (v: number) => number,
+  label: (v: number) => string,
+): AxisTick[] {
   const step = niceStep(top);
   const out: AxisTick[] = [];
   for (let v = 0; v <= top + 1e-9; v += step) out.push({ at: at(v), label: label(v) });

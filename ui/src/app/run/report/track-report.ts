@@ -1,5 +1,6 @@
 import { Component, computed, input } from '@angular/core';
-import { TrackReport as TrackReportData } from '../../api';
+import { TrackReport as TrackReportData, Tracks } from '../../api';
+import { TrackCharts } from '../track-charts/track-charts';
 import { motionView, trackNote, trackStats, whatIfRows } from './track-stats';
 
 /**
@@ -7,12 +8,15 @@ import { motionView, trackNote, trackStats, whatIfRows } from './track-stats';
  * direction too), and what would raise the accuracy.
  */
 @Component({
+  imports: [TrackCharts],
   selector: 'app-track-report',
   templateUrl: './track-report.html',
   styleUrl: './track-report.scss',
 })
 export class TrackReport {
   readonly report = input.required<TrackReportData>();
+  /** The tracks, for the charts; null while they load. */
+  readonly tracks = input<Tracks | null>(null);
 
   protected readonly stats = computed(() => trackStats(this.report().summary));
   protected readonly about = computed(() => trackNote(this.report().summary));

@@ -86,5 +86,5 @@
 @if (clickReport(); as cr) {
   <app-click-report class="report" [report]="cr" />
 } @else if (trackReport(); as tr) {
-  <app-track-report class="report" [report]="tr" />
+  <app-track-report class="report" [report]="tr" [tracks]="tracks()" />
 }

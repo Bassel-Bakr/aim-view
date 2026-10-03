@@ -1,0 +1,141 @@
+<div class="charts">
+  @let ot = onTarget();
+  <figure class="chart">
+    <figcaption class="chart-title">On target, {{ window }} seconds at a time</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="The share of the time on the bot in each stretch of the run"
+      [attr.viewBox]="'0 0 ' + ot.box.width + ' ' + ot.box.height"
+    >
+      @for (t of ot.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="ot.box.left"
+          [attr.x2]="ot.box.width - ot.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="ot.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of ot.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="ot.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @for (b of ot.bars; track b.seconds) {
+        <rect
+          class="bar"
+          [attr.x]="b.x"
+          [attr.y]="b.y"
+          [attr.width]="b.width"
+          [attr.height]="b.height"
+          (click)="goTo(b.seconds)"
+        >
+          <title>{{ b.title }}</title>
+        </rect>
+      }
+      @if (ot.overall; as o) {
+        <line
+          class="median"
+          [attr.x1]="ot.box.left"
+          [attr.x2]="ot.box.width - ot.box.right"
+          [attr.y1]="o.at"
+          [attr.y2]="o.at"
+        />
+        <text
+          class="median-label"
+          text-anchor="end"
+          [attr.x]="ot.box.width - ot.box.right"
+          [attr.y]="o.at - 4"
+        >
+          {{ o.label }}
+        </text>
+      }
+    </svg>
+    <p class="chart-note">
+      The share of each stretch spent on the bot, of the time tracking. Click one to go there in the
+      video.
+    </p>
+  </figure>
+
+  @let sp = spread();
+  <figure class="chart">
+    <figcaption class="chart-title">Distance from the bot's center line</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      aria-label="How the distance from the bot's center line was spread over the run"
+      [attr.viewBox]="'0 0 ' + sp.box.width + ' ' + sp.box.height"
+    >
+      @for (t of sp.yTicks; track t.label) {
+        <line
+          class="grid"
+          [attr.x1]="sp.box.left"
+          [attr.x2]="sp.box.width - sp.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
+        />
+        <text class="label" text-anchor="end" [attr.x]="sp.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of sp.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="sp.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      @for (b of sp.bars; track $index) {
+        <rect
+          class="band"
+          [attr.x]="b.x"
+          [attr.y]="b.y"
+          [attr.width]="b.width"
+          [attr.height]="b.height"
+        >
+          <title>{{ b.title }}</title>
+        </rect>
+      }
+      @if (sp.edge; as e) {
+        <line
+          class="edge"
+          [attr.x1]="e.at"
+          [attr.x2]="e.at"
+          [attr.y1]="sp.box.top"
+          [attr.y2]="sp.box.height - sp.box.bottom"
+        />
+        <text
+          class="median-label"
+          text-anchor="start"
+          [attr.x]="e.at + 4"
+          [attr.y]="sp.box.top + 10"
+        >
+          {{ e.label }}
+        </text>
+      }
+      @if (sp.median; as m) {
+        <line
+          class="median"
+          [attr.x1]="m.at"
+          [attr.x2]="m.at"
+          [attr.y1]="sp.box.top"
+          [attr.y2]="sp.box.height - sp.box.bottom"
+        />
+        <text
+          class="median-label"
+          text-anchor="start"
+          [attr.x]="m.at + 4"
+          [attr.y]="sp.box.top + 24"
+        >
+          {{ m.label }}
+        </text>
+      }
+    </svg>
+    <p class="chart-note">
+      The share of the time at each distance, on or near the bot (within three of its radii). Left
+      of its edge, the crosshair was on it.
+    </p>
+  </figure>
+</div>

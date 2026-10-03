@@ -58,6 +58,28 @@
     @apply mt-3 block text-2xs leading-(--card-why-leading) text-muted;
   }
 
+  // A chart in a card: its title, the drawing (an SVG that scales with the card), and a note under it. .charts lays
+  // several out side by side.
+  .charts {
+    @apply grid grid-cols-(--charts-columns) gap-5;
+  }
+
+  .chart {
+    @apply rounded-lg border border-border bg-surface-1 px-7 py-6;
+  }
+
+  .chart-title {
+    @apply text-sm font-strong;
+  }
+
+  .chart-svg {
+    @apply mt-2 block w-full;
+  }
+
+  .chart-note {
+    @apply mt-2 text-xs text-muted;
+  }
+
   // A small color square in a legend; its color comes from a background class or style.
   .color-swatch {
     @apply inline-block size-(--swatch-size) flex-none rounded-(--swatch-radius);
