@@ -1,15 +1,15 @@
-# aimview
+# Aim View
 
 Review aim trainer recordings (VODs). The app tracks every target frame by frame with a trained detector, matches
 the kills with the run's stats file (or reads the game's HUD in the video), and measures each flick. For tracking runs
 it measures the time on the target, how the crosshair followed the bot, and what would raise the accuracy. It works on
 KovaaK's recordings from KovOBS, other players' uploads, and Aim Lab runs.
 
-aimview started inside the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) and was copied here on 2026-10-02.
+Aim View started inside the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) and was copied here on 2026-10-02.
 
 ## Where it's going
 
-aimview will run three ways from one code base:
+Aim View will run three ways from one code base:
 
 1. As a web app, with the detector and the review running in the browser.
 2. As a web app with the Python server doing some of the work.

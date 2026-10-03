@@ -802,7 +802,7 @@ def main():
             print(f"model {model}: no file it can run from here")
     lib.load_stats_index()
     Handler.lib = lib
-    print(f"VOD review: http://127.0.0.1:{a.port}/  (VODs in {a.vods}; {sum(len(v) for v in lib.index.values())} stats "
+    print(f"Aim View: http://127.0.0.1:{a.port}/  (VODs in {a.vods}; {sum(len(v) for v in lib.index.values())} stats "
           f"files; model: {lib.model} on the {'GPU' if getattr(lib.detector, 'dev', 'cpu') == 'cuda' else 'CPU'})")
     sys.stdout.flush()
     ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()

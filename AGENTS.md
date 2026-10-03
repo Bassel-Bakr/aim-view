@@ -1,6 +1,6 @@
-# aimview: agent guide
+# Aim View: agent guide
 
-aimview reviews aim trainer recordings: `python/review.py` is the pipeline, `python/server.py` and `python/app/` the web app,
+Aim View reviews aim trainer recordings: `python/review.py` is the pipeline, `python/server.py` and `python/app/` the web app,
 `python/model/` the trained target detector. Read `README.md` first, then `python/README.md` (how the review works) and
 `python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
 `python/model/REPRODUCE.md`.

@@ -2,7 +2,7 @@
 name = "aimview"
 version = "0.1.0"
 edition = "2024"
-description = "aimview's review core: finds the targets in a recording and measures the aim"
+description = "Aim View's review core: finds the targets in a recording and measures the aim"
 publish = false
 
 [workspace]
