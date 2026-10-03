@@ -95,7 +95,8 @@ pub fn facts(text: &str) -> Facts {
 fn characters(t: &str) -> impl Iterator<Item = &str> {
     let mut starts: Vec<usize> = t.match_indices("\n[Character Profile]").map(|(i, _)| i + 1).collect();
     starts.push(t.len() + 1);
-    let last = starts.len() - 2;
+    // with no profile there is nothing to cut, and no last one
+    let last = starts.len().saturating_sub(2);
     (0..starts.len() - 1).map(move |k| {
         let end = starts[k + 1] - 1;
         // the "\r" before a newline that splits them goes with the split; the end of the text keeps its own
@@ -107,6 +108,13 @@ fn characters(t: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An untagged file with no character profile: dynamic clicking (no bot's speed is known), without a panic.
+    #[test]
+    fn reads_a_file_with_no_characters() {
+        assert_eq!(facts("Name=x\r\nTimelimit=60\r\n").kind, Kind::Dynamic);
+        assert_eq!(characters("Name=x").count(), 0);
+    }
 
     #[test]
     fn reads_the_tags_the_limit_and_the_bots() {
