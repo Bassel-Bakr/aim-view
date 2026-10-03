@@ -39,8 +39,8 @@ export class ClickReport {
     const m = this.picked();
     const s = this.report().summary;
     return m
-      ? killStats(m, s, pickText(this.paths.analysis(), m.n))
-      : runStats(s, this.pathSummary());
+      ? killStats(m, s, pickText(this.paths.analysis(), m.n), this.report().flicks)
+      : runStats(s, this.pathSummary(), this.report().flicks, this.report().fps);
   });
   protected readonly source = computed(() => sourceNote(this.report().summary));
   protected readonly budget = computed(() => budget(this.report().summary.budget, this.picked()));

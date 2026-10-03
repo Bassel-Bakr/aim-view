@@ -108,6 +108,9 @@ export interface ReportInfo {
   kills_stats?: number;
 }
 
+/** A target's place from the crosshair, in degrees: [x, y]. */
+export type TargetOffset = [x: number, y: number];
+
 /** One kill and the flick to it (review.measure). Times in seconds, angles in degrees. */
 export interface Flick {
   n: number;
@@ -123,9 +126,13 @@ export interface Flick {
   arrive: number;
   dwell: number;
   past: number;
+  /** Separate bursts of movement after the main flick. */
   corr: number;
   click_speed: number;
+  /** How far the crosshair was from the target's center at the click, and where: the target's place from the
+   * crosshair, in degrees. */
   click_off: number;
+  click_off_xy: TargetOffset;
   settle: number;
   still: number;
   start_frame: number;
@@ -194,6 +201,7 @@ export interface ClickSummary {
   peak: number | null;
   still: number | null;
   click_speed: number | null;
+  click_off: number | null;
   /** The average kill's time in its five steps. */
   budget: KillParts | null;
   by_distance: DistanceBand[];

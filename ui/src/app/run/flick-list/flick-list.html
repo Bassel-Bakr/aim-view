@@ -13,6 +13,12 @@
         <th>Click speed</th>
         <th>Shots</th>
         <th title="Time the pick of this target cost against the fastest pick">Path cost</th>
+        <th>Reaction</th>
+        <th>Main flick</th>
+        <th title="From reaching the target until the crosshair was still">Settle</th>
+        <th title="How far the crosshair was from the target's center at the click">Off center</th>
+        <th title="Separate movements after the main flick">Corrections</th>
+        <th title="The target appeared after the flick began">New target</th>
       </tr>
     </thead>
     <tbody>
@@ -42,6 +48,12 @@
           <td>{{ r.clickSpeed }}</td>
           <td [class.missed]="r.missed">{{ r.shots }}</td>
           <td>{{ r.pathCost }}</td>
+          <td>{{ r.reaction }}</td>
+          <td>{{ r.mainFlick }}</td>
+          <td>{{ r.settle }}</td>
+          <td>{{ r.offCenter }}</td>
+          <td>{{ r.corrections }}</td>
+          <td>{{ r.newTarget }}</td>
         </tr>
       }
     </tbody>

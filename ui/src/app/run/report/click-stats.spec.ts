@@ -3,6 +3,7 @@ import {
   directionRows,
   distanceRows,
   killStats,
+  killsPerMinute,
   runStats,
   sortedIssues,
   sourceNote,
@@ -40,7 +41,23 @@ describe('click stats', () => {
       'Fastest next target: 80%',
       'Path cost in all: 1234 ms',
       'More shots with the best path: ≈ 2.0',
+      'Accuracy: –',
+      'Reaction: 80 ms',
+      'Main flick: 170 ms',
+      'Click speed: 20 °/s',
+      'Off center at the click: –',
+      'Kills a minute: –',
     ]);
+  });
+
+  it('counts the kills a minute from the first flick to the last kill', () => {
+    const flicks = [
+      { start_frame: 60, kill_frame: 90 },
+      { start_frame: 100, kill_frame: 130 },
+      { start_frame: 150, kill_frame: 660 },
+    ] as Flick[];
+    expect(killsPerMinute(flicks, 60)).toBe(18);
+    expect(killsPerMinute(flicks.slice(0, 1), 60)).toBeNull();
   });
 
   it("shows a kill's numbers with the run's medians under them", () => {
@@ -60,13 +77,14 @@ describe('click stats', () => {
     expect(s[0].value).toBe('12.3° ↑');
     expect(s[1]).toEqual({ label: 'Kill time', value: '500 ms', detail: 'run 425 ms' });
     expect(s[4].value).toBe('short, 1.2° to go');
-    expect(s.at(-1)).toMatchObject({ label: 'Path cost', value: '+40 ms' });
+    expect(s[9]).toMatchObject({ label: 'Path cost', value: '+40 ms' });
+    expect(s).toHaveLength(16);
   });
 
   it('shows the path cards as under way while the tracks load', () => {
     expect(
       runStats(SUMMARY, null)
-        .slice(-3)
+        .slice(7, 10)
         .map((x) => x.value),
     ).toEqual(['…', '…', '…']);
   });

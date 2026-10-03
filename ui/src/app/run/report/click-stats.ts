@@ -3,11 +3,13 @@ import {
   arrow,
   DIRECTION_ARROWS,
   formatCount,
+  formatDegrees,
   formatEnded,
   formatMs,
   formatPercent,
   formatSpeed,
 } from '../../format';
+import { median } from '../median';
 
 /** A number card: its value, what it is, and a line under it. */
 export interface Stat {
@@ -26,8 +28,29 @@ export interface PathSummary {
 
 const LOADING = '…';
 
-/** The whole run's cards. */
-export function runStats(s: ClickSummary, paths: PathSummary | null): Stat[] {
+/** Kills a minute, from the first flick's start to the last kill; null with fewer than two kills. */
+export function killsPerMinute(flicks: Flick[], fps: number): number | null {
+  if (flicks.length < 2) return null;
+  const seconds = (flicks[flicks.length - 1].kill_frame - flicks[0].start_frame) / fps;
+  return seconds > 0 ? (60 * flicks.length) / seconds : null;
+}
+
+/** The run's median of one of the flicks' measures, leaving out the flicks without it. */
+function runMedian(flicks: Flick[], measure: (m: Flick) => number | null): number | null {
+  return median(flicks.map(measure).filter((v): v is number => v != null));
+}
+
+/**
+ * The whole run's cards: the score and kills, then the times and speeds, then the path; sixteen, as many as a kill
+ * has, so the rows stay put when a kill is picked.
+ */
+export function runStats(
+  s: ClickSummary,
+  paths: PathSummary | null,
+  flicks: Flick[] = [],
+  fps = 60,
+): Stat[] {
+  const pace = killsPerMinute(flicks, fps);
   return [
     { label: 'Score', value: formatCount(s.score), detail: '' },
     { label: 'Kills', value: formatCount(s.kills), detail: '' },
@@ -47,12 +70,28 @@ export function runStats(s: ClickSummary, paths: PathSummary | null): Stat[] {
       value: paths ? `≈ ${paths.extra.toFixed(1)}` : LOADING,
       detail: 'at your pace',
     },
+    { label: 'Accuracy', value: formatPercent(s.accuracy), detail: '' },
+    { label: 'Reaction', value: formatMs(s.react), detail: 'median' },
+    { label: 'Main flick', value: formatMs(s.flick), detail: 'median' },
+    { label: 'Click speed', value: formatSpeed(s.click_speed), detail: 'median' },
+    { label: 'Off center at the click', value: formatDegrees(s.click_off), detail: 'median' },
+    {
+      label: 'Kills a minute',
+      value: pace == null ? '–' : pace.toFixed(1),
+      detail: 'first flick to last kill',
+    },
   ];
 }
 
 /** One kill's cards, each with the run's median under it where there is one. */
-export function killStats(m: Flick, s: ClickSummary, pathCost: string): Stat[] {
+export function killStats(
+  m: Flick,
+  s: ClickSummary,
+  pathCost: string,
+  flicks: Flick[] = [],
+): Stat[] {
   const run = (v: string) => `run ${v}`;
+  const corrections = runMedian(flicks, (f) => f.corr);
   return [
     { label: 'Distance', value: `${m.D0.toFixed(1)}° ${arrow(m.dir)}`, detail: '' },
     { label: 'Kill time', value: formatMs(m.total), detail: run(formatMs(s.median_interval)) },
@@ -68,6 +107,36 @@ export function killStats(m: Flick, s: ClickSummary, pathCost: string): Stat[] {
     },
     { label: 'Shots', value: formatCount(m.shots), detail: '' },
     { label: 'Path cost', value: pathCost, detail: 'against the fastest pick' },
+    {
+      label: 'Onto the target',
+      value: formatMs(m.arrive),
+      detail: run(formatMs(runMedian(flicks, (f) => f.arrive))),
+    },
+    {
+      label: 'Settle',
+      value: formatMs(m.settle),
+      detail: run(formatMs(runMedian(flicks, (f) => f.settle))),
+    },
+    {
+      label: 'Off center at the click',
+      value: formatDegrees(m.click_off),
+      detail: run(formatDegrees(s.click_off)),
+    },
+    {
+      label: 'Corrections',
+      value: formatCount(m.corr),
+      detail: corrections == null ? '' : run(String(corrections)),
+    },
+    {
+      label: 'Went past by',
+      value: formatDegrees(Math.max(0, m.past - s.radius)),
+      detail: 'past the far edge',
+    },
+    {
+      label: 'New target',
+      value: m.spawned ? 'yes' : 'no',
+      detail: 'it appeared after the flick began',
+    },
   ];
 }
 

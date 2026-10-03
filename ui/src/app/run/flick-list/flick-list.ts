@@ -8,7 +8,14 @@ import {
   viewChild,
 } from '@angular/core';
 import { ClickReport, Flick } from '../../api';
-import { arrow, formatCount, formatEnded, formatMs, formatSpeed } from '../../format';
+import {
+  arrow,
+  formatCount,
+  formatDegrees,
+  formatEnded,
+  formatMs,
+  formatSpeed,
+} from '../../format';
 import { PathAnalysis, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
@@ -28,6 +35,12 @@ export interface FlickRow {
   missed: boolean;
   /** What picking this target cost against the fastest pick. */
   pathCost: string;
+  reaction: string;
+  mainFlick: string;
+  settle: string;
+  offCenter: string;
+  corrections: string;
+  newTarget: string;
 }
 
 export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[] {
@@ -44,6 +57,12 @@ export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[
     shots: formatCount(m.shots),
     missed: m.shots > 1,
     pathCost: pickText(paths, m.n),
+    reaction: formatMs(m.react),
+    mainFlick: formatMs(m.flick),
+    settle: formatMs(m.settle),
+    offCenter: formatDegrees(m.click_off),
+    corrections: formatCount(m.corr),
+    newTarget: m.spawned ? 'yes' : 'no',
   }));
 }
 
