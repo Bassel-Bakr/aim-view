@@ -4,6 +4,7 @@
 
 pub mod api;
 pub mod detector;
+pub mod ffmpeg;
 pub mod library;
 pub mod review;
 pub mod video;
@@ -17,6 +18,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let data = app.path().app_data_dir()?;
+            ffmpeg::set_folder(app.path().app_local_data_dir()?.join("ffmpeg"));
             let models = app.path().resource_dir()?.join("models");
             let lib = Arc::new(library::Library::new(data, models));
             app.manage(lib);

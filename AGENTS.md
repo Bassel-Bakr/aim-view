@@ -167,8 +167,11 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   core, ONNX Runtime with DirectML (1.84 ms a frame for full_v3; the CPU when there is no GPU), split into two runs
   as in the browser. av1: 12.7 s in the app (the browser 16 s), 20 frames apart from Python's (GPU noise), the same 66
   kills. `cargo run -p aimview-desktop --release --example track -- <video> <model> <out>` reviews without the app.
-  Not there yet: ffmpeg and DirectML.dll in the installer (ffmpeg comes from PATH), the user's marks, runs without a
-  stats file.
+  ffmpeg is not shipped: the first review downloads it into the app's local data folder as KovOBS does (desktop/src/
+  ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
+  libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
+  python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
+  DirectML.dll in the installer, the user's marks, runs without a stats file.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

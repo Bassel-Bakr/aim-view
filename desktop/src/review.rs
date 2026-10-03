@@ -138,16 +138,40 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     Ok(Reviewed { tracks, readings })
 }
 
-/// The fixed map, from the key frames (as python/review.py builds it).
+/// The fixed map, from the key frames (as python/review.py builds it). Each key frame is decoded on its own, from its
+/// exact time (ffmpeg's libaom ignores `-skip_frame nokey` and gives every frame), a few at once, and added in order.
 fn fixed_map(video: &Path, info: &VideoInfo) -> Result<Vec<u8>, String> {
-    let mut convert = Converter::new(info.width, info.height, info.matrix, info.full);
-    let mut frames = Frames::key_frames(video)?;
-    let mut yuv = vec![0u8; frame_bytes(info)];
-    let mut small = vec![0u8; W * H * 3 / 2];
+    const AT_ONCE: usize = 4;
+    let per = info.keys.len().div_ceil(AT_ONCE).max(1);
+    let small: Vec<Result<Vec<Vec<u8>>, String>> = thread::scope(|s| {
+        let running: Vec<_> = info
+            .keys
+            .chunks(per)
+            .map(|keys| {
+                s.spawn(move || {
+                    let mut convert = Converter::new(info.width, info.height, info.matrix, info.full);
+                    let mut yuv = vec![0u8; frame_bytes(info)];
+                    keys.iter()
+                        .map(|&t| {
+                            let mut frames = Frames::open(video, (t > info.times[0]).then_some(t), Some(1))?;
+                            if !frames.next_into(&mut yuv)? {
+                                return Err(format!("the key frame at {t:.3} s could not be decoded"));
+                            }
+                            let mut small = vec![0u8; W * H * 3 / 2];
+                            convert.yuv420p(&yuv, &mut small);
+                            Ok(small)
+                        })
+                        .collect()
+                })
+            })
+            .collect();
+        running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a key frame failed".into()))).collect()
+    });
     let mut map = FixedMap::default();
-    while frames.next_into(&mut yuv)? {
-        convert.yuv420p(&yuv, &mut small);
-        map.add(&small);
+    for frames in small {
+        for frame in frames? {
+            map.add(&frame);
+        }
     }
     Ok(map.map())
 }

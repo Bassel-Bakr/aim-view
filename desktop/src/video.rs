@@ -1,6 +1,6 @@
-//! A recording's frames from ffmpeg, as Python's review decodes them (python/review.py: `_frames`): the video's own
-//! YUV 4:2:0 at its size, through a pipe, so the core converts them to the same bytes. ffprobe gives the frames'
-//! times, the key frames and the colours.
+//! A recording's frames from ffmpeg (ffmpeg.rs: the app's own copy), as Python's review decodes them
+//! (python/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts them to
+//! the same bytes. ffprobe gives the frames' times, the key frames and the colours.
 
 use std::io::Read;
 use std::path::Path;
@@ -44,7 +44,7 @@ struct ProbePacket {
 
 /// A command for one of ffmpeg's programs, without a console window of its own.
 fn tool(name: &str) -> Command {
-    let mut c = Command::new(name);
+    let mut c = Command::new(crate::ffmpeg::program(name));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -61,7 +61,7 @@ pub fn probe(video: &Path) -> Result<VideoInfo, String> {
         .args(["-show_entries", "stream=width,height,r_frame_rate,color_space,color_range", "-of", "json"])
         .arg(video)
         .output()
-        .map_err(|e| format!("ffprobe could not start ({e}): is ffmpeg installed?"))?;
+        .map_err(|e| format!("ffprobe could not start: {e}"))?;
     let p: Probe = serde_json::from_slice(&out.stdout).map_err(|e| format!("ffprobe gave no video ({e})"))?;
     let s = p.streams.first().ok_or("the file has no video")?;
     let mut times = Vec::new();
@@ -122,20 +122,13 @@ impl Frames {
         Frames::spawn(c.args(["-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]))
     }
 
-    /// The key frames alone, as python/review.py's fixed map reads them (`-skip_frame nokey`).
-    pub fn key_frames(video: &Path) -> Result<Frames, String> {
-        let mut c = tool("ffmpeg");
-        c.args(["-v", "error", "-skip_frame", "nokey", "-i"]).arg(video);
-        Frames::spawn(c.args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]))
-    }
-
     fn spawn(c: &mut Command) -> Result<Frames, String> {
         let mut child = c
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .stdin(Stdio::null())
             .spawn()
-            .map_err(|e| format!("ffmpeg could not start ({e}): is ffmpeg installed?"))?;
+            .map_err(|e| format!("ffmpeg could not start: {e}"))?;
         let out = child.stdout.take().ok_or("ffmpeg gave no output")?;
         Ok(Frames { child, out })
     }

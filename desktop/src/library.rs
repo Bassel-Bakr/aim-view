@@ -602,7 +602,7 @@ impl Library {
                     (j.stage, j.done, j.total) = (stage.into(), done, total);
                 }
             };
-            let outcome = review(&req, &progress).and_then(|r| {
+            let outcome = crate::ffmpeg::ensure(|mb, of| progress("ffmpeg", mb, of)).and_then(|()| review(&req, &progress)).and_then(|r| {
                 write_json(&out.join("tracks.json"), &r.tracks).map_err(|f| f.message)?;
                 write_json(&out.join("readings.json"), &r.readings).map_err(|f| f.message)
             });

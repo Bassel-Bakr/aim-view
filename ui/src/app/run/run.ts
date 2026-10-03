@@ -28,6 +28,7 @@ const STAGES: Record<JobStage, string> = {
   looking: 'Looking at the key frames',
   tracking: 'Tracking the targets',
   linking: 'Linking the tracks',
+  ffmpeg: 'Getting FFmpeg (once)',
   'reading the HUD': 'Reading the session HUD',
   camera: "Reading the camera's turn",
   measuring: 'Measuring',
