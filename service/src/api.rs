@@ -69,6 +69,8 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
         (false, "/api/vods") => lib.recordings(),
         (false, "/api/models") => lib.models(),
         (true, "/api/model") => lib.pick(&query("name").unwrap_or_default()),
+        (true, "/api/device") => lib.use_device(&query("name").unwrap_or_default()),
+        (true, "/api/batch") => lib.use_batch(&query("n").unwrap_or_default()),
         (false, "/api/job") => id().map(|id| lib.job(&id)),
         (true, "/api/analyse") => id().and_then(|id| lib.analyse(&id, query("again").as_deref() == Some("1"))),
         (false, "/api/report") => id().and_then(|id| lib.report(&id)),

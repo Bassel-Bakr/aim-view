@@ -49,9 +49,9 @@ export type Device = 'cuda' | 'cpu' | 'wasm' | 'webgpu' | 'directml';
 export interface ModelList {
   chosen: string;
   device: Device;
-  /** The devices the user can choose between, where the mode lets them choose (the browser). */
+  /** The devices the user can choose between (the browser's, or the ones the review server can run). */
   devices?: Device[];
-  /** How many frames the detector takes in one go on this device, and the choices (the browser). */
+  /** How many frames the detector takes in one go on this device, and the choices. */
   batch?: number;
   batches?: number[];
   speed: string;

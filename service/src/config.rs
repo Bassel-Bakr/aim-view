@@ -101,6 +101,30 @@ impl Layout {
 
 impl Device {
     /// The device's name as the API gives it (python/server.py: "cuda" or "cpu"; the desktop app: "directml").
+    /// A device by its name ("directml", "cuda", "cpu"); none for another name.
+    pub fn from_name(name: &str) -> Option<Device> {
+        match name {
+            "directml" => Some(Device::DirectMl),
+            "cuda" => Some(Device::Cuda),
+            "cpu" => Some(Device::Cpu),
+            _ => None,
+        }
+    }
+
+    /// The devices this build can run the detector on: the GPU it has a provider for (DirectML on Windows, CUDA with
+    /// the `cuda` feature), and the CPU.
+    pub fn built() -> Vec<Device> {
+        let mut out = Vec::new();
+        if cfg!(windows) {
+            out.push(Device::DirectMl);
+        }
+        if cfg!(feature = "cuda") {
+            out.push(Device::Cuda);
+        }
+        out.push(Device::Cpu);
+        out
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Device::Auto if cfg!(windows) => "directml",

@@ -1,5 +1,6 @@
-//! What the user set, kept in settings.json: the VODs folder they chose in the app (`vods`) and the model new reviews
-//! use (`model`). Other keys in the file are kept as they are (the desktop app also kept KovaaK's folder as `kovaak`;
+//! What the user set, kept in settings.json: the VODs folder they chose in the app (`vods`), the model new reviews
+//! use (`model`), the device the detector runs on (`device`) and the frames it takes at once on each device (`batch`,
+//! by device name). Other keys in the file are kept as they are (the desktop app also kept KovaaK's folder as `kovaak`;
 //! python/server.py keeps only `model`). And the models to pick from.
 
 use std::path::{Path, PathBuf};
@@ -7,10 +8,15 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use super::{Answer, Failure, Library, read_json, write_json};
+use crate::config::Device;
 
 pub(super) const FILE: &str = "settings.json";
 /// The model new reviews use until the user picks one (infer.BEST).
 pub const BEST: &str = "full_v3";
+/// The frames the detector can take at once (the browser offers the same).
+pub const BATCHES: [usize; 4] = [1, 2, 4, 8];
+/// The frames at once until the user picks (av1: 4 was the fastest on the GPU).
+const BATCH: usize = 4;
 
 /// settings.json's keys and values.
 #[derive(Clone, Default)]
@@ -52,6 +58,36 @@ impl Library {
         picked.filter(|m| self.model_file(m).is_file()).unwrap_or_else(|| BEST.into())
     }
 
+    /// The device new reviews run the detector on: the user's pick when this build has it, else the configuration's.
+    pub fn device(&self) -> Device {
+        let picked = self.settings().0.get("device").and_then(Value::as_str).and_then(Device::from_name);
+        picked.filter(|d| Device::built().contains(d)).unwrap_or(self.config.device)
+    }
+
+    /// The frames new reviews give the detector at once on `device`: the user's pick for it, else 4.
+    pub fn batch(&self, device: Device) -> usize {
+        let picked = self.settings().0.get("batch").and_then(|b| b.get(device.name())).and_then(Value::as_u64);
+        picked.map(|b| b as usize).filter(|b| BATCHES.contains(b)).unwrap_or(BATCH)
+    }
+
+    /// The device new reviews use, kept for the next start.
+    pub fn use_device(&self, name: &str) -> Answer<Value> {
+        let device = Device::from_name(name).filter(|d| Device::built().contains(d));
+        let device = device.ok_or_else(|| Failure::bad(format!("the detector cannot run on {name} here")))?;
+        self.save_settings("device", json!(device.name()))?;
+        self.models()
+    }
+
+    /// The frames at once on the device in use, kept for each device.
+    pub fn use_batch(&self, frames: &str) -> Answer<Value> {
+        let batch = frames.parse::<usize>().ok().filter(|b| BATCHES.contains(b));
+        let batch = batch.ok_or_else(|| Failure::bad(format!("{frames} frames at once is not a choice")))?;
+        let mut all = self.settings().0.get("batch").cloned().unwrap_or_else(|| json!({}));
+        all[self.device().name()] = json!(batch);
+        self.save_settings("batch", all)?;
+        self.models()
+    }
+
     /// The detector export of a model.
     pub fn model_file(&self, name: &str) -> PathBuf {
         self.config.models.join(format!("detector_{name}_u8in.onnx"))
@@ -80,9 +116,12 @@ impl Library {
             m["available"] = json!(true);
             models.push(m);
         }
+        let device = self.device();
+        let devices: Vec<&str> = Device::built().into_iter().map(Device::name).collect();
         Ok(json!({
-            "chosen": self.model(), "device": self.config.device.name(), "speed": info["speed"], "checks": info["checks"],
-            "checked_on": info["checked_on"], "models": models,
+            "chosen": self.model(), "device": device.name(), "devices": devices, "batch": self.batch(device),
+            "batches": BATCHES, "speed": info["speed"], "checks": info["checks"], "checked_on": info["checked_on"],
+            "models": models,
         }))
     }
 
@@ -93,5 +132,36 @@ impl Library {
         }
         self.save_settings("model", json!(name))?;
         self.models()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{Config, Device, Layout};
+    use crate::library::Library;
+
+    /// The device and the frames at once are the user's picks, kept in settings.json across a restart, the frames for
+    /// each device; a device this build cannot run, or frames not offered, are refused and change nothing.
+    #[test]
+    fn the_device_and_frames_at_once_are_kept_for_each_device() {
+        let dir = std::env::temp_dir().join(format!("aimview-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("models")).unwrap();
+        std::fs::write(dir.join("models").join("models.json"), r#"{"models": {}}"#).unwrap();
+        let open = || Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
+        let lib = open();
+        let gpu = Device::built()[0];
+        assert_eq!(lib.batch(lib.device()), 4);
+        lib.use_device(gpu.name()).unwrap();
+        lib.use_batch("8").unwrap();
+        lib.use_device("cpu").unwrap();
+        lib.use_batch("1").unwrap();
+        assert!(lib.use_device("tpu").is_err());
+        assert!(lib.use_batch("3").is_err());
+        let again = open();
+        assert_eq!(again.device(), Device::Cpu);
+        assert_eq!(again.batch(Device::Cpu), 1);
+        assert_eq!(again.batch(gpu), if gpu == Device::Cpu { 1 } else { 8 });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -108,8 +108,8 @@ impl Library {
         let req = Request {
             video,
             model: self.model_file(&model),
-            device: self.config.device,
-            batch: 4,
+            device: self.device(),
+            batch: self.batch(self.device()),
             cap,
             runs,
             window,
