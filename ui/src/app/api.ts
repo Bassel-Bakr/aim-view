@@ -48,6 +48,9 @@ export interface ModelList {
   device: Device;
   /** The devices the user can choose between, where the mode lets them choose (the browser). */
   devices?: Device[];
+  /** How many frames the detector takes in one go on this device, and the choices (the browser). */
+  batch?: number;
+  batches?: number[];
   speed: string;
   checked_on: string;
   checks: Check[];

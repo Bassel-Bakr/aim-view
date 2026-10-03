@@ -41,6 +41,27 @@
         <span class="runs-on-note">New reviews run the detector here. The GPU is faster.</span>
       </div>
     }
+    @if (m.batches && m.batches.length > 1) {
+      <div class="runs-on">
+        <span id="batch-label">Frames at once</span>
+        <div class="segmented" role="group" aria-labelledby="batch-label">
+          @for (b of m.batches; track b) {
+            <button
+              type="button"
+              class="segmented-option"
+              [attr.aria-pressed]="m.batch === b"
+              (click)="useBatch(b)"
+            >
+              {{ b }}
+            </button>
+          }
+        </div>
+        <span class="runs-on-note">
+          How many frames the detector takes in one go, kept for each of GPU and CPU. More is faster
+          on most GPUs and slower on the CPU; the boxes are the same.
+        </span>
+      </div>
+    }
   }
   @if (table(); as t) {
     <div class="scroll">

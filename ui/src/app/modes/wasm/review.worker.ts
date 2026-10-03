@@ -202,16 +202,48 @@ async function review(req: ReviewRequest): Promise<void> {
   if (!format) throw new Error('The video has no frames');
   const camera = new CameraLink(req.camera);
   camera.start({ kind: 'start', coreUrl: req.coreUrl, fixed, ...format });
-  const fixedTensor = new ort.Tensor('uint8', fixed, [1, H, W]);
+  // the fixed map once for each frame of a call: the detector takes up to req.batch frames at once
+  const fixedTensors = new Map<number, InstanceType<Ort['Tensor']>>();
+  const fixedFor = (k: number) => {
+    let t = fixedTensors.get(k);
+    if (!t) {
+      const all = new Uint8Array(k * W * H);
+      for (let i = 0; i < k; i++) all.set(fixed, i * W * H);
+      t = new ort.Tensor('uint8', all, [k, H, W]);
+      fixedTensors.set(k, t);
+    }
+    return t;
+  };
 
-  // 2. every frame: the detector, then the tracker. While the detector works on a frame, the next one is decoded and
-  // converted; the tracker takes each frame's maps in order, one frame in the detector at a time.
+  // 2. every frame: the detector, then the tracker. The detector takes req.batch frames in one call (faster on most
+  // GPUs, the same boxes); while it works on them, the next ones are decoded and converted. The tracker takes each
+  // frame's maps in order, one call in the detector at a time.
   const gw = W / 4;
   const gh = H / 4;
   const score = core.reserve(gw * gh * 4);
   const reg = core.reserve(4 * gw * gh * 4);
   const tracker = core.x.tracker_new_kovobs(req.cap ?? 0);
   let n = 0;
+  const batch = Math.max(1, req.batch);
+  const frameBytes = W * H * 3;
+  let waiting: Uint8Array[] = [];
+  const detect = (frames: Uint8Array[]): Promise<void> => {
+    const k = frames.length;
+    const all = new Uint8Array(k * frameBytes);
+    frames.forEach((f, i) => all.set(f, i * frameBytes));
+    const feeds = { rgb: new ort.Tensor('uint8', all, [k, H, W, 3]), fixed: fixedFor(k) };
+    return session.run(feeds).then((out) => {
+      const scores = out['score'].data as Float32Array;
+      const regs = out['reg'].data as Float32Array;
+      for (let i = 0; i < k; i++) {
+        core.floats(score).set(scores.subarray(i * gw * gh, (i + 1) * gw * gh));
+        core.floats(reg).set(regs.subarray(i * 4 * gw * gh, (i + 1) * 4 * gw * gh));
+        core.x.tracker_push_maps(tracker, score.ptr, reg.ptr, gw, gh);
+        if (++n % PROGRESS_EVERY === 0)
+          say({ kind: 'progress', stage: 'tracking', done: n, total });
+      }
+    });
+  };
   const videoFrames = samples.samples()[Symbol.asyncIterator]();
   let next = videoFrames.next();
   let detecting: Promise<void> = Promise.resolve();
@@ -232,19 +264,14 @@ async function review(req: ReviewRequest): Promise<void> {
     camera.send(copy);
     core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
     core.x.tracker_watch(tracker, rgb.ptr);
-    const feeds = {
-      rgb: new ort.Tensor('uint8', core.bytes(rgb).slice(), [1, H, W, 3]),
-      fixed: fixedTensor,
-    };
+    waiting.push(core.bytes(rgb).slice());
+    if (waiting.length < batch) continue;
     await detecting;
-    detecting = session.run(feeds).then((out) => {
-      core.floats(score).set(out['score'].data as Float32Array);
-      core.floats(reg).set(out['reg'].data as Float32Array);
-      core.x.tracker_push_maps(tracker, score.ptr, reg.ptr, gw, gh);
-      if (++n % PROGRESS_EVERY === 0) say({ kind: 'progress', stage: 'tracking', done: n, total });
-    });
+    detecting = detect(waiting);
+    waiting = [];
   }
   await detecting;
+  if (waiting.length) await detect(waiting);
   say({ kind: 'progress', stage: 'linking', done: n, total });
   const framesText = core.takeText(core.x.tracker_finish(tracker));
   const frames = JSON.parse(framesText) as TrackFrame[];

@@ -60,5 +60,18 @@ for (const mode of MODE_CASES) {
       expect(list.devices).toContain('wasm');
       await expect(catalog.useDevice('cuda')).rejects.toThrow();
     });
+
+    it('lets the user choose the frames at once where it can, kept for each device', async () => {
+      const catalog = setUp(mode, ModelCatalog);
+      if (mode.name === 'server') {
+        await expect(catalog.useBatch(4)).rejects.toThrow();
+        return;
+      }
+      await catalog.useDevice('wasm');
+      expect((await catalog.useBatch(2)).batch).toBe(2);
+      // the CPU's pick stays the CPU's
+      expect((await catalog.useDevice('wasm')).batch).toBe(2);
+      await expect(catalog.useBatch(3)).rejects.toThrow();
+    });
   });
 }

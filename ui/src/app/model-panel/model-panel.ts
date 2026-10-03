@@ -36,6 +36,10 @@ export class ModelPanel {
     void this.models.useDevice(device);
   }
 
+  protected useBatch(batch: number): void {
+    void this.models.useBatch(batch);
+  }
+
   protected open(): void {
     this.status.set('');
     this.models.list.reload();

@@ -4,11 +4,14 @@ so a caller in any language only scans for cells over a threshold:
   input  "x"      float32 (1, 4, H, W)    RGB 0-1 and the fixed map 0/1; H, W multiples of 16 (1280 x 720 is fine)
   output "score"  float32 (1, 1, H/4, W/4) the centre score where it is a local maximum, else 0
   output "reg"    float32 (1, 4, H/4, W/4) offset x, y within the cell (0-1), log width, log height (input px)
-The _u8in file takes the raw bytes instead: "rgb" uint8 (1, H, W, 3) and "fixed" uint8 (1, H, W), same outputs.
+The _u8in file takes the raw bytes instead: "rgb" uint8 (N, H, W, 3) and "fixed" uint8 (N, H, W), the same outputs
+for N frames at once (N is free: a browser runs several frames in one call).
 The _embed file takes the raw bytes and gives "dets" float32 (1, 100, 5): the 100 best peaks as cx, cy, w, h, score,
 best first; keep the rows over the threshold.
 A detection at cell (i, j) with score > threshold: cx = (j + reg0) * 4, cy = (i + reg1) * 4, w = exp(reg2), h = exp(reg3).
 Usage: python python/model/export.py test_out/vod_model/runs/small/best.pt [--out python/model/exports]
+       python python/model/export.py <checkpoint> --u8in [--out DIR]   (the _u8in file only, checked against the
+       fp32 file beside it frame by frame and in a batch)
 """
 import argparse
 import json
@@ -80,6 +83,38 @@ class ExportedEmbed(nn.Module):
         return dets                                                               # (1, K, 5)
 
 
+def export_u8in(model, path):
+    """The uint8-input graph, with a free batch axis. Traced with 2 frames, so nothing in it is fixed to one frame."""
+    torch.onnx.export(ExportedU8(model).eval(), (torch.zeros(2, 720, 1280, 3, dtype=torch.uint8),
+                                                 torch.zeros(2, 720, 1280, dtype=torch.uint8)), str(path),
+                      input_names=["rgb", "fixed"], output_names=["score", "reg"],
+                      dynamic_axes={"rgb": {0: "n", 1: "h", 2: "w"}, "fixed": {0: "n", 1: "h", 2: "w"},
+                                    "score": {0: "n", 2: "h4", 3: "w4"}, "reg": {0: "n", 2: "h4", 3: "w4"}},
+                      opset_version=17, dynamo=False)
+
+
+def check_u8in(u8, f32):
+    """The uint8-input graph against the fp32 one on a real frame, alone and as the second of a batch of 4 (the
+    others different frames): the same outputs."""
+    import onnxruntime as ort
+    import bench
+    rgb, fixed = bench.sample()
+    xr = net.prepare(torch.from_numpy(rgb)[None], torch.from_numpy(fixed)[None])
+    s_o, r_o = ort.InferenceSession(str(f32), providers=["CPUExecutionProvider"]).run(None, {"x": xr.numpy()})
+    sess = ort.InferenceSession(str(u8), providers=["CPUExecutionProvider"])
+    s_u, r_u = sess.run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
+    print(f"uint8-input graph against fp32: max |reg| diff {np.abs(r_u - r_o).max():.2e}")
+    if np.abs(r_u - r_o).max() > 1e-3:
+        raise SystemExit("the uint8-input export does not match")
+    batch = np.stack([np.roll(rgb, 37 * k, axis=1) if k != 1 else rgb for k in range(4)])
+    fixed4 = np.repeat(fixed[None].astype(np.uint8), 4, axis=0)
+    s_b, r_b = sess.run(None, {"rgb": batch, "fixed": fixed4})
+    print(f"a frame in a batch of 4 against alone: max |score| diff {np.abs(s_b[1] - s_u[0]).max():.2e}, "
+          f"max |reg| diff {np.abs(r_b[1] - r_u[0]).max():.2e}")
+    if s_b.shape[0] != 4 or np.abs(r_b[1] - r_u[0]).max() > 1e-4:
+        raise SystemExit("the batch axis changes the outputs")
+
+
 def calibration_reader(data_dir, n=64):
     from onnxruntime.quantization import CalibrationDataReader
 
@@ -105,6 +140,7 @@ def main():
     ap.add_argument("checkpoint")
     ap.add_argument("--out", default="python/model/exports")
     ap.add_argument("--data", default="test_out/vod_model/data")
+    ap.add_argument("--u8in", action="store_true", help="only the _u8in file (the fp32 file must be beside it)")
     a = ap.parse_args()
     ck = torch.load(a.checkpoint, map_location="cpu", weights_only=False)
     cfg = ck["config"]
@@ -115,6 +151,12 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     name = cfg["name"]
     f32 = out / f"detector_{name}_fp32.onnx"
+    if a.u8in:
+        u8 = out / f"detector_{name}_u8in.onnx"
+        export_u8in(model, u8)
+        check_u8in(u8, f32 if f32.exists() else Path(__file__).parent / "exports" / f32.name)
+        print(f"{u8}: {u8.stat().st_size / 1024:.1f} KB")
+        return
     x = torch.zeros(1, 4, 720, 1280)
     torch.onnx.export(Exported(model).eval(), (x,), str(f32), input_names=["x"], output_names=["score", "reg"],
                       dynamic_axes={"x": {2: "h", 3: "w"}, "score": {2: "h4", 3: "w4"}, "reg": {2: "h4", 3: "w4"}},
@@ -134,13 +176,9 @@ def main():
                           output_names=["score", "reg"],
                           dynamic_axes={"x": {2: "h", 3: "w"}, "score": {2: "h4", 3: "w4"}, "reg": {2: "h4", 3: "w4"}},
                           opset_version=17, dynamo=False)
-    # uint8 in: rgb (1, H, W, 3) and fixed (1, H, W), both uint8, same outputs
+    # uint8 in: rgb (N, H, W, 3) and fixed (N, H, W), both uint8, same outputs
     u8 = out / f"detector_{name}_u8in.onnx"
-    torch.onnx.export(ExportedU8(model).eval(), (torch.zeros(1, 720, 1280, 3, dtype=torch.uint8),
-                                                 torch.zeros(1, 720, 1280, dtype=torch.uint8)), str(u8),
-                      input_names=["rgb", "fixed"], output_names=["score", "reg"],
-                      dynamic_axes={"rgb": {1: "h", 2: "w"}, "fixed": {1: "h", 2: "w"}, "score": {2: "h4", 3: "w4"},
-                                    "reg": {2: "h4", 3: "w4"}}, opset_version=17, dynamo=False)
+    export_u8in(model, u8)
     # raw bytes in, the 100 best boxes out: "dets" float32 (1, 100, 5)
     emb = out / f"detector_{name}_embed.onnx"
     torch.onnx.export(ExportedEmbed(model).eval(), (torch.zeros(1, 720, 1280, 3, dtype=torch.uint8),
@@ -168,11 +206,7 @@ def main():
     print(f"parity fp32 on a real frame: max |score| diff {sd:.2e}, max |reg| diff {rd:.2e}")
     if rd > 1e-3:
         raise SystemExit("the ONNX export does not match PyTorch")
-    s_u, r_u = ort.InferenceSession(str(u8), providers=["CPUExecutionProvider"]).run(
-        None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
-    print(f"uint8-input graph against fp32: max |reg| diff {np.abs(r_u - r_o).max():.2e}")
-    if np.abs(r_u - r_o).max() > 1e-3:
-        raise SystemExit("the uint8-input export does not match")
+    check_u8in(u8, f32)
     (dets,) = ort.InferenceSession(str(emb), providers=["CPUExecutionProvider"]).run(
         None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
     import infer

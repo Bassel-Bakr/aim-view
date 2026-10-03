@@ -31,6 +31,11 @@ export class Models {
   async useDevice(device: Device): Promise<void> {
     this.list.set(await this.catalog.useDevice(device));
   }
+
+  /** Picks how many frames new reviews give the detector at once. */
+  async useBatch(batch: number): Promise<void> {
+    this.list.set(await this.catalog.useBatch(batch));
+  }
 }
 
 /** A model's name as people read it: "hand" is the hand-written detector. */

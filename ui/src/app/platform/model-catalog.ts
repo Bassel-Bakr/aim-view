@@ -10,4 +10,7 @@ export abstract class ModelCatalog {
 
   /** Picks where new reviews run the detector (one of the list's devices); resolves to the list as it is now. */
   abstract useDevice(device: Device): Promise<ModelList>;
+
+  /** Picks how many frames new reviews give the detector at once on the device in use (one of the list's batches). */
+  abstract useBatch(batch: number): Promise<ModelList>;
 }

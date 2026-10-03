@@ -166,9 +166,10 @@ python python/model/export.py test_out/vod_model/runs/small_v2/best.pt
 ```
 
 This writes `python/model/exports/detector_<name>_fp32.onnx`, `_fp16.onnx` (the fp16 one needs CUDA to trace), `_u8in.onnx`
-(raw uint8 frame in) and `_embed.onnx` (raw bytes in, the 100 best boxes out). It checks the fp32 file against
-PyTorch on a real frame, and the u8in and embed files against fp32, and stops if they differ. Then it prints the
-sizes. To ship a model under the plain name, copy the checkpoint to `python/model/exports/detector_<name>.pt`.
+(raw uint8 frames in, any number at once) and `_embed.onnx` (raw bytes in, the 100 best boxes out). It checks the
+fp32 file against PyTorch on a real frame, and the u8in and embed files against fp32 (the u8in one also with the frame
+in a batch of 4), and stops if they differ. Then it prints the sizes. `--u8in` writes and checks the u8in file
+only. To ship a model under the plain name, copy the checkpoint to `python/model/exports/detector_<name>.pt`.
 
 ## 5. Quantize
 

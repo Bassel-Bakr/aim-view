@@ -200,6 +200,7 @@ export class BrowserReview implements ReviewEngine {
       ortPath: new URL('ort/', base).href,
       modelUrl: new URL(`models/detector_${model}_u8in.onnx`, base).href,
       device,
+      batch: list?.batch ?? 1,
       cap,
       camera: channel.port1,
     };

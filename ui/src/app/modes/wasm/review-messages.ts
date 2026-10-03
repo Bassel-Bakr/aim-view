@@ -5,7 +5,8 @@ export type BrowserDevice = 'webgpu' | 'wasm';
 
 /**
  * What the review worker is asked: a recording's file, where the core, the detector runtime and the model are, where
- * to run the detector, the scenario's target count (null: not known), and the port to the camera worker.
+ * to run the detector and how many frames it takes at once, the scenario's target count (null: not known), and the
+ * port to the camera worker.
  */
 export interface ReviewRequest {
   file: Blob;
@@ -13,6 +14,7 @@ export interface ReviewRequest {
   ortPath: string;
   modelUrl: string;
   device: BrowserDevice;
+  batch: number;
   cap: number | null;
   camera: MessagePort;
 }

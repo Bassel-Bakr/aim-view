@@ -125,9 +125,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
   float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
-  (2560x1440): 95 frames a second with the detector on the GPU (WebGPU, the default; 63.5 s for the
-  whole review), 31 on the CPU (measured before the camera worker; test_out/browser_check/profile.html times each
-  stage). The core is built with WebAssembly SIMD (.cargo/config.toml).
+  (2560x1440): 124 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call; 48.8 s
+  for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
+  test_out/browser_check/profile.html times each stage). The model panel lets the user pick the frames at once (1, 2,
+  4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml).
   The clicking
   review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
   gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number

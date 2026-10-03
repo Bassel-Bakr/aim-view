@@ -18,4 +18,9 @@ export class ServerModels implements ModelCatalog {
   async useDevice(device: Device): Promise<ModelList> {
     throw new Error(`The review server picks its own device, not ${device}`);
   }
+
+  /** The review server runs its detector as it does: the page does not choose. */
+  async useBatch(batch: number): Promise<ModelList> {
+    throw new Error(`The review server runs its own detector, not ${batch} frames at once`);
+  }
 }

@@ -29,7 +29,8 @@ A CenterNet-style detector ("objects as points"), written from scratch in PyTorc
 
 The exported ONNX graph also does the decoding that is awkward in other languages: the sigmoid and the 3 × 3 peak
 search. A caller only scans the score map for cells over the threshold. Two more exports go further. `_u8in` also
-does the pre-processing, so a caller passes the decoder's raw bytes. `_embed` does that and also picks the 100 best
+does the pre-processing, so a caller passes the decoder's raw bytes, and takes several frames in one call (a free
+batch axis: the browser's GPU reviews 4 at a time by default, the same boxes as one at a time). `_embed` does that and also picks the 100 best
 peaks, so a caller reads 100 rows of (cx, cy, w, h, score) and keeps those over the threshold: no pre- or
 post-processing left to port. It gives exactly the same boxes as the plain file.
 
