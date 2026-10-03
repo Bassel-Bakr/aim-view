@@ -106,8 +106,8 @@ time from the crosshair. A flick's time is taken from Fitts' law, t = a + b × l
 kills (D the flick's distance, W the target's width). The per-kill a is the same for every path, so the fastest path
 has the smallest sum of log2 terms. It is solved exactly for up to 14 targets. It only knows the targets on screen:
 in a scenario that respawns, new targets change the best path. It shows only during the run: not on the countdown
-before it (the run starts at the stats file's challenge start; without one, two median kill intervals before the
-first kill), nor after the last kill. Where the detector marks the crosshair itself (`review.crosshair_spots`, in the
+before it (the run starts at the stats file's challenge start; without one, two median TTKs (times to kill) before
+the first kill), nor after the last kill. Where the detector marks the crosshair itself (`review.crosshair_spots`, in the
 report as `crosshair`), detections on that spot are not targets to clear: on a valorant run the path counted the
 crosshair as a third target where the scenario has two.
 
@@ -116,9 +116,9 @@ against the fastest. For every kill, the app also works out what the pick cost: 
 picked (3 frames after the flick starts), how much slower clearing the targets on screen gets when that target goes
 first, with the best path after it. Only targets on screen at least 150 ms before you started moving count as
 options: a target that spawned just before or during the flick needs a reaction of its own, which the model does not
-price (the user's rule, 2026-10-01). A kill that went to such a new target gets no cost ("new target"). The flick
-list's "Path cost" column, the kill cards and the "Pathing" card in "What to look at" show it. The Pathing card flags
-picks that cost 5% of the median kill or more on average (provisional, like the other checks). It also turns the time
+price (the user's rule, 2026-10-01). A kill that went to such a new target gets no cost ("spawn"). The flick list's
+"Pathing" column, the kill cards and the "Pathing" check show it. The Pathing check flags picks that cost 5% of the
+median TTK or more on average (provisional, like the other checks). It also turns the time
 lost into shots: the time times your pace over the run (shots from the first flick to the last kill). That assumes the
 pace would have held. The path overlay leaves out new spawns by the same 150 ms rule.
 
