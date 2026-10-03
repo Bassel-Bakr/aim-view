@@ -30,21 +30,32 @@
     }
   }
 
-  // A number card: its value, what it is, and a line under it (the run's median, a detail, or why it matters).
+  // A number card. A clicking run's: its value, what it is, and a line under it (the run's median, or a detail). A
+  // tracking run's: its title, its reading, a detail, and why it matters.
   .card {
-    @apply flex flex-col gap-1 rounded-lg border border-border bg-surface-1 px-6 py-5;
+    @apply block min-w-(--card-min-width) rounded-lg border border-border bg-surface-1 px-7 py-6;
   }
 
   .card-value {
-    @apply text-(length:--stat-size) font-strong text-value tabular-nums;
+    @apply block truncate text-xl font-strong tracking-tight tabular-nums;
   }
 
-  .card-label {
-    @apply font-strong text-primary;
-  }
-
+  // An empty line keeps its height, so every card is as tall as the others
+  .card-label,
   .card-detail {
-    @apply text-xs text-muted;
+    @apply block min-h-lh text-xs text-muted;
+  }
+
+  .card-title {
+    @apply block text-sm leading-(--card-title-leading) font-bold;
+  }
+
+  .card-reading {
+    @apply mt-2 mb-1 block truncate text-(length:--stat-size) font-medium text-value;
+  }
+
+  .card-why {
+    @apply mt-3 block text-2xs leading-(--card-why-leading) text-muted;
   }
 
   // A small color square in a legend; its color comes from a background class or style.
@@ -54,7 +65,7 @@
 
   // A note under a section: what it measures and how.
   .section-note {
-    @apply mt-3 max-w-(--prose-width) text-xs text-muted;
+    @apply mt-3 text-xs text-muted;
   }
 
   // A label in an outlined pill: a run's kind, its data source, the model in use.

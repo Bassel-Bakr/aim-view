@@ -45,6 +45,6 @@ describe('App', () => {
       '/api/job': { stage: 'none' },
     });
     expect(el.querySelector('app-run h2')?.textContent).toContain('Controlsphere');
-    expect(el.querySelector('app-run h2')?.textContent).toContain('Tracking');
+    expect(el.querySelector('app-run h2')?.textContent).toContain('Stats file');
   });
 });

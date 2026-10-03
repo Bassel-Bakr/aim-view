@@ -1,54 +1,80 @@
-@use 'themes/theme' as t;
+@use 'themes/player' as p;
 @use 'themes/report' as r;
 @reference '../../tailwind.css';
 
 @layer components {
-  // The video and, on a clicking run, the flick list: side by side when there is room, the list under the video when
-  // there is not
-  .stage {
-    display: flex;
-    flex-wrap: wrap;
-    gap: t.$space-6;
-    margin-top: t.$space-6;
+  :host {
+    display: block;
+  }
 
-    app-player {
-      flex: 3 1 r.$player-min-width;
-      min-width: 0;
+  // The video (with a flick's speed chart under it) and, on a clicking run, the flick list beside it, as tall as
+  // the video's column
+  .player-column {
+    max-width: p.$max-width;
+  }
+
+  app-flick-list {
+    width: r.$flick-list-width;
+  }
+
+  // Too narrow for both side by side: the list goes under the video
+  @container (max-width: #{r.$stack-width}) {
+    .stage {
+      flex-direction: column;
     }
 
     app-flick-list {
-      flex: 1 1 r.$flick-list-width;
-      min-height: r.$flick-list-min-height;
+      width: auto;
     }
   }
 }
 
 @layer components {
   .head {
-    @apply flex flex-wrap items-start justify-between gap-x-7 gap-y-4;
+    @apply mb-7 flex flex-wrap items-start justify-between gap-x-8 gap-y-4;
   }
 
   .header {
     @apply min-w-0 flex-1;
   }
 
+  .by {
+    @apply mt-1 text-xs text-muted;
+  }
+
   .toolbar {
-    @apply flex items-center gap-3;
+    @apply flex items-center gap-4;
   }
 
   .note {
-    @apply mt-2 text-xs text-muted;
+    @apply mb-6 text-xs text-muted;
   }
 
   .progress {
-    @apply mt-4 flex items-center gap-5 text-xs text-secondary;
+    @apply relative mb-7 h-12 overflow-hidden rounded-pill bg-surface-2;
   }
 
-  .bar {
-    @apply w-(--progress-width) accent-accent;
+  .fill {
+    @apply absolute inset-y-0 left-0 bg-accent;
+  }
+
+  .progress-text {
+    @apply relative flex gap-3 px-6 text-xs leading-12;
+  }
+
+  .stage {
+    @apply flex items-stretch gap-10;
+  }
+
+  .player-column {
+    @apply min-w-0 flex-auto;
+  }
+
+  app-flick-list {
+    @apply flex-none;
   }
 
   .report {
-    @apply mt-6 block;
+    @apply block;
   }
 }

@@ -2,11 +2,7 @@
 
 @layer components {
   .cards {
-    @apply mt-2 grid grid-cols-(--cards-columns) gap-4;
-  }
-
-  .why {
-    @apply text-xs text-muted;
+    @apply mb-2 grid grid-cols-(--cards-columns) gap-5;
   }
 
   .what-if {
@@ -17,7 +13,11 @@
     @apply font-strong text-value;
   }
 
+  td.how {
+    @apply text-muted;
+  }
+
   .how {
-    @apply text-left whitespace-normal text-muted;
+    @apply text-left whitespace-normal;
   }
 }

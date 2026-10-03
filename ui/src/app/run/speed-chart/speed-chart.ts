@@ -12,6 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ClickReport } from '../../api';
+import { arrow } from '../../format';
 import { FlickFocus } from '../flick-focus';
 import { Playback } from '../playback';
 import { ChartSize, frameAt, speedChart, SpeedChartModel, xOf, yOf } from './speed-chart-model';
@@ -24,6 +25,7 @@ const SMOOTH_KEY = 'aimview-smooth';
  */
 @Component({
   selector: 'app-speed-chart',
+  host: { '[class.idle]': '!model()' },
   templateUrl: './speed-chart.html',
   styleUrl: './speed-chart.scss',
 })
@@ -52,7 +54,9 @@ export class SpeedChart {
   });
   protected readonly title = computed(() => {
     const m = this.focus.selected();
-    return m ? `Kill ${m.n}: ${m.D0.toFixed(1)}°, ${Math.round(1000 * m.total)} ms` : '';
+    return m
+      ? `Kill ${m.n}: ${m.D0.toFixed(1)}° ${arrow(m.dir)}, ${Math.round(1000 * m.total)} ms`
+      : '';
   });
 
   constructor() {

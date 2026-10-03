@@ -1,35 +1,18 @@
-<div class="head">
-  <span>
-    <span class="title">Every flick</span>
-    <span class="hint">· click one to play it slowed down</span>
-  </span>
-  <button
-    class="switch"
-    type="button"
-    role="switch"
-    [attr.aria-checked]="focus.follow()"
-    (click)="focus.setFollow(!focus.follow())"
-  >
-    <span class="switch-knob" aria-hidden="true"></span>
-    Follow the video
-  </button>
-</div>
+<h3 class="head">Every flick <span class="hint">· click one to play it slowed down</span></h3>
 <div class="scroll" #scroll>
   <table class="flick-list-table">
     <thead>
       <tr>
-        <th class="th">Kill</th>
-        <th class="th">Distance</th>
-        <th class="th">Toward</th>
-        <th class="th">Kill time</th>
-        <th class="th">Main flick ended</th>
-        <th class="th">Still</th>
-        <th class="th">Peak</th>
-        <th class="th">Click speed</th>
-        <th class="th">Shots</th>
-        <th class="th" title="Time the pick of this target cost against the fastest pick">
-          Path cost
-        </th>
+        <th>Kill</th>
+        <th>Distance</th>
+        <th>Toward</th>
+        <th>Kill time</th>
+        <th>Main flick ended</th>
+        <th>Still</th>
+        <th>Peak</th>
+        <th>Click speed</th>
+        <th>Shots</th>
+        <th title="Time the pick of this target cost against the fastest pick">Path cost</th>
       </tr>
     </thead>
     <tbody>
@@ -40,7 +23,7 @@
           [attr.data-selected]="r.flick === focus.selected() ? '' : null"
           [attr.aria-current]="r.flick === focus.selected() ? 'true' : null"
         >
-          <td class="td">
+          <td>
             <button
               class="play"
               type="button"
@@ -50,15 +33,15 @@
               {{ r.n }}
             </button>
           </td>
-          <td class="td">{{ r.distance }}</td>
-          <td class="td">{{ r.toward }}</td>
-          <td class="td">{{ r.killTime }}</td>
-          <td class="td">{{ r.ended }}</td>
-          <td class="td">{{ r.still }}</td>
-          <td class="td">{{ r.peak }}</td>
-          <td class="td">{{ r.clickSpeed }}</td>
-          <td [class]="r.missed ? 'missed' : 'td'">{{ r.shots }}</td>
-          <td class="td">{{ r.pathCost }}</td>
+          <td>{{ r.distance }}</td>
+          <td>{{ r.toward }}</td>
+          <td>{{ r.killTime }}</td>
+          <td>{{ r.ended }}</td>
+          <td>{{ r.still }}</td>
+          <td>{{ r.peak }}</td>
+          <td>{{ r.clickSpeed }}</td>
+          <td [class.missed]="r.missed">{{ r.shots }}</td>
+          <td>{{ r.pathCost }}</td>
         </tr>
       }
     </tbody>

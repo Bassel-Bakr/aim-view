@@ -1,72 +1,96 @@
+@use 'themes/report' as r;
 @reference '../../../tailwind.css';
 
 @layer components {
-  .head {
-    @apply flex flex-wrap items-baseline gap-x-5 gap-y-2;
-  }
-
-  .head-title {
-    @apply font-strong text-primary;
-  }
-
-  .head-hint {
-    @apply text-xs text-muted;
-  }
-
-  .cards {
-    @apply mt-4 grid grid-cols-(--cards-columns) gap-4;
-  }
-
-  .budget {
-    @apply mt-2 flex flex-col gap-2;
-  }
-
-  .bar {
-    @apply flex h-(--budget-height) overflow-hidden rounded-md;
-  }
-
-  .thin-bar {
-    @apply flex h-(--budget-thin-height) overflow-hidden rounded-sm;
+  .budget-box {
+    max-width: r.$budget-max-width;
   }
 
   .segment {
-    @apply flex min-w-0 items-center overflow-hidden px-2 text-xs whitespace-nowrap text-primary;
+    border-radius: r.$budget-radius;
+  }
+
+  .flag {
+    font-size: r.$issue-flag-size;
+    background: r.$issue-fine-bg;
+
+    &[data-flag='attention'] {
+      background: r.$issue-attention-bg;
+    }
+  }
+}
+
+@layer components {
+  .head {
+    @apply mt-9 mb-4 flex flex-wrap items-center gap-6;
+  }
+
+  .head-title {
+    @apply font-bold;
+  }
+
+  .head-hint {
+    @apply text-muted;
+  }
+
+  .whole-run {
+    @apply rounded-md border border-border-strong bg-surface-2 px-5 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-surface-3;
+  }
+
+  .cards {
+    @apply mb-2 grid grid-cols-(--cards-columns) gap-5;
+  }
+
+  .bar {
+    @apply mt-2 mb-3 flex h-(--budget-height) gap-1;
+  }
+
+  .thin-bar {
+    @apply mt-1 mb-4 flex h-(--budget-thin-height) gap-1;
+  }
+
+  .segment {
+    @apply flex items-center overflow-hidden px-3 text-xs whitespace-nowrap text-on-accent;
   }
 
   .reference {
-    @apply flex flex-col gap-1 text-xs text-muted;
+    @apply text-xs;
+
+    > span {
+      @apply text-muted;
+    }
   }
 
   .legend {
-    @apply mt-2 flex flex-wrap gap-x-7 gap-y-2 text-xs text-secondary;
+    @apply flex flex-wrap gap-7 text-xs text-secondary;
   }
 
-  .legend-item {
-    @apply flex items-center gap-3;
+  .swatch {
+    @apply mr-2.5 inline-block size-(--swatch-size) rounded-(--swatch-radius);
   }
 
   .issues {
-    @apply grid grid-cols-(--issues-columns) gap-4;
+    @apply grid grid-cols-(--issues-columns) gap-5;
   }
 
   .issue {
-    @apply flex flex-col gap-2 rounded-lg border border-border bg-surface-1 px-6 py-5;
+    @apply rounded-lg border border-border bg-surface-1 px-7 py-6;
   }
 
   .issue-top {
-    @apply flex items-start justify-between gap-4 font-strong text-primary;
+    @apply flex justify-between gap-4 font-strong;
   }
 
-  .attention {
-    @apply text-xs whitespace-nowrap text-(--issue-attention);
-  }
+  .flag {
+    @apply h-fit rounded-pill px-4 py-0.5 font-strong whitespace-nowrap text-good-text;
 
-  .fine {
-    @apply text-xs whitespace-nowrap text-(--issue-fine);
+    &[data-flag='attention'] {
+      @apply text-warning;
+    }
   }
 
   .issue-value {
-    @apply text-secondary;
+    @apply my-2;
   }
 
   .issue-why {
@@ -74,10 +98,10 @@
   }
 
   .link {
-    @apply mr-3 text-accent underline underline-offset-(--space-1);
+    @apply text-accent underline;
   }
 
-  .tables {
-    @apply grid grid-cols-(--tables-columns) gap-x-13;
+  .split {
+    @apply flex flex-wrap gap-20;
   }
 }

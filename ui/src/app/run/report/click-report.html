@@ -2,8 +2,8 @@
   <div class="head">
     @if (picked(); as m) {
       <span class="head-title">Kill {{ m.n }}</span>
-      <span class="head-hint">the run's median under each value</span>
-      <button type="button" appButton (click)="focus.selected.set(null)">Whole run</button>
+      <span class="head-hint">run median below each value</span>
+      <button class="whole-run" type="button" (click)="focus.selected.set(null)">Whole run</button>
     } @else {
       <span class="head-title">Whole run</span>
       <span class="head-hint">pick a kill for its own numbers</span>
@@ -22,46 +22,45 @@
 </section>
 
 @if (budget(); as b) {
-  <section aria-label="Where the time goes">
+  <section class="budget-box" aria-label="Where the time goes">
     <h3>{{ b.title }}</h3>
     @if (b.note) {
       <p class="section-note">{{ b.note }}</p>
     }
-    <div class="budget">
-      @for (bar of b.bars; track $index) {
-        @if (bar.label) {
-          <div class="reference" [style.visibility]="bar.hidden ? 'hidden' : null">
-            <span>{{ bar.label }}</span>
-            <div class="thin-bar" [style.width.%]="bar.width">
-              @for (seg of bar.segments; track $index) {
-                <div
-                  [style.flex-grow]="seg.grow"
-                  [style.background]="seg.color"
-                  [title]="seg.title"
-                ></div>
-              }
-            </div>
-          </div>
-        } @else {
-          <div class="bar" [style.width.%]="bar.width">
+    @for (bar of b.bars; track $index) {
+      @if (bar.label) {
+        <div class="reference" [style.visibility]="bar.hidden ? 'hidden' : null">
+          <span>{{ bar.label }}</span>
+          <div class="thin-bar" [style.width.%]="bar.width">
             @for (seg of bar.segments; track $index) {
               <div
                 class="segment"
-                [style.flex-grow]="seg.grow"
+                [style.flex]="seg.grow"
                 [style.background]="seg.color"
                 [title]="seg.title"
-              >
-                {{ seg.text }}
-              </div>
+              ></div>
             }
           </div>
-        }
+        </div>
+      } @else {
+        <div class="bar" [style.width.%]="bar.width">
+          @for (seg of bar.segments; track $index) {
+            <div
+              class="segment"
+              [style.flex]="seg.grow"
+              [style.background]="seg.color"
+              [title]="seg.title"
+            >
+              {{ seg.text }}
+            </div>
+          }
+        </div>
       }
-    </div>
+    }
     <div class="legend">
       @for (item of b.legend; track $index) {
-        <span class="legend-item">
-          <i class="color-swatch" [style.background]="item.color"></i>
+        <span>
+          <i class="swatch" [style.background]="item.color"></i>
           {{ item.text }}
           @if (item.average) {
             <span [style.visibility]="item.averageHidden ? 'hidden' : null">{{
@@ -81,30 +80,29 @@
       <div class="issue">
         <div class="issue-top">
           <span>{{ i.issue ? '#' + i.issue + ' ' : '' }}{{ i.title }}</span>
-          @if (i.flag === 'attention') {
-            <span class="attention">▲ Look at this</span>
-          } @else {
-            <span class="fine">✓ Fine</span>
-          }
+          <span class="flag" [attr.data-flag]="i.flag">
+            {{ i.flag === 'attention' ? '▲ Look at this' : '✓ Fine' }}
+          </span>
         </div>
         <div class="issue-value">{{ i.value }}</div>
-        @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
-          <div class="issue-why">
+        <div class="issue-why">
+          @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
             Costliest picks:
-            @for (c of pathing()?.costliest; track c.flick.n) {
+            @for (c of pathing()?.costliest; track c.flick.n; let last = $last) {
               <button class="link" type="button" (click)="focus.play(c.flick)">
-                kill {{ c.flick.n }} {{ c.cost }}
+                kill {{ c.flick.n }}
               </button>
+              {{ c.cost }}{{ last ? '.' : ',' }}
             }
-          </div>
-        }
-        <div class="issue-why">{{ i.why }}</div>
+          }
+          {{ i.why }}
+        </div>
       </div>
     }
   </div>
 </section>
 
-<div class="tables">
+<div class="split">
   <section aria-label="By distance">
     <h3>By distance</h3>
     <table>

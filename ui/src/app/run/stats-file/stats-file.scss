@@ -2,7 +2,7 @@
 
 @layer components {
   .panel {
-    @apply mt-6 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
+    @apply mb-7 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
   }
 
   .head {

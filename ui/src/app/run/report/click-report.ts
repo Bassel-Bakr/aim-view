@@ -1,5 +1,4 @@
 import { Component, computed, inject, input } from '@angular/core';
-import { Button } from '../../controls/button';
 import { ClickReport as ClickReportData } from '../../api';
 import { extraShots, pathing, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
@@ -20,7 +19,6 @@ import {
  * goes, the checks (Pathing among them once the tracks are in), and the kills by distance and by direction.
  */
 @Component({
-  imports: [Button],
   selector: 'app-click-report',
   templateUrl: './click-report.html',
   styleUrl: './click-report.scss',

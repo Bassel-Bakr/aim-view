@@ -1,7 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { Recording, Report, Source } from '../../api';
-import { formatSize, KIND_LABELS } from '../../format';
+import { formatSize } from '../../format';
 import { StampPipe } from '../../stamp-pipe';
 
 const SOURCES: Record<Source, string> = {
@@ -18,7 +18,7 @@ const SOURCE_DETAILS: Record<Source, string> = {
   video: 'Kills found in the video alone: no shots, misses or score',
 };
 
-/** The open recording's title, kind and data source, and its score, time and size. */
+/** The open recording's title and data source, and its score, time and size. */
 @Component({
   selector: 'app-run-header',
   imports: [DecimalPipe, StampPipe],
@@ -28,7 +28,6 @@ const SOURCE_DETAILS: Record<Source, string> = {
 export class RunHeader {
   readonly recording = input.required<Recording>();
   readonly report = input<Report | null>(null);
-  protected readonly kindLabels = KIND_LABELS;
   protected readonly size = computed(() => formatSize(this.recording().size));
 
   /** Where the review's kills came from, once there is a review; before that, whether a stats file was found. */

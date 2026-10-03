@@ -39,8 +39,8 @@
   }
 
   h3 {
-    margin: t.$space-13 0 t.$space-6;
-    font-size: t.$font-size-lg;
+    margin: t.$space-14 0 t.$space-6;
+    font-size: t.$font-size-h3;
     font-weight: t.$font-weight-strong;
   }
 
@@ -51,7 +51,7 @@
 
   th,
   td {
-    padding: t.$space-3 t.$space-6 t.$space-3 0;
+    padding: t.$cell-padding;
     text-align: right;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -71,6 +71,21 @@
   th:first-child,
   td:first-child {
     text-align: left;
+  }
+
+  ::-webkit-scrollbar {
+    width: t.$scrollbar-size;
+    height: t.$scrollbar-size;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: t.$line-width-strong solid t.$surface-0;
+    border-radius: t.$scrollbar-size;
+    background: t.$surface-3;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   :focus-visible {

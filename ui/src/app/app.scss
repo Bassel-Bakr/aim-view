@@ -41,8 +41,11 @@
     @apply flex min-w-0 flex-1 flex-row-reverse items-center gap-5;
   }
 
+  // The main area measures its own width: the run page puts the flick list beside the video when there is room
   .main {
-    @apply min-w-0 overflow-y-auto px-13 py-11;
+    @apply min-w-0 overflow-y-auto px-14 pt-11 pb-32;
+
+    container-type: inline-size;
   }
 
   .empty {

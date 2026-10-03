@@ -1,20 +1,11 @@
 <div class="chart-head">
-  <span class="title">Crosshair speed in the flick, °/s</span>
-  <span class="chart-label">{{ title() }}</span>
-  <button
-    class="switch"
-    type="button"
-    role="switch"
-    [attr.aria-checked]="smooth()"
-    (click)="toggleSmooth()"
-  >
-    <span class="switch-knob" aria-hidden="true"></span>
+  Crosshair speed in the selected flick, °/s
+  <label class="smooth">
+    <input type="checkbox" [checked]="smooth()" (change)="toggleSmooth()" />
     Smooth
-  </button>
+  </label>
+  <span class="chart-label">{{ title() }}</span>
 </div>
-@if (!model()) {
-  <p class="idle">Pick a kill in the list, or play the video with "Follow the video" on.</p>
-}
 <div class="frame">
   @let m = model();
   <svg
@@ -27,7 +18,6 @@
     [attr.aria-label]="'Crosshair speed over the flick. ' + title()"
     [attr.aria-valuemax]="flickMs()"
     [attr.viewBox]="m ? '0 0 ' + m.size.width + ' ' + m.size.height : null"
-    [attr.hidden]="m ? null : ''"
     (pointermove)="showPoint($event)"
     (pointerleave)="hidePoint()"
     (click)="goToPoint($event)"

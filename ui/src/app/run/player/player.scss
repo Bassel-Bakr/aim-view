@@ -7,17 +7,19 @@
     max-width: p.$max-width;
   }
 
+  // 16:9 until the video says its own shape
   .screen {
+    aspect-ratio: 16 / 9;
     background: p.$screen;
+    box-shadow: p.$shadow;
   }
 
-  .time {
-    background: p.$time-bg;
+  .seek-wrap {
+    height: p.$seek-height;
   }
 
   .mark {
     position: absolute;
-    top: 0;
     width: p.$kill-mark-width;
     height: p.$kill-mark-height;
     background: p.$kill-mark;
@@ -37,28 +39,56 @@
     @apply pointer-events-none absolute inset-0 size-full;
   }
 
-  .time {
-    @apply absolute bottom-4 left-4 rounded-md px-3 py-1 text-xs tabular-nums;
+  .seek-row {
+    @apply mt-4 flex items-center gap-5 text-xs tabular-nums;
   }
 
-  .seek-row {
-    @apply relative mt-4 h-(--seek-height);
+  .time {
+    @apply text-muted;
+  }
+
+  .seek-wrap {
+    @apply relative flex-1;
   }
 
   .marks {
     @apply pointer-events-none absolute inset-x-4 inset-y-0;
   }
 
+  .mark {
+    @apply top-0.5;
+  }
+
   .seek {
-    @apply absolute inset-0 w-full cursor-pointer accent-accent;
+    @apply absolute inset-0 m-0 w-full cursor-pointer accent-accent;
   }
 
   .controls {
-    @apply mt-4 flex flex-wrap items-center gap-4;
+    @apply my-5 flex flex-wrap items-center gap-3;
   }
 
-  .icon {
-    @apply size-(--icon-size-sm);
+  .speed {
+    @apply text-muted;
+  }
+
+  .rates {
+    @apply contents;
+  }
+
+  .rate {
+    @apply rounded-md border border-border-strong bg-surface-2 px-5.5 py-2 font-medium text-primary tabular-nums transition-colors hover:bg-surface-3;
+
+    &[aria-pressed='true'] {
+      @apply border-accent bg-accent-pressed;
+    }
+  }
+
+  .check {
+    @apply ml-6 cursor-pointer text-secondary;
+
+    input {
+      @apply my-1.5 mr-1.5 ml-2 accent-accent;
+    }
   }
 
   .hint {

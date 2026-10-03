@@ -8,14 +8,14 @@
 
 @layer components {
   .title {
-    @apply flex flex-wrap items-center gap-4;
+    @apply flex flex-wrap items-center gap-x-3;
+  }
+
+  .source {
+    @apply rounded-pill border border-border-strong px-5 py-1 text-xs font-medium text-secondary;
   }
 
   .sub {
     @apply mt-2 text-muted;
-  }
-
-  .detail {
-    @apply mt-1 text-xs text-muted;
   }
 }

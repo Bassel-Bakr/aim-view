@@ -11,7 +11,6 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { Button } from '../../controls/button';
 import { Report, Tracks } from '../../api';
 import { Playback, RATES } from '../playback';
 import { FlickFocus } from '../flick-focus';
@@ -62,7 +61,6 @@ export function markPositions(report: Report | null, duration: number): number[]
  * seek bar follow every frame through the video's frame callback, outside change detection.
  */
 @Component({
-  imports: [Button],
   selector: 'app-player',
   templateUrl: './player.html',
   styleUrl: './player.scss',
@@ -73,7 +71,7 @@ export class Player {
   readonly report = input<Report | null>(null);
   readonly tracks = input<Tracks | null>(null);
   protected readonly playback = inject(Playback);
-  private readonly focus = inject(FlickFocus);
+  protected readonly focus = inject(FlickFocus);
   private readonly paths = inject(PathCost);
   private readonly destroyRef = inject(DestroyRef);
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
@@ -89,6 +87,10 @@ export class Player {
   protected readonly showMine = signal(localStorage.getItem(MINE_KEY) !== '0');
   protected readonly clicking = computed(() => this.report()?.mode === 'click');
   protected readonly marks = computed(() => markPositions(this.report(), this.playback.duration()));
+  /** The video's length, in whole seconds: the seek bar's end. */
+  protected readonly end = computed(() =>
+    clock(this.playback.duration() || 0).replace(/\.\d$/, ''),
+  );
   private style: OverlayStyle | null = null;
   private seeking = false;
 
@@ -122,8 +124,7 @@ export class Player {
   }
 
   private draw(t: number): void {
-    const video = this.video().nativeElement;
-    this.clockText().nativeElement.textContent = `${clock(t)} / ${clock(video.duration || 0)}`;
+    this.clockText().nativeElement.textContent = clock(t);
     if (!this.seeking) this.seekBar().nativeElement.value = String(t);
     const canvas = this.canvas().nativeElement;
     const w = canvas.clientWidth;

@@ -25,6 +25,7 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-pressed: var(--accent-pressed);
   --color-value: var(--value);
   --color-good-soft: var(--good-soft);
   --color-good-text: var(--good-text);
@@ -52,13 +53,17 @@
   --default-font-family: var(--font-family);
 
   --font-sans: var(--font-family);
+  --text-2xs: var(--font-size-2xs);
   --text-xs: var(--font-size-xs);
   --text-sm: var(--font-size-sm);
   --text-md: var(--font-size-md);
+  --text-h3: var(--font-size-h3);
   --text-lg: var(--font-size-lg);
   --text-xl: var(--font-size-xl);
   --font-weight-regular: var(--font-weight-regular);
+  --font-weight-medium: var(--font-weight-medium);
   --font-weight-strong: var(--font-weight-strong);
+  --font-weight-bold: var(--font-weight-bold);
   --leading-normal: var(--line-height);
   --tracking-tight: var(--letter-spacing-tight);
 }

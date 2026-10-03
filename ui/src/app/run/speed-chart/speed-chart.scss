@@ -6,7 +6,12 @@
 @layer components {
   :host {
     display: block;
-    margin-top: t.$space-6;
+    margin: t.$space-3 0 t.$space-2;
+  }
+
+  // No flick picked: the chart keeps its place, so picking the first kill moves nothing
+  :host(.idle) {
+    visibility: hidden;
   }
 
   .grid {
@@ -53,27 +58,27 @@
 
 @layer components {
   .chart-head {
-    @apply flex flex-wrap items-center gap-x-5 gap-y-1;
+    @apply mb-1 flex items-center gap-7 text-xs text-secondary;
   }
 
-  .title {
-    @apply font-strong text-primary;
+  .smooth {
+    @apply cursor-pointer text-muted;
+
+    input {
+      @apply my-1.5 mr-1.5 ml-2 accent-accent;
+    }
   }
 
   .chart-label {
-    @apply text-xs text-muted;
+    @apply ml-auto whitespace-nowrap text-muted;
   }
 
   .frame {
-    @apply relative mt-2;
+    @apply relative;
   }
 
   .svg {
     @apply block h-(--speed-chart-height) w-full cursor-crosshair;
-  }
-
-  .idle {
-    @apply mt-2 text-xs text-muted;
   }
 
   .tip {

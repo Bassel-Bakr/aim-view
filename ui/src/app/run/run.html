@@ -1,5 +1,10 @@
 <div class="head">
-  <app-run-header class="header" [recording]="recording()" [report]="report()" />
+  <div class="header">
+    <app-run-header [recording]="recording()" [report]="report()" />
+    @if (reviewedBy(); as note) {
+      <p class="by">{{ note }}</p>
+    }
+  </div>
   <div class="toolbar">
     @if (!review.unavailable()) {
       <button
@@ -29,9 +34,11 @@
 @if (video(); as v) {
   @if (v.state === 'remuxing') {
     <div class="progress">
-      <progress class="bar" max="1" [value]="v.progress"></progress>
-      <span role="status">Remuxing it into MP4 in the browser</span>
-      <span aria-hidden="true">{{ remuxShare() }}</span>
+      <div class="fill" [style.width.%]="100 * v.progress"></div>
+      <span class="progress-text">
+        <span role="status">Remuxing it into MP4 in the browser</span>
+        <span aria-hidden="true">{{ remuxShare() }}</span>
+      </span>
     </div>
   } @else if (v.state === 'failed') {
     <p class="note" role="alert">
@@ -47,33 +54,36 @@
 @if (statsOpen()) {
   <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
 }
-@if (reviewedBy(); as note) {
-  <p class="note">{{ note }}</p>
-}
 @if (progress(); as p) {
   <div class="progress">
-    <progress class="bar" max="1" [value]="p.fraction"></progress>
-    <span [attr.role]="p.failed ? 'alert' : 'status'">{{ p.stage }}</span>
-    <span aria-hidden="true">{{ p.count }}</span>
+    <div class="fill" [style.width.%]="100 * p.fraction"></div>
+    <span class="progress-text">
+      <span [attr.role]="p.failed ? 'alert' : 'status'">{{ p.stage }}</span>
+      <span aria-hidden="true">{{ p.count }}</span>
+    </span>
   </div>
 }
 <!-- The player keeps its place whatever the report, so the video never reloads when the report arrives -->
 <div class="stage">
-  @if (videoUrl(); as src) {
-    <app-player [src]="src" [report]="report()" [tracks]="tracks()">
-      @if (trackReport(); as tr) {
-        @if (tracks(); as t) {
-          <app-timeline [report]="tr" [tracks]="t" />
+  <div class="player-column">
+    @if (videoUrl(); as src) {
+      <app-player [src]="src" [report]="report()" [tracks]="tracks()">
+        @if (trackReport(); as tr) {
+          @if (tracks(); as t) {
+            <app-timeline [report]="tr" [tracks]="t" />
+          }
         }
-      }
-    </app-player>
-  }
+      </app-player>
+    }
+    @if (clickReport(); as cr) {
+      <app-speed-chart [report]="cr" />
+    }
+  </div>
   @if (clickReport(); as cr) {
     <app-flick-list [report]="cr" />
   }
 </div>
 @if (clickReport(); as cr) {
-  <app-speed-chart [report]="cr" />
   <app-click-report class="report" [report]="cr" />
 } @else if (trackReport(); as tr) {
   <app-track-report class="report" [report]="tr" />

@@ -27,6 +27,7 @@
   --accent: #3987e5;
   --accent-hover: #4d95ea;
   --accent-soft: rgba(57, 135, 229, 0.16);
+  --accent-pressed: rgba(57, 135, 229, 0.22);
   --value: #7fb6f2;
   --good-soft: rgba(34, 177, 76, 0.16);
   --good-text: #6fd38e;
@@ -55,6 +56,7 @@
   --space-9: 18px;
   --space-11: 22px;
   --space-13: 26px;
+  --space-14: 28px;
 
   // Corners
   --radius-sm: 6px;
@@ -64,13 +66,17 @@
 
   // Type
   --font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-size-2xs: 11px;
   --font-size-xs: 12px;
   --font-size-sm: 13px;
   --font-size-md: 14px;
+  --font-size-h3: 15px;
   --font-size-lg: 16px;
   --font-size-xl: 22px;
   --font-weight-regular: 400;
+  --font-weight-medium: 500;
   --font-weight-strong: 600;
+  --font-weight-bold: 700;
   --line-height: 1.5;
   --letter-spacing-tight: -0.01em;
 
@@ -89,7 +95,9 @@
   --icon-size-sm: 16px;
   --progress-width: 160px;
   --prose-width: 72ch;
+  --cell-padding: 5px 12px 5px 0;
   --swatch-size: 10px;
+  --scrollbar-size: 10px;
   --swatch-radius: 2px;
   --disabled-opacity: 0.5;
   --switch-width: 26px;
@@ -122,6 +130,7 @@ $backdrop: var(--backdrop);
 $accent: var(--accent);
 $accent-hover: var(--accent-hover);
 $accent-soft: var(--accent-soft);
+$accent-pressed: var(--accent-pressed);
 $value: var(--value);
 $good-soft: var(--good-soft);
 $good-text: var(--good-text);
@@ -147,6 +156,7 @@ $space-7: var(--space-7);
 $space-9: var(--space-9);
 $space-11: var(--space-11);
 $space-13: var(--space-13);
+$space-14: var(--space-14);
 
 $radius-sm: var(--radius-sm);
 $radius-md: var(--radius-md);
@@ -154,15 +164,21 @@ $radius-lg: var(--radius-lg);
 $radius-pill: var(--radius-pill);
 
 $font-family: var(--font-family);
+$font-size-2xs: var(--font-size-2xs);
 $font-size-xs: var(--font-size-xs);
 $font-size-sm: var(--font-size-sm);
 $font-size-md: var(--font-size-md);
+$font-size-h3: var(--font-size-h3);
 $font-size-lg: var(--font-size-lg);
 $font-size-xl: var(--font-size-xl);
 $font-weight-regular: var(--font-weight-regular);
+$font-weight-medium: var(--font-weight-medium);
 $font-weight-strong: var(--font-weight-strong);
+$font-weight-bold: var(--font-weight-bold);
 $line-height: var(--line-height);
 $letter-spacing-tight: var(--letter-spacing-tight);
+$cell-padding: var(--cell-padding);
+$scrollbar-size: var(--scrollbar-size);
 
 $line-width: var(--line-width);
 $line-width-strong: var(--line-width-strong);

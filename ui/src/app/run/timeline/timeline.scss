@@ -28,11 +28,11 @@
 
 @layer components {
   .legend {
-    @apply mb-3 flex flex-wrap items-center gap-x-7 gap-y-2 text-xs text-secondary;
+    @apply mb-3 flex flex-wrap items-center gap-x-8 gap-y-3 text-xs text-secondary;
   }
 
   .title {
-    @apply font-strong text-primary;
+    @apply font-bold text-primary;
   }
 
   .item {
@@ -40,7 +40,7 @@
   }
 
   .hint {
-    @apply ml-auto text-muted;
+    @apply text-muted;
   }
 
   .box {
