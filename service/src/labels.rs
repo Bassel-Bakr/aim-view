@@ -34,7 +34,7 @@ pub(crate) fn add_id(p: &Path, id: &str) -> Answer<Value> {
 impl Library {
     /// The recordings the user marked as another game, not an aim trainer.
     pub fn not_aim(&self) -> BTreeSet<String> {
-        read_ids(&self.data.join(NOT_AIM))
+        read_ids(&self.file(NOT_AIM))
     }
 
     /// Marks a recording as another game (on), or as an aim trainer again: a marked one is left out of the queues and
@@ -47,19 +47,19 @@ impl Library {
         } else {
             ids.remove(id);
         }
-        write_ids(&self.data.join(NOT_AIM), &ids)?;
+        write_ids(&self.file(NOT_AIM), &ids)?;
         Ok(json!({ "id": id, "not_aim": on }))
     }
 
     /// Skipped in the labelling queue: left out of it from now on.
     pub fn skip_label(&self, id: &str) -> Answer<Value> {
-        add_id(&self.data.join(LABEL_SKIPPED), id)
+        add_id(&self.file(LABEL_SKIPPED), id)
     }
 
     /// Recordings to label areas in: uploads first (other players' layouts), then the most recent recording of each
     /// scenario, leaving out probes, other games, skipped ones and those with saved areas.
     pub fn label_queue(&self) -> Answer<Value> {
-        let skipped = read_ids(&self.data.join(LABEL_SKIPPED));
+        let skipped = read_ids(&self.file(LABEL_SKIPPED));
         let ids = self.queue(|id| skipped.contains(id) || self.review_dir(id).join("exclude.json").exists())?;
         Ok(json!(ids))
     }

@@ -8,8 +8,11 @@
 Clicking kinds (static, dynamic, switching): kills matched to a target and flicks measured (review.match, measure).
 Tracking: the review's time on the target (review.track_summary) against the stats file's accuracy, hits over hits
 and misses: the game's own measure of the same thing.
-Tracks are cached per model name in test_out/vod_model/eval/moving_<name>.pkl.
-Usage: python python/model/eval_moving.py name=model.pt [name=model.pt ...]
+The tracks come from the app's native review (the review service through the aimview module, python-bindings/: the
+model's _u8in export, see eval_vods.u8in, and the app's areas for each recording); with --python, from
+review.track_model as before. They are cached per model name in test_out/vod_model/eval/moving_<name>_native.pkl
+(--python: moving_<name>.pkl).
+Usage: python python/model/eval_moving.py name=model [name=model ...] [--python]
 """
 import glob
 import os
@@ -57,21 +60,28 @@ def picks():
 
 
 def main():
+    python = "--python" in sys.argv[1:]
+    lib = None if python else eval_vods.library()
     pick = picks()
     facts = review.scenario_facts()
     counts = review.target_counts()
     res = {}
     os.makedirs("test_out/vod_model/eval", exist_ok=True)
-    for arg in sys.argv[1:]:
+    for arg in [x for x in sys.argv[1:] if x != "--python"]:
         name, path = arg.split("=", 1)
-        cache = f"test_out/vod_model/eval/moving_{name}.pkl"
+        model = None if python else str(eval_vods.u8in(path))
+        cache = f"test_out/vod_model/eval/moving_{name}{'' if python else '_native'}.pkl"
         tracks = pickle.load(open(cache, "rb")) if os.path.exists(cache) else {}
         det = None
         for vs in pick.values():
             for v, _ in vs:
                 if v not in tracks:
-                    det = det or infer.TorchDetector(path)
-                    tracks[v] = review.track_model(v, det, cap=counts.get(Path(v).stem.rsplit(" - ", 2)[0].lower()))
+                    cap = counts.get(Path(v).stem.rsplit(" - ", 2)[0].lower())
+                    if python:
+                        det = det or infer.TorchDetector(path)
+                        tracks[v] = review.track_model(v, det, cap=cap)
+                    else:
+                        tracks[v] = lib.review_video(v, model, cap=cap)["tracks"]
                     pickle.dump(tracks, open(cache, "wb"))
         out = {}
         for kind, vs in pick.items():

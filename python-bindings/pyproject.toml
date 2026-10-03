@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "aimview"
+version = "0.1.0"
+description = "Aim View's review service and review core for Python"
+requires-python = ">=3.10"
+
+[tool.maturin]
+module-name = "aimview"

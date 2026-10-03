@@ -1,0 +1,28 @@
+[package]
+name = "aimview-service"
+version = "0.1.0"
+edition = "2024"
+description = "Aim View's review service: the review server's API (python/server.py) over a library of recordings, with the review run natively. The desktop app and the HTTP server both serve it."
+publish = false
+
+[features]
+# the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
+cuda = ["ort/cuda"]
+
+[dependencies]
+aimview = { path = ".." }
+# ONNX Runtime: on the CPU everywhere, DirectML on Windows (any GPU), CUDA with the `cuda` feature
+ort = "=2.0.0-rc.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# the API's paths and queries, read as the desktop app's window sends them
+url = "2"
+# ffmpeg downloaded on first need, as KovOBS gets it (Config.ffmpeg: Ffmpeg::Download)
+ffmpeg-sidecar = "2.5.2"
+anyhow = "1"
+# NumPy's .npz files (zips of arrays), as python/ writes and reads them
+zip = { version = "4.6", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+# its prebuilt library is downloaded at build time
+ort = { version = "=2.0.0-rc.10", features = ["directml"] }

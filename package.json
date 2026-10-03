@@ -14,6 +14,7 @@
     "lint:ui": "bun run --cwd ui lint",
     "format": "bun run --cwd ui format",
     "app": "cd desktop && cargo tauri dev",
-    "build:app": "cd desktop && cargo tauri build"
+    "build:app": "cd desktop && cargo tauri build",
+    "server": "cargo run -p aimview-server --release"
   }
 }

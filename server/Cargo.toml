@@ -1,0 +1,28 @@
+[package]
+name = "aimview-server"
+version = "0.1.0"
+edition = "2024"
+description = "Aim View's review server: the server-mode UI and the review API over HTTP"
+publish = false
+
+[[bin]]
+name = "aimview-server"
+path = "src/main.rs"
+
+[features]
+# the detector on an NVIDIA GPU with CUDA (Linux): --device cuda
+cuda = ["aimview-service/cuda"]
+
+[dependencies]
+aimview-service = { path = "../service" }
+serde_json = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "fs", "time", "sync", "macros"] }
+tokio-util = { version = "0.7", features = ["io"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+percent-encoding = "2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

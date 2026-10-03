@@ -12,6 +12,20 @@
       "port": 8770
     },
     {
+      "name": "rust-server",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": [
+        "run",
+        "-p",
+        "aimview-server",
+        "--release",
+        "--",
+        "--port",
+        "8770"
+      ],
+      "port": 8770
+    },
+    {
       "name": "ui",
       "runtimeExecutable": "bun",
       "runtimeArgs": [

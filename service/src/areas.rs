@@ -153,7 +153,7 @@ impl Library {
     /// The area kinds, built-in ones first (python/server.py: kinds). The first use, or a list kept before kinds had
     /// ids, writes the list with ids.
     pub fn kinds(&self) -> Answer<Vec<Kind>> {
-        let p = self.data.join(AREA_KINDS);
+        let p = self.file(AREA_KINDS);
         let data: Vec<OldKind> = match pyjson::load(&p) {
             Some(v) => serde_json::from_value(v).map_err(|e| format!("{AREA_KINDS}: {e}"))?,
             None if p.exists() => return Err(format!("{AREA_KINDS} is not JSON").into()),
@@ -220,7 +220,7 @@ impl Library {
             let k = kinds.iter_mut().find(|k| k.id == id).ok_or_else(|| Failure::bad(format!("no type with the id {id}")))?;
             (k.name, k.about) = (name, about);
         }
-        pyjson::dump(&self.data.join(AREA_KINDS), &kinds, true)?;
+        pyjson::dump(&self.file(AREA_KINDS), &kinds, true)?;
         Ok(json!(kinds))
     }
 
@@ -246,7 +246,7 @@ impl Library {
             Ok(v.as_array().cloned().unwrap_or_default())
         };
         let saved = self.review_dir(id).join(EXCLUDE);
-        let uploads = self.data.join(EXCLUDE_UPLOADS);
+        let uploads = self.file(EXCLUDE_UPLOADS);
         let (boxes, source) = if saved.exists() {
             (read(&saved)?, "saved")
         } else if id.starts_with("uploads/") && uploads.exists() {
@@ -317,7 +317,7 @@ impl Library {
         };
         pyjson::dump(&self.review_dir(id).join(EXCLUDE), &boxes, false)?;
         if id.starts_with("uploads/") {
-            pyjson::dump(&self.data.join(EXCLUDE_UPLOADS), &boxes, false)?;
+            pyjson::dump(&self.file(EXCLUDE_UPLOADS), &boxes, false)?;
         }
         // the finder learns in the background: finding the areas reads the recording when they are not kept yet
         let (lib, rec, saved) = (self.clone(), id.to_string(), boxes.clone());
@@ -344,7 +344,7 @@ impl Library {
     pub fn labelled(&self, but: Option<&str>) -> Vec<(String, Value, Value)> {
         let skip: Vec<PathBuf> = self.not_aim().iter().map(|id| self.review_dir(id)).chain(but.map(|id| self.review_dir(id))).collect();
         let mut out = Vec::new();
-        for e in std::fs::read_dir(self.data.join("reviews")).into_iter().flatten().flatten() {
+        for e in std::fs::read_dir(&self.folders().recordings).into_iter().flatten().flatten() {
             let d = e.path();
             if !d.is_dir() || skip.contains(&d) {
                 continue;
@@ -409,8 +409,9 @@ impl Library {
         Ok(pyjson::write_text(&p, finder_areas::merge(&lines, id, &new).as_bytes())?)
     }
 
-    fn examples_path(&self) -> PathBuf {
-        self.data.join(AREA_EXAMPLES)
+    /// The area finder's examples (area_examples.jsonl).
+    pub fn examples_path(&self) -> PathBuf {
+        self.file(AREA_EXAMPLES)
     }
 
     /// Examples kept before kinds had ids hold the kind's name: their kinds as ids (python/server.py: Library's

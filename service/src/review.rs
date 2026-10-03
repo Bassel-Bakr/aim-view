@@ -1,5 +1,5 @@
 //! A recording's review on this computer (the browser's review worker, natively): ffmpeg decodes the frames, the core
-//! converts them to ffmpeg's 720p RGB and luma byte for byte, the detector runs on the GPU (DirectML), the tracker
+//! converts them to ffmpeg's 720p RGB and luma byte for byte, the detector runs on the GPU (detector.rs), the tracker
 //! keeps and links the targets, the camera watch reads the camera's turn and the HUD watch the game's on-screen counts.
 //! A recording is split into runs at key frames (`split_runs`, as ui/src/app/modes/wasm/split-runs.ts), reviewed at
 //! once and joined: one ffmpeg decoder is the limit, as one browser decoder was.
@@ -18,6 +18,7 @@ use aimview::track::{Mask, TrackFrame};
 use aimview::tracker::{TrackPart, Tracker};
 use serde::Serialize;
 
+use crate::config::Device;
 use crate::detector::Detector;
 use crate::video::{Frames, VideoInfo, probe};
 
@@ -26,12 +27,14 @@ pub const LEAST_RUN: usize = 600;
 /// Frames between progress reports.
 const PROGRESS_EVERY: usize = 60;
 
-/// What to review: the video, the detector model (its _u8in export), the frames it takes at once, the scenario's
-/// target count (0: not known), the runs to split the recording into, the part of the video to track (the user's
-/// run window with a margin; None: all of it), and the areas it leaves out (the recording's, areas.rs).
+/// What to review: the video, the detector model (its _u8in export) and the device it runs on, the frames it takes at
+/// once, the scenario's target count (0: not known), the runs to split the recording into, the part of the video to
+/// track (the user's run window with a margin; None: all of it), and the areas it leaves out (the recording's,
+/// areas.rs).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
+    pub device: Device,
     pub batch: usize,
     pub cap: usize,
     pub runs: usize,
@@ -313,7 +316,7 @@ fn review_run(
     let batch = req.batch.max(1);
     let extra = usize::from(run.to.is_some());
     let mut frames = Frames::open(&req.video, (run.first > 0).then_some(run.from), Some(run.frames + extra))?;
-    let mut detector = Detector::new(&req.model, batch, fixed)?;
+    let mut detector = Detector::new(&req.model, batch, fixed, req.device)?;
     let device = detector.device;
     let mut started = req.tracker();
     started.start_at(run.first);

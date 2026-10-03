@@ -1,12 +1,12 @@
 //! A raw mouse log read (python/mouse_read.py's command line, on the core's reader: src/mouse.rs). With a stats file it
 //! measures each flick of the run and writes <log>.kills.json beside the log; without one it sums the log up.
-//! cargo run -p aimview-desktop --release --example mouse_read -- <log.bin> [--stats "<stats csv>"] [--dpi N]
+//! cargo run -p aimview-service --release --example mouse_read -- <log.bin> [--stats "<stats csv>"] [--dpi N]
 //!   [--cm360 N] [--window MS] [--start DEG_S] [--stop DEG_S] [--hold MS]
 
 use std::path::Path;
 
 use aimview::mouse::{self as reader, Options, ReadOutcome, ReadRequest};
-use aimview_desktop::mouse::utc_offset_at;
+use aimview_service::mouse::utc_offset_at;
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();

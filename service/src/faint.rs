@@ -18,9 +18,6 @@ use crate::video::{Frames, VideoInfo, probe};
 
 const FAINT: &str = "faint.json";
 const FAINT_SKIPPED: &str = "faint_skipped.json";
-/// Where submitted cut-offs' labels go, as python/ keeps them in test_out/vod_model/hand/cutoff: crops in train/, rows
-/// in checked.jsonl.
-const CUTOFF_LABELS: &str = "cutoff";
 
 /// faint.json as the review server writes it: on and offset, and once submitted when and how many labels it gave.
 #[derive(Serialize, Deserialize)]
@@ -113,7 +110,8 @@ impl Library {
         let out = self.set_faint(id, &json!({ "on": true, "offset": offset }), Some(now_iso()))?;
         let video: PathBuf = self.resolve(id)?.components().collect();
         let exclude: Vec<[f64; 4]> = self.exclude_areas(id);
-        let (faint, labels) = (self.faint_path(id), self.data.join(CUTOFF_LABELS));
+        // the labels go where python/ keeps them (the layout's cutoff folder): crops in train/, rows in checked.jsonl
+        let (faint, labels) = (self.faint_path(id), self.folders().cutoff.clone());
         std::thread::spawn(move || {
             let n = match cutoff_labels(&video, &dir.join("tracks.json"), &report, exclude, offset, &labels) {
                 Ok(n) => n,
@@ -135,13 +133,13 @@ impl Library {
 
     /// Skipped in the cut-off queue: left out of it from now on.
     pub fn skip_faint(&self, id: &str) -> Answer<Value> {
-        crate::labels::add_id(&self.data.join(FAINT_SKIPPED), id)
+        crate::labels::add_id(&self.file(FAINT_SKIPPED), id)
     }
 
     /// Recordings to set a cut-off in, in the area queue's order, leaving out probes, other games, skipped and
     /// submitted ones.
     pub fn faint_queue(&self) -> Answer<Value> {
-        let skipped = crate::labels::read_ids(&self.data.join(FAINT_SKIPPED));
+        let skipped = crate::labels::read_ids(&self.file(FAINT_SKIPPED));
         let submitted = |id: &str| self.faint_file(id).and_then(|f| f.record).is_some_and(|r| !r.submitted.is_empty());
         Ok(json!(self.queue(|id| skipped.contains(id) || submitted(id))?))
     }
