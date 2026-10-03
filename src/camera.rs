@@ -234,6 +234,17 @@ impl CameraWatch {
         out
     }
 
+    /// The watch for a recording, its tiles kept clear of the KovOBS overlay and of the fixed map (1280 x 720, 1 fixed).
+    pub fn for_recording(fixed: &[u8]) -> CameraWatch {
+        let overlay = crate::track::Mask::without(&crate::geometry::overlay_shares());
+        CameraWatch::new(&excluded(overlay.kept(), fixed))
+    }
+
+    /// The readings, the tracks known: each frame's camera turn, and whether the countdown bar shows.
+    pub fn finish(self, frames: &[TrackFrame]) -> VideoReadings {
+        VideoReadings { camera: self.readings(frames), countdown: self.countdown }
+    }
+
     /// What this run of the recording read, to join with the other runs' (a recording split into runs, reviewed in
     /// workers at once, has a watch for each).
     pub fn part(self) -> CameraPart {
@@ -326,6 +337,13 @@ impl CameraWatch {
             })
             .collect()
     }
+}
+
+/// What a tracking run reads from the video besides the tracks (CameraWatch::finish).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct VideoReadings {
+    pub camera: Vec<CameraReading>,
+    pub countdown: Vec<bool>,
 }
 
 /// A run's part of the camera watch (CameraWatch::part): each frame's tile shifts and whether the countdown bar shows.

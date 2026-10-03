@@ -4,13 +4,10 @@
 
 use std::alloc::{Layout, alloc as raw_alloc, dealloc as raw_dealloc};
 
-use serde::{Deserialize, Serialize};
-
 use crate::convert::{Converter, DST_H, DST_W, Matrix};
-use crate::detect;
 use crate::fixed::FixedMap;
-use crate::popup::AreaWatch;
-use crate::track::{Mask, RawBox, Spot, TrackFrame, keep, link, reopen};
+use crate::track::{RawBox, TrackFrame};
+use crate::tracker::{TrackPart, Tracker};
 
 fn layout(len: usize) -> Layout {
     Layout::from_size_align(len.max(1), 8).unwrap()
@@ -31,30 +28,6 @@ pub unsafe extern "C" fn dealloc(ptr: *mut u8, len: usize) {
     unsafe { raw_dealloc(ptr, layout(len)) }
 }
 
-/// The track step for one recording: each frame's boxes kept or dropped (raw boxes kept too), its excluded areas
-/// watched for pop-ups, then the frames where a pop-up is off kept again, and all linked when the frames are in.
-pub struct Tracker {
-    areas: Vec<[f64; 4]>,
-    mask: Mask,
-    cap: Option<usize>,
-    watch: AreaWatch,
-    raw: Vec<Vec<RawBox>>,
-    frames: Vec<Vec<Spot>>,
-}
-
-impl Tracker {
-    fn new(areas: Vec<[f64; 4]>, cap: usize) -> Tracker {
-        Tracker {
-            mask: Mask::without(&areas),
-            watch: AreaWatch::new(&areas),
-            areas,
-            cap: (cap > 0).then_some(cap),
-            raw: Vec::new(),
-            frames: Vec::new(),
-        }
-    }
-}
-
 /// A tracker for a recording. areas: `areas_len` excluded boxes as shares of the frame, [x0, y0, x1, y1] each
 /// (f64); cap: the scenario's target count, 0 for none.
 ///
@@ -70,7 +43,7 @@ pub unsafe extern "C" fn tracker_new(areas: *const f64, areas_len: usize, cap: u
 /// A tracker with the KovOBS overlay excluded (the default areas). cap: the scenario's target count, 0 for none.
 #[unsafe(no_mangle)]
 pub extern "C" fn tracker_new_kovobs(cap: usize) -> *mut Tracker {
-    Box::into_raw(Box::new(Tracker::new(crate::geometry::overlay_shares(), cap)))
+    Box::into_raw(Box::new(Tracker::kovobs(cap)))
 }
 
 /// The frame the next boxes are from, as RGB24 at 1280 x 720: its excluded areas are watched for pop-ups.
@@ -80,7 +53,7 @@ pub extern "C" fn tracker_new_kovobs(cap: usize) -> *mut Tracker {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_watch(tracker: *mut Tracker, rgb: *const u8) {
     let t = unsafe { &mut *tracker };
-    t.watch.add(unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
+    t.watch(unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
 }
 
 /// One frame's detector output: the score map (gh x gw) and reg maps (4 x gh x gw), f32. Returns the boxes kept.
@@ -98,7 +71,7 @@ pub unsafe extern "C" fn tracker_push_maps(
     let t = unsafe { &mut *tracker };
     let score = unsafe { std::slice::from_raw_parts(score, gw * gh) };
     let reg = unsafe { std::slice::from_raw_parts(reg, 4 * gw * gh) };
-    push(t, &detect::decode(score, reg, gw, gh, detect::THRESHOLD))
+    t.push_maps(score, reg, gw, gh)
 }
 
 /// One frame's boxes, already decoded: `n` boxes of [cx, cy, w, h, score] (f32, frame pixels). Returns the boxes kept.
@@ -113,23 +86,7 @@ pub unsafe extern "C" fn tracker_push_boxes(tracker: *mut Tracker, boxes: *const
         .chunks_exact(5)
         .map(|b| RawBox { cx: b[0], cy: b[1], w: b[2], h: b[3], score: b[4] })
         .collect();
-    push(t, &raw)
-}
-
-fn push(t: &mut Tracker, raw: &[RawBox]) -> usize {
-    let kept = keep(raw, &t.mask, t.cap);
-    let n = kept.len();
-    t.frames.push(kept);
-    t.raw.push(raw.to_vec());
-    n
-}
-
-/// A run's part of the track step (`tracker_part`): its frames' raw boxes and its area watch. A recording split into
-/// runs, reviewed in workers at once, has a tracker for each; the page joins their parts in order (`tracker_add_part`).
-#[derive(Serialize, Deserialize)]
-struct TrackPart {
-    raw: Vec<Vec<RawBox>>,
-    watch: AreaWatch,
+    t.push_boxes(&raw)
 }
 
 /// The tracker's run starts at frame `first` of the recording: call before its first frame.
@@ -138,37 +95,32 @@ struct TrackPart {
 /// `tracker` from `tracker_new`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_start_at(tracker: *mut Tracker, first: usize) {
-    unsafe { &mut *tracker }.watch.start_at(first);
+    unsafe { &mut *tracker }.start_at(first);
 }
 
-/// The run's part as JSON, and frees the tracker. Free the result as `tracker_finish`'s.
+/// The run's part as JSON (src/tracker.rs: `TrackPart`), and frees the tracker. Free the result as
+/// `tracker_finish`'s.
 ///
 /// # Safety
 /// `tracker` from `tracker_new`, not used again.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_part(tracker: *mut Tracker) -> *mut u8 {
     let t = unsafe { Box::from_raw(tracker) };
-    let part = TrackPart { raw: t.raw, watch: t.watch };
-    bytes_out(serde_json::to_vec(&part).unwrap_or_default())
+    bytes_out(serde_json::to_vec(&t.part()).unwrap_or_default())
 }
 
-/// The next run's part (`tracker_part`'s JSON), after the frames the tracker has: each frame's boxes kept or dropped
-/// as `tracker_push_maps` would, and its looks after the ones before. Returns the frames added; none when the part
-/// cannot be read.
+/// The next run's part (`tracker_part`'s JSON), after the frames the tracker has (`Tracker::add_part`). Returns the
+/// frames added; none when the part cannot be read.
 ///
 /// # Safety
 /// `tracker` from `tracker_new`; `part` must hold `len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_add_part(tracker: *mut Tracker, part: *const u8, len: usize) -> usize {
     let t = unsafe { &mut *tracker };
-    let Ok(part) = serde_json::from_slice::<TrackPart>(unsafe { std::slice::from_raw_parts(part, len) }) else {
-        return 0;
-    };
-    for raw in &part.raw {
-        push(t, raw);
+    match serde_json::from_slice::<TrackPart>(unsafe { std::slice::from_raw_parts(part, len) }) {
+        Ok(part) => t.add_part(part),
+        Err(_) => 0,
     }
-    t.watch.join(part.watch);
-    part.raw.len()
 }
 
 /// Links the frames and frees the tracker. Returns the tracks as JSON (tracks.json's `frames`), in a buffer that
@@ -178,11 +130,8 @@ pub unsafe extern "C" fn tracker_add_part(tracker: *mut Tracker, part: *const u8
 /// `tracker` from `tracker_new`, not used again.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_finish(tracker: *mut Tracker) -> *mut u8 {
-    let mut t = unsafe { Box::from_raw(tracker) };
-    let shows = t.watch.showing();
-    reopen(&t.raw, &mut t.frames, &t.areas, &shows, t.cap);
-    let frames: Vec<TrackFrame> = link(&t.frames);
-    bytes_out(serde_json::to_vec(&frames).unwrap_or_default())
+    let t = unsafe { Box::from_raw(tracker) };
+    bytes_out(serde_json::to_vec(&t.finish()).unwrap_or_default())
 }
 
 /// A byte buffer handed to the page: its length (u32), then the bytes.
@@ -310,8 +259,7 @@ pub unsafe extern "C" fn review_report(request: *const u8, len: usize) -> *mut u
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn camera_new(fixed: *const u8) -> *mut crate::camera::CameraWatch {
     let fixed = unsafe { std::slice::from_raw_parts(fixed, DST_W * DST_H) };
-    let bad = crate::camera::excluded(Mask::without(&crate::geometry::overlay_shares()).kept(), fixed);
-    Box::into_raw(Box::new(crate::camera::CameraWatch::new(&bad)))
+    Box::into_raw(Box::new(crate::camera::CameraWatch::for_recording(fixed)))
 }
 
 /// One frame: its YUV 4:2:0 at 1280 x 720 (the luma is read) and its RGB24 at 1280 x 720 (the countdown bar).
@@ -362,6 +310,5 @@ pub unsafe extern "C" fn camera_finish(c: *mut crate::camera::CameraWatch, frame
     let c = unsafe { Box::from_raw(c) };
     let frames: Vec<TrackFrame> =
         serde_json::from_slice(unsafe { std::slice::from_raw_parts(frames, len) }).unwrap_or_default();
-    let out = serde_json::json!({ "camera": c.readings(&frames), "countdown": c.countdown });
-    bytes_out(serde_json::to_vec(&out).unwrap_or_default())
+    bytes_out(serde_json::to_vec(&c.finish(&frames)).unwrap_or_default())
 }

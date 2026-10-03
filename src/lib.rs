@@ -17,6 +17,7 @@ pub mod statistics;
 pub mod stats_file;
 pub mod summary;
 pub mod track;
+pub mod tracker;
 pub mod tracking;
 
 #[cfg(target_arch = "wasm32")]
