@@ -1,0 +1,57 @@
+@use 'themes/timeline' as tl;
+@reference '../../../tailwind.css';
+
+@layer components {
+  .box,
+  .labels {
+    height: tl.$lanes-height;
+  }
+
+  .labels {
+    grid-template-rows: tl.$lanes-mark-row minmax(0, 1fr);
+  }
+
+  .head {
+    width: tl.$head-width;
+    margin-left: calc(-0.5 * #{tl.$head-width});
+    background: tl.$lanes-head;
+  }
+}
+
+@layer components {
+  :host {
+    @apply mt-4 grid grid-cols-(--kill-lanes-columns) overflow-hidden rounded-lg border border-border bg-surface-1;
+  }
+
+  .labels {
+    @apply grid border-r border-grid text-xs text-muted;
+  }
+
+  .label {
+    @apply flex flex-col justify-center px-5;
+  }
+
+  .long {
+    @apply flex items-center gap-2;
+  }
+
+  .swatch {
+    @apply inline-block size-(--swatch-size) rounded-(--swatch-radius) bg-attention;
+  }
+
+  .box {
+    @apply relative min-w-0 cursor-pointer select-none;
+  }
+
+  .lanes {
+    @apply block size-full;
+  }
+
+  .head {
+    @apply absolute inset-y-0;
+  }
+
+  .tip {
+    @apply absolute top-1 rounded-md bg-surface-3 px-4 py-1 text-xs whitespace-nowrap;
+  }
+}

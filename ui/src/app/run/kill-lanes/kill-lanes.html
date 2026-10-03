@@ -1,0 +1,23 @@
+<div class="labels" aria-hidden="true">
+  <span class="label"
+    >Kills <span>{{ kills() }} measured</span></span
+  >
+  <span class="label"
+    >Kill time <span class="long"><i class="swatch"></i>over 1 s</span></span
+  >
+</div>
+<div
+  #box
+  class="box"
+  role="slider"
+  tabindex="0"
+  aria-label="The kills over the run: click near one to play it, elsewhere to go there"
+  aria-valuemin="0"
+  aria-valuenow="0"
+  [attr.aria-valuemax]="seconds()"
+  (keydown)="moveWithKeys($event)"
+>
+  <canvas class="lanes" #lanes aria-hidden="true"></canvas>
+  <div #head class="head" hidden aria-hidden="true"></div>
+  <div class="tip" #tip hidden aria-hidden="true"></div>
+</div>

@@ -1,5 +1,13 @@
 import { DecimalPipe } from '@angular/common';
-import { afterRenderEffect, Component, computed, ElementRef, inject, signal } from '@angular/core';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Badge } from '../controls/badge';
 import { Button } from '../controls/button';
 import { Kind, Recording } from '../api';
@@ -20,18 +28,20 @@ const KIND_ORDER: Kind[] = ['static', 'dynamic', 'switching', 'tracking'];
 const PAGE = 10;
 
 /**
- * The recordings: a text filter, a chip per kind of run, and a list. The arrow keys, Home, End, Page Up and Page Down
- * move the selection; the list keeps the selected recording in view.
+ * The recordings: a text filter (Ctrl K from anywhere), a chip per kind of run, and a list. The arrow keys, Home, End,
+ * Page Up and Page Down move the selection; the list keeps the selected recording in view.
  */
 @Component({
   selector: 'app-recordings',
   imports: [DecimalPipe, StampPipe, Badge, Button],
+  host: { '(document:keydown)': 'focusSearch($event)' },
   templateUrl: './recordings.html',
   styleUrl: './recordings.scss',
 })
 export class Recordings {
   protected readonly library = inject(Library);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly search = viewChild.required<ElementRef<HTMLInputElement>>('q');
   protected readonly kindLabels = KIND_LABELS;
   protected readonly query = signal('');
   protected readonly kind = signal<KindFilter>('all');
@@ -108,5 +118,14 @@ export class Recordings {
     e.preventDefault();
     if (list.length)
       this.library.selectedId.set(list[Math.max(0, Math.min(list.length - 1, to))].id);
+  }
+
+  /** Ctrl K (Cmd K on a Mac) from anywhere: the filter, its text selected. */
+  protected focusSearch(e: KeyboardEvent): void {
+    if (e.key.toLowerCase() !== 'k' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    e.preventDefault();
+    const input = this.search().nativeElement;
+    input.focus();
+    input.select();
   }
 }

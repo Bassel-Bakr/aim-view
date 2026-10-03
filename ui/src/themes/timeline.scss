@@ -1,4 +1,5 @@
-// Module tokens: a tracking run's timeline (a canvas, which reads these variables when it draws).
+// Module tokens: a tracking run's timeline and a clicking run's kill lanes (canvases, which read these variables
+// when they draw).
 
 @mixin tokens {
   --timeline-height: 130px;
@@ -9,6 +10,14 @@
   --timeline-font: var(--font-size-xs) var(--font-family);
   --timeline-swatch: var(--swatch-size);
   --timeline-swatch-radius: var(--swatch-radius);
+  // The kill lanes: the labels' column, the height, the kills' lane and its marks, and each kill time's bar (px)
+  --kill-lanes-columns: 92px minmax(0, 1fr);
+  --kill-lanes-height: 92px;
+  --kill-lanes-mark-row: 34px;
+  --kill-lanes-split: 34;
+  --kill-lanes-mark: 16;
+  --kill-lanes-bar: 3;
+  --kill-lanes-head: var(--text-primary);
 }
 
 $height: var(--timeline-height);
@@ -16,3 +25,6 @@ $head-width: var(--timeline-head-width);
 $head: var(--timeline-head);
 $swatch: var(--timeline-swatch);
 $swatch-radius: var(--timeline-swatch-radius);
+$lanes-height: var(--kill-lanes-height);
+$lanes-mark-row: var(--kill-lanes-mark-row);
+$lanes-head: var(--kill-lanes-head);

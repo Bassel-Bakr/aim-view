@@ -75,6 +75,8 @@
           @if (tracks(); as t) {
             <app-timeline [report]="tr" [tracks]="t" />
           }
+        } @else if (clickReport(); as cr) {
+          <app-kill-lanes [report]="cr" />
         }
       </app-player>
     }

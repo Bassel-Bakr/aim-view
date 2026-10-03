@@ -7,6 +7,8 @@ import { modelName, Models } from '../services/models';
 import { ClickSide } from './click-side/click-side';
 import { FlickList } from './flick-list/flick-list';
 import { Headline } from './headline/headline';
+import { scoreChange } from './score-change';
+import { KillLanes } from './kill-lanes/kill-lanes';
 import { Player } from './player/player';
 import { ClickReport } from './report/click-report';
 import { HeadlineTile, runHeadline } from './report/click-stats';
@@ -54,6 +56,7 @@ const STAGES: Record<JobStage, string> = {
     ClickReport,
     ClickSide,
     Headline,
+    KillLanes,
     TrackReport,
     Button,
   ],
@@ -83,19 +86,26 @@ export class Run {
   /** The run in a few numbers, above the video: a tracking run's are its first cards (track-report shows the rest). */
   protected readonly headline = computed<HeadlineTile[] | null>(() => {
     const c = this.clickReport();
-    if (c) return runHeadline(c.summary, c.issues, c.flicks, c.fps);
     const t = this.trackReport();
-    return t
-      ? trackStats(t.summary)
-          .slice(0, HEADLINE_TILES)
-          .map((s) => ({
-            label: s.label,
-            value: s.value,
-            note: s.detail,
-            attention: false,
-            why: s.why,
-          }))
-      : null;
+    const tiles = c
+      ? runHeadline(c.summary, c.issues, c.flicks, c.fps)
+      : t
+        ? trackStats(t.summary)
+            .slice(0, HEADLINE_TILES)
+            .map((s) => ({
+              label: s.label,
+              value: s.value,
+              note: s.detail,
+              attention: false,
+              good: false,
+              why: s.why,
+            }))
+        : null;
+    // the score's line: against the same scenario's run before, where there is one
+    const change = scoreChange(this.recording(), this.library.source.recordings());
+    return tiles && change
+      ? tiles.map((tile, i) => (i === 0 ? { ...tile, note: change.text, good: change.up } : tile))
+      : tiles;
   });
   protected readonly statsOpen = signal(false);
   /** The recording's video, which may still be being remuxed into MP4. */

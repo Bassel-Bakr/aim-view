@@ -162,12 +162,16 @@ export function sourceNote(s: ClickSummary): string {
   return `${from} · ${s.measured} flicks measured · target radius ${s.radius.toFixed(2)}°${sens}`;
 }
 
-/** A headline tile: a number, what it is, a line under it, whether the review flags it, and what it means. */
+/**
+ * A headline tile: a number, what it is, a line under it, whether the review flags it, whether the line is good news
+ * (a better score than the run before), and what it means.
+ */
 export interface HeadlineTile {
   label: string;
   value: string;
   note: string;
   attention: boolean;
+  good: boolean;
   why: string;
 }
 
@@ -193,6 +197,7 @@ export function runHeadline(
     value,
     note,
     attention: issue > 0 && flagged(issue),
+    good: false,
     why: '',
   });
   return [
