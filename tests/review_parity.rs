@@ -33,7 +33,10 @@ fn clicking_review_matches_python() {
         let mut diff = Diff::default();
         compare("flicks.json", &serde_json::to_value(&got.flicks).unwrap(), &read(&dir.join("flicks.json")), &mut diff);
         compare("measures.json", &serde_json::to_value(&got.report.flicks).unwrap(), &read(&dir.join("measures.json")), &mut diff);
-        compare("report.json", &serde_json::to_value(&got.report).unwrap(), &want, &mut diff);
+        // the what-if lines are the core's own: Python's report has none
+        let mut report = serde_json::to_value(&got.report).unwrap();
+        report["summary"].as_object_mut().unwrap().remove("what_if");
+        compare("report.json", &report, &want, &mut diff);
         eprintln!("{case}: {} numbers equal within 1e-9, not to the bit", diff.close);
         for w in diff.wrong.iter().take(30) {
             eprintln!("  {w}");

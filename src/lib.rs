@@ -25,6 +25,7 @@ pub mod summary;
 pub mod track;
 pub mod tracker;
 pub mod tracking;
+pub mod what_if;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;

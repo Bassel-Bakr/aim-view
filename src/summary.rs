@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::matching::{KillSource, MatchInfo};
 use crate::measure::{Choice, Measure};
 use crate::statistics::{mean, med, median, pstdev};
+use crate::what_if::{click_what_if, ClickWhatIf};
 
 /// Click: one shot a kill. Hold: the trigger is held on the target (the median kill takes more than 3 shots).
 /// Track: a tracking run, on the target all along.
@@ -101,12 +102,15 @@ pub struct Summary {
     pub extra_when_not_nearest: Option<f64>,
     #[serde(flatten)]
     pub pace: Option<Pace>,
+    /// What would raise the score, biggest first (src/what_if.rs; Python's report has none).
+    pub what_if: Vec<ClickWhatIf>,
 }
 
 /// Eight 45-degree sectors, each centered on its direction (0 = right, 90 = up).
 pub const DIRECTIONS: [&str; 8] = ["right", "up-right", "up", "up-left", "left", "down-left", "down", "down-right"];
 
-const DISTANCES: [(u32, u32); 5] = [(0, 5), (5, 10), (10, 15), (15, 25), (25, 90)];
+/// The distance groups (degrees).
+pub const DISTANCES: [(u32, u32); 5] = [(0, 5), (5, 10), (10, 15), (15, 25), (25, 90)];
 
 /// A value of the stats file read as Python's float() reads it.
 fn number(meta: &HashMap<String, String>, key: &str) -> Result<Option<f64>, String> {
@@ -164,7 +168,7 @@ pub fn summarize(
     let parts: Vec<[f64; 5]> = ms.iter().filter_map(|m| m.parts).collect();
     let fit = fitts(ms, 2.0 * r);
     let totals: Vec<f64> = ms.iter().map(|m| m.total).collect();
-    Ok(Summary {
+    let mut s = Summary {
         scenario: meta.get("Scenario").cloned(),
         score: if video_only || !meta.contains_key("Score") { None } else { Some(number(meta, "Score")?.unwrap_or(0.0)) },
         kills: if video_only { info.matched as i64 } else { count(meta, "Kills")?.unwrap_or(0) },
@@ -250,7 +254,11 @@ pub fn summarize(
             pace_first: med(totals[..n / 3].iter().map(|&t| Some(t))),
             pace_last: med(totals[n - n / 3..].iter().map(|&t| Some(t))),
         }),
-    })
+        what_if: Vec::new(),
+    };
+    let hits_per_kill = hit.filter(|_| s.kills > 0).map(|h| h / s.kills as f64);
+    s.what_if = click_what_if(ms, &s, r, s.info.fps, hits_per_kill);
+    Ok(s)
 }
 
 /// A check's verdict.
