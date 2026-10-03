@@ -184,6 +184,7 @@ This writes `python/model/exports/detector_<name>_fp32.onnx`, `_fp16.onnx` (the 
 fp32 file against PyTorch on a real frame, and the u8in and embed files against fp32 (the u8in one also with the frame
 in a batch of 4), and stops if they differ. Then it prints the sizes. `--u8in` writes and checks the u8in file
 only. To ship a model under the plain name, copy the checkpoint to `python/model/exports/detector_<name>.pt`.
+Last, it calibrates the model and writes its settings file (see "After a training run" below).
 
 ## 5. Quantize
 
@@ -193,6 +194,128 @@ activations) calibrated on 64 validation crops. Evaluate it like any other model
 ```bash
 python python/model/eval.py python/model/exports/detector_small_v2_fp32.onnx python/model/exports/detector_small_v2_int8.onnx
 ```
+
+## After a training run: settings file and contract
+
+A new model needs no change to the code. It brings a settings file, and it must meet a contract. After training
+(step 2) and the checks against the stats files (step 3), three commands:
+
+```bash
+cp test_out/vod_model/runs/<name>/best.pt python/model/exports/detector_<name>.pt
+python python/model/export.py test_out/vod_model/runs/<name>/best.pt      # the exports, then the settings file
+python python/model/contract.py <name>                                       # the contract
+```
+
+### The settings file
+
+`python/model/exports/detector_<name>.json` holds the model's threshold and score map. [MODEL_FILE.md](MODEL_FILE.md)
+gives its format and who reads it. `export.py` writes it only when no file is there: it never replaces one. The
+numbers behind it go to `python/model/reports/calibration_<name>.json`. To calibrate again without exporting:
+
+```bash
+python python/model/calibrate.py <name> --report python/model/reports/calibration_<name>.json   # prints the settings
+python python/model/calibrate.py <name> --write                              # writes the file if there is none
+```
+
+The review reads scores in three places: the threshold (0.3), the one box past the target count (0.5 or more), and
+the faint-target cut-off. Those numbers were set on full_v3, the reference model. The score map puts a model's raw
+scores on full_v3's scale, so that the same score means the same precision: the same share of the boxes with that
+score are targets. The calibration (`calibrate.py`):
+
+- runs the model's `_u8in` export on the val crops of `data_v3`, `data_kills4` and `data_moving_dark` (8,559 crops of
+  60 scenarios, every kind; the models were picked on them, and none trained on them), and matches every peak to the
+  labels as `eval.py` does;
+- fits each model's precision at each score, rising with the score (isotonic regression on bins 0.01 wide);
+- maps a raw score to the full_v3 score with the same fitted precision, at the full_v3 scores 0.05, 0.10, ... 0.95;
+- fits again on 400 draws of the 60 scenarios (both models on the same draw). A score moves only as far as the 95%
+  range of the draws demands, and not at all when that range holds it. Moves under 0.01 are dropped. A model with no
+  move left gets no map (null);
+- picks the threshold as `infer.THRESHOLD` was picked: `eval.py`'s sweep (0.2 to 0.6, the best F1 on the val split of
+  `test_out/vod_model/data`, where full_v3's best is 0.3), on the mapped scale. A threshold other than 0.3 is taken
+  only when its F1 is better on 95% of the draws of that split's scenarios.
+
+Why precision, and not the scores of true targets (the same recall at the same score)? Matching recall pushes a model
+that finds fewer targets down to scores where most boxes are false. small_v13 would keep boxes from raw 0.21 up, where
+about a fifth of its boxes are targets, to reach full_v3's recall at 0.3. small_v11, which never saw a moving target,
+would map its 0.05 to 0.35. The review's numbers rely on what a score means; recall is the model's quality, which the
+contract and the stats-file checks judge.
+
+What the calibration gives today's models (the files keep today's values, threshold 0.3 and no map; the proposals
+are in `python/model/reports/`):
+
+| Model | Threshold | Score map |
+| --- | --- | --- |
+| full_v3 | 0.3 | none (the reference) |
+| small_v13 | 0.3 | raw 0.5205 to 0.55, 0.5652 to 0.6, 0.6354 to 0.65; no move under 0.5 or over 0.7 |
+| small_v11 | 0.3 (0.5 has the best F1, 0.9483 against 0.9469, but is better on only 56% of the draws) | none |
+
+So at the threshold all three agree with full_v3. small_v13's scores from 0.5 to 0.65 are more precise than full_v3's
+(its boxes scoring 0.5 to 0.6 are targets 85% of the time, full_v3's 71%): the map moves them up by at most 0.035. The
+full results: `calibration_small_v13.json` and `calibration_small_v11.json`.
+
+### The contract
+
+```bash
+python python/model/contract.py <name> [--settings FILE] [--report FILE]
+```
+
+It checks the model's `_u8in` export with its settings file (or with `--settings`, another settings file or a
+calibration report). It writes `python/model/reports/contract_<name>.json` and exits with 1 when a check fails. It
+keeps the recordings' camera readings and each export's peaks on them in `test_out/vod_model/contract/`, so a second
+run takes a few minutes; the first takes about a quarter of an hour on the CPU.
+
+Each check tests something the review relies on. Each limit compares the model with full_v3 on the same data:
+
+| Check | What it measures | Limit |
+| --- | --- | --- |
+| export | Inputs `rgb` and `fixed` (uint8, a free batch axis), outputs `score` (peaks only, 0 to 1) and `reg` at 4 px a cell; a frame in a batch of 4 gives what it gives alone; a settings file the pipeline accepts; the fixed map made as for training (`DIFF` 30, `SHARE` 0.8) | all of them |
+| crosshair | On the 8 static recordings of `eval_moving.py`: the turning pairs (the room moved 0.5 degrees or more since the frame before, and half that either side; `review.camera_motion`) with a box on the fixed map's crosshair that stayed put while the room moved | the pairs over full_v3's, recording by recording: at most 0.5% of all the pairs, and under 2% on any one recording |
+| screen_fixed | The same on the fixed map's other parts (the HUD) | as for crosshair |
+| boxes_per_frame | The most boxes in one frame of those recordings | 50 (`link` compares at most 2,500 pairs of boxes) |
+| box_fit | Centre error (median, 90th percentile) and width and height (medians, over the label's) against the val labels; centre error against the 40 held-out hand-labelled targets (`hand_data`, `hand_data2` test splits) | within 2 standard deviations of full_v3's number over 400 draws of the val scenarios |
+| one_box | Second boxes inside a found target's box, per target found | as box_fit, but never under 1 point |
+| under_crosshair | Kill-moment labels touching the fixed map (a target under the crosshair) found | as one_box |
+| calibrated | Precision in each band of mapped scores (0.3, 0.4, ... 0.8 to 1.0) against full_v3's | as one_box, either way, with 50 boxes or more in the band |
+| targets_found | Recall at the threshold on static, kill-moment and moving val crops | as one_box |
+
+Why these limits. A camera reading can jump for one frame (a shot's flash), so a turn must last; a frame where most
+boxes stayed put is left out (the reading is wrong there). small_v10, which took KovaaK's crosshair for a target, boxes
+it in 14.9% of 1w4ts's turning pairs, where full_v3 boxes it in none; the review's crosshair-spot rule
+(`src/matching.rs` `crosshair_spots`) only engages when such boxes pile up in 2% of the turning frames, and the tracking
+summary has no such rule. Two standard deviations of full_v3's own number is the range it keeps on 95% of the draws
+of scenarios, so a model that fails is worse than full_v3 by more than full_v3's own results can tell apart. For shares
+the gap is never under 1 point: full_v3 finds 99.8% of the kill-moment targets (spread 0.1 point), and a smaller gap is
+a few labels in 2,500, which the stats-file checks do not resolve.
+
+Results (2026-10-04):
+
+| Check | full_v3 | small_v13 | small_v11 |
+| --- | --- | --- | --- |
+| export | pass | pass | pass |
+| crosshair: share of the 5,179 turning pairs | 20.3% (valorant 99.2%, 849.91 0.9%, others 0) | 18.5%; **fails**: 1w4ts 2.8% where full_v3 has 0 | 20.3%; **fails**: 0.64% more than full_v3 (1w4ts 1.5%, 849.91 2.5%) |
+| screen_fixed | 0 | 0.08% | 0 |
+| boxes_per_frame | 11 | 15 | 21 |
+| box_fit: centre error median, p90 (px) | 0.49, 1.33 | 0.47, 1.34 | 0.44, 1.22 |
+| box_fit: width, height over the label's | 0.96, 0.99 | 0.98, 0.98 | 0.98, 1.00 |
+| box_fit: hand labels, centre error median; found, false boxes | 0.72 px; 32 of 40, 9 | 0.67 px; 31, 17 | 0.64 px; 31, 18 |
+| one_box | 2.5% | 2.1% | 0.2% |
+| under_crosshair | 99.9% | 99.7% | 99.6% |
+| calibrated: precision at 0.4 to 0.5, 0.5 to 0.6 | 0.46, 0.71 | 0.57, 0.85: **fails** at 0.5 to 0.6 (gap 0.14, allowed 0.11); with the calibrated map 0.57, 0.81: pass | 0.54, 0.81 |
+| targets_found: static, kill moments, moving | 0.964, 0.998, 0.965 | 0.945, 0.995, 0.948 | 0.947, 0.996, **0.844 fails** |
+| **Contract** | **meets it** | **fails** (crosshair; calibrated with today's file) | **fails** (crosshair; moving targets) |
+
+What the results say:
+
+- **full_v3 boxes the crosshair on the valorant run** (1wall 2targets xsmall, 558.46) in 99% of the turning pairs, at
+  a score of about 0.6 and 6.6 px, and on 1wall 6targets 849.91 in 0.9% (scores 0.3 to 0.4). The crosshair-spot rule
+  keeps those boxes from being taken for the killed target, which is why every kill there matches. So "the crosshair
+  is never a target" does not hold for full_v3 itself; the check compares each model with it.
+- **small_v13 boxes KovaaK's crosshair on 1w4ts** in 2.8% of the turning pairs (scores about 0.3 to 0.4), where full_v3
+  boxes it in none. That is above 2%, the share at which the review's rule engages, but counted on turns of 0.5
+  degrees a frame or more; whether the rule finds that spot over all the turning frames it reads was not checked.
+- small_v13's precision at 0.5 to 0.6 is above full_v3's; with the map `calibrate.py` proposes it passes. Its file
+  holds no map today.
+- small_v11 misses moving targets (it never trained on them), as `MODEL_STATUS.md` says.
 
 ## 6. Run inference
 

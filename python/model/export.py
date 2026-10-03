@@ -9,6 +9,9 @@ for N frames at once (N is free: a browser runs several frames in one call).
 The _embed file takes the raw bytes and gives "dets" float32 (1, 100, 5): the 100 best peaks as cx, cy, w, h, score,
 best first; keep the rows over the threshold.
 A detection at cell (i, j) with score > threshold: cx = (j + reg0) * 4, cy = (i + reg1) * 4, w = exp(reg2), h = exp(reg3).
+Last, the model's settings file detector_<name>.json (calibrate.py: its scores on the reference model's scale and its
+threshold there; written only when the file does not exist yet), with the numbers behind it in
+python/model/reports/calibration_<name>.json. Then check the model with python/model/contract.py <name>.
 Usage: python python/model/export.py test_out/vod_model/runs/small/best.pt [--out python/model/exports]
        python python/model/export.py <checkpoint> --u8in [--out DIR]   (the _u8in file only, checked against the
        fp32 file beside it frame by frame and in a batch)
@@ -143,6 +146,8 @@ def main():
     ap.add_argument("--out", default="python/model/exports")
     ap.add_argument("--data", default="test_out/vod_model/data")
     ap.add_argument("--u8in", action="store_true", help="only the _u8in file (the fp32 file must be beside it)")
+    ap.add_argument("--val", action="append", help="a dataset whose val split fits the score map (repeat it) "
+                    "[calibrate.VAL]; the threshold is picked on --data's val split")
     a = ap.parse_args()
     ck = torch.load(a.checkpoint, map_location="cpu", weights_only=False)
     cfg = ck["config"]
@@ -224,6 +229,25 @@ def main():
     for p in (f32, f16, u8, emb, i8):
         if p.exists():
             print(f"{p}: {p.stat().st_size / 1024:.1f} KB")
+    settings_file(u8, a)
+
+
+def settings_file(u8, a):
+    """The model's settings file, detector_<name>.json beside the exports: its scores put on the reference model's
+    scale and its threshold there (calibrate.py), written only when the file does not exist yet. The numbers behind
+    it go to python/model/reports/calibration_<name>.json."""
+    import calibrate
+    try:
+        s, report = calibrate.calibrate(u8, tuple(a.val or calibrate.VAL), a.data)
+    except SystemExit as e:                               # no validation crops on this computer
+        print(f"no settings file: {e}")
+        return
+    print(f"settings: {json.dumps(s)}")
+    calibrate.write_settings(s, u8.parent)
+    rp = Path(__file__).resolve().parent / "reports" / f"calibration_{s['name']}.json"
+    rp.parent.mkdir(exist_ok=True)
+    json.dump(dict(settings=s, **report), open(rp, "w"), indent=1)
+    print(f"{rp}: the calibration's numbers")
 
 
 if __name__ == "__main__":

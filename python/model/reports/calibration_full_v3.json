@@ -1,0 +1,10 @@
+{
+ "settings": {
+  "format": 1,
+  "name": "full_v3",
+  "threshold": 0.3,
+  "score_map": null,
+  "reference": "full_v3"
+ },
+ "note": "the reference model: its own scale"
+}

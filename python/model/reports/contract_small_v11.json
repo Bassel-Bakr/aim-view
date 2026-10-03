@@ -1,0 +1,878 @@
+{
+ "model": "small_v11",
+ "export_file": "D:\\Projects\\aim-view\\python\\model\\exports\\detector_small_v11_u8in.onnx",
+ "settings": {
+  "format": 1,
+  "name": "small_v11",
+  "threshold": 0.3,
+  "score_map": null,
+  "reference": "full_v3"
+ },
+ "settings_from": "D:\\Projects\\aim-view\\python\\model\\exports\\detector_small_v11.json",
+ "export": {
+  "passed": true,
+  "problems": [],
+  "batch_of_4_largest_difference": 0.0,
+  "fixed_map": {
+   "core_diff": 30.0,
+   "core_share": 0.8,
+   "python_diff": 30
+  },
+  "peaks_on_sample_frame": 3
+ },
+ "box_fit": {
+  "boxes": 10180,
+  "centre_error_median": 0.4381,
+  "centre_error_p90": 1.222,
+  "iou_median": 0.7611,
+  "iou_p10": 0.5325,
+  "width_ratio_median": 0.9826,
+  "height_ratio_median": 1.0004
+ },
+ "one_box": 0.002357563850687623,
+ "under_crosshair": 0.9963336388634281,
+ "band_precision": [
+  0.32677165354330706,
+  0.539291217257319,
+  0.8132678132678133,
+  0.9483960948396095,
+  0.9800936768149883,
+  0.9950719495367633
+ ],
+ "recall_by_kind": {
+  "static": 0.9464755077658303,
+  "kill_moments": 0.9956175298804781,
+  "moving": 0.8439201451905626
+ },
+ "band_boxes": [
+  762,
+  649,
+  814,
+  1434,
+  2562,
+  5073
+ ],
+ "hand": {
+  "boxes": 31,
+  "centre_error_median": 0.6435,
+  "centre_error_p90": 1.6016,
+  "iou_median": 0.7306,
+  "iou_p10": 0.5582,
+  "width_ratio_median": 1.0319,
+  "height_ratio_median": 1.0047,
+  "targets": 40,
+  "found": 31,
+  "false_boxes": 18
+ },
+ "bands": [
+  0.3,
+  0.4,
+  0.5,
+  0.6,
+  0.7,
+  0.8,
+  1.0
+ ],
+ "at_threshold": {
+  "precision": 0.9014,
+  "recall": 0.9169,
+  "f1": 0.9091,
+  "tp": 10180,
+  "fp": 1114,
+  "fn": 923
+ },
+ "recordings": [
+  {
+   "video": "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
+   "frames": 7933,
+   "turning_pairs": 779,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 52,
+   "crosshair_pairs": 12,
+   "crosshair_share": 0.0154,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.0449,
+   "boxes_max": 5,
+   "boxes_p99": 5.0,
+   "screen_fixed_examples": [
+    {
+     "frame": 464,
+     "room_deg": [
+      1.13,
+      1.174
+     ],
+     "boxes": [
+      [
+       639.36,
+       359.56,
+       5.99,
+       5.9,
+       0.3
+      ]
+     ]
+    },
+    {
+     "frame": 5106,
+     "room_deg": [
+      -0.148,
+      0.562
+     ],
+     "boxes": [
+      [
+       639.35,
+       359.53,
+       5.83,
+       5.74,
+       0.33
+      ]
+     ]
+    },
+    {
+     "frame": 5107,
+     "room_deg": [
+      -0.17,
+      0.598
+     ],
+     "boxes": [
+      [
+       639.34,
+       359.55,
+       5.85,
+       5.76,
+       0.32
+      ]
+     ]
+    },
+    {
+     "frame": 6114,
+     "room_deg": [
+      -0.01,
+      0.616
+     ],
+     "boxes": [
+      [
+       639.34,
+       359.51,
+       5.98,
+       5.88,
+       0.31
+      ]
+     ]
+    },
+    {
+     "frame": 6115,
+     "room_deg": [
+      -0.007,
+      0.718
+     ],
+     "boxes": [
+      [
+       639.34,
+       359.5,
+       6.0,
+       5.9,
+       0.3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "video": "10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4",
+   "frames": 4006,
+   "turning_pairs": 73,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 52,
+   "crosshair_pairs": 0,
+   "crosshair_share": 0.0,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.0959,
+   "boxes_max": 10,
+   "boxes_p99": 10.0,
+   "screen_fixed_examples": []
+  },
+  {
+   "video": "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4",
+   "frames": 7916,
+   "turning_pairs": 20,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 52,
+   "crosshair_pairs": 0,
+   "crosshair_share": 0.0,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.1,
+   "boxes_max": 5,
+   "boxes_p99": 5.0,
+   "screen_fixed_examples": []
+  },
+  {
+   "video": "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4",
+   "frames": 7917,
+   "turning_pairs": 15,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 52,
+   "crosshair_pairs": 0,
+   "crosshair_share": 0.0,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.0,
+   "boxes_max": 1,
+   "boxes_p99": 1.0,
+   "screen_fixed_examples": []
+  },
+  {
+   "video": "1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4",
+   "frames": 6038,
+   "turning_pairs": 1048,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 139,
+   "crosshair_pairs": 1006,
+   "crosshair_share": 0.9599,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.9857,
+   "boxes_max": 11,
+   "boxes_p99": 9.0,
+   "screen_fixed_examples": [
+    {
+     "frame": 182,
+     "room_deg": [
+      0.518,
+      0.158
+     ],
+     "boxes": [
+      [
+       639.11,
+       358.74,
+       6.72,
+       6.72,
+       0.57
+      ]
+     ]
+    },
+    {
+     "frame": 183,
+     "room_deg": [
+      0.476,
+      0.172
+     ],
+     "boxes": [
+      [
+       639.38,
+       358.78,
+       6.72,
+       6.71,
+       0.48
+      ]
+     ]
+    },
+    {
+     "frame": 184,
+     "room_deg": [
+      0.515,
+      0.153
+     ],
+     "boxes": [
+      [
+       638.64,
+       358.41,
+       9.43,
+       9.39,
+       0.61
+      ]
+     ]
+    },
+    {
+     "frame": 185,
+     "room_deg": [
+      0.891,
+      0.293
+     ],
+     "boxes": [
+      [
+       639.18,
+       358.89,
+       6.53,
+       6.51,
+       0.59
+      ]
+     ]
+    },
+    {
+     "frame": 186,
+     "room_deg": [
+      0.548,
+      0.163
+     ],
+     "boxes": [
+      [
+       639.3,
+       358.71,
+       6.61,
+       6.59,
+       0.65
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "video": "1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4",
+   "frames": 7838,
+   "turning_pairs": 983,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 60,
+   "crosshair_pairs": 0,
+   "crosshair_share": 0.0,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.0264,
+   "boxes_max": 21,
+   "boxes_p99": 16.0,
+   "screen_fixed_examples": []
+  },
+  {
+   "video": "1wall 6targets extra small - 886.15 - 2026.10.01-16.12.44.mp4",
+   "frames": 7838,
+   "turning_pairs": 989,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 52,
+   "crosshair_pairs": 0,
+   "crosshair_share": 0.0,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.0,
+   "boxes_max": 7,
+   "boxes_p99": 6.0,
+   "screen_fixed_examples": []
+  },
+  {
+   "video": "1wall 6targets extra small - 849.91 - 2026.10.01-16.15.22.mp4",
+   "frames": 7834,
+   "turning_pairs": 1272,
+   "camera_contradicted": 0,
+   "crosshair_pixels": 60,
+   "crosshair_pairs": 32,
+   "crosshair_share": 0.0252,
+   "screen_fixed_pairs": 0,
+   "screen_fixed_share": 0.0,
+   "any_box_on_crosshair_share": 0.1085,
+   "boxes_max": 7,
+   "boxes_p99": 7.0,
+   "screen_fixed_examples": [
+    {
+     "frame": 282,
+     "room_deg": [
+      -0.586,
+      0.707
+     ],
+     "boxes": [
+      [
+       638.95,
+       359.15,
+       5.25,
+       5.23,
+       0.32
+      ]
+     ]
+    },
+    {
+     "frame": 521,
+     "room_deg": [
+      0.456,
+      -0.444
+     ],
+     "boxes": [
+      [
+       638.6,
+       359.2,
+       4.73,
+       4.72,
+       0.3
+      ]
+     ]
+    },
+    {
+     "frame": 522,
+     "room_deg": [
+      0.4,
+      -0.332
+     ],
+     "boxes": [
+      [
+       638.92,
+       359.09,
+       4.6,
+       4.59,
+       0.34
+      ]
+     ]
+    },
+    {
+     "frame": 1140,
+     "room_deg": [
+      0.721,
+      0.331
+     ],
+     "boxes": [
+      [
+       638.52,
+       358.91,
+       3.88,
+       3.86,
+       0.3
+      ]
+     ]
+    },
+    {
+     "frame": 1141,
+     "room_deg": [
+      0.857,
+      0.442
+     ],
+     "boxes": [
+      [
+       638.72,
+       359.32,
+       4.97,
+       4.95,
+       0.39
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "reference": {
+  "model": "full_v3",
+  "box_fit": {
+   "boxes": 10794,
+   "centre_error_median": 0.4882,
+   "centre_error_p90": 1.332,
+   "iou_median": 0.7828,
+   "iou_p10": 0.5066,
+   "width_ratio_median": 0.964,
+   "height_ratio_median": 0.986
+  },
+  "one_box": 0.024921252547711693,
+  "under_crosshair": 0.999083409715857,
+  "band_precision": [
+   0.32629558541266795,
+   0.4626865671641791,
+   0.7105263157894737,
+   0.9082969432314411,
+   0.9761904761904762,
+   0.9943367084262914
+  ],
+  "recall_by_kind": {
+   "static": 0.9643966547192354,
+   "kill_moments": 0.99800796812749,
+   "moving": 0.9648366606170599
+  },
+  "band_boxes": [
+   521,
+   402,
+   456,
+   1145,
+   3360,
+   5827
+  ],
+  "hand": {
+   "boxes": 32,
+   "centre_error_median": 0.7206,
+   "centre_error_p90": 1.9982,
+   "iou_median": 0.7987,
+   "iou_p10": 0.5992,
+   "width_ratio_median": 0.9674,
+   "height_ratio_median": 0.9851,
+   "targets": 40,
+   "found": 32,
+   "false_boxes": 9
+  },
+  "bands": [
+   0.3,
+   0.4,
+   0.5,
+   0.6,
+   0.7,
+   0.8,
+   1.0
+  ],
+  "at_threshold": {
+   "precision": 0.9217,
+   "recall": 0.9722,
+   "f1": 0.9463,
+   "tp": 10794,
+   "fp": 917,
+   "fn": 309
+  },
+  "spread": {
+   "box_fit.centre_error_median": 0.0524,
+   "box_fit.centre_error_p90": 0.0988,
+   "box_fit.iou_median": 0.0166,
+   "box_fit.iou_p10": 0.0309,
+   "box_fit.width_ratio_median": 0.0168,
+   "box_fit.height_ratio_median": 0.0191,
+   "one_box": 0.0097,
+   "under_crosshair": 0.0009,
+   "band_precision.0": 0.0501,
+   "band_precision.1": 0.0529,
+   "band_precision.2": 0.0542,
+   "band_precision.3": 0.0321,
+   "band_precision.4": 0.0111,
+   "band_precision.5": 0.0027,
+   "recall_by_kind.static": 0.0165,
+   "recall_by_kind.kill_moments": 0.0009,
+   "recall_by_kind.moving": 0.0112,
+   "hand.centre_error_median": 0.1715
+  },
+  "recordings": [
+   {
+    "video": "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
+    "turning_pairs": 779,
+    "crosshair_share": 0.0,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 4
+   },
+   {
+    "video": "10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4",
+    "turning_pairs": 73,
+    "crosshair_share": 0.0,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 11
+   },
+   {
+    "video": "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4",
+    "turning_pairs": 20,
+    "crosshair_share": 0.0,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 5
+   },
+   {
+    "video": "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4",
+    "turning_pairs": 15,
+    "crosshair_share": 0.0,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 3
+   },
+   {
+    "video": "1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4",
+    "turning_pairs": 1048,
+    "crosshair_share": 0.9924,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 5
+   },
+   {
+    "video": "1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4",
+    "turning_pairs": 983,
+    "crosshair_share": 0.0,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 6
+   },
+   {
+    "video": "1wall 6targets extra small - 886.15 - 2026.10.01-16.12.44.mp4",
+    "turning_pairs": 989,
+    "crosshair_share": 0.0,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 6
+   },
+   {
+    "video": "1wall 6targets extra small - 849.91 - 2026.10.01-16.15.22.mp4",
+    "turning_pairs": 1272,
+    "crosshair_share": 0.0086,
+    "screen_fixed_share": 0.0,
+    "boxes_max": 7
+   }
+  ]
+ },
+ "checks": {
+  "export": {
+   "passed": true,
+   "problems": []
+  },
+  "crosshair": {
+   "value": 0.2027,
+   "reference": 0.2029,
+   "more_than_reference": 0.0064,
+   "allowed_gap": 0.005,
+   "allowed_gap_one_recording": 0.02,
+   "recordings": [
+    {
+     "video": "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
+     "pairs": 779,
+     "value": 0.0154,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "10 Sphere Hipfire Extra Small - 1550 - 2026.08.2",
+     "pairs": 73,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGO",
+     "pairs": 20,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO",
+     "pairs": 15,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 2targets xsmall - valorant - 558.46 - 2026",
+     "pairs": 1048,
+     "value": 0.9599,
+     "reference": 0.9924,
+     "passed": true
+    },
+    {
+     "video": "1wall 6targets extra small - 889.26 - 2026.10.01",
+     "pairs": 983,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 6targets extra small - 886.15 - 2026.10.01",
+     "pairs": 989,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 6targets extra small - 849.91 - 2026.10.01",
+     "pairs": 1272,
+     "value": 0.0252,
+     "reference": 0.0086,
+     "passed": true
+    }
+   ],
+   "passed": false
+  },
+  "screen_fixed": {
+   "value": 0.0,
+   "reference": 0.0,
+   "more_than_reference": 0.0,
+   "allowed_gap": 0.005,
+   "allowed_gap_one_recording": 0.02,
+   "recordings": [
+    {
+     "video": "1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
+     "pairs": 779,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "10 Sphere Hipfire Extra Small - 1550 - 2026.08.2",
+     "pairs": 73,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGO",
+     "pairs": 20,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO",
+     "pairs": 15,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 2targets xsmall - valorant - 558.46 - 2026",
+     "pairs": 1048,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 6targets extra small - 889.26 - 2026.10.01",
+     "pairs": 983,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 6targets extra small - 886.15 - 2026.10.01",
+     "pairs": 989,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    },
+    {
+     "video": "1wall 6targets extra small - 849.91 - 2026.10.01",
+     "pairs": 1272,
+     "value": 0.0,
+     "reference": 0.0,
+     "passed": true
+    }
+   ],
+   "passed": true
+  },
+  "boxes_per_frame": {
+   "value": 21,
+   "limit": 50,
+   "passed": true
+  },
+  "box_fit": {
+   "centre_error_median": {
+    "value": 0.4381,
+    "reference": 0.4882,
+    "allowed_gap": 0.1048,
+    "passed": true
+   },
+   "centre_error_p90": {
+    "value": 1.222,
+    "reference": 1.332,
+    "allowed_gap": 0.1976,
+    "passed": true
+   },
+   "width_ratio_median": {
+    "value": 0.9826,
+    "reference": 0.964,
+    "allowed_gap": 0.0336,
+    "passed": true
+   },
+   "height_ratio_median": {
+    "value": 1.0004,
+    "reference": 0.986,
+    "allowed_gap": 0.0382,
+    "passed": true
+   },
+   "hand_centre_error_median": {
+    "value": 0.6435,
+    "reference": 0.7206,
+    "allowed_gap": 0.343,
+    "passed": true
+   },
+   "passed": true
+  },
+  "one_box": {
+   "value": 0.0024,
+   "reference": 0.0249,
+   "allowed_gap": 0.0194,
+   "passed": true
+  },
+  "under_crosshair": {
+   "value": 0.9963,
+   "reference": 0.9991,
+   "allowed_gap": 0.01,
+   "passed": true
+  },
+  "calibrated": {
+   "bands": [
+    {
+     "band": [
+      0.3,
+      0.4
+     ],
+     "value": 0.3268,
+     "reference": 0.3263,
+     "allowed_gap": 0.1002,
+     "passed": true,
+     "boxes": 762,
+     "reference_boxes": 521
+    },
+    {
+     "band": [
+      0.4,
+      0.5
+     ],
+     "value": 0.5393,
+     "reference": 0.4627,
+     "allowed_gap": 0.1058,
+     "passed": true,
+     "boxes": 649,
+     "reference_boxes": 402
+    },
+    {
+     "band": [
+      0.5,
+      0.6
+     ],
+     "value": 0.8133,
+     "reference": 0.7105,
+     "allowed_gap": 0.1084,
+     "passed": true,
+     "boxes": 814,
+     "reference_boxes": 456
+    },
+    {
+     "band": [
+      0.6,
+      0.7
+     ],
+     "value": 0.9484,
+     "reference": 0.9083,
+     "allowed_gap": 0.0642,
+     "passed": true,
+     "boxes": 1434,
+     "reference_boxes": 1145
+    },
+    {
+     "band": [
+      0.7,
+      0.8
+     ],
+     "value": 0.9801,
+     "reference": 0.9762,
+     "allowed_gap": 0.0222,
+     "passed": true,
+     "boxes": 2562,
+     "reference_boxes": 3360
+    },
+    {
+     "band": [
+      0.8,
+      1.0
+     ],
+     "value": 0.9951,
+     "reference": 0.9943,
+     "allowed_gap": 0.01,
+     "passed": true,
+     "boxes": 5073,
+     "reference_boxes": 5827
+    }
+   ],
+   "passed": true
+  },
+  "targets_found": {
+   "static": {
+    "value": 0.9465,
+    "reference": 0.9644,
+    "allowed_gap": 0.033,
+    "passed": true
+   },
+   "kill_moments": {
+    "value": 0.9956,
+    "reference": 0.998,
+    "allowed_gap": 0.01,
+    "passed": true
+   },
+   "moving": {
+    "value": 0.8439,
+    "reference": 0.9648,
+    "allowed_gap": 0.0224,
+    "passed": false
+   },
+   "passed": false
+  }
+ },
+ "passed": false
+}
