@@ -7,7 +7,13 @@ import { Review } from '../services/review';
 import { modelTable } from './model-table';
 
 /** Where the browser runs the detector, as the choice says it. */
-const RUNS_ON: Record<Device, string> = { cuda: 'GPU', cpu: 'CPU', wasm: 'CPU', webgpu: 'GPU' };
+const RUNS_ON: Record<Device, string> = {
+  cuda: 'GPU',
+  cpu: 'CPU',
+  wasm: 'CPU',
+  webgpu: 'GPU',
+  directml: 'GPU',
+};
 
 /**
  * The model in use, in the top bar; it opens the models side by side (what each does best, its checks and speeds),

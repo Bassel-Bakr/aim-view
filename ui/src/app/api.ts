@@ -40,8 +40,11 @@ export interface Check {
 }
 
 /** Where the detector runs: the GPU, the CPU, or the browser (WebAssembly). */
-/** Where the detector runs: the server's GPU (cuda) or CPU, or in the browser on the CPU (wasm) or the GPU. */
-export type Device = 'cuda' | 'cpu' | 'wasm' | 'webgpu';
+/**
+ * Where the detector runs: the server's GPU (cuda) or CPU, in the browser on the CPU (wasm) or the GPU (webgpu), or
+ * in the desktop app on the GPU (directml).
+ */
+export type Device = 'cuda' | 'cpu' | 'wasm' | 'webgpu' | 'directml';
 
 export interface ModelList {
   chosen: string;

@@ -23,7 +23,7 @@ export type UploadParams = Record<string, string>;
 @Injectable({ providedIn: 'root' })
 export class ServerRecordings implements RecordingSource {
   private readonly http = inject(HttpClient);
-  private readonly list = httpResource<Recording[]>(() => '/api/vods');
+  protected readonly list = httpResource<Recording[]>(() => '/api/vods');
   readonly recordings = computed<Recording[]>(() =>
     this.list.hasValue() ? this.list.value() : [],
   );
@@ -33,7 +33,7 @@ export class ServerRecordings implements RecordingSource {
       ? 'The review server is not running. Start it with python python/server.py.'
       : null,
   );
-  readonly addedFilesGo = 'They are sent to the review server, which keeps them.';
+  readonly addedFilesGo: string = 'They are sent to the review server, which keeps them.';
   readonly transfer = signal<Transfer | null>(null);
   /** The server lists its own recordings folder. */
   readonly folder = signal<FolderAction | null>(null).asReadonly();

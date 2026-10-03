@@ -158,12 +158,17 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   by a median 0.001 degrees), and the countdown test does not depend on the HUD color (Python's looks for teal only).
   Not in the browser yet: runs without a stats file (KovaaK's HUD, Aim Lab's, the video alone), and the user's marks
   (run window, faint cut-off, areas).
-- The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window (WebGPU, WebCodecs, cross-origin
-  isolated through the window's headers), with the browser mode's services for now (av1 reviewed in 16.2 s, as in
-  Chrome), and its installer (NSIS). Next: a Rust backend in the app answering the review server's `/api` through a
-  custom protocol (http://api.localhost, no network port), so the desktop mode uses the server mode's services; the
-  disk read directly; the review run natively (ffmpeg's frames through a pipe: 397 frames a second at 2560x1440, the
-  core, and ONNX Runtime on the GPU).
+- The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
+  (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
+  (desktop/src/api.rs over a custom protocol: no network port, nothing outside the app reaches it; library.rs: the VODs
+  folder chosen in the system's dialog, KovaaK's stats files and scenarios read from disk, the models it ships, each
+  recording's reviews in the app's data folder, the report worked out by the core as the browser does). The review
+  runs natively (review.rs): ffmpeg's frames through a pipe (the video's own YUV, as python/review.py reads them), the
+  core, ONNX Runtime with DirectML (1.84 ms a frame for full_v3; the CPU when there is no GPU), split into two runs
+  as in the browser. av1: 12.7 s in the app (the browser 16 s), 20 frames apart from Python's (GPU noise), the same 66
+  kills. `cargo run -p aimview-desktop --release --example track -- <video> <model> <out>` reviews without the app.
+  Not there yet: ffmpeg and DirectML.dll in the installer (ffmpeg comes from PATH), the user's marks, runs without a
+  stats file.
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

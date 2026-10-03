@@ -8,6 +8,7 @@ export const DEVICE_LABELS: Record<Device, string> = {
   cpu: 'CPU',
   wasm: 'browser CPU',
   webgpu: 'browser GPU',
+  directml: 'GPU',
 };
 
 /** The detector models, and the one new reviews use (the top bar and the run page show it). */

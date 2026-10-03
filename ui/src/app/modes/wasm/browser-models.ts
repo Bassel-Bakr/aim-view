@@ -33,7 +33,7 @@ const DEVICES: Device[] = HAS_GPU ? ['webgpu', 'wasm'] : ['wasm'];
  * 1 (37 one at a time, 28 four at a time). Machines differ, so the user can pick.
  */
 const BATCHES = [1, 2, 4, 8];
-const DEFAULT_BATCH: Record<Device, number> = { webgpu: 4, wasm: 1, cuda: 1, cpu: 1 };
+const DEFAULT_BATCH: Record<Device, number> = { webgpu: 4, wasm: 1, cuda: 1, cpu: 1, directml: 4 };
 const BATCH_KEY = 'aimview-batch-';
 /** The model the browser reviews with until the user picks one: the best on every check (infer.BEST). */
 const DEFAULT_MODEL = 'full_v3';
