@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { Button } from '../controls/button';
-import { isClickReport, JobStage, Recording } from '../api';
+import { isClickReport, Recording } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
 import { FaintCutoff } from '../services/faint-cutoff';
@@ -12,6 +12,7 @@ import { AreaDraft } from './areas/area-draft';
 import { ClickSide } from './click-side/click-side';
 import { FlickList } from './flick-list/flick-list';
 import { Headline } from './headline/headline';
+import { jobProgress } from './job-progress';
 import { scoreChange } from './score-change';
 import { KillLanes } from './kill-lanes/kill-lanes';
 import { MousePanel } from './mouse-panel/mouse-panel';
@@ -27,28 +28,6 @@ import { formatClock, RunWindow } from './run-window/run-window';
 import { SpeedChart } from './speed-chart/speed-chart';
 import { StatsFile } from './stats-file/stats-file';
 import { Timeline } from './timeline/timeline';
-
-/** A review job's progress as the page shows it: the stage (announced) and the frames done (not announced). */
-export interface JobProgress {
-  stage: string;
-  count: string;
-  fraction: number;
-  failed: boolean;
-}
-
-const STAGES: Record<JobStage, string> = {
-  none: '',
-  starting: 'Starting',
-  looking: 'Looking at the key frames',
-  tracking: 'Tracking the targets',
-  linking: 'Linking the tracks',
-  ffmpeg: 'Getting FFmpeg (once)',
-  'reading the HUD': 'Reading the session HUD',
-  camera: "Reading the camera's turn",
-  measuring: 'Measuring',
-  done: 'Reviewed',
-  error: 'The review failed',
-};
 
 /** The open recording: its header, the review's button and progress, the video, and a tracking run's timeline. */
 
@@ -172,23 +151,7 @@ export class Run {
     return chosen && by !== chosen ? `Review with ${modelName(chosen)}` : 'Review again';
   });
 
-  protected readonly progress = computed<JobProgress | null>(() => {
-    const job = this.review.job();
-    if (job.stage === 'none') return null;
-    const failed = job.stage === 'error';
-    const frames = job.stage === 'tracking' || job.stage === 'camera';
-    return {
-      stage: failed ? `${STAGES.error}: ${job.error}` : STAGES[job.stage],
-      count:
-        job.stage === 'done'
-          ? `in ${job.seconds} s`
-          : frames && job.total
-            ? `${job.done} / ${job.total} frames`
-            : '',
-      fraction: job.stage === 'done' ? 1 : job.total ? (job.done ?? 0) / job.total : 0,
-      failed,
-    };
-  });
+  protected readonly progress = computed(() => jobProgress(this.review.job()));
 
   protected startReview(): void {
     void this.review.analyse(this.recording().analysed && !this.unmeasured());

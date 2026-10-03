@@ -16,7 +16,8 @@
     @apply text-xs font-medium;
   }
 
+  // adds no width of its own: the run page sizes its header by the title alone (run.scss)
   .sub {
-    @apply mt-2 text-muted;
+    @apply mt-2 text-muted contain-inline-size;
   }
 }

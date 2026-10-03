@@ -4,13 +4,15 @@
 @layer components {
   :host {
     display: block;
-    max-width: p.$max-width;
   }
 
-  // 16:9 until the video says its own shape (the template sets --screen-ratio)
+  // 16:9 until the video says its own shape (the template sets --screen-ratio). As wide as the column, unless that
+  // would push the controls under it out of the window: then as tall as the window allows, centered
   .screen {
     --screen-ratio: 16 / 9;
 
+    width: min(100%, (100dvh - p.$room-below) * var(--screen-ratio));
+    margin-inline: auto;
     aspect-ratio: var(--screen-ratio);
     background: p.$screen;
     box-shadow: p.$shadow;

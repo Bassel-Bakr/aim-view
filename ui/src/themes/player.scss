@@ -2,7 +2,9 @@
 // variables when it draws).
 
 @mixin tokens {
-  --player-max-width: 1100px;
+  // Outside full screen, the video leaves at least this much of the window's height under it, so the timeline, the
+  // seek bar and the controls under it stay in view
+  --player-room-below: 260px;
   // In full screen the video never gets smaller than this, however much the panels and controls take
   --player-full-min-height: 270px;
   --player-screen: #000;
@@ -27,7 +29,7 @@
   --overlay-legend-bg: rgba(0, 0, 0, 0.5);
 }
 
-$max-width: var(--player-max-width);
+$room-below: var(--player-room-below);
 $full-min-height: var(--player-full-min-height);
 $screen: var(--player-screen);
 $shadow: var(--player-shadow);

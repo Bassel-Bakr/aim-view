@@ -14,6 +14,26 @@ use super::{Answer, Failure, Library, modified};
 
 pub(crate) const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];
 
+/// Removes the upload bodies (`spool`'s ".incoming-<pid>-<n>.part" files) that a process other than `pid` left in
+/// `dir`: a server that stopped mid-upload never moved them into place. Every other file stays.
+pub(super) fn remove_stale_spools(dir: &Path, pid: u32) {
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let owner = name
+            .strip_prefix(".incoming-")
+            .and_then(|r| r.strip_suffix(".part"))
+            .and_then(|r| r.split_once('-'))
+            .filter(|(_, n)| n.parse::<u64>().is_ok())
+            .and_then(|(p, _)| p.parse::<u32>().ok());
+        if owner.is_some_and(|p| p != pid)
+            && e.path().is_file()
+            && let Err(err) = std::fs::remove_file(e.path())
+        {
+            eprintln!("{}: {err}", e.path().display());
+        }
+    }
+}
+
 impl Library {
     /// Where videos (and in stats/, stats files) added from the user's computer are kept.
     pub(crate) fn uploads(&self) -> PathBuf {
@@ -172,5 +192,38 @@ impl Library {
                 Ok(json!({ "id": id, "saved": saved, "job": change["job"], "stats": change["stats"] }))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{Config, Layout};
+    use crate::library::Library;
+
+    /// Opening the library removes the upload bodies another process left behind, and keeps this process's and every
+    /// other file.
+    #[test]
+    fn opening_removes_other_processes_upload_bodies() {
+        let dir = std::env::temp_dir().join(format!("aimview-spools-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = Config::new(dir.clone(), Layout::App, dir.join("models"));
+        let uploads = config.folders().uploads;
+        std::fs::create_dir_all(&uploads).unwrap();
+        let other = std::process::id().wrapping_add(1);
+        let mine = format!(".incoming-{}-0.part", std::process::id());
+        let kept = [mine.as_str(), "run.mp4", ".incoming-x-0.part", ".incoming-12.part", "incoming-12-0.part"];
+        for name in kept.iter().copied().chain([format!(".incoming-{other}-3.part").as_str()]) {
+            std::fs::write(uploads.join(name), b"x").unwrap();
+        }
+        let lib = Library::open(config).unwrap();
+        let mut left: Vec<String> = std::fs::read_dir(lib.uploads())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        let mut want: Vec<String> = kept.iter().map(|s| s.to_string()).collect();
+        want.sort();
+        assert_eq!(left, want);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
