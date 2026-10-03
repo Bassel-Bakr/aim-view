@@ -1,16 +1,22 @@
 // Builds the review core for the browser (WebAssembly) and copies what the UI ships beside it into ui/generated/
-// (not in git): the core's module (core/aimview.wasm) and the detector models the browser runs (models/, the _u8in
-// exports). angular.json serves ui/generated/ as it is; Angular takes no files from outside ui/.
+// (not in git): the core's module (core/aimview.wasm), the detector models the browser runs (models/, the _u8in
+// exports) and the user's area finder data (data/), which browser mode starts from. angular.json serves ui/generated/
+// as it is; Angular takes no files from outside ui/.
+//
+// The area finder data names the user's recordings, so a build meant for others leaves it out: it is copied unless
+// --no-data, but with --release (the `build:*` scripts) only with --data.
 import { $ } from 'bun';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
 const out = join(root, 'ui', 'generated');
+const args = process.argv.slice(2);
 rmSync(out, { recursive: true, force: true });
 
 // --release: the shipped build (whole-program optimization, slow to build); else the quick one for development
-const profile = process.argv.includes('--release') ? 'release' : 'wasm-dev';
+const release = args.includes('--release');
+const profile = release ? 'release' : 'wasm-dev';
 await $`cargo build --profile ${profile} --target wasm32-unknown-unknown`.cwd(root).quiet();
 mkdirSync(join(out, 'core'), { recursive: true });
 copyFileSync(join(root, `target/wasm32-unknown-unknown/${profile}/aimview.wasm`), join(out, 'core/aimview.wasm'));
@@ -21,4 +27,17 @@ const listed = Object.keys(JSON.parse(readFileSync(join(root, 'python/model/mode
 mkdirSync(join(out, 'models'), { recursive: true });
 const models = listed.map((n) => `detector_${n}_u8in.onnx`).filter((f) => existsSync(join(exports, f)));
 for (const f of models) copyFileSync(join(exports, f), join(out, 'models', f));
+const unexported = listed.filter((n) => !models.includes(`detector_${n}_u8in.onnx`));
 console.log(`ui/generated: core/aimview.wasm and ${models.length} models`);
+if (unexported.length) console.log(`  listed with no _u8in export in python/model/exports: ${unexported.join(', ')}`);
+
+// the area finder's training data, from python/server.py's data folder (test_out/vod_app/), as it is there
+const from = join(root, 'test_out', 'vod_app');
+const files = ['area_examples.jsonl', 'area_kinds.json'].filter((f) => existsSync(join(from, f)));
+if (!args.includes('--data') && (release || args.includes('--no-data'))) {
+  console.log('  no area finder data (data/)');
+} else {
+  mkdirSync(join(out, 'data'), { recursive: true });
+  for (const f of files) copyFileSync(join(from, f), join(out, 'data', f));
+  console.log(`  area finder data (data/): ${files.join(', ') || 'none in test_out/vod_app/'}`);
+}

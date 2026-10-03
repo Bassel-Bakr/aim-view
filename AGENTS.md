@@ -36,12 +36,24 @@ cargo test --profile quick                     # the Rust core, checked against 
                                                # (--release gives the same results; its builds take 40 s, quick's 3 s)
 python tests/fixtures.py <video> [--areas exclude.json]   # Python's results stage by stage, for those checks
 python tests/fixtures.py --faint                          # the faint-target cut-off in Python (--test faint_parity)
-bun run assets                                 # the core as WebAssembly and the models, into ui/generated/
+bun run assets                                 # the core as WebAssembly, the models and the area finder's data,
+                                               # into ui/generated/ (--no-data: without the data; see below)
 ```
 
 Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
 `C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats` (more than 70k CSVs: use a Python
 glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
+
+Browser mode starts from the user's latest training data. `bun run assets` copies the area finder's examples and
+types (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`) into `ui/generated/data/`, and `AreaExamples` starts
+from them: a recording's examples learnt or loaded in the browser replace its shipped ones, and a type changed in the
+browser replaces the shipped type with the same id. The examples name the user's recordings, so a build for others
+must not ship them. `bun run assets` and the `dev*` scripts copy them (`--no-data` leaves them out). `--release`, which
+every `build:*` script uses, leaves them out unless `--data` is given. For a browser build with them, run
+`bun run assets --release --data`, then `bun run --cwd ui build --configuration production,browser`. The browser runs
+every model `python/model/models.json` lists, from its `_u8in` export in `python/model/exports/`. A newly trained model
+shows up once it is exported (`python python/model/export.py <best.pt>`, or `--u8in` for that file only), listed in
+models.json, and `bun run assets` has run again; `assets` names any listed model with no export.
 
 ## Working with this user
 
