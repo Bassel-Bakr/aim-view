@@ -11,7 +11,8 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { Report, Tracks } from '../../api';
+import { isClickReport, Report, Tracks } from '../../api';
+import { Button } from '../../controls/button';
 import { Playback, RATES } from '../playback';
 import { FlickFocus } from '../flick-focus';
 import { clock } from '../track';
@@ -24,6 +25,10 @@ const OVERLAY_KEY = 'aimview-overlay';
 const FASTEST_KEY = 'aimview-fastest';
 const MINE_KEY = 'aimview-mine';
 const RATE_LABELS: Record<number, string> = { 1: '1×', 0.5: '½×', 0.25: '¼×', 0.125: '⅛×' };
+/** Keys typed into these are theirs. */
+const FIELDS = 'input, textarea, select, dialog';
+/** These also use Space and the arrows. */
+const KEY_OWNERS = `${FIELDS}, [role=listbox], [role=slider]`;
 
 /**
  * Calls back with the time of each frame the video shows, through the video's own frame callback; where the browser
@@ -59,14 +64,20 @@ export function markPositions(report: Report | null, duration: number): number[]
 }
 
 /**
- * The video with the review drawn over it, the seek bar and the playback controls. The overlay, the clock and the
- * seek bar follow every frame through the video's frame callback, outside change detection.
+ * The video with the review drawn over it, the seek bar and the playback controls, and the panels that work on the
+ * video above it (projected with the `panel` attribute). The overlay, the clock and the seek bar follow every frame
+ * through the video's frame callback, outside change detection. Full screen (the button, or F) fills the screen with
+ * the video, its timeline and the controls, and puts the panels below them.
  */
 @Component({
   selector: 'app-player',
+  imports: [Button],
   templateUrl: './player.html',
   styleUrl: './player.scss',
-  host: { '(document:keydown)': 'handleKeydown($event)' },
+  host: {
+    '(document:keydown)': 'handleKeydown($event)',
+    '(document:fullscreenchange)': 'followFullScreen()',
+  },
 })
 export class Player {
   readonly src = input.required<string>();
@@ -79,6 +90,7 @@ export class Player {
   private readonly paths = inject(PathCost);
   private readonly faint = inject(FaintCutoff);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('overlay');
   private readonly clockText = viewChild.required<ElementRef<HTMLElement>>('clock');
@@ -90,7 +102,9 @@ export class Player {
   protected readonly showOverlay = signal(localStorage.getItem(OVERLAY_KEY) !== '0');
   protected readonly showFastest = signal(localStorage.getItem(FASTEST_KEY) === '1');
   protected readonly showMine = signal(localStorage.getItem(MINE_KEY) !== '0');
-  protected readonly clicking = computed(() => this.report()?.mode === 'click');
+  /** The player fills the screen. */
+  protected readonly full = signal(false);
+  protected readonly clicking = computed(() => isClickReport(this.report()));
   protected readonly marks = computed(() => markPositions(this.report(), this.playback.duration()));
   /** The video's length, in whole seconds: the seek bar's end. */
   protected readonly end = computed(() =>
@@ -155,7 +169,7 @@ export class Player {
     const frame = Math.round(t * r.fps);
     const scale = w / r.geometry.W;
     const tracks = this.tracks();
-    if (r.mode === 'click') {
+    if (isClickReport(r)) {
       const paths = this.paths.analysis();
       const show = { fastest: this.showFastest(), mine: this.showMine() };
       if (tracks && paths && (show.fastest || show.mine)) {
@@ -251,15 +265,49 @@ export class Player {
     localStorage.setItem(MINE_KEY, this.showMine() ? '1' : '0');
   }
 
+  /** Fills the screen with the player, or leaves full screen. Where the browser refuses, nothing changes. */
+  protected toggleFullScreen(): void {
+    if (this.full()) {
+      void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    const host: Partial<HTMLElement> = this.host.nativeElement;
+    void host.requestFullscreen?.().catch(() => undefined);
+  }
+
+  /**
+   * Full screen started or ended (the browser's own Escape ends it too). It starts on the video, not where the panels
+   * below it were scrolled to last time.
+   */
+  protected followFullScreen(): void {
+    const host = this.host.nativeElement;
+    this.full.set(document.fullscreenElement === host);
+    if (this.full()) host.scrollTop = 0;
+  }
+
   /**
    * Space plays or pauses; Left and Right step one frame; Shift with Left or Right replays the previous or next flick
-   * (a tracking run: goes to the previous or next bot's death). Keys typed into a field or used by a list or slider
-   * are theirs.
+   * (a tracking run: goes to the previous or next bot's death); F goes full screen or leaves it, and so does Escape
+   * where the browser leaves it to the page. Keys typed into a field, and Space and the arrows used by a list or a
+   * slider, are theirs.
    */
   protected handleKeydown(e: KeyboardEvent): void {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const owners = 'input, textarea, select, dialog, [role=listbox], [role=slider]';
-    if (e.target instanceof Element && e.target.closest(owners)) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest(FIELDS)) return;
+    if (e.key.toLowerCase() === 'f') {
+      this.toggleFullScreen();
+      return;
+    }
+    if (e.key === 'Escape') {
+      // handled here: the excluded areas editor stays open
+      if (this.full()) {
+        e.preventDefault();
+        this.toggleFullScreen();
+      }
+      return;
+    }
+    if (target?.closest(KEY_OWNERS)) return;
     const fps = this.report()?.fps ?? 60;
     if (e.key === ' ') {
       e.preventDefault();

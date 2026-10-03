@@ -1,87 +1,108 @@
-<div
-  class="screen"
-  [style.aspect-ratio]="aspect()"
-  (mousemove)="pointAt($event)"
-  (mouseleave)="stopPointing()"
->
-  <video
-    class="video"
-    #video
-    preload="metadata"
-    muted
-    playsinline
-    [src]="src()"
-    (click)="playback.toggle()"
-    (play)="playback.paused.set(false)"
-    (pause)="playback.paused.set(true)"
-    (loadedmetadata)="loadedMetadata()"
-    (seeked)="showSeekedFrame()"
-  ></video>
-  <canvas class="canvas" #overlay aria-hidden="true"></canvas>
-  <ng-content select="[screen]" />
+<div class="panels">
+  <ng-content select="[panel]" />
 </div>
 
-<ng-content />
+<!-- In full screen these fill the screen, and the panels come after them -->
+<div class="view">
+  <div class="frame">
+    <div
+      class="screen"
+      [style.--screen-ratio]="aspect()"
+      (mousemove)="pointAt($event)"
+      (mouseleave)="stopPointing()"
+    >
+      <video
+        class="video"
+        #video
+        preload="metadata"
+        muted
+        playsinline
+        [src]="src()"
+        (click)="playback.toggle()"
+        (play)="playback.paused.set(false)"
+        (pause)="playback.paused.set(true)"
+        (loadedmetadata)="loadedMetadata()"
+        (seeked)="showSeekedFrame()"
+      ></video>
+      <canvas class="canvas" #overlay aria-hidden="true"></canvas>
+      <ng-content select="[screen]" />
+    </div>
+  </div>
 
-<div class="seek-row">
-  <span #clock class="time" aria-hidden="true">0:00.0</span>
-  <div class="seek-wrap">
-    <div class="marks" aria-hidden="true">
-      @for (m of marks(); track $index) {
-        <i class="mark" [style.left.%]="m"></i>
+  <div class="below">
+    <ng-content />
+  </div>
+
+  <div class="seek-row">
+    <span #clock class="time" aria-hidden="true">0:00.0</span>
+    <div class="seek-wrap">
+      <div class="marks" aria-hidden="true">
+        @for (m of marks(); track $index) {
+          <i class="mark" [style.left.%]="m"></i>
+        }
+      </div>
+      <input
+        class="seek"
+        #seek
+        type="range"
+        min="0"
+        step="any"
+        aria-label="Position in the video"
+        [max]="playback.duration()"
+        (pointerdown)="startSeeking()"
+        (pointerup)="stopSeeking()"
+        (input)="seekTo(seek.valueAsNumber)"
+      />
+    </div>
+    <span class="time" aria-hidden="true">{{ end() }}</span>
+  </div>
+
+  <div class="controls">
+    <span class="speed">Speed</span>
+    <div class="rates" role="group" aria-label="Playback speed">
+      @for (r of rates; track r) {
+        <button
+          class="rate"
+          type="button"
+          [attr.aria-pressed]="playback.rate() === r"
+          (click)="playback.setRate(r)"
+        >
+          {{ rateLabels[r] }}
+        </button>
       }
     </div>
-    <input
-      class="seek"
-      #seek
-      type="range"
-      min="0"
-      step="any"
-      aria-label="Position in the video"
-      [max]="playback.duration()"
-      (pointerdown)="startSeeking()"
-      (pointerup)="stopSeeking()"
-      (input)="seekTo(seek.valueAsNumber)"
-    />
-  </div>
-  <span class="time" aria-hidden="true">{{ end() }}</span>
-</div>
-
-<div class="controls">
-  <span class="speed">Speed</span>
-  <div class="rates" role="group" aria-label="Playback speed">
-    @for (r of rates; track r) {
-      <button
-        class="rate"
-        type="button"
-        [attr.aria-pressed]="playback.rate() === r"
-        (click)="playback.setRate(r)"
-      >
-        {{ rateLabels[r] }}
-      </button>
+    <label class="check">
+      <input type="checkbox" [checked]="showOverlay()" (change)="toggleOverlay()" />
+      Show the tracked target
+    </label>
+    @if (clicking()) {
+      <label class="check">
+        <input
+          type="checkbox"
+          [checked]="focus.follow()"
+          (change)="focus.setFollow(!focus.follow())"
+        />
+        Follow the video in the list
+      </label>
+      <label class="check">
+        <input type="checkbox" [checked]="showFastest()" (change)="toggleFastest()" />
+        Show the fastest path
+      </label>
+      <label class="check">
+        <input type="checkbox" [checked]="showMine()" (change)="toggleMine()" />
+        Show my path
+      </label>
     }
+    <span class="hint">Space plays · ← → one frame · Shift ← → the next kill · F full screen</span>
+    <button
+      class="full-toggle"
+      type="button"
+      appButton
+      title="The video fills the screen, with its timeline and controls; the open panels are below them (F, or Escape to leave)"
+      [attr.aria-pressed]="full()"
+      (click)="toggleFullScreen()"
+    >
+      Full screen
+    </button>
   </div>
-  <label class="check">
-    <input type="checkbox" [checked]="showOverlay()" (change)="toggleOverlay()" />
-    Show the tracked target
-  </label>
-  @if (clicking()) {
-    <label class="check">
-      <input
-        type="checkbox"
-        [checked]="focus.follow()"
-        (change)="focus.setFollow(!focus.follow())"
-      />
-      Follow the video in the list
-    </label>
-    <label class="check">
-      <input type="checkbox" [checked]="showFastest()" (change)="toggleFastest()" />
-      Show the fastest path
-    </label>
-    <label class="check">
-      <input type="checkbox" [checked]="showMine()" (change)="toggleMine()" />
-      Show my path
-    </label>
-  }
-  <span class="hint">Space plays · ← → one frame · Shift ← → the next kill</span>
 </div>

@@ -3,6 +3,8 @@
 
 @mixin tokens {
   --player-max-width: 1100px;
+  // In full screen the video never gets smaller than this, however much the panels and controls take
+  --player-full-min-height: 270px;
   --player-screen: #000;
   --player-shadow: 0 1px 0 var(--border), 0 8px 24px rgba(0, 0, 0, 0.35);
   --seek-height: 20px;
@@ -26,6 +28,7 @@
 }
 
 $max-width: var(--player-max-width);
+$full-min-height: var(--player-full-min-height);
 $screen: var(--player-screen);
 $shadow: var(--player-shadow);
 $seek-height: var(--seek-height);

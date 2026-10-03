@@ -93,12 +93,6 @@
 @if (statsOpen()) {
   <app-stats-file [recording]="recording()" (closed)="toggleStats()" />
 }
-@if (windowOpen()) {
-  <app-run-window (closed)="toggleWindow()" />
-}
-@if (faint.shown() && (report() || faint.queued())) {
-  <app-faint-cutoff />
-}
 @if (progress(); as p) {
   <div class="progress">
     <div class="fill" [style.width.%]="100 * p.fraction"></div>
@@ -111,14 +105,21 @@
 @if (headline(); as h) {
   <app-headline [tiles]="h" />
 }
-@if (areas.open()) {
-  <app-area-bar [recording]="recording()" />
-}
-<!-- The player keeps its place whatever the report, so the video never reloads when the report arrives -->
+<!-- The player keeps its place whatever the report, so the video never reloads when the report arrives. The panels
+     that work on the video are in it, so they stay in full screen -->
 <div class="stage">
   <div class="player-column">
     @if (videoUrl(); as src) {
       <app-player [src]="src" [report]="report()" [tracks]="tracks()" [editing]="areas.open()">
+        @if (windowOpen()) {
+          <app-run-window panel (closed)="toggleWindow()" />
+        }
+        @if (faint.shown() && (report() || faint.queued())) {
+          <app-faint-cutoff panel />
+        }
+        @if (areas.open()) {
+          <app-area-bar panel [recording]="recording()" />
+        }
         @if (areas.open()) {
           <app-area-canvas screen />
         }

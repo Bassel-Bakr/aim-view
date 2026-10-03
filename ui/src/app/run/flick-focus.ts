@@ -1,5 +1,5 @@
 import { computed, effect, inject, Injectable, signal, untracked } from '@angular/core';
-import { ClickReport, Flick } from '../api';
+import { ClickReport, Flick, isClickReport } from '../api';
 import { Library } from '../services/library';
 import { Playback } from './playback';
 import { Review } from '../services/review';
@@ -23,7 +23,7 @@ export class FlickFocus {
 
   private readonly report = computed<ClickReport | null>(() => {
     const r = this.review.report.hasValue() ? this.review.report.value() : null;
-    return r?.mode === 'click' ? r : null;
+    return isClickReport(r) ? r : null;
   });
 
   constructor() {

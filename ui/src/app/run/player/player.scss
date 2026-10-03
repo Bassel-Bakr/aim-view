@@ -7,11 +7,26 @@
     max-width: p.$max-width;
   }
 
-  // 16:9 until the video says its own shape
+  // 16:9 until the video says its own shape (the template sets --screen-ratio)
   .screen {
-    aspect-ratio: 16 / 9;
+    --screen-ratio: 16 / 9;
+
+    aspect-ratio: var(--screen-ratio);
     background: p.$screen;
     box-shadow: p.$shadow;
+  }
+
+  // Full screen: the timeline and the controls keep their height, and the video takes the rest of the screen, as large
+  // as its shape allows; the panels come after them
+  :host(:fullscreen) {
+    .frame {
+      min-height: p.$full-min-height;
+      container-type: size;
+    }
+
+    .screen {
+      width: min(100cqw, 100cqh * var(--screen-ratio));
+    }
   }
 
   .seek-wrap {
@@ -27,6 +42,27 @@
 }
 
 @layer components {
+  :host(:fullscreen) {
+    @apply flex flex-col overflow-y-auto bg-surface-0 px-7 py-4;
+
+    .view {
+      @apply flex h-full shrink-0 flex-col;
+    }
+
+    .panels {
+      @apply order-1;
+    }
+
+    .frame {
+      @apply grid flex-1 place-items-center;
+    }
+
+    // a timeline's height is its own, not the room left
+    .below {
+      @apply shrink-0;
+    }
+  }
+
   .screen {
     @apply relative overflow-hidden rounded-lg;
   }
@@ -93,5 +129,9 @@
 
   .hint {
     @apply ml-auto text-xs text-muted;
+  }
+
+  .full-toggle[aria-pressed='true'] {
+    @apply border-accent bg-accent-pressed;
   }
 }

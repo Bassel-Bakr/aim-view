@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { Button } from '../controls/button';
-import { JobStage, Recording } from '../api';
+import { isClickReport, JobStage, Recording } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
 import { FaintCutoff } from '../services/faint-cutoff';
@@ -98,7 +98,7 @@ export class Run {
   });
   protected readonly clickReport = computed(() => {
     const r = this.report();
-    return r?.mode === 'click' ? r : null;
+    return isClickReport(r) ? r : null;
   });
   /** The run in a few numbers, above the video: a tracking run's are its first cards (track-report shows the rest). */
   protected readonly headline = computed<HeadlineTile[] | null>(() => {

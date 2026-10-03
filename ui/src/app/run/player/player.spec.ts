@@ -1,5 +1,11 @@
+import { Component } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
 import { ClickReport, TrackReport } from '../../api';
-import { markPositions } from './player';
+import { answer, serverMode } from '../../fake-api';
+import { AreaCanvas } from '../areas/area-canvas/area-canvas';
+import { Library } from '../../services/library';
+import { AreaDraft } from '../areas/area-draft';
+import { markPositions, Player } from './player';
 
 describe('markPositions', () => {
   it('marks each kill of a clicking run, as a share of the video', () => {
@@ -24,5 +30,110 @@ describe('markPositions', () => {
     expect(
       markPositions({ mode: 'click', fps: 100, flicks: [] } as unknown as ClickReport, 0),
     ).toEqual([]);
+  });
+});
+
+const ID = 'Air/Air - 1 - 2026.10.01-16.23.03.mp4';
+
+/** The player on a page: a field in a panel above the video, and the excluded areas editor over it. */
+@Component({
+  imports: [Player, AreaCanvas],
+  template: `
+    <app-player src="blob:test/video">
+      <input panel type="text" aria-label="A panel's field" />
+      <app-area-canvas screen />
+    </app-player>
+  `,
+})
+class Host {}
+
+/** The player with the areas editor open, and the browser's full screen, which jsdom lacks, standing in. */
+async function render() {
+  TestBed.configureTestingModule({ providers: serverMode() });
+  TestBed.inject(Library).selectedId.set(ID);
+  const draft = TestBed.inject(AreaDraft);
+  draft.start(ID);
+  const fixture = TestBed.createComponent(Host);
+  // every request (the editor's areas) answered with a 404: the keys do not need them
+  const settle = () => answer({});
+  await settle();
+  const el = fixture.nativeElement as HTMLElement;
+  const player = el.querySelector('app-player') as HTMLElement;
+  let shown: Element | null = null;
+  const change = async (to: Element | null) => {
+    shown = to;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    await settle();
+  };
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => shown });
+  player.requestFullscreen = () => change(player);
+  document.exitFullscreen = () => change(null);
+  const button = el.querySelector('.full-toggle') as HTMLButtonElement;
+  const field = el.querySelector('input[panel]') as HTMLInputElement;
+  const press = async (
+    key: string,
+    target: EventTarget = document,
+    init: KeyboardEventInit = {},
+  ) => {
+    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(e);
+    await settle();
+    return e;
+  };
+  const full = () => document.fullscreenElement === player;
+  return { draft, settle, button, field, press, change, full };
+}
+
+describe('Player full screen', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(document, 'fullscreenElement');
+    Reflect.deleteProperty(document, 'exitFullscreen');
+  });
+
+  it('fills the screen with the whole player from the button, and leaves it from the button', async () => {
+    const { settle, button, full } = await render();
+    button.click();
+    await settle();
+    expect(full()).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    button.click();
+    await settle();
+    expect(full()).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('goes full screen with F and leaves it with F', async () => {
+    const { press, full } = await render();
+    await press('f');
+    expect(full()).toBe(true);
+    await press('F', document, { shiftKey: true });
+    expect(full()).toBe(false);
+  });
+
+  it('leaves full screen with Escape and keeps the areas editor open; out of it, Escape closes the editor', async () => {
+    const { draft, press, full } = await render();
+    await press('f');
+    const escape = await press('Escape');
+    expect(full()).toBe(false);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(draft.open()).toBe(true);
+    await press('Escape');
+    expect(draft.open()).toBe(false);
+  });
+
+  it('leaves F typed into a field, and Ctrl F, to the field and the browser', async () => {
+    const { field, press, full } = await render();
+    await press('f', field);
+    await press('f', document, { ctrlKey: true });
+    expect(full()).toBe(false);
+  });
+
+  it('follows the browser when it ends full screen itself (its own Escape)', async () => {
+    const { button, change, press, full } = await render();
+    await press('f');
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    await change(null);
+    expect(full()).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
   });
 });

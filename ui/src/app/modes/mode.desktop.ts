@@ -19,7 +19,7 @@ import { DesktopMouseLogs } from './tauri/desktop-mouse-logs';
 import { DesktopRecordings } from './tauri/desktop-recordings';
 
 /**
- * The desktop app (Tauri 2, desktop/): the review server's services, answered by the app itself (desktop/src/api.rs),
+ * The desktop app (Tauri 2, desktop/): the review server's services, answered by the app itself (service/, through desktop/src/protocol.rs),
  * which reads the disk directly and runs the review natively. HttpClient sends with XMLHttpRequest, so an upload
  * reports its progress.
  */

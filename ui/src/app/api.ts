@@ -340,7 +340,8 @@ export interface RunMarks {
  * track when the tracker lost and found it again).
  */
 export interface ClickReport extends ReportBase {
-  mode: 'click';
+  /** hold: the scenario holds the trigger (a lightning gun: over 3 shots a kill), reviewed as a clicking run. */
+  mode: 'click' | 'hold';
   summary: ClickSummary;
   flicks: Flick[];
   issues: Issue[];
@@ -356,6 +357,11 @@ export interface TrackReport extends ReportBase {
 }
 
 export type Report = ClickReport | TrackReport;
+
+/** A clicking run's report (click or hold mode: every run but a tracking one), as the old page read them. */
+export function isClickReport(r: Report | null | undefined): r is ClickReport {
+  return !!r && r.mode !== 'track';
+}
 
 /** A target in a frame: [track id, x, y], in degrees from the crosshair. */
 export type TrackPoint = [id: number, x: number, y: number];

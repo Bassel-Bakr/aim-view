@@ -192,9 +192,12 @@ export class AreaCanvas {
     else this.draft.select(-1);
   }
 
-  /** Escape closes the editor; Delete or Backspace removes the selected area. Keys typed into a field are its own. */
+  /**
+   * Escape closes the editor; Delete or Backspace removes the selected area. Keys typed into a field are its own, and
+   * a key the player already used (Escape leaving full screen) is the player's.
+   */
   protected handleKeydown(e: KeyboardEvent): void {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target instanceof Element && e.target.closest('input, textarea, select, dialog')) return;
     if (e.key === 'Escape') {
       this.draft.stop();
