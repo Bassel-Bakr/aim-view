@@ -310,6 +310,134 @@ CPU, the browser, KovOBS).
 kind-specific model could be picked per run without any other change. The other way to combine two models into one is
 the one used here: train one model on both datasets (or on both models' labels). Neither is needed now.
 
+## The app's pipeline, 2026-10-03
+
+The figures above come from `python/review.py`: the PyTorch checkpoint on the GPU with bf16 autocast, and KovOBS's
+default areas (`review.MASK`) on every recording. The app reviews another way. `aimview-tool review`
+(`service/src/bin/aimview-tool.rs`) decodes with ffmpeg, runs the Rust core, and runs the model's `_u8in` export in
+ONNX Runtime on DirectML, in fp32. It leaves out the areas the user saved for the recording (else KovOBS's layout), and
+watches each area for pop-ups. `eval_vods.py` and `eval_moving.py` now review this way by default. These numbers are
+the baseline for later detector work.
+
+The recordings and settings are those of the section above. `eval_moving.py`: the same 32 recordings. Run today, it
+would pick Plaza Palace Easy (recorded 2026-10-03) in place of Pokeball Frenzy Auto Small Wide, so these runs kept the
+earlier set. `eval_vods.py`: the four end-to-end VODs. The tool was built at commit 7f494f5.
+
+**The review code changed since the figures above.** Scored again with today's `review.py`, the cached Python-path
+tracks (`moving_<name>.pkl`) give the same kills and flicks, but other tracking numbers: full_v3 -0.016 and 0.077
+(was -0.025 and 0.075), small_v13 -0.026 and 0.084 (was -0.035 and 0.086). `track_summary` now ends the run at its
+last frame on a target and starts it the time limit before. It used to start at the first frame with a target, which
+took in KovaaK's countdown. So the native numbers are compared with the Python path scored today.
+
+**Every scenario kind** (`eval_moving.py`, cells: kills matched, flicks measured):
+
+| Check | full_v3 Python | full_v3 native | small_v13 Python | small_v13 native |
+| --- | --- | --- | --- | --- |
+| Static, 854 kills | 854, 844 | 854, 848 | 854, 844 | 854, 847 |
+| Dynamic, 707 kills | 694, 672 | 694, 670 | 693, 666 | 693, 669 |
+| Switching, 405 kills | 403, 388 | 403, 388 | 403, 382 | 403, 380 |
+| Tracking: time on target minus accuracy, mean and mean size | -0.016, 0.077 | -0.016, 0.076 | -0.026, 0.084 | -0.027, 0.084 |
+
+The tracking runs, native (Python is within 0.004 on every run):
+
+| Run | Accuracy (stats file) | full_v3 on target | small_v13 on target |
+| --- | --- | --- | --- |
+| AA4V OW Easy | 0.75 | 0.81 | 0.81 |
+| Aethercontrol Easy | 0.75 | 0.84 | 0.85 |
+| Air Tracking 180 | 0.62 | 0.48 | 0.40 |
+| cA FBS Easy S1 | 0.67 | 0.69 | 0.63 |
+| Centering II 180 No Strafes Fixed | 0.59 | 0.43 | 0.48 |
+| cloverRawControl Big | 0.78 | 0.87 | 0.87 |
+| Easy Throne Strafe | 0.54 | 0.55 | 0.55 |
+| Flower 50cm | 0.65 | 0.68 | 0.60 |
+| Pasu Track Smaller rAim | 0.46 | 0.33 | 0.35 |
+| Pokeball 1w2ts Pasu Perfected | 0.62 | 0.49 | 0.49 |
+| Pokeball 1w4ts 30% | 0.24 | 0.27 | 0.29 |
+| Pokeball Frenzy Auto Small Wide | 0.21 | 0.24 | 0.25 |
+
+**The four stats-file VODs** (`eval_vods.py`, cells: kills matched, confirmed, flicks measured; the hand-written
+detector is today's Python review too):
+
+| VOD | Hand-written | full_v3 Python | full_v3 native | small_v13 Python | small_v13 native |
+| --- | --- | --- | --- | --- | --- |
+| 1w4ts Voltaic, 143 kills | 143, 131, 143 | 143, 143, 141 | 143, 143, 142 | 143, 143, 141 | 143, 143, 142 |
+| 10 Sphere Hipfire XS, 155 kills | 155, 138, 155 | 155, 134, 155 | 155, 134, 155 | 155, 129, 154 | 155, 129, 154 |
+| Pokeball 5 Sphere XS, 114 kills | 114, 74, 114 | 114, 67, 111 | 114, 68, 114 | 114, 72, 113 | 114, 76, 114 |
+| Pokeball 1 Sphere XS, 84 kills | 84, 41, 83 | 84, 56, 83 | 84, 55, 83 | 84, 62, 83 | 84, 62, 83 |
+| **Total, 496 kills** | 496, 384, 495 | 496, 400, 490 | 496, 400, 494 | 496, 406, 491 | 496, 410, 493 |
+
+The native report (the Rust core's) and `eval_moving.py`'s scoring of the same native tracks agree on every kill and
+flick of these four VODs.
+
+**What differs, and why.** The native path gives the Python path's tracks exactly when the model runs the same way.
+The check: the two recordings that differ most (cA FBS Easy S1 and 360 Tracking OW2, the same boxes in about 70% of
+frames) tracked in Python with the `_u8in` export in ONNX Runtime (fp32, CPU) and the native review's areas. Every
+frame then has the same boxes as the native review (count, and places within 0.1 deg), and the numbers are the same.
+So decoding, the fixed map, `keep`, the area watch and `link` add nothing. Two inputs differ, and they explain every
+difference:
+
+- **The model's arithmetic.** Python runs the checkpoint with bf16 autocast, the training precision. The app runs the
+  fp32 export. Scores near the 0.3 threshold fall on either side, so a box shows in one and not the other. On
+  recordings with the default areas, the two paths give the same boxes in 89% to 99% of frames, and in 67% to 71% on
+  cA FBS Easy S1 (full_v3: Python 1.85 boxes a frame, native 1.82) and 360 Tracking OW2. The results move little:
+  time on target by 0.004 at most, flicks by up to 3 (small_v13 on Smoothbot Switch Robots: 35 in Python, 32 native;
+  full_v3 on Pokeball 5: 111 and 114). Earlier, fp32 inference cost six confirmed kills on Pokeball 1 (55 against 61,
+  Deployment above). Here it costs full_v3 one there (55 against 56) and gains elsewhere: 400 confirmed on both paths
+  for full_v3, 410 against 406 for small_v13.
+- **The user's areas.** Python tracked every recording with KovOBS's layout. The app uses the areas the user saved:
+  here, on seven of the eight static recordings (all but 10 Sphere), Air Tracking 180 and Pokeball Frenzy. Their
+  hand-cam box starts at 83% of the frame's width, KovOBS's webcam box at 75%, so the detector sees more of the
+  screen: about 0.1 more boxes a frame on the 1wall 6targets runs (4.24 against 4.35 on 889.26). Tracked in Python
+  with full_v3 and the same saved areas, these recordings give the same boxes as the native review in 97% to 99% of
+  frames (86% to 93% without), and their flicks move to the native counts on four of five (1w4ts 141 to 142, 889.26
+  97 to 98, 886.15 95 to 96, 849.91 98 to 96). Pokeball 5 stays at 111: there the arithmetic makes the difference.
+  On KovOBS's layout the area watch changed at most 0.2% of frames, on the six runs checked.
+
+So the app's pipeline matches as many kills as the Python path on every kind (854, 1,097 and 1,096 of 1,112) and
+tracks as close to the stats files. The gaps between the two paths are small: 4 flicks at most per kind, 4 confirmed
+kills in all, and 0.001 in the tracking mean size.
+
+**The open items in these numbers.**
+
+- **Moving targets on themes other than dark-on-light: the check hardly tests it.** By `build_data.dark_scene`, the
+  test the moving labeller used, 23 of the 24 moving recordings show dark targets on light walls. The one that does
+  not, 360 Tracking OW2 (4% of its screen dark, at most 1.2% on the others), is the weakest clicking run: 7 of 10
+  kills matched, 5 flicks, with both models on both paths. One run of 10 kills says little. The check needs moving
+  runs on other themes before it can measure this item. (Two static runs have a dark wall, 1wall 6targets 889.26 and
+  849.91: every kill matched.)
+- **Thin capsules: still the largest under-reading.** Centering II 180 (a capsule a few pixels wide) reads 0.43 on
+  target with full_v3 for an accuracy of 0.59, the largest gap below the stats file of the 12 runs (small_v13 0.48).
+  Small targets held under the crosshair still read low too: Pasu Track Smaller 0.33 and 0.35 for 0.46, Pokeball
+  1w2ts 0.49 for 0.62. Air Tracking 180 is small_v13's worst run (0.40 for 0.62; full_v3 0.48).
+- **Tiled-wall seams: no kill or flick lost here, but small_v13 still sees a seam.** The valorant run matches 66 of 66
+  kills and measures 64 flicks on both paths (the two unmeasured kills have a track of one or two frames before the
+  kill). The 1wall 6targets runs match every kill and measure all but 2 flicks (849.91: 96 of 98). On 889.26's dark
+  tiled wall, small_v13 keeps 5.05 boxes a frame against full_v3's 4.34; on 886.15's light wall both keep 4.4. So
+  small_v13 still marks something on 889.26's wall, most likely the corner seam under "Tiled walls" below, and the cap
+  on the target count is what keeps it out of the kills.
+
+Other weak runs, all dark-on-light: Smoothbot Switch Robots (54 of 56 kills; 41 flicks with full_v3, 32 with
+small_v13: the killed robot's track mostly starts 1 to 3 frames before the kill) and Bounce 180 Sparky Jumbo (100 and
+98 of 107 kills).
+
+The commands (results in `test_out/vod_model/eval/`: `vods_detector_full_v3_u8in_native.json`,
+`vods_detector_small_v13_u8in_native.json`, `moving_full_v3_native.pkl`, `moving_small_v13_native.pkl`):
+
+```bash
+python python/model/eval_vods.py python/model/exports/detector_full_v3_u8in.onnx
+python python/model/eval_vods.py python/model/exports/detector_small_v13_u8in.onnx
+python python/model/eval_moving.py full_v3=python/model/exports/detector_full_v3.pt small_v13=python/model/exports/detector_small_v13.pt
+# the Python path, for the comparison (eval_moving.py scores its cached tracks again)
+python python/model/eval_vods.py test_out/vod_model/runs/full_v3/best.pt --python
+python python/model/eval_vods.py test_out/vod_model/runs/small_v13/best.pt --python
+python python/model/eval_moving.py full_v3=python/model/exports/detector_full_v3.pt small_v13=python/model/exports/detector_small_v13.pt --python
+```
+
+`eval_vods.py` takes the `_u8in` file here because it names its results after a `.pt` file's folder: two models in
+`exports/` would both write `vods_exports_native.json`. A native review took 21 s on average with full_v3 and 18 s
+with small_v13 over the 32 recordings, on a GPU shared with other work (not a benchmark). The uploads and Aim Lab row
+of the section above (kills from the HUD) was not measured again.
+
 ## Current best model
 
 **full_v3**, threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX, 169.6 KB as fp16. Static, dynamic, switching
