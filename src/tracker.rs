@@ -40,6 +40,13 @@ impl Tracker {
         }
     }
 
+    /// Which areas are the challenge's end screen (popup::END_SCREEN), in the areas' order: each is excluded only while
+    /// it shows.
+    pub fn end_screens(mut self, which: &[bool]) -> Tracker {
+        self.watch.end_screens(which);
+        self
+    }
+
     /// With the KovOBS overlay excluded (the default areas).
     pub fn kovobs(cap: usize) -> Tracker {
         Tracker::new(crate::geometry::overlay_shares(), cap)

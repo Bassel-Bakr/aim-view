@@ -462,13 +462,16 @@ class AreaWatch:
     off for 30% of the run or more, comes and goes 3 times or more (the results screen covering it once at the end
     is not), and looks the same whenever it is on (its on frames match their common pattern, its off frames do not);
     it is then excluded in its on frames and 4 frames either side. Any other area (the
-    session box, a webcam) is excluded all the time, as before."""
+    session box, a webcam) is excluded all the time, as before. An area of the challenge's end screen (kind
+    challenge_results) shows once or twice, at the end or between runs: it is excluded only while it shows (excluded
+    all the time, it hid the whole of VT FlyTS: 0 of 5 kills). src/popup.rs does the same."""
 
     STEP = 2                                             # frames between looks
 
     def __init__(self, boxes):
         self.boxes = [[int(round(v * s)) for v, s in zip(b[:4], (W, H, W, H))] for b in boxes]
         self.steps = [max(1, max(x1 - x0, y1 - y0) // 64) for x0, y0, x1, y1 in self.boxes]
+        self.ends = [len(b) > 4 and b[4] == "challenge_results" for b in boxes]
         self.maps = [[] for _ in self.boxes]
         self.n = 0
 
@@ -486,25 +489,29 @@ class AreaWatch:
     def showing(self):
         """Per area: a bool per frame (excluded in that frame) for a pop-up, or None (excluded all the time)."""
         out = []
-        for maps in self.maps:
+        for maps, end in zip(self.maps, self.ends):
             m = np.array(maps)
             share = m.reshape(len(m), -1).mean(axis=1) if len(m) else np.zeros(0)
-            if len(m) < 20 or np.percentile(share, 98) < 0.04:
+            if len(m) < 20:
                 out.append(None)
+                continue
+            if np.percentile(share, 98) < 0.04:          # nothing ever shows: an end screen that never came stays in
+                out.append(np.zeros(self.n, bool) if end else None)
                 continue
             on = share >= 0.5 * np.percentile(share, 98)
             episodes = ndimage.label(ndimage.binary_closing(on, iterations=5))[1]
-            if on.mean() > 0.7 or episodes < 3:          # always on, or on once: the results screen at the end
-                out.append(None)                         # covering it is not a pop-up
+            if not end and (on.mean() > 0.7 or episodes < 3):   # always on, or on once: the results screen at the
+                out.append(None)                                # end covering it is not a pop-up
                 continue
             tpl = m[on].mean(axis=0) > 0.5
             inter = (m & tpl).reshape(len(m), -1).sum(axis=1)
             union = (m | tpl).reshape(len(m), -1).sum(axis=1)
             match = inter / np.maximum(1, union)
-            if np.median(match[on]) < 0.5 or np.median(match[~on]) >= 0.2:
+            consistent = np.median(match[on]) >= 0.5 and np.median(match[~on]) < 0.2
+            if not consistent and not end:
                 out.append(None)
                 continue
-            seen = np.repeat(match >= 0.35, self.STEP)[:self.n]
+            seen = np.repeat(match >= 0.35 if consistent else on, self.STEP)[:self.n]
             out.append(ndimage.binary_dilation(seen, iterations=4))    # fading in and out
         return out
 

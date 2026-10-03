@@ -3,7 +3,9 @@
 //! neighbours, as text and boxes do and a plain wall does not. After the run, an area is a pop-up when it is off for
 //! 30% of the run or more, comes and goes 3 times or more (the results screen covering it once at the end is not),
 //! and looks the same whenever it is on; it is then excluded in its on frames and 4 frames either side. Any other
-//! area (the session box, a webcam) is excluded all the time.
+//! area (the session box, a webcam) is excluded all the time. An area the user named the challenge's end screen
+//! (`END_SCREEN`) shows once or twice, at the end or between runs, and covers most of the frame: it is excluded only
+//! while it shows, however few its episodes (excluded all the time, it hid the whole run: VT FlyTS, 0 of 5 kills).
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +15,9 @@ use crate::scipy::{Edge, close_line, count_runs, dilate_line, uniform_filter};
 
 /// Frames between looks.
 pub const STEP: usize = 2;
+
+/// The area kind of the challenge's end screen (test_out/vod_app/area_kinds.json: "Challenge results").
+pub const END_SCREEN: &str = "challenge_results";
 
 /// One look at an area: which of its sampled pixels stand out (row by row). Sent between workers as bits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -65,6 +70,9 @@ pub struct AreaWatch {
     /// The first frame watched: frames before it were not reviewed.
     #[serde(default)]
     from: usize,
+    /// Per area: it is the challenge's end screen (`end_screens`); none set: no area is.
+    #[serde(default)]
+    ends: Vec<bool>,
 }
 
 impl AreaWatch {
@@ -78,7 +86,13 @@ impl AreaWatch {
             })
             .collect();
         let steps = boxes.iter().map(|&[x0, y0, x1, y1]| ((x1 - x0).max(y1 - y0) / 64).max(1)).collect();
-        AreaWatch { looks: vec![Vec::new(); boxes.len()], boxes, steps, frames: 0, from: 0 }
+        AreaWatch { looks: vec![Vec::new(); boxes.len()], boxes, steps, frames: 0, from: 0, ends: Vec::new() }
+    }
+
+    /// Which areas are the challenge's end screen, in the areas' order.
+    pub fn end_screens(&mut self, which: &[bool]) {
+        assert_eq!(which.len(), self.boxes.len(), "one flag per area");
+        self.ends = which.to_vec();
     }
 
     /// For a run of the recording that starts at frame `first`, before its first frame: it looks at the frames the
@@ -104,6 +118,9 @@ impl AreaWatch {
         assert_eq!(self.boxes, next.boxes, "another recording's areas");
         if self.unwatched() {
             self.from = next.from;
+        }
+        if self.ends.is_empty() {
+            self.ends = next.ends;
         }
         for (looks, more) in self.looks.iter_mut().zip(next.looks) {
             looks.extend(more);
@@ -133,10 +150,11 @@ impl AreaWatch {
 
     /// Per area: for a pop-up, whether it is excluded in each frame; None for an area excluded all the time.
     pub fn showing(&self) -> Vec<Option<Vec<bool>>> {
-        self.looks.iter().map(|looks| self.popup(looks)).collect()
+        self.looks.iter().enumerate().map(|(i, looks)| self.popup(looks, self.ends.get(i) == Some(&true))).collect()
     }
 
-    fn popup(&self, looks: &[Look]) -> Option<Vec<bool>> {
+    /// `end`: the area is the challenge's end screen, which may show only once.
+    fn popup(&self, looks: &[Look], end: bool) -> Option<Vec<bool>> {
         let n = looks.len();
         if n < 20 {
             return None;
@@ -146,12 +164,13 @@ impl AreaWatch {
             looks.iter().map(|l| l.0.iter().filter(|&&v| v).count() as f64 / size as f64).collect();
         let p98 = numpy_percentile(&share, 98.0);
         if p98 < 0.04 {
-            return None;
+            // nothing ever shows there: an end screen that never came is not excluded
+            return end.then(|| vec![false; self.frames]);
         }
         let on: Vec<bool> = share.iter().map(|&s| s >= 0.5 * p98).collect();
         let episodes = count_runs(&close_line(&on, 5));
         let on_count = on.iter().filter(|&&v| v).count();
-        if on_count as f64 / n as f64 > 0.7 || episodes < 3 {
+        if !end && (on_count as f64 / n as f64 > 0.7 || episodes < 3) {
             return None;
         }
         // the pattern it has when on: pixels standing out in more than half the on frames
@@ -172,13 +191,17 @@ impl AreaWatch {
         let pick = |want: bool| -> Vec<f64> {
             matched.iter().zip(&on).filter(|(_, o)| **o == want).map(|(m, _)| *m).collect()
         };
-        if numpy_median(&pick(true)) < 0.5 || numpy_median(&pick(false)) >= 0.2 {
+        let consistent = numpy_median(&pick(true)) >= 0.5 && numpy_median(&pick(false)) < 0.2;
+        if !consistent && !end {
             return None;
         }
+        // an end screen that does not look the same each time is excluded where it stands out (its on looks)
+        let shown: Vec<bool> =
+            if consistent { matched.iter().map(|&m| m >= 0.35).collect() } else { on };
         // the frames before the first look (none unless the review started part way in) are not excluded
         let skipped = self.from.div_ceil(STEP) * STEP;
         let seen: Vec<bool> = std::iter::repeat_n(false, skipped)
-            .chain(matched.iter().flat_map(|&m| std::iter::repeat_n(m >= 0.35, STEP)))
+            .chain(shown.into_iter().flat_map(|s| std::iter::repeat_n(s, STEP)))
             .take(self.frames)
             .collect();
         Some(dilate_line(&seen, 4))
@@ -188,6 +211,27 @@ impl AreaWatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An area that shows once, at the end (a challenge's end screen): an ordinary area is excluded all the time, the
+    /// end screen only while it shows, and an end screen that never comes not at all.
+    #[test]
+    fn the_end_screen_is_left_out_only_while_it_shows() {
+        let looks = |on_from: usize| -> Vec<Look> {
+            (0..300).map(|i| Look((0..400).map(|p| if i >= on_from { p % 3 == 0 } else { p % 97 == i % 97 }).collect())).collect()
+        };
+        let watch = |end: bool, on_from: usize| {
+            let mut w = AreaWatch::new(&[[0.1, 0.1, 0.9, 0.9]]);
+            w.end_screens(&[end]);
+            w.looks = vec![looks(on_from)];
+            w.frames = 300 * STEP;
+            w.showing().remove(0)
+        };
+        assert_eq!(watch(false, 250), None);
+        let shown = watch(true, 250).expect("the end screen is a pop-up");
+        assert!(shown[..250 * STEP - 4].iter().all(|&s| !s), "left in while the run is on");
+        assert!(shown[250 * STEP..].iter().all(|&s| s), "left out while it shows");
+        assert_eq!(watch(true, 300), Some(vec![false; 300 * STEP]));
+    }
 
     /// A recording's watch split into two runs at any frame, each sent as JSON and joined, is the whole recording's.
     #[test]
