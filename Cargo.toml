@@ -6,7 +6,8 @@ description = "Aim View's review core: finds the targets in a recording and meas
 publish = false
 
 [workspace]
-# The detector prototype keeps its own build until its code moves into src/.
+# desktop/: the Tauri app. The detector prototype keeps its own build until its code moves into src/.
+members = ["desktop"]
 exclude = ["python/model/rust"]
 
 [lib]

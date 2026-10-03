@@ -1,0 +1,12 @@
+[package]
+name = "aimview-desktop"
+version = "0.1.0"
+edition = "2024"
+description = "Aim View's desktop app (Tauri 2): the Angular app in a window, with the review core built natively"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

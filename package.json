@@ -12,6 +12,8 @@
     "build:desktop": "bun run assets && bun run --cwd ui build --configuration production,desktop",
     "test:ui": "bun run --cwd ui test --watch=false",
     "lint:ui": "bun run --cwd ui lint",
-    "format": "bun run --cwd ui format"
+    "format": "bun run --cwd ui format",
+    "app": "cd desktop && cargo tauri dev",
+    "build:app": "cd desktop && cargo tauri build"
   }
 }
