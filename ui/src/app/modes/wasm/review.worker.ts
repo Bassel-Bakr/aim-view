@@ -10,8 +10,10 @@ import {
   BlobSource,
   EncodedPacketSink,
   Input,
+  InputVideoTrack,
   VideoSample,
   VideoSampleSink,
+  VideoSinkDecoderOptions,
 } from 'mediabunny';
 import type { InferenceSession } from 'onnxruntime-web/wasm';
 import { TrackFrame, Tracks } from '../../api';
@@ -91,6 +93,22 @@ function frameRate(rate: number): number {
   return Math.abs(rate - Math.round(rate)) < 0.01 ? Math.round(rate) : rate;
 }
 
+/**
+ * The decoder to ask for: the browser's software decoder, where it has one for the video. A hardware decoder's frames
+ * are on the GPU, and copying each one back takes longer than the software decoder does, while the detector waits for
+ * the GPU (av1 at 2560x1440: 50 frames a second with the hardware decoder, 76 with the software one). Both give the
+ * same bytes. Chrome has no software decoder for HEVC: there, the hardware one.
+ */
+async function decoderOptions(track: InputVideoTrack): Promise<VideoSinkDecoderOptions> {
+  const config = await track.getDecoderConfig();
+  if (!config) return {};
+  const software = await VideoDecoder.isConfigSupported({
+    ...config,
+    hardwareAcceleration: 'prefer-software',
+  }).catch(() => null);
+  return software?.supported ? { hardwareAcceleration: 'prefer-software' } : {};
+}
+
 /** onnxruntime-web's build for the device, loading its WebAssembly from ortPath. */
 async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
   const ort: Ort =
@@ -132,7 +150,7 @@ async function review(req: ReviewRequest): Promise<void> {
   if (!track) throw new Error('The file has no video');
   const fps = frameRate((await track.computePacketStats(240)).averagePacketRate);
   const total = Math.round(fps * (await track.computeDuration()));
-  const samples = new VideoSampleSink(track);
+  const samples = new VideoSampleSink(track, await decoderOptions(track));
 
   // the converter, made for the first frame's size and colours; the buffers it reads and fills
   let converter = 0;
