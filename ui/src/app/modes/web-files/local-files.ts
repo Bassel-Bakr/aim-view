@@ -90,6 +90,10 @@ export function localRecording(
   };
 }
 
+/** Why a remembered folder's VODs are not listed. */
+const goneText = (name: string) =>
+  `${name} could not be found: it was moved or deleted, or its drive is not connected. `;
+
 /** A step done item by item, with how far it is. */
 function counted(label: string, count: ItemCount | null): Transfer {
   return count
@@ -144,7 +148,11 @@ export class LocalFiles implements RecordingSource {
   });
   /** The recordings folder is being read and nothing is listed yet. */
   readonly loading = computed(() => this.recordingsFolder.state().busy && !this.files().length);
-  readonly problem = signal<string | null>(null).asReadonly();
+  /** A remembered recordings folder that could not be found, shown above the list. */
+  readonly problem = computed(() => {
+    const gone = this.recordingsFolder.state().gone;
+    return gone ? `${goneText(gone)}Open it again with VODs folder when it is back.` : null;
+  });
   readonly addedFilesGo = 'They stay in this browser.';
   private readonly remuxing = signal<Transfer | null>(null);
   private readonly finding = signal<Transfer | null>(null);
@@ -175,6 +183,7 @@ export class LocalFiles implements RecordingSource {
       label: 'VODs folder',
       detail:
         (s.refused ? `${s.refused}. ` : '') +
+        (s.gone ? goneText(s.gone) : '') +
         (s.ask
           ? `Let the browser read ${s.name} again.`
           : s.name
