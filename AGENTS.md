@@ -117,16 +117,21 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   folder.
   Server mode: files added are sent to the server, and the stats file panel lists KovaaK's stats files (`/api/stats`).
 - The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
-  (review.worker.ts): decode (Mediabunny and the browser's decoder: the same YUV as ffmpeg once the edit list's
-  pre-roll, the frames before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV
+  (review.worker.ts): decode (Mediabunny and the browser's decoder, its software one where it has one: the same YUV
+  as ffmpeg once the edit list's pre-roll, the frames before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
-  float noise (17 of 6,038 frames differ by one pixel of area). About 27 frames a second for full_v3. The clicking
+  float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
+  (2560x1440): 95 frames a second with the detector on the GPU (WebGPU, the default; 63.5 s for the
+  whole review), 31 on the CPU (measured before the camera worker; test_out/browser_check/profile.html times each
+  stage). The core is built with WebAssembly SIMD (.cargo/config.toml).
+  The clicking
   review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
   gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number
   within 1e-9 (`cargo test --release --test review_parity`). After the track step the core uses plain floating point:
-  it copies Python's logic, not its last bits. Tracking runs with a stats file too: the worker also feeds the camera
-  watch (src/camera.rs: the camera's turn by phase correlation, and KovaaK's countdown bar), and the page's core gives
+  it copies Python's logic, not its last bits. Tracking runs with a stats file too: the review worker sends each
+  frame to the camera worker (camera.worker.ts, src/camera.rs: the camera's turn by phase correlation, and KovaaK's
+  countdown bar), which runs beside it so the detector never waits for it, and the page's core gives
   the summary (src/tracking.rs). Equal to Python's on 5 tracking runs (`--test tracking_parity`), the camera within
   1e-8 degrees on the same frames (`--test camera_parity`). Two inputs differ from Python's on purpose: the camera
   reads the frame's Y plane, where Python reads ffmpeg's `format=gray` (which goes through the colors: readings differ

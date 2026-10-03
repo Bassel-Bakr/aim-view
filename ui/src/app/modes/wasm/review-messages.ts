@@ -5,7 +5,7 @@ export type BrowserDevice = 'webgpu' | 'wasm';
 
 /**
  * What the review worker is asked: a recording's file, where the core, the detector runtime and the model are, where
- * to run the detector, and the scenario's target count (null: not known).
+ * to run the detector, the scenario's target count (null: not known), and the port to the camera worker.
  */
 export interface ReviewRequest {
   file: Blob;
@@ -14,6 +14,49 @@ export interface ReviewRequest {
   modelUrl: string;
   device: BrowserDevice;
   cap: number | null;
+  camera: MessagePort;
+}
+
+/** A recording's frames as the decoder gives them, as the core's converter takes them (src/wasm.rs: converter_new). */
+export interface FrameFormat {
+  width: number;
+  height: number;
+  matrix: number;
+  full: number;
+}
+
+/** The camera worker's start: where the core is, the frames' format, and the fixed map (1280 x 720). */
+export interface CameraStart extends FrameFormat {
+  kind: 'start';
+  coreUrl: string;
+  fixed: Uint8Array;
+}
+
+/** A frame as decoded (YUV 4:2:0, the recording's size). Its buffer comes back once read. */
+export interface CameraFrame {
+  kind: 'frame';
+  yuv: ArrayBuffer;
+}
+
+/** No more frames: the tracks (tracker_finish's JSON), which the readings need. */
+export interface CameraFinish {
+  kind: 'finish';
+  frames: string;
+}
+
+/** What the review worker tells the camera worker. */
+export type CameraTask = CameraStart | CameraFrame | CameraFinish;
+
+/** A frame's buffer, read and free again. */
+export interface CameraFree {
+  kind: 'free';
+  yuv: ArrayBuffer;
+}
+
+/** The readings, once every frame is read. */
+export interface CameraDone {
+  kind: 'readings';
+  readings: VideoReadings;
 }
 
 export interface ReviewProgress {
@@ -52,3 +95,6 @@ export interface ReviewFailed {
 
 /** What the review worker says back. */
 export type ReviewMessage = ReviewProgress | ReviewTracked | ReviewFailed;
+
+/** What the camera worker says back. */
+export type CameraReply = CameraFree | CameraDone | ReviewFailed;

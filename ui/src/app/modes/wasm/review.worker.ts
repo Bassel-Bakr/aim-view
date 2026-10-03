@@ -3,8 +3,8 @@
 // frame into the exact pixels ffmpeg gives Python (the core's converter), finds the targets with the detector model
 // (onnxruntime-web, WebAssembly) and tracks them (the core's tracker, which also watches the excluded areas for
 // pop-ups). python/review.py's track_model, step by step: the fixed map from the key frames, then every frame. Frames
-// before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each frame also feeds the camera
-// watch (the camera's turn and KovaaK's countdown bar, which a tracking run's review reads).
+// before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each frame also goes to the
+// camera worker (the camera's turn and KovaaK's countdown bar, which a tracking run's review reads).
 import {
   ALL_FORMATS,
   BlobSource,
@@ -17,8 +17,9 @@ import {
 } from 'mediabunny';
 import type { InferenceSession } from 'onnxruntime-web/wasm';
 import { TrackFrame, Tracks } from '../../api';
+import { CameraLink } from './camera-link';
 import { Core, CoreBlock, matrixNumber } from './core';
-import { BrowserDevice, ReviewMessage, ReviewRequest, VideoReadings } from './review-messages';
+import { BrowserDevice, FrameFormat, ReviewMessage, ReviewRequest } from './review-messages';
 
 /** onnxruntime-web, either build: for the GPU (WebGPU) or the CPU (WebAssembly). Both have the same API. */
 type Ort = typeof import('onnxruntime-web/wasm');
@@ -154,6 +155,8 @@ async function review(req: ReviewRequest): Promise<void> {
 
   // the converter, made for the first frame's size and colours; the buffers it reads and fills
   let converter = 0;
+  // set inside prepare(): "as" keeps TypeScript from taking it for null for good
+  let format = null as FrameFormat | null;
   let size = 0;
   let yuv: CoreBlock | null = null;
   let scratch = new Uint8Array(0);
@@ -162,12 +165,13 @@ async function review(req: ReviewRequest): Promise<void> {
   const prepare = (s: VideoSample) => {
     const { width: w, height: h } = s.visibleRect;
     if (!converter) {
-      converter = core.x.converter_new(
-        w,
-        h,
-        matrixNumber(s.colorSpace.matrix),
-        s.colorSpace.fullRange ? 1 : 0,
-      );
+      format = {
+        width: w,
+        height: h,
+        matrix: matrixNumber(s.colorSpace.matrix),
+        full: s.colorSpace.fullRange ? 1 : 0,
+      };
+      converter = core.x.converter_new(w, h, format.matrix, format.full);
       size = (w * h * 3) / 2;
       yuv = core.reserve(size);
     }
@@ -194,8 +198,10 @@ async function review(req: ReviewRequest): Promise<void> {
   const fixedBlock = core.reserve(W * H);
   core.x.fixed_finish(fixedBuilder, fixedBlock.ptr);
   const fixed = core.bytes(fixedBlock).slice();
-  const camera = core.x.camera_new(fixedBlock.ptr);
   core.free(fixedBlock);
+  if (!format) throw new Error('The video has no frames');
+  const camera = new CameraLink(req.camera);
+  camera.start({ kind: 'start', coreUrl: req.coreUrl, fixed, ...format });
   const fixedTensor = new ort.Tensor('uint8', fixed, [1, H, W]);
 
   // 2. every frame: the detector, then the tracker. While the detector works on a frame, the next one is decoded and
@@ -221,9 +227,10 @@ async function review(req: ReviewRequest): Promise<void> {
     const block = prepare(s);
     await writeI420(s, core, block, scratch);
     s.close();
+    const copy = await camera.take(size);
+    new Uint8Array(copy).set(core.bytes(block));
+    camera.send(copy);
     core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
-    core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
-    core.x.camera_add(camera, yuv720.ptr, rgb.ptr);
     core.x.tracker_watch(tracker, rgb.ptr);
     const feeds = {
       rgb: new ort.Tensor('uint8', core.bytes(rgb).slice(), [1, H, W, 3]),
@@ -241,14 +248,7 @@ async function review(req: ReviewRequest): Promise<void> {
   say({ kind: 'progress', stage: 'linking', done: n, total });
   const framesText = core.takeText(core.x.tracker_finish(tracker));
   const frames = JSON.parse(framesText) as TrackFrame[];
-  const framesBytes = new TextEncoder().encode(framesText);
-  const framesBlock = core.reserve(framesBytes.length);
-  core.bytes(framesBlock).set(framesBytes);
-  const readingsText = core.takeText(
-    core.x.camera_finish(camera, framesBlock.ptr, framesBytes.length),
-  );
-  core.free(framesBlock);
-  const readings = JSON.parse(readingsText) as VideoReadings;
+  const readings = await camera.finish(framesText);
   if (converter) core.x.converter_free(converter);
   const share = fixed.reduce((a, v) => a + v, 0) / fixed.length;
   const tracks: Tracks = {

@@ -126,7 +126,15 @@ export class BrowserReview implements ReviewEngine {
     const device: BrowserDevice = list?.device === 'wasm' ? 'wasm' : 'webgpu';
     const run: BrowserRun = { job: { stage: 'starting' } };
     this.runs.set(id, run);
+    // the review worker, and the camera worker beside it: the two talk over a port of their own
     const worker = new Worker(new URL('./review.worker', import.meta.url), { type: 'module' });
+    const camera = new Worker(new URL('./camera.worker', import.meta.url), { type: 'module' });
+    const channel = new MessageChannel();
+    camera.postMessage(channel.port2, [channel.port2]);
+    const stop = () => {
+      worker.terminate();
+      camera.terminate();
+    };
     const base = new URL(document.baseURI);
     const request: ReviewRequest = {
       file: local.file,
@@ -135,6 +143,7 @@ export class BrowserReview implements ReviewEngine {
       modelUrl: new URL(`models/detector_${model}_u8in.onnx`, base).href,
       device,
       cap,
+      camera: channel.port1,
     };
     worker.onmessage = (e: MessageEvent<ReviewMessage>) => {
       const m = e.data;
@@ -148,14 +157,14 @@ export class BrowserReview implements ReviewEngine {
           m.kind === 'done'
             ? { stage: 'done', seconds: Math.round(m.seconds * 10) / 10 }
             : { stage: 'error', error: m.error };
-        worker.terminate();
+        stop();
       }
     };
-    worker.onerror = (e) => {
+    worker.onerror = camera.onerror = (e) => {
       run.job = { stage: 'error', error: e.message };
-      worker.terminate();
+      stop();
     };
-    worker.postMessage(request);
+    worker.postMessage(request, [channel.port1]);
     return run.job;
   }
 
