@@ -4,6 +4,8 @@
 
 use std::alloc::{Layout, alloc as raw_alloc, dealloc as raw_dealloc};
 
+use serde::{Deserialize, Serialize};
+
 use crate::convert::{Converter, DST_H, DST_W, Matrix};
 use crate::detect;
 use crate::fixed::FixedMap;
@@ -120,6 +122,53 @@ fn push(t: &mut Tracker, raw: &[RawBox]) -> usize {
     t.frames.push(kept);
     t.raw.push(raw.to_vec());
     n
+}
+
+/// A run's part of the track step (`tracker_part`): its frames' raw boxes and its area watch. A recording split into
+/// runs, reviewed in workers at once, has a tracker for each; the page joins their parts in order (`tracker_add_part`).
+#[derive(Serialize, Deserialize)]
+struct TrackPart {
+    raw: Vec<Vec<RawBox>>,
+    watch: AreaWatch,
+}
+
+/// The tracker's run starts at frame `first` of the recording: call before its first frame.
+///
+/// # Safety
+/// `tracker` from `tracker_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracker_start_at(tracker: *mut Tracker, first: usize) {
+    unsafe { &mut *tracker }.watch.start_at(first);
+}
+
+/// The run's part as JSON, and frees the tracker. Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `tracker` from `tracker_new`, not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracker_part(tracker: *mut Tracker) -> *mut u8 {
+    let t = unsafe { Box::from_raw(tracker) };
+    let part = TrackPart { raw: t.raw, watch: t.watch };
+    bytes_out(serde_json::to_vec(&part).unwrap_or_default())
+}
+
+/// The next run's part (`tracker_part`'s JSON), after the frames the tracker has: each frame's boxes kept or dropped
+/// as `tracker_push_maps` would, and its looks after the ones before. Returns the frames added; none when the part
+/// cannot be read.
+///
+/// # Safety
+/// `tracker` from `tracker_new`; `part` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracker_add_part(tracker: *mut Tracker, part: *const u8, len: usize) -> usize {
+    let t = unsafe { &mut *tracker };
+    let Ok(part) = serde_json::from_slice::<TrackPart>(unsafe { std::slice::from_raw_parts(part, len) }) else {
+        return 0;
+    };
+    for raw in &part.raw {
+        push(t, raw);
+    }
+    t.watch.join(part.watch);
+    part.raw.len()
 }
 
 /// Links the frames and frees the tracker. Returns the tracks as JSON (tracks.json's `frames`), in a buffer that
@@ -274,6 +323,33 @@ pub unsafe extern "C" fn camera_add(c: *mut crate::camera::CameraWatch, yuv: *co
     let c = unsafe { &mut *c };
     let gray = unsafe { std::slice::from_raw_parts(yuv, DST_W * DST_H) };
     c.add(gray, unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
+}
+
+/// The run's part of the watch as JSON (src/camera.rs: `CameraPart`), and frees the watch. Free the result as
+/// `tracker_finish`'s.
+///
+/// # Safety
+/// `c` from `camera_new`, not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_part(c: *mut crate::camera::CameraWatch) -> *mut u8 {
+    let c = unsafe { Box::from_raw(c) };
+    bytes_out(serde_json::to_vec(&c.part()).unwrap_or_default())
+}
+
+/// The next run's part (`camera_part`'s JSON), after the frames the watch has (`CameraWatch::join`). Returns the
+/// watch's frames after it; none when the part cannot be read.
+///
+/// # Safety
+/// `c` from `camera_new`; `part` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn camera_add_part(c: *mut crate::camera::CameraWatch, part: *const u8, len: usize) -> usize {
+    let c = unsafe { &mut *c };
+    let slice = unsafe { std::slice::from_raw_parts(part, len) };
+    let Ok(part) = serde_json::from_slice::<crate::camera::CameraPart>(slice) else {
+        return 0;
+    };
+    c.join(part);
+    c.countdown.len()
 }
 
 /// The readings, the tracks known (`frames`: the JSON `tracker_finish` gave), as JSON {camera, countdown}, and frees the

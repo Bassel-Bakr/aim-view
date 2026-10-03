@@ -1,18 +1,18 @@
-import { CameraReply, CameraStart, CameraTask, VideoReadings } from './review-messages';
+import { CameraReply, CameraStart, CameraTask } from './review-messages';
 
 /** Frames sent to the camera worker and not read yet: past this many, the review waits for one to come back. */
 const IN_FLIGHT = 4;
 
 /**
  * The review worker's side of the camera worker (camera.worker.ts): each frame goes to it in a buffer of its own,
- * which comes back once read, and at the end its readings come back. If it fails, the next call says why.
+ * which comes back once read, and at the end its part of the run comes back. If it fails, the next call says why.
  */
 export class CameraLink {
   private readonly free: ArrayBuffer[] = [];
   private made = 0;
   private wake: (() => void) | null = null;
   private failure: Error | null = null;
-  private done: ((readings: VideoReadings) => void) | null = null;
+  private done: ((part: string) => void) | null = null;
   private failed: ((error: Error) => void) | null = null;
 
   constructor(private readonly port: MessagePort) {
@@ -41,13 +41,13 @@ export class CameraLink {
     this.post({ kind: 'frame', frame }, [frame]);
   }
 
-  /** The readings, once the camera worker has read every frame. */
-  finish(frames: string): Promise<VideoReadings> {
+  /** The watch's part of the run (camera_part's JSON), once the camera worker has read every frame. */
+  finish(): Promise<string> {
     return new Promise((resolve, reject) => {
       if (this.failure) return reject(this.failure);
       this.done = resolve;
       this.failed = reject;
-      this.post({ kind: 'finish', frames });
+      this.post({ kind: 'finish' });
     });
   }
 
@@ -57,7 +57,7 @@ export class CameraLink {
 
   private hear(m: CameraReply): void {
     if (m.kind === 'free') this.free.push(m.frame);
-    else if (m.kind === 'readings') this.done?.(m.readings);
+    else if (m.kind === 'part') this.done?.(m.part);
     else {
       this.failure = new Error(`The camera watch failed: ${m.error}`);
       this.failed?.(this.failure);

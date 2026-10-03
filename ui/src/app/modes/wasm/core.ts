@@ -9,6 +9,9 @@ export interface CoreExports {
   tracker_watch(tracker: number, rgb: number): void;
   tracker_push_maps(tracker: number, score: number, reg: number, gw: number, gh: number): number;
   tracker_finish(tracker: number): number;
+  tracker_start_at(tracker: number, first: number): void;
+  tracker_part(tracker: number): number;
+  tracker_add_part(tracker: number, part: number, len: number): number;
   converter_new(w: number, h: number, matrix: number, full: number): number;
   converter_rgb24(converter: number, yuv: number, len: number, out: number): void;
   converter_yuv420p(converter: number, yuv: number, len: number, out: number): void;
@@ -23,6 +26,8 @@ export interface CoreExports {
   camera_new(fixed: number): number;
   camera_add(camera: number, yuv: number, rgb: number): void;
   camera_finish(camera: number, frames: number, len: number): number;
+  camera_part(camera: number): number;
+  camera_add_part(camera: number, part: number, len: number): number;
 }
 
 /** A block of the core's memory, reserved until freed. */

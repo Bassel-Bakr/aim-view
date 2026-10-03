@@ -126,9 +126,15 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
   float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
-  (2560x1440): 271 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
-  outputs read back while the next call is sent; 22.3 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
-  test_out/browser_check/profile.html times each stage). On the GPU the session uses graph capture (onnxruntime records
+  (2560x1440): 380 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
+  outputs read back while the next call is sent; 15.9 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
+  test_out/browser_check/profile.html times each stage). On the GPU, with 8 threads or more, a recording of 1,200
+  frames or more is split at the key frame nearest its middle into two runs (split-runs.ts), each with its own review
+  and camera workers, so two software decoders work at once (one was the limit: about 430 frames a second on av1;
+  test_out/browser_check/decode-bench.html). Each run's tracker and camera watch hand back parts (src/wasm.rs:
+  `tracker_part`, `camera_part`; the area watch counts from the run's first frame, and a run reads the next run's first
+  frame for the camera's turn into it), which the page joins (core-module.ts: `joinRuns`). Two runs give the same
+  tracks and readings as one, byte for byte, on av1, flower, h264 and hevc (`popup` and `camera_same` test the joins). On the GPU the session uses graph capture (onnxruntime records
   the model's GPU work once and replays it), NHWC convolutions, no extra validation and a fixed input size
   (review.worker.ts, `gpuOptions`); graph capture needs every node on the GPU, so the _u8in exports cast the fixed map
   to float before its Unsqueeze (onnxruntime's WebGPU build has none for uint8). The model panel lets the user pick the frames at once (1, 2,

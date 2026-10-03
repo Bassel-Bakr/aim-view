@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use rustfft::num_complex::Complex32;
 use rustfft::{Fft, FftPlanner};
+use serde::{Deserialize, Serialize};
 
 use crate::geometry::{CX, CY, H, K, W, degrees, radians};
 use crate::track::TrackFrame;
@@ -233,6 +234,20 @@ impl CameraWatch {
         out
     }
 
+    /// What this run of the recording read, to join with the other runs' (a recording split into runs, reviewed in
+    /// workers at once, has a watch for each).
+    pub fn part(self) -> CameraPart {
+        CameraPart { shifts: self.shifts, countdown: self.countdown }
+    }
+
+    /// The next run's part. Each run but the last also reads the next run's first frame, for the camera's turn into
+    /// it; the next run read that frame without the one before it, so its first entry is left out.
+    pub fn join(&mut self, next: CameraPart) {
+        let skip = usize::from(!self.countdown.is_empty());
+        self.shifts.extend(next.shifts.into_iter().skip(skip));
+        self.countdown.extend(next.countdown.into_iter().skip(skip));
+    }
+
     /// One frame: its luma (1280 x 720) and its RGB24 (for the countdown bar).
     pub fn add(&mut self, gray: &[u8], rgb: &[u8]) {
         self.countdown.push(countdown_showing(rgb));
@@ -311,6 +326,13 @@ impl CameraWatch {
             })
             .collect()
     }
+}
+
+/// A run's part of the camera watch (CameraWatch::part): each frame's tile shifts and whether the countdown bar shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CameraPart {
+    pub shifts: Vec<TileShifts>,
+    pub countdown: Vec<bool>,
 }
 
 /// The rows of a frame the countdown test reads (y from, to): the camera watch needs only these rows of a frame's RGB.

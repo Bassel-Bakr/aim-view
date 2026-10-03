@@ -16,10 +16,10 @@ import {
   VideoSinkDecoderOptions,
 } from 'mediabunny';
 import type { InferenceSession } from 'onnxruntime-web/wasm';
-import { TrackFrame, Tracks } from '../../api';
 import { CameraLink } from './camera-link';
 import { Core, CoreBlock, matrixNumber } from './core';
 import { BrowserDevice, FrameFormat, ReviewMessage, ReviewRequest } from './review-messages';
+import { splitRuns } from './split-runs';
 
 /** WebGPU's flag constants, which TypeScript's worker library leaves out (it has WebGPU's types). */
 declare const GPUBufferUsage: Readonly<
@@ -64,11 +64,17 @@ interface Captured {
   turn: number;
 }
 
-const DEVICE_NAMES: Record<BrowserDevice, string> = { webgpu: 'WebGPU', wasm: 'WebAssembly' };
-
 const W = 1280;
 const H = 720;
 const PROGRESS_EVERY = 60;
+/** The fewest frames a run has (10 s at 60 frames a second): a shorter recording is one run. */
+const LEAST_RUN = 600;
+
+/** Every frame's time from 0 on, in order, and the key frames' times. */
+interface FrameTimes {
+  times: number[];
+  keys: number[];
+}
 
 const say = (m: ReviewMessage) => postMessage(m);
 
@@ -158,10 +164,27 @@ async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
       ? await import('onnxruntime-web/webgpu')
       : await import('onnxruntime-web/wasm');
   ort.env.wasm.wasmPaths = ortPath;
-  ort.env.wasm.numThreads = self.crossOriginIsolated
-    ? Math.min(8, navigator.hardwareConcurrency)
-    : 1;
+  // on the GPU no node runs on the CPU: more threads there only take cores from the decoder (one thread: 3% faster)
+  ort.env.wasm.numThreads =
+    device === 'webgpu' || !self.crossOriginIsolated
+      ? 1
+      : Math.min(8, navigator.hardwareConcurrency);
   return ort;
+}
+
+/** The recording's frame times, from its packets alone (none decoded). */
+async function frameTimes(track: InputVideoTrack): Promise<FrameTimes> {
+  const packets = new EncodedPacketSink(track);
+  const only = { metadataOnly: true };
+  const times: number[] = [];
+  const keys: number[] = [];
+  for (let p = await packets.getFirstPacket(only); p; p = await packets.getNextPacket(p, only)) {
+    if (p.timestamp < 0) continue;
+    times.push(p.timestamp);
+    if (p.type === 'key') keys.push(p.timestamp);
+  }
+  times.sort((a, b) => a - b);
+  return { times, keys };
 }
 
 /**
@@ -234,18 +257,26 @@ async function startCapture(
   return { device, rgb, feeds, outputs, staging, turn: 0 };
 }
 
+/**
+ * One run of the recording (split-runs.ts): its frames' tracks and camera readings, as parts the page joins with the
+ * other runs'. A run but the last also reads the next run's first frame, for the camera's turn into it.
+ */
 async function review(req: ReviewRequest): Promise<void> {
-  const start = performance.now();
-  const core = await Core.load(req.coreUrl);
-  const detector = await startDetector(req);
-  const { ort, device } = detector;
-  let session = detector.session;
-
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(req.file) });
   const track = await input.getPrimaryVideoTrack();
   if (!track) throw new Error('The file has no video');
   const fps = frameRate((await track.computePacketStats(240)).averagePacketRate);
-  const total = Math.round(fps * (await track.computeDuration()));
+  const { times, keys } = await frameTimes(track);
+  const total = times.length;
+  const run = splitRuns(times, keys, req.runs, LEAST_RUN)[req.run];
+  if (!run) {
+    say({ kind: 'part', part: null });
+    return;
+  }
+  const core = await Core.load(req.coreUrl);
+  const detector = await startDetector(req);
+  const { ort, device } = detector;
+  let session = detector.session;
   const samples = new VideoSampleSink(track, await decoderOptions(track));
 
   // the converter, made for the first frame's size and colours; the buffers it reads and fills
@@ -333,6 +364,7 @@ async function review(req: ReviewRequest): Promise<void> {
   const score = core.reserve(gw * gh * 4);
   const reg = core.reserve(4 * gw * gh * 4);
   const tracker = core.x.tracker_new_kovobs(req.cap ?? 0);
+  core.x.tracker_start_at(tracker, run.first);
   let n = 0;
   const lumaBytes = format.width * format.height;
   const rows = core.x.camera_rgb_rows();
@@ -400,9 +432,24 @@ async function review(req: ReviewRequest): Promise<void> {
       if (++n % PROGRESS_EVERY === 0) say({ kind: 'progress', stage: 'tracking', done: n, total });
     }
   };
+  /** A frame to RGB, and to the camera worker: its Y plane, and the rows of the RGB the countdown test reads. */
+  const convert = async (s: VideoSample) => {
+    const block = prepare(s);
+    await writeI420(s, core, block, scratch);
+    s.close();
+    core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
+    const copy = await camera.take(lumaBytes + rowsEnd - rowsStart);
+    new Uint8Array(copy).set(core.bytes(block).subarray(0, lumaBytes));
+    new Uint8Array(copy).set(core.bytes(rgb).subarray(rowsStart, rowsEnd), lumaBytes);
+    camera.send(copy);
+  };
   const inFlight: Promise<unknown>[] = [];
-  const videoFrames = samples.samples()[Symbol.asyncIterator]();
+  // the run's frames, then the next run's first (a frame within half a frame of the next run's time)
+  const half = 0.5 / fps;
+  const end = run.to === null ? Infinity : run.to + half;
+  const videoFrames = samples.samples(run.from, end)[Symbol.asyncIterator]();
   let next = videoFrames.next();
+  let nextRunRead = false;
   let detecting: Promise<void> = Promise.resolve();
   for (;;) {
     const got = await next;
@@ -413,15 +460,15 @@ async function review(req: ReviewRequest): Promise<void> {
       s.close();
       continue;
     }
-    const block = prepare(s);
-    await writeI420(s, core, block, scratch);
-    s.close();
-    core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
-    // to the camera worker: the Y plane, and the rows of the RGB the countdown test reads
-    const copy = await camera.take(lumaBytes + rowsEnd - rowsStart);
-    new Uint8Array(copy).set(core.bytes(block).subarray(0, lumaBytes));
-    new Uint8Array(copy).set(core.bytes(rgb).subarray(rowsStart, rowsEnd), lumaBytes);
-    camera.send(copy);
+    if (run.to !== null && s.timestamp > run.to - half) {
+      await convert(s);
+      nextRunRead = true;
+      const rest = await next;
+      if (!rest.done) rest.value.close();
+      await videoFrames.return?.();
+      break;
+    }
+    await convert(s);
     core.x.tracker_watch(tracker, rgb.ptr);
     waiting.set(core.bytes(rgb), count++ * frameBytes);
     if (count < batch) continue;
@@ -436,17 +483,14 @@ async function review(req: ReviewRequest): Promise<void> {
   }
   await detecting;
   if (count) toTracker(await detect(waiting, count));
-  say({ kind: 'progress', stage: 'linking', done: n, total });
-  const framesText = core.takeText(core.x.tracker_finish(tracker));
-  const frames = JSON.parse(framesText) as TrackFrame[];
-  const readings = await camera.finish(framesText);
+  if (n !== run.frames || (run.to !== null && !nextRunRead)) {
+    throw new Error(`The run from ${run.from} s gave ${n} frames where it has ${run.frames}`);
+  }
+  const trackPart = core.takeText(core.x.tracker_part(tracker));
+  const cameraPart = await camera.finish();
   if (converter) core.x.converter_free(converter);
-  const share = fixed.reduce((a, v) => a + v, 0) / fixed.length;
-  const tracks: Tracks = {
-    fps,
-    frames,
-    fixed: share,
-    detector: `onnxruntime-web (${DEVICE_NAMES[device]})`,
-  };
-  say({ kind: 'done', tracks, readings, seconds: (performance.now() - start) / 1000, keyFrames });
+  say({
+    kind: 'part',
+    part: { frames: n, track: trackPart, camera: cameraPart, fps, fixed, device, keyFrames },
+  });
 }

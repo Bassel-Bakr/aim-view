@@ -1,15 +1,18 @@
-import { JobStage, Tracks } from '../../api';
+import { JobStage } from '../../api';
 
 /** Where the browser runs the detector: the GPU (WebGPU) or the CPU (WebAssembly). */
 export type BrowserDevice = 'webgpu' | 'wasm';
 
 /**
- * What the review worker is asked: a recording's file, where the core, the detector runtime and the model are, where
- * to run the detector and how many frames it takes at once, the scenario's target count (null: not known), and the
- * port to the camera worker.
+ * What the review worker is asked: a recording's file, which of its runs to review (`run` of `runs`: split-runs.ts;
+ * each run has a worker of its own), where the core, the detector runtime and the model are, where to run the
+ * detector and how many frames it takes at once, the scenario's target count (null: not known), and the port to the
+ * camera worker.
  */
 export interface ReviewRequest {
   file: Blob;
+  run: number;
+  runs: number;
   coreUrl: string;
   ortPath: string;
   modelUrl: string;
@@ -43,10 +46,9 @@ export interface CameraFrame {
   frame: ArrayBuffer;
 }
 
-/** No more frames: the tracks (tracker_finish's JSON), which the readings need. */
+/** No more frames: the watch's part comes back. */
 export interface CameraFinish {
   kind: 'finish';
-  frames: string;
 }
 
 /** What the review worker tells the camera worker. */
@@ -58,10 +60,10 @@ export interface CameraFree {
   frame: ArrayBuffer;
 }
 
-/** The readings, once every frame is read. */
+/** The watch's part of the run (src/wasm.rs: camera_part's JSON), once every frame is read. */
 export interface CameraDone {
-  kind: 'readings';
-  readings: VideoReadings;
+  kind: 'part';
+  part: string;
 }
 
 export interface ReviewProgress {
@@ -84,13 +86,25 @@ export interface VideoReadings {
   countdown: boolean[];
 }
 
-/** The tracks, the video's readings, and the timings of the run (seconds). */
-export interface ReviewTracked {
-  kind: 'done';
-  tracks: Tracks;
-  readings: VideoReadings;
-  seconds: number;
+/**
+ * A run's part of the review, for the page to join with the other runs' in order (core-module.ts: joinRuns): its
+ * frames, its tracker's and camera watch's parts (src/wasm.rs: tracker_part and camera_part's JSON), and what every
+ * run finds the same: the frame rate, the fixed map (1280 x 720), where the detector ran and the key frames read.
+ */
+export interface RunPart {
+  frames: number;
+  track: string;
+  camera: string;
+  fps: number;
+  fixed: Uint8Array;
+  device: BrowserDevice;
   keyFrames: number;
+}
+
+/** A run's part; null for a run the recording is too short to have. */
+export interface ReviewPart {
+  kind: 'part';
+  part: RunPart | null;
 }
 
 export interface ReviewFailed {
@@ -99,7 +113,7 @@ export interface ReviewFailed {
 }
 
 /** What the review worker says back. */
-export type ReviewMessage = ReviewProgress | ReviewTracked | ReviewFailed;
+export type ReviewMessage = ReviewProgress | ReviewPart | ReviewFailed;
 
 /** What the camera worker says back. */
 export type CameraReply = CameraFree | CameraDone | ReviewFailed;

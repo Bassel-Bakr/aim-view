@@ -6,7 +6,7 @@
 // detector (av1: 76 frames a second with it there, 99 to 119 without it). The luma alone and the review worker's RGB
 // rows, instead of every frame converted to RGB and YUV here, keep it light.
 import { Core, CoreBlock } from './core';
-import { CameraReply, CameraStart, CameraTask, VideoReadings } from './review-messages';
+import { CameraReply, CameraStart, CameraTask } from './review-messages';
 
 const W = 1280;
 const H = 720;
@@ -45,7 +45,7 @@ function serve(port: MessagePort): void {
           read(w, task.frame);
           say({ kind: 'free', frame: task.frame }, [task.frame]);
         } else {
-          say({ kind: 'readings', readings: finish(w, task.frames) });
+          say({ kind: 'part', part: finish(w) });
         }
       })
       .catch((err: unknown) =>
@@ -81,13 +81,8 @@ function read(w: Watch, frame: ArrayBuffer): void {
   w.core.x.camera_add(w.camera, w.luma.ptr, w.rgb.ptr);
 }
 
-/** The readings, the tracks known; the watch is done. */
-function finish(w: Watch, frames: string): VideoReadings {
-  const bytes = new TextEncoder().encode(frames);
-  const block = w.core.reserve(bytes.length);
-  w.core.bytes(block).set(bytes);
-  const text = w.core.takeText(w.core.x.camera_finish(w.camera, block.ptr, bytes.length));
-  w.core.free(block);
+/** The watch's part of the run (the page joins the runs' parts and works out the readings); the watch is done. */
+function finish(w: Watch): string {
   w.core.x.converter_free(w.converter);
-  return JSON.parse(text) as VideoReadings;
+  return w.core.takeText(w.core.x.camera_part(w.camera));
 }

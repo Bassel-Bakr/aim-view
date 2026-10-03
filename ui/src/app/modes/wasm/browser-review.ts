@@ -7,7 +7,7 @@ import { SavedReview, SavedReviews } from '../web-files/saved-reviews';
 import { ScenarioFacts } from '../web-files/scenario-facts';
 import { StatsCsv } from '../web-files/stats-csv';
 import { CoreModule } from './core-module';
-import { BrowserDevice, ReviewMessage, ReviewRequest } from './review-messages';
+import { BrowserDevice, ReviewMessage, ReviewRequest, RunPart } from './review-messages';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
 const NO_SCENARIOS =
@@ -18,6 +18,13 @@ const NO_STATS =
   'at the top, or its .csv in the stats file panel. Runs without one (read from the HUD or the video alone) are ' +
   'not reviewed here yet.';
 const DEFAULT_MODEL = 'full_v3';
+const DEVICE_NAMES: Record<BrowserDevice, string> = { webgpu: 'WebGPU', wasm: 'WebAssembly' };
+/**
+ * The runs a recording is split into on the GPU, each reviewed in a worker of its own (split-runs.ts): one software
+ * decoder is the review's limit there, and two decode at almost twice the speed. On the CPU the detector is the limit:
+ * one run. A computer with fewer than 8 threads has one run too.
+ */
+const GPU_RUNS = 2;
 
 /** A recording's run in the worker: where it stands. */
 export interface BrowserRun {
@@ -184,48 +191,83 @@ export class BrowserReview implements ReviewEngine {
     const device: BrowserDevice = list?.device === 'wasm' ? 'wasm' : 'webgpu';
     const run: BrowserRun = { job: { stage: 'starting' } };
     this.runs.set(id, run);
-    // the review worker, and the camera worker beside it: the two talk over a port of their own
-    const worker = new Worker(new URL('./review.worker', import.meta.url), { type: 'module' });
-    const camera = new Worker(new URL('./camera.worker', import.meta.url), { type: 'module' });
-    const channel = new MessageChannel();
-    camera.postMessage(channel.port2, [channel.port2]);
-    const stop = () => {
-      worker.terminate();
-      camera.terminate();
+    const begun = performance.now();
+    const runs = device === 'webgpu' && navigator.hardwareConcurrency >= 8 ? GPU_RUNS : 1;
+    const workers: Worker[] = [];
+    const parts: (RunPart | null | undefined)[] = Array.from({ length: runs }, () => undefined);
+    const done = parts.map(() => 0);
+    const looking = parts.map(() => true);
+    let total = 0;
+    let over = false;
+    const end = (job: Job) => {
+      if (over) return;
+      over = true;
+      run.job = job;
+      for (const w of workers) w.terminate();
+    };
+    /** The runs' parts joined into the review, which is kept and shown. */
+    const join = async () => {
+      run.job = { stage: 'linking', done: total, total };
+      const got = parts.filter((p): p is RunPart => !!p);
+      const joined = await this.core.joinRuns(got, cap ?? 0);
+      const first = got[0];
+      const tracks: Tracks = {
+        fps: first.fps,
+        frames: joined.frames,
+        fixed: first.fixed.reduce((a, v) => a + v, 0) / first.fixed.length,
+        detector: `onnxruntime-web (${DEVICE_NAMES[first.device]})`,
+      };
+      const review: SavedReview = { tracks, readings: joined.readings, model };
+      this.found.update((all) => new Map(all).set(foundKey(id, model), review));
+      // kept for the next visit; a browser that cannot keep it still shows it now
+      this.saved.save(local.file, review).catch((err: unknown) => console.warn(err));
+      end({ stage: 'done', seconds: Math.round((performance.now() - begun) / 100) / 10 });
     };
     const base = new URL(document.baseURI);
-    const request: ReviewRequest = {
-      file: local.file,
-      coreUrl: new URL('core/aimview.wasm', base).href,
-      ortPath: new URL('ort/', base).href,
-      modelUrl: new URL(`models/detector_${model}_u8in.onnx`, base).href,
-      device,
-      batch: list?.batch ?? 1,
-      cap,
-      camera: channel.port1,
-    };
-    worker.onmessage = (e: MessageEvent<ReviewMessage>) => {
-      const m = e.data;
-      if (m.kind === 'progress') run.job = { stage: m.stage, done: m.done, total: m.total };
-      else {
-        if (m.kind === 'done') {
-          const review: SavedReview = { tracks: m.tracks, readings: m.readings, model };
-          this.found.update((all) => new Map(all).set(foundKey(id, model), review));
-          // kept for the next visit; a browser that cannot keep it still shows it now
-          this.saved.save(local.file, review).catch((err: unknown) => console.warn(err));
+    for (let i = 0; i < runs; i++) {
+      // each run's review worker, and the camera worker beside it: the two talk over a port of their own
+      const worker = new Worker(new URL('./review.worker', import.meta.url), { type: 'module' });
+      const camera = new Worker(new URL('./camera.worker', import.meta.url), { type: 'module' });
+      workers.push(worker, camera);
+      const channel = new MessageChannel();
+      camera.postMessage(channel.port2, [channel.port2]);
+      const request: ReviewRequest = {
+        file: local.file,
+        run: i,
+        runs,
+        coreUrl: new URL('core/aimview.wasm', base).href,
+        ortPath: new URL('ort/', base).href,
+        modelUrl: new URL(`models/detector_${model}_u8in.onnx`, base).href,
+        device,
+        batch: list?.batch ?? 1,
+        cap,
+        camera: channel.port1,
+      };
+      worker.onmessage = (e: MessageEvent<ReviewMessage>) => {
+        const m = e.data;
+        if (over) return;
+        if (m.kind === 'error') return end({ stage: 'error', error: m.error });
+        if (m.kind === 'progress') {
+          done[i] = m.done;
+          looking[i] = m.stage === 'looking';
+          total = m.total;
+          const stage = looking.some((l) => l) ? 'looking' : 'tracking';
+          run.job = { stage, done: done.reduce((a, d) => a + d, 0), total };
+          return;
         }
-        run.job =
-          m.kind === 'done'
-            ? { stage: 'done', seconds: Math.round(m.seconds * 10) / 10 }
-            : { stage: 'error', error: m.error };
-        stop();
-      }
-    };
-    worker.onerror = camera.onerror = (e) => {
-      run.job = { stage: 'error', error: e.message };
-      stop();
-    };
-    worker.postMessage(request, [channel.port1]);
+        parts[i] = m.part;
+        looking[i] = false;
+        worker.terminate();
+        camera.terminate();
+        if (parts.every((p) => p !== undefined)) {
+          join().catch((err: unknown) =>
+            end({ stage: 'error', error: err instanceof Error ? err.message : String(err) }),
+          );
+        }
+      };
+      worker.onerror = camera.onerror = (e) => end({ stage: 'error', error: e.message });
+      worker.postMessage(request, [channel.port1]);
+    }
     return run.job;
   }
 

@@ -7,7 +7,7 @@ use crate::geometry::{H, W, to_deg};
 use crate::python::{hypot, numpy_mean, round};
 
 /// A box from the detector model, in frame pixels, as it gives them (float32): center, size, and score.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RawBox {
     pub cx: f32,
     pub cy: f32,

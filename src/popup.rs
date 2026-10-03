@@ -5,6 +5,8 @@
 //! and looks the same whenever it is on; it is then excluded in its on frames and 4 frames either side. Any other
 //! area (the session box, a webcam) is excluded all the time.
 
+use serde::{Deserialize, Serialize};
+
 use crate::geometry::{H, W};
 use crate::python::{numpy_median, numpy_percentile};
 use crate::scipy::{Edge, close_line, count_runs, dilate_line, uniform_filter};
@@ -12,12 +14,48 @@ use crate::scipy::{Edge, close_line, count_runs, dilate_line, uniform_filter};
 /// Frames between looks.
 pub const STEP: usize = 2;
 
-/// One look at an area: which of its sampled pixels stand out (row by row).
-#[derive(Clone, Debug)]
+/// One look at an area: which of its sampled pixels stand out (row by row). Sent between workers as bits.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "LookBits", try_from = "LookBits")]
 struct Look(Vec<bool>);
 
-/// Watches a recording's excluded areas frame by frame.
-#[derive(Clone, Debug)]
+/// A look as text: its pixel count, and its pixels as bits in hex (8 to a byte, the first pixel in the lowest bit).
+#[derive(Serialize, Deserialize)]
+struct LookBits {
+    n: usize,
+    hex: String,
+}
+
+impl From<Look> for LookBits {
+    fn from(look: Look) -> LookBits {
+        let hex = look
+            .0
+            .chunks(8)
+            .map(|byte| format!("{:02x}", byte.iter().rev().fold(0u8, |acc, &b| (acc << 1) | b as u8)))
+            .collect();
+        LookBits { n: look.0.len(), hex }
+    }
+}
+
+impl TryFrom<LookBits> for Look {
+    type Error = String;
+
+    fn try_from(bits: LookBits) -> Result<Look, String> {
+        let bytes = (0..bits.hex.len())
+            .step_by(2)
+            .map(|i| bits.hex.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok()))
+            .collect::<Option<Vec<u8>>>()
+            .ok_or("a look's bits are not hex")?;
+        if bytes.len() != bits.n.div_ceil(8) {
+            return Err("a look's bits do not match its pixel count".into());
+        }
+        Ok(Look((0..bits.n).map(|i| bytes[i / 8] >> (i % 8) & 1 == 1).collect()))
+    }
+}
+
+/// Watches a recording's excluded areas frame by frame. A recording split into runs (reviewed in workers at once) has
+/// a watch for each run, each started at its run's first frame and joined in order after.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AreaWatch {
     boxes: Vec<[usize; 4]>,
     steps: Vec<usize>,
@@ -37,6 +75,21 @@ impl AreaWatch {
             .collect();
         let steps = boxes.iter().map(|&[x0, y0, x1, y1]| ((x1 - x0).max(y1 - y0) / 64).max(1)).collect();
         AreaWatch { looks: vec![Vec::new(); boxes.len()], boxes, steps, frames: 0 }
+    }
+
+    /// For a run of the recording that starts at frame `first`, before its first frame: it looks at the frames the
+    /// whole recording's watch would (every `STEP`th from the start), so its looks follow on from the run before's.
+    pub fn start_at(&mut self, first: usize) {
+        self.frames = first;
+    }
+
+    /// The looks of the run after this one (its watch started where this one stopped).
+    pub fn join(&mut self, next: AreaWatch) {
+        assert_eq!(self.boxes, next.boxes, "another recording's areas");
+        for (looks, more) in self.looks.iter_mut().zip(next.looks) {
+            looks.extend(more);
+        }
+        self.frames = next.frames;
     }
 
     /// One frame, RGB24 at 1280 x 720: every `STEP`th frame, each area's green channel, every k-th pixel (k keeps
@@ -106,5 +159,41 @@ impl AreaWatch {
         let seen: Vec<bool> =
             matched.iter().flat_map(|&m| std::iter::repeat_n(m >= 0.35, STEP)).take(self.frames).collect();
         Some(dilate_line(&seen, 4))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A recording's watch split into two runs at any frame, each sent as JSON and joined, is the whole recording's.
+    #[test]
+    fn runs_join_to_the_whole() {
+        let areas = crate::geometry::overlay_shares();
+        let mut seed = 7u32;
+        let frames: Vec<Vec<u8>> = (0..9)
+            .map(|_| {
+                (0..W * H * 3)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        (seed >> 24) as u8
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut whole = AreaWatch::new(&areas);
+        frames.iter().for_each(|f| whole.add(f));
+        assert!(whole.looks.iter().all(|l| !l.is_empty()));
+        let sent = |w: &AreaWatch| serde_json::from_str::<AreaWatch>(&serde_json::to_string(w).unwrap()).unwrap();
+        for cut in 0..=frames.len() {
+            let (mut a, mut b) = (AreaWatch::new(&areas), AreaWatch::new(&areas));
+            frames[..cut].iter().for_each(|f| a.add(f));
+            b.start_at(cut);
+            frames[cut..].iter().for_each(|f| b.add(f));
+            let mut joined = AreaWatch::new(&areas);
+            joined.join(sent(&a));
+            joined.join(sent(&b));
+            assert_eq!(joined, whole, "cut at {cut}");
+        }
     }
 }
