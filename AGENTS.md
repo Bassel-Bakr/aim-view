@@ -195,8 +195,10 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   and hits come from the HUD, else from the video alone (matching.rs `match_video`; review.rs `KillTimes`), and the
   run page says which. Checked against stats files: on 27 recordings the HUD's kill count equals the file's on all
   27, its hits and shots on 22 (the rest: a lightning gun's last redraw, a bot whose hits KovaaK counts apart, a last
-  miss after the last redraw), its kill frames within a frame on 25. The video alone finds 76% of the kills within 3
-  frames. The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
+  miss after the last redraw), its kill frames within a frame on 25. The video alone (matching.rs `match_video`, its
+  `Paths`: a false camera turn at a kill repaired, a target found again only where and as big as it was) finds 94.5%
+  of the stats files' kills within 3 frames on 47 runs (97.3% on the 18 held out; was 83%), precision 95%; switching
+  runs are the weakest (90%). The benchmark and its notes: the session scratchpad's vbench/ (2026-10-04). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
   recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
   `REVIEW_VERSION`, 2 since the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.

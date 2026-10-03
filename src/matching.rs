@@ -514,50 +514,295 @@ fn kept<T>(v: &mut Vec<T>, keep: &[bool]) {
     }
 }
 
+/// The tracks as the video alone reads them: each track's points and blob areas by frame, and the tracks in the order
+/// they first appear (tracks split off by `repair` come last).
+struct Paths {
+    ids: Vec<u32>,
+    points: HashMap<u32, BTreeMap<i64, (f64, f64)>>,
+    areas: HashMap<u32, BTreeMap<i64, i64>>,
+}
+
+/// How far the camera's turn must jump in one frame (degrees), and how many times the turn of the frames either side,
+/// to be a spike (`Paths::repair`).
+const SPIKE: f64 = 1.0;
+const SPIKE_RATIO: f64 = 3.0;
+
+impl Paths {
+    fn new(frames: &[TrackFrame]) -> Paths {
+        let mut paths = Paths { ids: Vec::new(), points: HashMap::new(), areas: HashMap::new() };
+        for f in frames {
+            let areas: Vec<i64> = if f.a.is_empty() { vec![0; f.t.len()] } else { f.a.clone() };
+            for (&(tid, x, y), a) in f.t.iter().zip(areas) {
+                if !paths.points.contains_key(&tid) {
+                    paths.ids.push(tid);
+                }
+                paths.points.entry(tid).or_default().insert(f.i as i64, (x, y));
+                paths.areas.entry(tid).or_default().insert(f.i as i64, a);
+            }
+        }
+        paths
+    }
+
+    fn first(&self, tid: u32) -> i64 {
+        *self.points[&tid].first_key_value().unwrap().0
+    }
+
+    fn last(&self, tid: u32) -> i64 {
+        *self.points[&tid].last_key_value().unwrap().0
+    }
+
+    /// The track's blob areas near the crosshair (within 3 degrees), where the detector sees the target whole.
+    fn near_areas(&self, tid: u32) -> Vec<f64> {
+        let p = &self.points[&tid];
+        self.areas[&tid]
+            .iter()
+            .filter(|&(i, &a)| a != 0 && hypot(p[i].0, p[i].1) < 3.0)
+            .map(|(_, &a)| a as f64)
+            .collect()
+    }
+
+    /// A kill can fool the camera's turn on a plain wall: with the target at the crosshair gone, the frame's shift
+    /// lines up another target with the dead one's place, and the tracker hands the dead target's track on to that
+    /// target (its place on screen jumps with the shift) and starts new tracks for the targets that stayed put. A
+    /// track at the crosshair whose place jumps more than `near` with the frame's shift is split there when the shift
+    /// is a spike (more than `SPIKE` degrees and `SPIKE_RATIO` times the shifts either side), or when the jump is more
+    /// than twice `near` and lands within `near` of a track that ended the frame before. Its head ends where the
+    /// target died; its rest continues that track, else becomes a track of its own. Returns the camera's turn summed
+    /// from the first frame, by frame, with each spike replaced by the mean of the frames either side.
+    fn repair(&mut self, frames: &[TrackFrame], near: f64) -> Vec<(f64, f64)> {
+        let cum = turned(frames);
+        let n = frames.len();
+        let size: Vec<f64> = frames.iter().map(|f| hypot(f.shift.0, f.shift.1)).collect();
+        let spike: Vec<bool> = (0..n)
+            .map(|j| j >= 1 && j + 1 < n && size[j] > SPIKE && size[j] > SPIKE_RATIO * size[j - 1].max(size[j + 1]))
+            .collect();
+        // the tracks seen on each frame, and those that end on it
+        let mut at: Vec<Vec<u32>> = vec![Vec::new(); n];
+        let mut ends: HashMap<i64, HashSet<u32>> = HashMap::new();
+        for &tid in &self.ids {
+            for &i in self.points[&tid].keys() {
+                at[i as usize].push(tid);
+            }
+            ends.entry(self.last(tid)).or_default().insert(tid);
+        }
+        let mut next = self.ids.iter().max().map_or(0, |m| m + 1);
+        for j in 1..n {
+            let (i, fi, fj) = (j - 1, j as i64 - 1, j as i64);
+            let s = (cum[j].0 - cum[i].0, cum[j].1 - cum[i].1);
+            let mut both: Vec<u32> = at[i].iter().copied().filter(|t| at[j].contains(t)).collect();
+            both.sort_unstable();
+            for t in both {
+                let p = &self.points[&t];
+                let (Some(&(x0, y0)), Some(&(x1, y1))) = (p.get(&fi), p.get(&fj)) else { continue };
+                let jump = hypot(x1 - x0, y1 - y0);
+                if hypot(x0, y0) >= near || jump <= near || hypot(x1 - x0 - s.0, y1 - y0 - s.1) >= near {
+                    continue;
+                }
+                let mut ended: Vec<(f64, u32)> = ends
+                    .get(&fi)
+                    .into_iter()
+                    .flatten()
+                    .filter(|&&b| b != t && self.last(b) == fi)
+                    .map(|&b| {
+                        let (bx, by) = self.points[&b][&fi];
+                        (hypot(x1 - bx, y1 - by), b)
+                    })
+                    .filter(|&(d, _)| d < near)
+                    .collect();
+                ended.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                if !spike[j] && (ended.is_empty() || jump <= 2.0 * near) {
+                    continue;
+                }
+                let rest = self.points.get_mut(&t).unwrap().split_off(&fj);
+                let rest_areas = self.areas.get_mut(&t).unwrap().split_off(&fj);
+                let old_end = *rest.last_key_value().unwrap().0;
+                let b = match ended.first() {
+                    Some(&(_, b)) => {
+                        ends.get_mut(&fi).unwrap().remove(&b);
+                        b
+                    }
+                    None => {
+                        next += 1;
+                        self.ids.push(next - 1);
+                        next - 1
+                    }
+                };
+                for &k in rest.keys() {
+                    let here = &mut at[k as usize];
+                    here.retain(|&u| u != t);
+                    here.push(b);
+                }
+                self.points.entry(b).or_default().extend(rest);
+                self.areas.entry(b).or_default().extend(rest_areas);
+                ends.entry(self.last(b)).or_default().insert(b);
+                ends.get_mut(&old_end).unwrap().remove(&t);
+                ends.entry(fi).or_default().insert(t);
+            }
+        }
+        if !spike.contains(&true) {
+            return cum;
+        }
+        let mut step: Vec<(f64, f64)> = (0..n)
+            .map(|k| if k == 0 { (0.0, 0.0) } else { (cum[k].0 - cum[k - 1].0, cum[k].1 - cum[k - 1].1) })
+            .collect();
+        for j in (0..n).filter(|&j| spike[j]) {
+            step[j] = ((step[j - 1].0 + step[j + 1].0) / 2.0, (step[j - 1].1 + step[j + 1].1) / 2.0);
+        }
+        let mut sum = step[0];
+        let mut out = vec![sum];
+        for v in &step[1..] {
+            sum = (sum.0 + v.0, sum.1 + v.1);
+            out.push(sum);
+        }
+        out
+    }
+
+    /// Tracks that are one target picked up again (`appearances`, for the video alone): a track that starts within
+    /// 0.5 s of another's end (or up to 2 frames before it), within 1 degree of where that one would be now (its last
+    /// place moved by the camera's turn since, and by its own speed over its last 3 frames or not: either will do),
+    /// continues it, unless the target was gone meanwhile. A target hidden under the crosshair stays there: one whose
+    /// place came out from under it (farther than 1.5 x `near`) on 2 or more of the frames it was missing would have
+    /// been seen, so it died. And a target that comes back is where it was and as big: one missing for 3 frames or
+    /// more that comes back more than half its radius `r` from that place (2 frames: 1.5 radii), or less than half or
+    /// more than twice as big (`same_size`), is a new target, such as one that spawned near the dead one. Returns the
+    /// track that continues each track.
+    fn continued(&self, cum: &[(f64, f64)], fps: f64, r: f64, near: f64) -> HashMap<u32, u32> {
+        let g = round_frame(0.5 * fps).max(1);
+        let mut ending: HashMap<i64, Vec<u32>> = HashMap::new();
+        for &tid in &self.ids {
+            ending.entry(self.last(tid)).or_default().push(tid);
+        }
+        let mut starts = self.ids.clone();
+        starts.sort_by_key(|&t| self.first(t));
+        let mut follows: HashMap<u32, u32> = HashMap::new();
+        let mut before: HashMap<u32, u32> = HashMap::new();
+        for tid in starts {
+            let s0 = self.first(tid);
+            let (qx, qy) = self.points[&tid][&s0];
+            let mut best: Option<(f64, u32)> = None;
+            for e in (s0 - g).max(0)..s0 + 3 {
+                for &prev in ending.get(&e).map(Vec::as_slice).unwrap_or_default() {
+                    if follows.contains_key(&prev) || prev == tid || self.first(prev) >= s0 {
+                        continue;
+                    }
+                    let (x, y) = self.points[&prev][&e];
+                    let (a, b) = (cum[s0 as usize], cum[e as usize]);
+                    let n = (s0 - e) as f64;
+                    // where it would be if it moved on as it did, and if it stood still: either will do
+                    for v in [self.speed(prev, &before, cum, e), (0.0, 0.0)] {
+                        let d = hypot(qx - (x + a.0 - b.0 + v.0 * n), qy - (y + a.1 - b.1 + v.1 * n));
+                        if d >= 1.0 || best.is_some_and(|(bd, _)| d >= bd) {
+                            continue;
+                        }
+                        let seen = (e + 1..s0)
+                            .filter(|&i| {
+                                let (c, k) = (cum[i as usize], (i - e) as f64);
+                                hypot(x + c.0 - b.0 + v.0 * k, y + c.1 - b.1 + v.1 * k) > 1.5 * near
+                            })
+                            .count();
+                        let back = match s0 - e {
+                            3.. => d <= 0.5 * r && self.same_size(prev, tid),
+                            2 => d <= 1.5 * r,
+                            _ => true,
+                        };
+                        if seen < 2 && back {
+                            best = Some((d, prev));
+                        }
+                    }
+                }
+            }
+            if let Some((_, prev)) = best {
+                follows.insert(prev, tid);
+                before.insert(tid, prev);
+            }
+        }
+        follows
+    }
+
+    /// Whether a target came back about as big as it was: the new track's median blob area over its first 3 frames is
+    /// within half and twice the old track's over its last 3 (true when either has no area).
+    fn same_size(&self, old: u32, new: u32) -> bool {
+        let a: Vec<f64> = self.areas[&old].values().rev().take(3).map(|&v| v as f64).collect();
+        let b: Vec<f64> = self.areas[&new].values().take(3).map(|&v| v as f64).collect();
+        let (a, b) = (crate::statistics::median(&a), crate::statistics::median(&b));
+        a <= 0.0 || b <= 0.0 || (0.5..=2.0).contains(&(b / a))
+    }
+
+    /// A target's speed over the world (degrees a frame) where its track ends, at frame `e`: from its points over its
+    /// last 3 frames, with those of the tracks it continues (`before`) when it has 3 points or fewer.
+    fn speed(&self, tid: u32, before: &HashMap<u32, u32>, cum: &[(f64, f64)], e: i64) -> (f64, f64) {
+        const FRAMES: i64 = 3;
+        let own = &self.points[&tid];
+        let joined: BTreeMap<i64, (f64, f64)>;
+        let mut pts = own;
+        if own.len() <= FRAMES as usize && before.contains_key(&tid) {
+            let mut all = own.clone();
+            let mut c = tid;
+            while let Some(&b) = before.get(&c) {
+                if all.len() > FRAMES as usize {
+                    break;
+                }
+                c = b;
+                for (&k, &q) in &self.points[&c] {
+                    all.entry(k).or_insert(q);
+                }
+            }
+            joined = all;
+            pts = &joined;
+        }
+        let mut window = pts.range(e - FRAMES..=e);
+        let (Some((&i0, &(x0, y0))), Some(_)) = (window.next(), window.next()) else { return (0.0, 0.0) };
+        let (x1, y1) = pts[&e];
+        let k = (e - i0) as f64;
+        let (c0, c1) = (cum[i0 as usize], cum[e as usize]);
+        (((x1 - c1.0) - (x0 - c0.0)) / k, ((y1 - c1.1) - (y0 - c0.1)) / k)
+    }
+}
+
 /// The flicks from the video alone, for a run without a stats file or a readable HUD. A kill is a track that ends near
 /// the crosshair, unless:
-/// - another track continues it (`appearances`: tracking lost the target; it did not die);
+/// - another track continues it (`Paths::continued`: tracking lost the target; it did not die);
 /// - it is the crosshair (`ghosts`);
 /// - three or more steady tracks (5 frames or more, not continued) end within a frame of it (the run ended or
 ///   restarted); flickering false detections, such as a game's HUD text, do not count;
 /// - another kill was found within 3 frames (the same kill twice).
 ///
-/// A flick's path joins the pieces of its target's track. "Near" is the target's radius (from the tracks' median blob
-/// area) plus 0.25 degrees, and at least 0.6. Flicks are built as `match_times` builds them, with no shot counts.
+/// Tracks the camera's turn fooled at a kill are split first (`Paths::repair`). A flick's path joins the pieces of
+/// its target's track. "Near" is the target's radius (from the tracks' median blob area) plus 0.25 degrees, and at
+/// least 0.6. Flicks are built as `match_times` builds them, with no shot counts.
 pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
     let tracks = without_ghosts(tracks);
     let (fps, frames) = (tracks.fps, &tracks.frames);
-    let index = TrackIndex::new(frames);
-    // each track's areas near the crosshair (within 3 degrees), where the detector sees the target whole
-    let mut area: HashMap<u32, Vec<f64>> = HashMap::new();
-    for f in frames {
-        for (&(tid, x, y), &a) in f.t.iter().zip(&f.a) {
-            if a != 0 && hypot(x, y) < 3.0 {
-                area.entry(tid).or_default().push(a as f64);
-            }
-        }
-    }
-    let areas: Vec<f64> = area.values().map(|v| crate::statistics::median(v)).collect();
+    let mut paths = Paths::new(frames);
+    let areas: Vec<f64> = paths
+        .ids
+        .iter()
+        .map(|&tid| paths.near_areas(tid))
+        .filter(|v| !v.is_empty())
+        .map(|v| crate::statistics::median(&v))
+        .collect();
     let r = if areas.len() >= 5 {
         crate::geometry::degrees((crate::statistics::median(&areas) / std::f64::consts::PI).sqrt() / crate::geometry::K)
     } else {
         0.43
     };
     let near = (r + 0.25).max(0.6);
-    let follows = appearances(&tracks, 0.5, 1.0).follows;
+    let cum = paths.repair(frames, near);
+    let follows = paths.continued(&cum, fps, r, near);
     let before: HashMap<u32, u32> = follows.iter().map(|(&k, &v)| (v, k)).collect();
     let mut ends_at: HashMap<i64, usize> = HashMap::new();
-    for &tid in &index.ids {
-        if index.points[&tid].len() >= 5 && !follows.contains_key(&tid) {
-            *ends_at.entry(index.last(tid).0).or_default() += 1;
+    for &tid in &paths.ids {
+        if paths.points[&tid].len() >= 5 && !follows.contains_key(&tid) {
+            *ends_at.entry(paths.last(tid)).or_default() += 1;
         }
     }
     let ending = |e: i64| (e - 1..=e + 1).map(|i| ends_at.get(&i).copied().unwrap_or(0)).sum::<usize>();
     let n = frames.len() as i64;
     // candidates: (end frame, distance from the crosshair, track, the track and the tracks it continues)
     let mut cands: Vec<(i64, f64, u32, Vec<u32>)> = Vec::new();
-    for &tid in &index.ids {
-        let (e, (x, y)) = index.last(tid);
+    for &tid in &paths.ids {
+        let e = paths.last(tid);
+        let (x, y) = paths.points[&tid][&e];
         if follows.contains_key(&tid) || e >= n - 2 || hypot(x, y) >= near || ending(e) >= 3 {
             continue;
         }
@@ -565,7 +810,7 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
         while let Some(&b) = before.get(chain.last().unwrap()) {
             chain.push(b);
         }
-        if chain.iter().map(|c| index.points[c].len()).sum::<usize>() < 3 {
+        if chain.iter().map(|c| paths.points[c].len()).sum::<usize>() < 3 {
             continue;
         }
         cands.push((e, hypot(x, y), tid, chain));
@@ -588,7 +833,7 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
     for (k, (end, _, tid, chain)) in kills.iter().enumerate() {
         let mut p: BTreeMap<i64, (f64, f64)> = BTreeMap::new();
         for c in chain {
-            p.extend(index.points[c].iter().map(|(&i, &q)| (i, q)));
+            p.extend(paths.points[c].iter().map(|(&i, &q)| (i, q)));
         }
         let first = *p.first_key_value().unwrap().0;
         let mut start = prev.unwrap_or(first);
@@ -604,7 +849,7 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
             shots: None,
             traj: p.range(start..=*end).map(|(&i, &(x, y))| (i, x, y)).collect(),
             spawned,
-            area: area.get(tid).filter(|v| !v.is_empty()).map(|v| crate::statistics::median(v)),
+            area: Some(paths.near_areas(*tid)).filter(|v| !v.is_empty()).map(|v| crate::statistics::median(&v)),
         });
         prev = Some(*end);
     }
@@ -618,4 +863,69 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
         source: Some(KillSource::Video),
     };
     (flicks, info)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A frame's camera turn and targets.
+    type Frame = ((f64, f64), Vec<crate::track::TrackPoint>);
+
+    /// Tracks at 60 frames a second from each frame's camera turn and targets (id, x, y), every target 40 pixels big.
+    fn tracks(frames: Vec<Frame>) -> Tracks {
+        let frames = frames
+            .into_iter()
+            .enumerate()
+            .map(|(i, (shift, t))| TrackFrame { i, shift, a: vec![40; t.len()], t, wh: None, s: None })
+            .collect();
+        Tracks { fps: 60.0, frames, version: 0 }
+    }
+
+    fn kill_frames(t: &Tracks) -> Vec<i64> {
+        match_video(t).0.iter().map(|f| f.kill_frame).collect()
+    }
+
+    #[test]
+    fn a_false_turn_at_a_kill_keeps_the_kill() {
+        // the target at the crosshair dies on frame 21, and the tracker takes the other target for it, turned there by
+        // a one-frame spike; the camera then turns to that target, which dies at the crosshair on frame 31
+        let mut f = Vec::new();
+        for _ in 0..=20 {
+            f.push(((0.0, 0.0), vec![(1, 0.05, 0.0), (2, -3.0, -0.5)]));
+        }
+        f.push(((-3.05, -0.5), vec![(1, -3.0, -0.5)]));
+        for k in 1..=10 {
+            f.push(((0.3, 0.05), vec![(1, -3.0 + 0.3 * k as f64, -0.5 + 0.05 * k as f64)]));
+        }
+        for _ in 0..10 {
+            f.push(((0.0, 0.0), vec![]));
+        }
+        assert_eq!(kill_frames(&tracks(f)), vec![20, 31]);
+    }
+
+    #[test]
+    fn a_target_back_from_under_the_crosshair_is_no_kill_but_one_spawned_beside_it_is() {
+        // hidden under the crosshair for 3 frames and found again where it was: one target, killed on frame 40
+        let mut f = Vec::new();
+        for i in 0..=45 {
+            let t = if (21..24).contains(&i) { vec![] } else { vec![(if i < 21 { 1 } else { 2 }, 0.05, 0.0)] };
+            f.push(((0.0, 0.0), if i <= 40 { t } else { vec![] }));
+        }
+        assert_eq!(kill_frames(&tracks(f)), vec![40]);
+        // killed on frame 20, and the next target spawns 0.4 degrees away on frame 25; the camera turns to it, and it
+        // dies at the crosshair on frame 45
+        let mut f = Vec::new();
+        for i in 0..=50 {
+            let shift = if (31..=38).contains(&i) { (-0.05, 0.0) } else { (0.0, 0.0) };
+            let x = 0.5 - 0.05 * (i.clamp(30, 38) - 30) as f64;
+            let t = match i {
+                ..=20 => vec![(1, 0.1, 0.0)],
+                25..=45 => vec![(2, x, 0.0)],
+                _ => vec![],
+            };
+            f.push((shift, t));
+        }
+        assert_eq!(kill_frames(&tracks(f)), vec![20, 45]);
+    }
 }
