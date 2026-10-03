@@ -12,6 +12,8 @@ export interface CoreExports {
   converter_new(w: number, h: number, matrix: number, full: number): number;
   converter_rgb24(converter: number, yuv: number, len: number, out: number): void;
   converter_yuv420p(converter: number, yuv: number, len: number, out: number): void;
+  converter_luma(converter: number, y: number, len: number, out: number): void;
+  camera_rgb_rows(): number;
   converter_free(converter: number): void;
   fixed_new(): number;
   fixed_add(fixed: number, yuv: number): void;

@@ -509,33 +509,55 @@ impl Converter {
             mean2x2(v, cw, ov, ocw, och);
             return;
         }
-        let f = self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
-        let planes = [(y, self.w, self.h, &f.lh, &f.lv, oy, DST_W, DST_H, true), (u, cw, ch, &f.ch, &f.cv, ou, ocw, och, false), (v, cw, ch, &f.ch, &f.cv, ov, ocw, och, false)];
-        for (src, w, h, hf, vf, dst, dw, dh, luma) in planes {
-            let hs = hscale(src, w, h, hf);
-            // the x86 vertical kernel (ff_yuv2yuvX) runs on every row but the last two luma rows and last chroma row
-            let simd_rows = if luma { DST_H - 2 } else { (DST_H - 1) / 2 };
-            for r in 0..dh {
-                let c = vf.row(r);
-                let at = |j: usize| ((vf.pos[r] + j as i64) as usize).min(h - 1) * dw;
-                for i in 0..dw {
-                    let o = if vf.size == 1 {
-                        (hs[at(0) + i] + 64) >> 7
-                    } else if self.x86 && r < simd_rows {
-                        let mut acc = (64 + 8 * (vf.size as i64 - 1)) >> 4;
-                        for (j, cj) in c.iter().enumerate() {
-                            acc += (hs[at(j) + i] * cj) >> 16;
-                        }
-                        wrap16(acc) >> 3
-                    } else {
-                        let mut acc = 64i64 << 12;
-                        for (j, cj) in c.iter().enumerate() {
-                            acc += hs[at(j) + i] * cj;
-                        }
-                        acc >> 19
-                    };
-                    dst[r * dw + i] = o.clamp(0, 255) as u8;
-                }
+        self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
+        let f = self.yuv_filters.as_ref().unwrap();
+        self.scale_plane(y, self.w, self.h, &f.lh, &f.lv, oy, DST_W, DST_H, true);
+        self.scale_plane(u, cw, ch, &f.ch, &f.cv, ou, ocw, och, false);
+        self.scale_plane(v, cw, ch, &f.ch, &f.cv, ov, ocw, och, false);
+    }
+
+    /// The frame's luma at 1280 x 720 from its Y plane alone (`y`: w x h bytes), into `out` (DST_W * DST_H bytes):
+    /// the Y plane yuv420p gives, for what reads only the luma (the camera watch), without scaling the chroma.
+    pub fn luma(&mut self, y: &[u8], out: &mut [u8]) {
+        if self.w == DST_W && self.h == DST_H {
+            out.copy_from_slice(&y[..DST_W * DST_H]);
+            return;
+        }
+        if self.exact_half() {
+            mean2x2(y, self.w, out, DST_W, DST_H);
+            return;
+        }
+        self.yuv_filters.get_or_insert_with(|| filters(self.w, self.h, false, self.x86));
+        let f = self.yuv_filters.as_ref().unwrap();
+        self.scale_plane(y, self.w, self.h, &f.lh, &f.lv, out, DST_W, DST_H, true);
+    }
+
+    /// One plane scaled to dw x dh as yuv420p scales it (`luma`: the Y plane, else U or V).
+    #[allow(clippy::too_many_arguments)]
+    fn scale_plane(&self, src: &[u8], w: usize, h: usize, hf: &Filter, vf: &Filter, dst: &mut [u8], dw: usize, dh: usize, luma: bool) {
+        let hs = hscale(src, w, h, hf);
+        // the x86 vertical kernel (ff_yuv2yuvX) runs on every row but the last two luma rows and last chroma row
+        let simd_rows = if luma { DST_H - 2 } else { (DST_H - 1) / 2 };
+        for r in 0..dh {
+            let c = vf.row(r);
+            let at = |j: usize| ((vf.pos[r] + j as i64) as usize).min(h - 1) * dw;
+            for i in 0..dw {
+                let o = if vf.size == 1 {
+                    (hs[at(0) + i] + 64) >> 7
+                } else if self.x86 && r < simd_rows {
+                    let mut acc = (64 + 8 * (vf.size as i64 - 1)) >> 4;
+                    for (j, cj) in c.iter().enumerate() {
+                        acc += (hs[at(j) + i] * cj) >> 16;
+                    }
+                    wrap16(acc) >> 3
+                } else {
+                    let mut acc = 64i64 << 12;
+                    for (j, cj) in c.iter().enumerate() {
+                        acc += hs[at(j) + i] * cj;
+                    }
+                    acc >> 19
+                };
+                dst[r * dw + i] = o.clamp(0, 255) as u8;
             }
         }
     }

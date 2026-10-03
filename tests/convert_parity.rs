@@ -39,6 +39,12 @@ fn convert_matches_ffmpeg() {
                             conv.rgb24(&src, &mut got);
                         } else {
                             conv.yuv420p(&src, &mut got);
+                            // the luma alone, from the Y plane alone, is the same bytes
+                            let mut luma = vec![0u8; DST_W * DST_H];
+                            conv.luma(&src[..w * h], &mut luma);
+                            if luma[..] != got[..DST_W * DST_H] {
+                                wrong.push(format!("{key}_{n} luma{suffix} shortcut={shortcut}: not yuv420p's Y"));
+                            }
                         }
                         let bad = got.iter().zip(&want).filter(|(a, b)| a != b).count();
                         checked += 1;

@@ -125,7 +125,7 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
   float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
-  (2560x1440): 124 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call; 48.8 s
+  (2560x1440): 146 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call; 41.3 s
   for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
   test_out/browser_check/profile.html times each stage). The model panel lets the user pick the frames at once (1, 2,
   4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml).
@@ -135,7 +135,9 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   within 1e-9 (`cargo test --release --test review_parity`). After the track step the core uses plain floating point:
   it copies Python's logic, not its last bits. Tracking runs with a stats file too: the review worker sends each
   frame to the camera worker (camera.worker.ts, src/camera.rs: the camera's turn by phase correlation, and KovaaK's
-  countdown bar), which runs beside it so the detector never waits for it, and the page's core gives
+  countdown bar), which runs beside it so the detector never waits for it: it gets the decoded Y plane and the rows of
+  the RGB the countdown test reads, and makes only the 720p luma (the same bytes as the Y of yuv420p;
+  `--test camera_same` checks the watch's shifts to the bit), and the page's core gives
   the summary (src/tracking.rs). Equal to Python's on 5 tracking runs (`--test tracking_parity`), the camera within
   1e-8 degrees on the same frames (`--test camera_parity`). Two inputs differ from Python's on purpose: the camera
   reads the frame's Y plane, where Python reads ffmpeg's `format=gray` (which goes through the colors: readings differ

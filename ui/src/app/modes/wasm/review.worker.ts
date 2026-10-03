@@ -224,6 +224,9 @@ async function review(req: ReviewRequest): Promise<void> {
   const reg = core.reserve(4 * gw * gh * 4);
   const tracker = core.x.tracker_new_kovobs(req.cap ?? 0);
   let n = 0;
+  const lumaBytes = format.width * format.height;
+  const rows = core.x.camera_rgb_rows();
+  const [rowsStart, rowsEnd] = [(rows & 0xffff) * W * 3, (rows >> 16) * W * 3];
   const batch = Math.max(1, req.batch);
   const frameBytes = W * H * 3;
   let waiting: Uint8Array[] = [];
@@ -259,10 +262,12 @@ async function review(req: ReviewRequest): Promise<void> {
     const block = prepare(s);
     await writeI420(s, core, block, scratch);
     s.close();
-    const copy = await camera.take(size);
-    new Uint8Array(copy).set(core.bytes(block));
-    camera.send(copy);
     core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
+    // to the camera worker: the Y plane, and the rows of the RGB the countdown test reads
+    const copy = await camera.take(lumaBytes + rowsEnd - rowsStart);
+    new Uint8Array(copy).set(core.bytes(block).subarray(0, lumaBytes));
+    new Uint8Array(copy).set(core.bytes(rgb).subarray(rowsStart, rowsEnd), lumaBytes);
+    camera.send(copy);
     core.x.tracker_watch(tracker, rgb.ptr);
     waiting.push(core.bytes(rgb).slice());
     if (waiting.length < batch) continue;

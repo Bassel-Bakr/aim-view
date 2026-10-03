@@ -180,6 +180,24 @@ pub unsafe extern "C" fn converter_yuv420p(c: *mut Converter, yuv: *const u8, yu
     c.yuv420p(yuv, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H * 3 / 2) });
 }
 
+/// The frame's luma at 1280 x 720 from its Y plane alone (`y`: the source's w x h bytes), into `out` (1280 x 720
+/// bytes): the bytes `converter_yuv420p` gives for Y.
+///
+/// # Safety
+/// `c` from `converter_new`; `y` must hold `y_len` bytes, `out` 1280 x 720.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn converter_luma(c: *mut Converter, y: *const u8, y_len: usize, out: *mut u8) {
+    let (c, y) = unsafe { (&mut *c, std::slice::from_raw_parts(y, y_len)) };
+    c.luma(y, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) });
+}
+
+/// The rows of a frame's RGB the camera watch reads (the countdown bar's), as from + (to << 16).
+#[unsafe(no_mangle)]
+pub extern "C" fn camera_rgb_rows() -> u32 {
+    let (from, to) = crate::camera::COUNTDOWN_ROWS;
+    (from | (to << 16)) as u32
+}
+
 /// # Safety
 /// `c` from `converter_new`, not used again.
 #[unsafe(no_mangle)]

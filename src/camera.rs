@@ -77,12 +77,15 @@ impl Grid {
     /// The image resampled onto the grid, as 18 tiles of T x T (row by row), tile k at row k / 6, column k % 6.
     fn tiles(&self, img: &[u8]) -> Vec<f32> {
         let mut out = vec![0.0f32; TILES * T * T];
-        for (p, &i) in self.i00.iter().enumerate() {
-            let (fx, fy) = (self.fx[p], self.fy[p]);
-            let f = |j: usize| img[j] as f32;
-            let v = (f(i) * (1.0 - fx) + f(i + 1) * fx) * (1.0 - fy) + (f(i + W) * (1.0 - fx) + f(i + W + 1) * fx) * fy;
-            let (r, c) = (p / COLS, p % COLS);
-            out[((r / T) * 6 + c / T) * T * T + (r % T) * T + c % T] = v;
+        let f = |j: usize| img[j] as f32;
+        for r in 0..3 * T {
+            let row = (r / T) * 6 * T * T + (r % T) * T;
+            for c in 0..COLS {
+                let p = r * COLS + c;
+                let (i, fx, fy) = (self.i00[p], self.fx[p], self.fy[p]);
+                let v = (f(i) * (1.0 - fx) + f(i + 1) * fx) * (1.0 - fy) + (f(i + W) * (1.0 - fx) + f(i + W + 1) * fx) * fy;
+                out[row + (c / T) * T * T + c % T] = v;
+            }
         }
         out
     }
@@ -168,6 +171,8 @@ pub struct CameraWatch {
     static_ok: [bool; TILES],
     row: Arc<dyn Fft<f32>>,
     row_inv: Arc<dyn Fft<f32>>,
+    /// The FFTs' working space, kept from frame to frame.
+    scratch: Vec<Complex32>,
     prev: Option<Vec<Complex32>>,
     pub shifts: Vec<TileShifts>,
     pub countdown: Vec<bool>,
@@ -184,40 +189,44 @@ impl CameraWatch {
             *ok = (t.iter().map(|&v| v as f64).sum::<f64>() / (T * T) as f64) < 0.1;
         }
         let mut planner = FftPlanner::new();
+        let (row, row_inv) = (planner.plan_fft_forward(T), planner.plan_fft_inverse(T));
+        let scratch = vec![Complex32::default(); row.get_inplace_scratch_len().max(row_inv.get_inplace_scratch_len())];
         CameraWatch {
             grid,
             static_ok,
-            row: planner.plan_fft_forward(T),
-            row_inv: planner.plan_fft_inverse(T),
+            row,
+            row_inv,
+            scratch,
             prev: None,
             shifts: Vec::new(),
             countdown: Vec::new(),
         }
     }
 
-    /// Each tile's spectrum (T rows of BINS, rfft2 of the tile less its mean, times the Hann window).
-    fn spectra(&self, gray: &[u8]) -> Vec<Complex32> {
+    /// Each tile's spectrum (T rows of BINS, rfft2 of the tile less its mean, times the Hann window). The FFTs run a
+    /// tile at a time: its T rows in one call, then its BINS columns in one call.
+    fn spectra(&mut self, gray: &[u8]) -> Vec<Complex32> {
         let tiles = self.grid.tiles(gray);
         let mut out = vec![Complex32::default(); TILES * T * BINS];
-        let mut buf = vec![Complex32::default(); T];
+        let mut rows = vec![Complex32::default(); T * T];
+        let mut cols = vec![Complex32::default(); BINS * T];
         for k in 0..TILES {
             let t = &tiles[k * T * T..(k + 1) * T * T];
             let mean = (t.iter().map(|&v| v as f64).sum::<f64>() / (T * T) as f64) as f32;
-            let f = &mut out[k * T * BINS..(k + 1) * T * BINS];
-            for y in 0..T {
-                for x in 0..T {
-                    buf[x] = Complex32::new((t[y * T + x] - mean) * self.grid.hann[y * T + x], 0.0);
-                }
-                self.row.process(&mut buf);
-                f[y * BINS..(y + 1) * BINS].copy_from_slice(&buf[..BINS]);
+            for (i, v) in rows.iter_mut().enumerate() {
+                *v = Complex32::new((t[i] - mean) * self.grid.hann[i], 0.0);
             }
+            self.row.process_with_scratch(&mut rows, &mut self.scratch);
             for c in 0..BINS {
                 for y in 0..T {
-                    buf[y] = f[y * BINS + c];
+                    cols[c * T + y] = rows[y * T + c];
                 }
-                self.row.process(&mut buf);
+            }
+            self.row.process_with_scratch(&mut cols, &mut self.scratch);
+            let f = &mut out[k * T * BINS..(k + 1) * T * BINS];
+            for c in 0..BINS {
                 for y in 0..T {
-                    f[y * BINS + c] = buf[y];
+                    f[y * BINS + c] = cols[c * T + y];
                 }
             }
         }
@@ -234,36 +243,31 @@ impl CameraWatch {
         };
         let f = self.prev.as_ref().unwrap();
         let mut shifts = [None; TILES];
-        let mut r = vec![Complex32::default(); T * BINS];
-        let mut buf = vec![Complex32::default(); T];
+        let mut cols = vec![Complex32::default(); BINS * T];
+        let mut rows = vec![Complex32::default(); T * T];
         let mut c = vec![0.0f32; T * T];
         for (k, shift) in shifts.iter_mut().enumerate() {
             let at = k * T * BINS;
-            for i in 0..T * BINS {
-                let v = f[at + i] * prev[at + i].conj();
-                r[i] = v / v.norm().max(1e-6);
-            }
-            // irfft2: the inverse along y for each column, then the real inverse along x for each row
+            // the normalized cross-power spectrum, column by column
             for col in 0..BINS {
                 for y in 0..T {
-                    buf[y] = r[y * BINS + col];
-                }
-                self.row_inv.process(&mut buf);
-                for y in 0..T {
-                    r[y * BINS + col] = buf[y];
+                    let v = f[at + y * BINS + col] * prev[at + y * BINS + col].conj();
+                    cols[col * T + y] = v / v.norm().max(1e-6);
                 }
             }
+            // irfft2: the inverse along y for each column (one call), then the real inverse along x for each row
+            self.row_inv.process_with_scratch(&mut cols, &mut self.scratch);
             for y in 0..T {
                 for x in 0..BINS {
-                    buf[x] = r[y * BINS + x];
+                    rows[y * T + x] = cols[x * T + y];
                 }
                 for x in BINS..T {
-                    buf[x] = r[y * BINS + T - x].conj();
+                    rows[y * T + x] = cols[(T - x) * T + y].conj();
                 }
-                self.row_inv.process(&mut buf);
-                for x in 0..T {
-                    c[y * T + x] = buf[x].re / (T * T) as f32;
-                }
+            }
+            self.row_inv.process_with_scratch(&mut rows, &mut self.scratch);
+            for (ci, v) in c.iter_mut().zip(&rows) {
+                *ci = v.re / (T * T) as f32;
             }
             let peak = (0..T * T).fold(0, |b, i| if c[i] > c[b] { i } else { b });
             let (py, px) = (peak / T, peak % T);
@@ -309,13 +313,16 @@ impl CameraWatch {
     }
 }
 
+/// The rows of a frame the countdown test reads (y from, to): the camera watch needs only these rows of a frame's RGB.
+pub const COUNTDOWN_ROWS: (usize, usize) = (214, 247);
+
 /// Whether a frame (RGB24, 1280 x 720) shows KovaaK's countdown bar ("Challenge begins in"): its box (x 520 to 760,
 /// y 214 to 246) holds the bar's dark gray track and one fill color, the fill on the left, the track at the right
 /// end, and white digits. The fill takes the HUD's color, so the color is read from the bar's left end, which the
 /// fill covers to the last frame.
 pub fn countdown_showing(rgb: &[u8]) -> bool {
     const TRACK: [i32; 3] = [64, 60, 68];
-    let (x0, x1, y0, y1) = (520, 761, 214, 247);
+    let (x0, x1, (y0, y1)) = (520, 761, COUNTDOWN_ROWS);
     let px = |x: usize, y: usize| {
         let i = (y * W + x) * 3;
         [rgb[i] as i32, rgb[i + 1] as i32, rgb[i + 2] as i32]

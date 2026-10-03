@@ -1,9 +1,10 @@
 /// <reference lib="webworker" />
 // The camera watch (src/camera.rs) in a worker of its own, beside the review worker: each frame's turn of the camera and
-// whether KovaaK's countdown bar shows. The review worker sends it every frame as decoded, over a port between the two.
-// It makes the frame's 720p pixels with its own copy of the core (the same converter, so the same bytes) and sends the
-// buffer back. In the review worker the watch held up the detector (av1: 76 frames a second with it there, 99 to 119
-// without it).
+// whether KovaaK's countdown bar shows. The review worker sends it, over a port between the two, every frame's decoded
+// Y plane and the rows of its RGB the countdown test reads; this worker makes the 720p luma with its own copy of the
+// core (the same converter, so the same bytes) and sends the buffer back. In the review worker the watch held up the
+// detector (av1: 76 frames a second with it there, 99 to 119 without it). The luma alone and the review worker's RGB
+// rows, instead of every frame converted to RGB and YUV here, keep it light.
 import { Core, CoreBlock } from './core';
 import { CameraReply, CameraStart, CameraTask, VideoReadings } from './review-messages';
 
@@ -15,9 +16,12 @@ interface Watch {
   core: Core;
   converter: number;
   camera: number;
+  /** The decoded Y plane, its 720p luma, and a 720p RGB frame of which only the countdown rows are filled. */
   source: CoreBlock;
-  yuv720: CoreBlock;
+  luma: CoreBlock;
   rgb: CoreBlock;
+  /** Where the countdown rows go in it, in bytes. */
+  rowsAt: number;
 }
 
 addEventListener('message', (e: MessageEvent<MessagePort>) => serve(e.data));
@@ -38,8 +42,8 @@ function serve(port: MessagePort): void {
         const w = watch;
         if (!w) throw new Error('The camera watch was not started');
         if (task.kind === 'frame') {
-          read(w, task.yuv);
-          say({ kind: 'free', yuv: task.yuv }, [task.yuv]);
+          read(w, task.frame);
+          say({ kind: 'free', frame: task.frame }, [task.frame]);
         } else {
           say({ kind: 'readings', readings: finish(w, task.frames) });
         }
@@ -56,22 +60,25 @@ async function start(t: CameraStart): Promise<Watch> {
   core.bytes(fixed).set(t.fixed);
   const camera = core.x.camera_new(fixed.ptr);
   core.free(fixed);
+  const rows = core.x.camera_rgb_rows();
   return {
     core,
     converter: core.x.converter_new(t.width, t.height, t.matrix, t.full),
     camera,
-    source: core.reserve((t.width * t.height * 3) / 2),
-    yuv720: core.reserve((W * H * 3) / 2),
+    source: core.reserve(t.width * t.height),
+    luma: core.reserve(W * H),
     rgb: core.reserve(W * H * 3),
+    rowsAt: (rows & 0xffff) * W * 3,
   };
 }
 
-/** One frame: its 720p RGB and YUV (ffmpeg's pixels), then the watch. */
-function read(w: Watch, yuv: ArrayBuffer): void {
-  w.core.bytes(w.source).set(new Uint8Array(yuv));
-  w.core.x.converter_rgb24(w.converter, w.source.ptr, w.source.len, w.rgb.ptr);
-  w.core.x.converter_yuv420p(w.converter, w.source.ptr, w.source.len, w.yuv720.ptr);
-  w.core.x.camera_add(w.camera, w.yuv720.ptr, w.rgb.ptr);
+/** One frame: its 720p luma (ffmpeg's pixels) and its countdown rows, then the watch. */
+function read(w: Watch, frame: ArrayBuffer): void {
+  const y = w.source.len;
+  w.core.bytes(w.source).set(new Uint8Array(frame, 0, y));
+  w.core.bytes(w.rgb).set(new Uint8Array(frame, y), w.rowsAt);
+  w.core.x.converter_luma(w.converter, w.source.ptr, y, w.luma.ptr);
+  w.core.x.camera_add(w.camera, w.luma.ptr, w.rgb.ptr);
 }
 
 /** The readings, the tracks known; the watch is done. */

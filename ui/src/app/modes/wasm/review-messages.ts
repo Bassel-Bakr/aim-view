@@ -34,10 +34,13 @@ export interface CameraStart extends FrameFormat {
   fixed: Uint8Array;
 }
 
-/** A frame as decoded (YUV 4:2:0, the recording's size). Its buffer comes back once read. */
+/**
+ * A frame, as much of it as the camera watch reads: the decoded Y plane (the recording's size), then the rows of its
+ * 720p RGB the countdown test reads (core: camera_rgb_rows). Its buffer comes back once read.
+ */
 export interface CameraFrame {
   kind: 'frame';
-  yuv: ArrayBuffer;
+  frame: ArrayBuffer;
 }
 
 /** No more frames: the tracks (tracker_finish's JSON), which the readings need. */
@@ -52,7 +55,7 @@ export type CameraTask = CameraStart | CameraFrame | CameraFinish;
 /** A frame's buffer, read and free again. */
 export interface CameraFree {
   kind: 'free';
-  yuv: ArrayBuffer;
+  frame: ArrayBuffer;
 }
 
 /** The readings, once every frame is read. */

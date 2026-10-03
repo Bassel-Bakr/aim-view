@@ -37,8 +37,8 @@ export class CameraLink {
   }
 
   /** Sends a frame, its buffer from take(). */
-  send(yuv: ArrayBuffer): void {
-    this.post({ kind: 'frame', yuv }, [yuv]);
+  send(frame: ArrayBuffer): void {
+    this.post({ kind: 'frame', frame }, [frame]);
   }
 
   /** The readings, once the camera worker has read every frame. */
@@ -56,7 +56,7 @@ export class CameraLink {
   }
 
   private hear(m: CameraReply): void {
-    if (m.kind === 'free') this.free.push(m.yuv);
+    if (m.kind === 'free') this.free.push(m.frame);
     else if (m.kind === 'readings') this.done?.(m.readings);
     else {
       this.failure = new Error(`The camera watch failed: ${m.error}`);
