@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ClickReport as ClickReportData, Flick } from '../../api';
 import { answer, serverMode } from '../../fake-api';
 import { FlickFocus } from '../flick-focus';
-import { ClickReport } from './click-report';
+import { ClickSide } from './click-side';
 
 const FLICK = { n: 4, D0: 8, dir: 0, total: 0.4, end_left: 0, parts: null, shots: 1 } as Flick;
 const REPORT = {
@@ -27,27 +27,25 @@ const REPORT = {
   },
 } as unknown as ClickReportData;
 
-describe('ClickReport', () => {
-  it("shows the whole run's cards, then a picked kill's, and goes back", async () => {
+describe('ClickSide', () => {
+  it("lists the checks to work on first, and shows where the picked kill's time went", async () => {
     TestBed.configureTestingModule({
       providers: serverMode(),
     });
-    const fixture = TestBed.createComponent(ClickReport);
+    const fixture = TestBed.createComponent(ClickSide);
     fixture.componentRef.setInput('report', REPORT);
     await answer({ '/api/vods': [] });
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
-    const heading = () => el.querySelector('section')?.textContent;
-    const titles = () => [...el.querySelectorAll('h3')].map((h) => h.textContent);
-    expect(heading()).toContain('Whole run');
-    expect(titles()).toContain('The run at a glance');
+    const titles = () => [...el.querySelectorAll('h3')].map((h) => h.textContent?.trim());
+    expect(titles()).toContain('Checks');
+    expect(el.textContent).toContain('1 to work on · 1 fine');
+    expect(el.textContent?.indexOf('Stopped short')).toBeLessThan(
+      el.textContent?.indexOf('Slow start') ?? 0,
+    );
 
     TestBed.inject(FlickFocus).selected.set(FLICK);
     await fixture.whenStable();
-    expect(heading()).toContain('Kill 4');
-
-    (el.querySelector('section button') as HTMLButtonElement).click();
-    await fixture.whenStable();
-    expect(heading()).toContain('Whole run');
+    expect(titles()).toContain("Where kill 4's 400 ms goes");
   });
 });

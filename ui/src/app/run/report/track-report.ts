@@ -1,7 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { TrackReport as TrackReportData, Tracks } from '../../api';
 import { TrackCharts } from '../track-charts/track-charts';
-import { motionView, trackNote, trackStats, whatIfRows } from './track-stats';
+import { HEADLINE_TILES, motionView, trackNote, trackStats, whatIfRows } from './track-stats';
 
 /**
  * A tracking run's report: the time on the bot and the drops off it, how the crosshair followed the bot's motion (by
@@ -18,7 +18,10 @@ export class TrackReport {
   /** The tracks, for the charts; null while they load. */
   readonly tracks = input<Tracks | null>(null);
 
-  protected readonly stats = computed(() => trackStats(this.report().summary));
+  /** The cards after the headline's, which are above the video. */
+  protected readonly stats = computed(() =>
+    trackStats(this.report().summary).slice(HEADLINE_TILES),
+  );
   protected readonly about = computed(() => trackNote(this.report().summary));
   protected readonly motion = computed(() => motionView(this.report().summary.motion));
   protected readonly whatIf = computed(() => whatIfRows(this.report().summary.what_if));

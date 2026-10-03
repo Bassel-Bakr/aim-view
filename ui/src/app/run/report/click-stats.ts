@@ -162,6 +162,87 @@ export function sourceNote(s: ClickSummary): string {
   return `${from} · ${s.measured} flicks measured · target radius ${s.radius.toFixed(2)}°${sens}`;
 }
 
+/** A headline tile: a number, what it is, a line under it, whether the review flags it, and what it means. */
+export interface HeadlineTile {
+  label: string;
+  value: string;
+  note: string;
+  attention: boolean;
+  why: string;
+}
+
+/** The checks behind the headline numbers (review.py's issue numbers). */
+const ISSUE_MISSES = 39;
+const ISSUE_WAITING = 36;
+const ISSUE_START = 1;
+const ISSUE_PACE = 49;
+
+/** The run in six numbers, above the video; a tile is flagged when the review flags its check. */
+export function runHeadline(
+  s: ClickSummary,
+  issues: Issue[],
+  flicks: Flick[] = [],
+  fps = 60,
+): HeadlineTile[] {
+  const flagged = (n: number) => issues.some((i) => i.issue === n && i.flag === 'attention');
+  const pace = killsPerMinute(flicks, fps);
+  const { matched, kills_stats: counted } = s.info;
+  const stillShare = s.still != null && s.median_interval ? s.still / s.median_interval : null;
+  const tile = (label: string, value: string, note: string, issue = 0): HeadlineTile => ({
+    label,
+    value,
+    note,
+    attention: issue > 0 && flagged(issue),
+    why: '',
+  });
+  return [
+    tile('Score', formatCount(s.score), s.sens ?? ''),
+    tile(
+      'Kills',
+      formatCount(s.kills),
+      matched != null && counted != null ? `${matched} of ${counted} found in the video` : '',
+    ),
+    tile(
+      'Accuracy',
+      formatPercent(s.accuracy),
+      s.misses == null ? '' : `${formatCount(s.misses)} misses`,
+      ISSUE_MISSES,
+    ),
+    tile(
+      'Median kill',
+      formatMs(s.median_interval),
+      pace == null ? '' : `${pace.toFixed(1)} kills a minute`,
+      ISSUE_PACE,
+    ),
+    tile(
+      'Still before the click',
+      formatMs(s.still),
+      stillShare == null ? '' : `${formatPercent(stillShare)} of a kill`,
+      ISSUE_WAITING,
+    ),
+    tile('Reaction', formatMs(s.react), 'after each kill, median', ISSUE_START),
+  ];
+}
+
+/** A bar of the kill time by distance: the band, its median kill, how often it stopped short, and its length. */
+export interface DistanceBar {
+  band: string;
+  kill: string;
+  short: string;
+  /** The median kill against the slowest band's, 0 to 1. */
+  share: number;
+}
+
+export function distanceBars(bands: DistanceBand[]): DistanceBar[] {
+  const longest = Math.max(...bands.map((b) => b.interval));
+  return distanceRows(bands).map((r, i) => ({
+    band: bands[i].hi === OPEN_BAND ? `${bands[i].lo}°+` : r.band,
+    kill: r.kill,
+    short: r.short,
+    share: longest > 0 ? bands[i].interval / longest : 0,
+  }));
+}
+
 /** The checks, those to look at first. */
 export function sortedIssues(issues: Issue[]): Issue[] {
   return [...issues].sort(

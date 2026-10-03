@@ -7,24 +7,24 @@
     display: block;
   }
 
-  // The video (with a flick's speed chart under it) and, on a clicking run, the flick list beside it, as tall as
-  // the video's column
+  // The video, a flick's speed chart and the flick list under it; on a clicking run, the side column beside them
   .player-column {
     max-width: p.$max-width;
   }
 
-  app-flick-list {
-    width: r.$flick-list-width;
+  .side {
+    flex: 0 1 r.$side-width;
+    min-width: r.$side-min-width;
   }
 
-  // Too narrow for both side by side: the list goes under the video
+  // Too narrow for both side by side: the side column goes under the video
   @container (max-width: #{r.$stack-width}) {
     .stage {
       flex-direction: column;
     }
 
-    app-flick-list {
-      width: auto;
+    .side {
+      flex: none;
     }
   }
 }
@@ -63,15 +63,11 @@
   }
 
   .stage {
-    @apply flex items-stretch gap-10;
+    @apply flex items-start gap-7;
   }
 
   .player-column {
-    @apply min-w-0 flex-auto;
-  }
-
-  app-flick-list {
-    @apply flex-none;
+    @apply flex min-w-0 flex-auto flex-col gap-6;
   }
 
   .report {

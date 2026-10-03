@@ -63,7 +63,7 @@ function bar(
     hidden,
     segments: parts.map((v, i) => ({
       color: PARTS[i].color,
-      grow: v,
+      grow: total ? v / total : 0,
       title: `${PARTS[i].label}: ${formatMs(v)}`,
       text: !thin && total && v / total > LABEL_SHARE ? `${PARTS[i].label} ${formatMs(v)}` : '',
     })),

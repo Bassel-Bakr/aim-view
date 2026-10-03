@@ -59,11 +59,13 @@
         [attr.data-i]="i"
         [attr.aria-selected]="r.id === library.selectedId()"
       >
-        <div class="name" [title]="r.scenario">{{ r.scenario }}</div>
-        <div class="meta">
+        <div class="row-top">
+          <span class="name" [title]="r.scenario">{{ r.scenario }}</span>
           @if (r.score !== null) {
-            <span>{{ r.score | number: '1.0-2' }}</span>
+            <span class="score">{{ r.score | number: '1.0-2' }}</span>
           }
+        </div>
+        <div class="meta">
           <span>{{ r.stamp | stamp }}</span>
           @if (r.kind) {
             <span>{{ kindLabels[r.kind] }}</span>

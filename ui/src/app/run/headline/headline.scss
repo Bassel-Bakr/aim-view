@@ -1,0 +1,32 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply mb-6 grid grid-cols-(--headline-columns) gap-4;
+  }
+
+  .tile {
+    @apply flex min-w-0 flex-col rounded-lg border border-border bg-surface-2 px-6 py-5;
+
+    &[data-attention] {
+      @apply border-attention-line;
+
+      .tile-note {
+        @apply text-attention-text;
+      }
+    }
+  }
+
+  .tile-label {
+    @apply truncate text-xs font-strong tracking-wide text-muted uppercase;
+  }
+
+  .tile-value {
+    @apply truncate font-display text-kpi leading-tight font-bold tabular-nums;
+  }
+
+  // An empty note keeps its line, so every tile is as tall as the others
+  .tile-note {
+    @apply min-h-lh truncate text-sm text-muted;
+  }
+}

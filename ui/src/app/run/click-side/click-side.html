@@ -1,0 +1,99 @@
+@if (budget(); as b) {
+  <section class="panel" aria-label="Where the time goes">
+    <h3 class="panel-title">{{ b.title }}</h3>
+    @if (b.note) {
+      <p class="section-note">{{ b.note }}</p>
+    }
+    @for (bar of b.bars; track $index) {
+      @if (bar.hidden) {
+      } @else if (bar.label) {
+        <div class="reference">
+          <span>{{ bar.label }}</span>
+          <div class="thin-bar" [style.width.%]="bar.width">
+            @for (seg of bar.segments; track $index) {
+              <div
+                class="segment"
+                [style.flex]="seg.grow"
+                [style.background]="seg.color"
+                [title]="seg.title"
+              ></div>
+            }
+          </div>
+        </div>
+      } @else {
+        <div class="bar" [style.width.%]="bar.width">
+          @for (seg of bar.segments; track $index) {
+            <div
+              class="segment"
+              [style.flex]="seg.grow"
+              [style.background]="seg.color"
+              [title]="seg.title"
+            ></div>
+          }
+        </div>
+      }
+    }
+    <div class="legend">
+      @for (item of b.legend; track $index) {
+        <span>
+          <i class="swatch" [style.background]="item.color"></i>
+          {{ item.text }}
+          @if (item.average && !item.averageHidden) {
+            <span class="average">{{ item.average }}</span>
+          }
+        </span>
+      }
+    </div>
+  </section>
+}
+
+@if (distance().length) {
+  <section class="panel" aria-label="Kill time by distance">
+    <div class="panel-head">
+      <h3 class="panel-title">Kill time by distance</h3>
+      <span class="panel-hint">median · stopped short</span>
+    </div>
+    @for (d of distance(); track d.band) {
+      <div class="distance">
+        <span class="band">{{ d.band }}</span>
+        <span class="track"><span class="fill" [style.width.%]="100 * d.share"></span></span>
+        <span class="kill">{{ d.kill }}</span>
+        <span class="short">{{ d.short }}</span>
+      </div>
+    }
+  </section>
+}
+
+<section class="panel" aria-label="Checks">
+  <div class="panel-head">
+    <h3 class="panel-title">Checks</h3>
+    <span class="panel-hint"
+      >{{ toWorkOn() }} to work on · {{ issues().length - toWorkOn() }} fine</span
+    >
+  </div>
+  @for (i of issues(); track i.title) {
+    <details class="check">
+      <summary class="check-line">
+        <span class="flag" [attr.data-flag]="i.flag">
+          {{ i.flag === 'attention' ? 'Work on' : 'Fine' }}
+        </span>
+        <span>
+          <span class="check-title">{{ i.title }}</span>
+          <span class="check-value">{{ i.value }}</span>
+        </span>
+      </summary>
+      <p class="check-why">
+        @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
+          Costliest picks:
+          @for (c of pathing()?.costliest; track c.flick.n; let last = $last) {
+            <button class="link" type="button" (click)="focus.play(c.flick)">
+              kill {{ c.flick.n }}
+            </button>
+            {{ c.cost }}{{ last ? '.' : ',' }}
+          }
+        }
+        {{ i.why }}
+      </p>
+    </details>
+  }
+</section>

@@ -30,6 +30,10 @@
   --color-good-soft: var(--good-soft);
   --color-good-text: var(--good-text);
   --color-warning: var(--warning);
+  --color-attention: var(--attention);
+  --color-attention-text: var(--attention-text);
+  --color-attention-line: var(--attention-line);
+  --color-on-attention: var(--on-attention);
   --color-on-accent: var(--on-accent);
   --color-on-target: var(--on-target);
   --color-off-target: var(--off-target);
@@ -38,6 +42,7 @@
   --color-series-3: var(--series-3);
   --color-series-4: var(--series-4);
   --color-series-5: var(--series-5);
+  --color-series-quiet: var(--series-quiet);
 
   /* p-4 is 4 x 2px = 8px, the same as --space-4 */
   --spacing: var(--space-1);
@@ -53,6 +58,7 @@
   --default-font-family: var(--font-family);
 
   --font-sans: var(--font-family);
+  --font-display: var(--font-display);
   --text-2xs: var(--font-size-2xs);
   --text-xs: var(--font-size-xs);
   --text-sm: var(--font-size-sm);
@@ -60,10 +66,14 @@
   --text-h3: var(--font-size-h3);
   --text-lg: var(--font-size-lg);
   --text-xl: var(--font-size-xl);
+  --text-title: var(--font-size-title);
+  --text-kpi: var(--font-size-kpi);
   --font-weight-regular: var(--font-weight-regular);
   --font-weight-medium: var(--font-weight-medium);
   --font-weight-strong: var(--font-weight-strong);
   --font-weight-bold: var(--font-weight-bold);
   --leading-normal: var(--line-height);
+  --leading-tight: var(--line-height-tight);
   --tracking-tight: var(--letter-spacing-tight);
+  --tracking-wide: var(--letter-spacing-wide);
 }

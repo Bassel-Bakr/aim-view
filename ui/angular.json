@@ -39,7 +39,17 @@
                 "output": "/"
               }
             ],
-            "styles": ["src/tailwind.css", "src/styles.scss", "src/themes/controls.scss"],
+            "styles": [
+              "@fontsource/barlow/400.css",
+              "@fontsource/barlow/500.css",
+              "@fontsource/barlow/600.css",
+              "@fontsource/barlow/700.css",
+              "@fontsource/barlow-condensed/600.css",
+              "@fontsource/barlow-condensed/700.css",
+              "src/tailwind.css",
+              "src/styles.scss",
+              "src/themes/controls.scss"
+            ],
             "inlineStyleLanguage": "scss",
             "stylePreprocessorOptions": {
               "includePaths": ["src"]

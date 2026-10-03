@@ -4,9 +4,13 @@ import { JobStage, Recording } from '../api';
 import { formatPercent } from '../format';
 import { Library } from '../services/library';
 import { modelName, Models } from '../services/models';
+import { ClickSide } from './click-side/click-side';
 import { FlickList } from './flick-list/flick-list';
+import { Headline } from './headline/headline';
 import { Player } from './player/player';
 import { ClickReport } from './report/click-report';
+import { HeadlineTile, runHeadline } from './report/click-stats';
+import { HEADLINE_TILES, trackStats } from './report/track-stats';
 import { TrackReport } from './report/track-report';
 import { Review } from '../services/review';
 import { RunHeader } from './run-header/run-header';
@@ -37,6 +41,7 @@ const STAGES: Record<JobStage, string> = {
 };
 
 /** The open recording: its header, the review's button and progress, the video, and a tracking run's timeline. */
+
 @Component({
   selector: 'app-run',
   imports: [
@@ -47,6 +52,8 @@ const STAGES: Record<JobStage, string> = {
     FlickList,
     SpeedChart,
     ClickReport,
+    ClickSide,
+    Headline,
     TrackReport,
     Button,
   ],
@@ -72,6 +79,23 @@ export class Run {
   protected readonly clickReport = computed(() => {
     const r = this.report();
     return r?.mode === 'click' ? r : null;
+  });
+  /** The run in a few numbers, above the video: a tracking run's are its first cards (track-report shows the rest). */
+  protected readonly headline = computed<HeadlineTile[] | null>(() => {
+    const c = this.clickReport();
+    if (c) return runHeadline(c.summary, c.issues, c.flicks, c.fps);
+    const t = this.trackReport();
+    return t
+      ? trackStats(t.summary)
+          .slice(0, HEADLINE_TILES)
+          .map((s) => ({
+            label: s.label,
+            value: s.value,
+            note: s.detail,
+            attention: false,
+            why: s.why,
+          }))
+      : null;
   });
   protected readonly statsOpen = signal(false);
   /** The recording's video, which may still be being remuxed into MP4. */

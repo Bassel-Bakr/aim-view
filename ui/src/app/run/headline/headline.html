@@ -1,0 +1,7 @@
+@for (t of tiles(); track t.label) {
+  <div class="tile" [attr.data-attention]="t.attention ? '' : null" [title]="t.why">
+    <span class="tile-label" [title]="t.label">{{ t.label }}</span>
+    <span class="tile-value" [title]="t.value">{{ t.value }}</span>
+    <span class="tile-note" [title]="t.note">{{ t.note }}</span>
+  </div>
+}

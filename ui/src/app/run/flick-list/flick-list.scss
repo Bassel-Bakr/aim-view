@@ -1,20 +1,12 @@
-@use 'themes/theme' as t;
-@use 'themes/report' as r;
 @reference '../../../tailwind.css';
 
 @layer components {
-  // As tall as the video's column beside it: the list's own size never stretches the row
   :host {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    contain: size;
+    @apply block overflow-hidden rounded-lg border border-border bg-surface-1;
   }
-}
 
-@layer components {
   .head {
-    @apply mt-0 mb-3;
+    @apply m-0 border-b border-grid px-7 py-4 text-h3;
   }
 
   .hint {
@@ -22,15 +14,24 @@
   }
 
   .scroll {
-    @apply min-h-0 flex-1 overflow-auto;
+    @apply max-h-(--flick-list-stacked-height) overflow-auto;
+  }
+
+  .flick-list-table {
+    @apply w-full;
   }
 
   thead th {
-    @apply sticky top-0 z-1 bg-surface-0 pt-3;
+    @apply sticky top-0 z-1 bg-surface-1 pt-3 tracking-wide uppercase;
+  }
+
+  th:first-child,
+  td:first-child {
+    @apply pl-7;
   }
 
   .row {
-    @apply relative cursor-pointer hover:bg-surface-2 data-selected:bg-accent-pressed;
+    @apply relative cursor-pointer hover:bg-surface-2 data-selected:bg-surface-3 data-selected:inset-shadow-(--selected-edge);
   }
 
   .play {
@@ -38,21 +39,6 @@
   }
 
   .missed {
-    @apply text-warning;
-  }
-
-  // Under the video: the list has a height of its own
-  @container (max-width: #{r.$stack-width}) {
-    :host {
-      contain: none;
-    }
-
-    .head {
-      margin-top: t.$space-13;
-    }
-
-    .scroll {
-      max-height: r.$flick-list-stacked-height;
-    }
+    @apply text-attention-text;
   }
 }

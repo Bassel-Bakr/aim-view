@@ -26,11 +26,13 @@
 
 @layer components {
   .top {
-    @apply flex items-center gap-7 border-b border-border bg-surface-1 px-9;
+    @apply flex items-center gap-7 border-b border-border px-6;
+
+    background: l.$surface-bar;
   }
 
   .brand {
-    @apply flex items-center gap-4 text-lg font-strong;
+    @apply flex items-center gap-4 font-display text-lg font-bold tracking-wide uppercase;
   }
 
   .logo {
@@ -43,7 +45,7 @@
 
   // The main area measures its own width: the run page puts the flick list beside the video when there is room
   .main {
-    @apply min-w-0 overflow-y-auto px-14 pt-11 pb-32;
+    @apply min-w-0 overflow-y-auto px-9 pt-8 pb-32;
 
     container-type: inline-size;
   }
@@ -53,6 +55,6 @@
   }
 
   .empty-title {
-    @apply text-primary;
+    @apply font-display text-title font-bold text-primary;
   }
 }

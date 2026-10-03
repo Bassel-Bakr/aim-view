@@ -63,6 +63,9 @@
     </span>
   </div>
 }
+@if (headline(); as h) {
+  <app-headline [tiles]="h" />
+}
 <!-- The player keeps its place whatever the report, so the video never reloads when the report arrives -->
 <div class="stage">
   <div class="player-column">
@@ -76,11 +79,12 @@
       </app-player>
     }
     @if (clickReport(); as cr) {
+      <app-flick-list [report]="cr" />
       <app-speed-chart [report]="cr" />
     }
   </div>
   @if (clickReport(); as cr) {
-    <app-flick-list [report]="cr" />
+    <app-click-side class="side" [report]="cr" />
   }
 </div>
 @if (clickReport(); as cr) {

@@ -8,7 +8,7 @@
     flex-direction: column;
     gap: t.$space-5;
     min-height: 0;
-    padding: t.$space-7 t.$space-6;
+    padding: t.$space-6 t.$space-5;
     border-right: t.$line-width solid t.$border;
     background: t.$surface-1;
   }
@@ -26,11 +26,11 @@
 
 @layer components {
   .search {
-    @apply w-full rounded-md border border-border-strong bg-surface-0 px-6 py-4 text-primary placeholder:text-muted;
+    @apply w-full rounded-md border border-border-strong bg-surface-0 px-5 py-3 text-primary placeholder:text-muted;
   }
 
   .chips {
-    @apply flex flex-wrap gap-3;
+    @apply flex flex-wrap gap-2;
   }
 
   .count {
@@ -46,15 +46,23 @@
   }
 
   .row {
-    @apply cursor-pointer rounded-md border-l-(length:--line-width-marker) border-transparent px-5 py-4 hover:bg-surface-2 aria-selected:border-accent aria-selected:bg-accent-soft;
+    @apply cursor-pointer rounded-md px-5 py-3 hover:bg-surface-2 aria-selected:bg-surface-3 aria-selected:inset-ring aria-selected:inset-ring-border-strong;
+  }
+
+  .row-top {
+    @apply flex items-baseline justify-between gap-4;
   }
 
   .name {
-    @apply truncate text-sm font-strong;
+    @apply min-w-0 truncate font-medium;
+  }
+
+  .score {
+    @apply font-display text-lg font-strong tabular-nums;
   }
 
   .meta {
-    @apply mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted tabular-nums;
+    @apply mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted tabular-nums;
   }
 
   .note {

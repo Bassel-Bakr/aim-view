@@ -1,24 +1,4 @@
-@use 'themes/report' as r;
 @reference '../../../tailwind.css';
-
-@layer components {
-  .budget-box {
-    max-width: r.$budget-max-width;
-  }
-
-  .segment {
-    border-radius: r.$budget-radius;
-  }
-
-  .flag {
-    font-size: r.$issue-flag-size;
-    background: r.$issue-fine-bg;
-
-    &[data-flag='attention'] {
-      background: r.$issue-attention-bg;
-    }
-  }
-}
 
 @layer components {
   .head {
@@ -39,66 +19,6 @@
 
   .cards {
     @apply mb-2 grid grid-cols-(--cards-columns) gap-5;
-  }
-
-  .bar {
-    @apply mt-2 mb-3 flex h-(--budget-height) gap-1;
-  }
-
-  .thin-bar {
-    @apply mt-1 mb-4 flex h-(--budget-thin-height) gap-1;
-  }
-
-  .segment {
-    @apply flex items-center overflow-hidden px-3 text-xs whitespace-nowrap text-on-accent;
-  }
-
-  .reference {
-    @apply text-xs;
-
-    > span {
-      @apply text-muted;
-    }
-  }
-
-  .legend {
-    @apply flex flex-wrap gap-7 text-xs text-secondary;
-  }
-
-  .swatch {
-    @apply mr-2.5 inline-block size-(--swatch-size) rounded-(--swatch-radius);
-  }
-
-  .issues {
-    @apply grid grid-cols-(--issues-columns) gap-5;
-  }
-
-  .issue {
-    @apply rounded-lg border border-border bg-surface-1 px-7 py-6;
-  }
-
-  .issue-top {
-    @apply flex justify-between gap-4 font-strong;
-  }
-
-  .flag {
-    @apply h-fit rounded-pill px-4 py-0.5 font-strong whitespace-nowrap text-good-text;
-
-    &[data-flag='attention'] {
-      @apply text-warning;
-    }
-  }
-
-  .issue-value {
-    @apply my-2;
-  }
-
-  .issue-why {
-    @apply text-xs text-muted;
-  }
-
-  .link {
-    @apply text-accent underline;
   }
 
   .split {

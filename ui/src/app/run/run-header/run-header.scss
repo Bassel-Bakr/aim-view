@@ -8,7 +8,7 @@
 
 @layer components {
   .title {
-    @apply flex flex-wrap items-center gap-x-3;
+    @apply flex flex-wrap items-center gap-x-4 font-display text-title leading-tight font-bold;
   }
 
   .source {

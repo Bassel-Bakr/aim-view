@@ -2,7 +2,14 @@
 
 @layer components {
   .trigger {
-    @apply rounded-pill border border-border-strong px-4 py-1 text-xs text-secondary hover:bg-surface-2 hover:text-primary;
+    @apply flex items-center gap-3 rounded-pill border border-border-strong px-5 py-1 text-sm text-secondary hover:bg-surface-2 hover:text-primary;
+
+    // the dot: the detector is ready
+    &::before {
+      @apply size-3 rounded-pill bg-accent;
+
+      content: '';
+    }
   }
 
   .down {

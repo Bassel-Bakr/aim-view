@@ -1,0 +1,122 @@
+@use 'themes/report' as r;
+@reference '../../../tailwind.css';
+
+@layer components {
+  .segment {
+    border-radius: r.$budget-radius;
+  }
+}
+
+@layer components {
+  :host {
+    @apply flex flex-col gap-5;
+  }
+
+  .panel {
+    @apply rounded-lg border border-border bg-surface-2 px-7 py-6;
+  }
+
+  .panel-head {
+    @apply mb-3 flex items-baseline justify-between gap-4;
+  }
+
+  .panel-title {
+    @apply m-0 text-h3 font-strong;
+  }
+
+  .panel-hint {
+    @apply text-xs text-muted;
+  }
+
+  .bar {
+    @apply mt-3 mb-3 flex h-(--budget-thin-height) gap-1;
+  }
+
+  .thin-bar {
+    @apply mt-1 mb-3 flex h-(--budget-thin-height) gap-1 opacity-60;
+  }
+
+  .segment {
+    @apply min-w-0;
+  }
+
+  .reference {
+    @apply text-xs;
+
+    > span {
+      @apply text-muted;
+    }
+  }
+
+  .legend {
+    @apply flex flex-wrap gap-x-6 gap-y-1 text-sm text-secondary;
+  }
+
+  .average {
+    @apply text-muted;
+  }
+
+  .swatch {
+    @apply mr-2 inline-block size-(--swatch-size) rounded-(--swatch-radius);
+  }
+
+  .distance {
+    @apply grid grid-cols-(--distance-columns) items-center gap-5 py-1 tabular-nums;
+  }
+
+  .band {
+    @apply text-secondary;
+  }
+
+  .track {
+    @apply h-(--budget-thin-height) overflow-hidden rounded-sm bg-surface-0;
+  }
+
+  .fill {
+    @apply block h-full rounded-sm bg-accent;
+  }
+
+  .kill {
+    @apply text-right;
+  }
+
+  .short {
+    @apply text-right text-muted;
+  }
+
+  .check {
+    @apply border-t border-grid;
+  }
+
+  .check-line {
+    @apply grid cursor-pointer list-none grid-cols-(--check-columns) items-baseline gap-4 py-3;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+  }
+
+  .flag {
+    @apply justify-self-start rounded-pill bg-surface-3 px-4 text-2xs font-bold tracking-wide whitespace-nowrap text-secondary uppercase;
+
+    &[data-flag='attention'] {
+      @apply bg-attention text-on-attention;
+    }
+  }
+
+  .check-title {
+    @apply font-strong;
+  }
+
+  .check-value {
+    @apply ml-2 text-secondary;
+  }
+
+  .check-why {
+    @apply mb-4 ml-(--flag-width) pl-4 text-sm text-muted;
+  }
+
+  .link {
+    @apply text-accent underline;
+  }
+}

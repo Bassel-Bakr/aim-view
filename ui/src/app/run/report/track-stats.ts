@@ -15,6 +15,9 @@ export interface TrackStat {
   why: string;
 }
 
+/** How many of the run's cards go above the video, as its headline; the report shows the rest. */
+export const HEADLINE_TILES = 6;
+
 /** The run's cards. Bots that die add the switching between them. */
 export function trackStats(s: TrackSummary): TrackStat[] {
   const bots = s.bots > 0;
