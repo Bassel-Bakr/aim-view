@@ -29,11 +29,13 @@ pub fn compare(path: &str, got: &Value, want: &Value, diff: &mut Diff) {
                 compare(&format!("{path}[{i}]"), x, y, diff);
             }
         }
+        // only the fields Python's output has: a field the core adds (Python has no such thing) is not compared, so a
+        // new field needs no change here; a field Python has and the core lacks is a difference
         (Value::Object(a), Value::Object(b)) => {
-            for k in a.keys().chain(b.keys().filter(|k| !a.contains_key(*k))) {
-                match (a.get(k), b.get(k)) {
-                    (Some(x), Some(y)) => compare(&format!("{path}.{k}"), x, y, diff),
-                    (x, y) => diff.wrong.push(format!("{path}.{k}: {x:?} against {y:?}")),
+            for (k, y) in b {
+                match a.get(k) {
+                    Some(x) => compare(&format!("{path}.{k}"), x, y, diff),
+                    None => diff.wrong.push(format!("{path}.{k}: missing against {y}")),
                 }
             }
         }

@@ -29,8 +29,8 @@ fn scenario_facts_match_python() {
     let mut wrong = 0;
     for (name, w) in want {
         let mut g = serde_json::to_value(&got[name]).unwrap();
-        // the ammo rules are the core's own: Python reads none
-        g.as_object_mut().unwrap().remove("reload");
+        // only the facts Python reads: a fact the core adds is not compared
+        g.as_object_mut().unwrap().retain(|k, _| w.get(k).is_some());
         if &g != w {
             if wrong < 5 {
                 eprintln!("{name}: rust {g} python {w}");

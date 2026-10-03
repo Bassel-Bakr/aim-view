@@ -57,11 +57,7 @@ fn tracking_review_with_the_cut_off_matches_python() {
             let kills = KillTimes::Stats { name: stats, text: &stats_text };
             let got = review_tracking(&tracks, kills, video, limit, readings, None, Some(faint)).unwrap();
             let mut diff = Diff::default();
-            let mut got = serde_json::to_value(&got).unwrap();
-            // the time back on the bot after each of its turns: the core's own, Python's review has none
-            if let Some(m) = got.pointer_mut("/summary/motion").and_then(|m| m.as_object_mut()) {
-                m.remove("turns_back");
-            }
+            let got = serde_json::to_value(&got).unwrap();
             compare("report.json", &got, &want, &mut diff);
             eprintln!(
                 "{case} {offset}: cut {} ({} tracks), {} numbers equal within 1e-9, not to the bit",

@@ -69,18 +69,8 @@ fn clicking_review_matches_python() {
         let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, want["video"].as_str().unwrap(), None, None).unwrap();
         let mut diff = Diff::default();
         compare("flicks.json", &serde_json::to_value(&got.flicks).unwrap(), &read(&dir.join("flicks.json")), &mut diff);
-        // the what-if lines, each flick's camera speed and the flick speed profile are the core's own: Python's report
-        // has none
-        let without_speed = |mut v: serde_json::Value| {
-            v.as_array_mut().unwrap().iter_mut().for_each(|m| _ = m.as_object_mut().unwrap().remove("speed"));
-            v
-        };
-        let measures = without_speed(serde_json::to_value(&got.report.flicks).unwrap());
-        compare("measures.json", &measures, &read(&dir.join("measures.json")), &mut diff);
+        compare("measures.json", &serde_json::to_value(&got.report.flicks).unwrap(), &read(&dir.join("measures.json")), &mut diff);
         let mut report = serde_json::to_value(&got.report).unwrap();
-        report["summary"].as_object_mut().unwrap().remove("what_if");
-        report["summary"].as_object_mut().unwrap().remove("flick_profile");
-        report["flicks"] = without_speed(report["flicks"].take());
         report["issues"] = without_words(&report["issues"]);
         want["issues"] = without_words(&want["issues"]);
         compare("report.json", &report, &want, &mut diff);
