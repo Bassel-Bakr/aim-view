@@ -157,6 +157,20 @@ python python/model/eval_vods.py test_out/vod_model/runs/small_v2/best.pt --out 
   "E:/OBS/KovOBS/ClickTrack Vertical 2t Long/ClickTrack Vertical 2t Long - 58 - 2026.06.26-19.41.13.mp4"
 ```
 
+The video-alone kill finder (a clicking run's kills from the video alone, with no stats file and no HUD:
+`src/matching.rs`, `match_video`) on the 48 runs in `video_alone_runs.json` (one run per scenario: 29 for development,
+19 of held-out scenarios), scored against each run's stats file (a kill within 3 frames, one to one). It takes the
+model's name, or a model file with its _u8in export beside it (step 4). It tracks each run once in the app's native
+review (about 15 minutes for full_v3 on the RTX 5070 Ti) and keeps the tracks in
+`test_out/vod_model/eval/video_alone/<model>/`, so after a change to the finder it only scores again (under a minute).
+`--retrack` tracks again after a change to the tracking. It writes `test_out/vod_model/eval/video_alone_<model>.json`:
+
+```bash
+python python/model/eval_video_alone.py full_v3
+```
+
+full_v3 (2026-10-04): recall 0.945 and precision 0.955 on 47 runs (one has no clock offset); held out, 0.973 and 0.967.
+
 Results land in `test_out/vod_model/eval/`.
 
 ## 4. Export to ONNX

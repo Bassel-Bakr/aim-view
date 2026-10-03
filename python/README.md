@@ -240,11 +240,42 @@ stretch: on 1w4ts that matched the stats file's shots for all 142 kills. Reviewe
 the same kills, misses, accuracy and flagged checks as with its stats file. The score comes from the file name. A HUD
 read takes about 10 s and runs alongside the tracking.
 
-Without a stats file or a readable HUD, the run is reviewed from the video alone. A kill is a target whose track
-ends near the crosshair, unless another track picks the same target up again within 0.5 s (allowing for the camera's
-turn), it is the crosshair, or three or more steady tracks vanish at once (the run ended). Short, flickering
-detections, such as a game's HUD text, do not count towards that last rule: on the uploaded Aim Lab run (2007 1w6ts,
-206 kills from 217 shots) they made the review drop half the kills.
+Without a stats file or a readable HUD, the run is reviewed from the video alone (src/matching.rs: `match_video`). A
+kill is a track that ends near the crosshair. Near means within the target's radius (from the run's median blob area)
+plus 0.25 degrees, and at least 0.6 degrees. A track's end is no kill when:
+
+- another track continues it: the tracker lost the target, but it did not die;
+- it is the crosshair (see below);
+- three or more steady tracks (5 frames or more) end within a frame of it: the run ended or restarted. Short,
+  flickering detections, such as a game's HUD text, do not count here: on the uploaded Aim Lab run (2007 1w6ts, 206
+  kills from 217 shots) they made the review drop half the kills;
+- its blob is less than a tenth of the run's typical target: it is a hit marker or a spark (the smallest real kill
+  seen was 0.24 of it);
+- another kill was found within 3 frames: it is the same kill twice.
+
+A track continues another when it starts within 0.5 s of the other's end (or up to 2 frames before it), within 1
+degree of where that target would be. That place is its last place, moved by the camera's turn since, with the target
+either keeping its speed over its last 3 frames or standing still. Two more tests keep a new target from passing for a
+lost one. A target hidden under the crosshair stays there: if its place would have come out from under the crosshair
+(more than 1.5 times "near" from it) on 2 or more of the missing frames, the tracker would have seen it, so it died.
+And a target that comes back is where it was and as big: after 3 or more missing frames, a track that starts more than
+half a radius from that place, or with a blob less than half or more than twice as big, is a new target, such as one
+that spawned beside the dead one (after 2 missing frames the limit is 1.5 radii).
+
+Before that, the finder repairs tracks that the camera's turn fooled at a kill. On a plain wall, with the target at the
+crosshair gone, the frame's shift can line another target up with the dead one's place. The tracker then hands the
+dead target's track on to that target, and starts new tracks for the targets that stayed put. A track at the
+crosshair that jumps more than "near" with the frame's shift is split there when the shift is a spike (more than 1
+degree, and 3 times the shifts of the frames either side), or when the jump is more than twice "near" and lands within
+"near" of a track that ended the frame before. Its first part ends where the target died. At a spike, the camera's
+turn is the mean of the frames either side.
+
+python/review.py's `match_video` keeps the old rules: a track picked up again within 0.5 s (allowing for the camera's
+turn) continues it, with no repair, no test of where and how big a target comes back, and no limit on blob size. It
+stays only as the reference for the parity of the HUD path; the core's video-alone path differs from it on purpose.
+`python/model/eval_video_alone.py` scores the core's finder against the stats files of 48 clicking runs
+(python/model/REPRODUCE.md, step 3). With full_v3 it finds 94.5% of the kills within 3 frames, and 95.5% of the kills it
+gives are real (on the held-out scenarios, 97.3% and 96.7%). The old rules found 83.1%, with 94.8% real.
 
 A track is the crosshair when it stays on the crosshair while the camera turns, which a static target cannot do, or
 when it lasts 3 frames or fewer on a crosshair spot (`review.crosshair_spots`): a fixed point near the crosshair where
@@ -253,12 +284,12 @@ is marked by every model in about half the turning frames; right after a kill, t
 target look picked up again, so its kill was lost or came late. The user's KovaaK's runs have no such spot with
 small_v7.
 
-Checked on small_v7's tracks against the stats files (precision, recall, a kill within 3 frames): 1w4ts 0.99, 0.99;
-ClickTrack Vertical 2t 1.00, 0.97; 10 Sphere 0.81, 0.82 (156 kills for 155, but often 4 to 6 frames early at 120 fps:
-the tiny target is lost under the crosshair just before the click); Pokeball 1 0.67, 0.70; Pokeball 5 0.64, 0.61;
-Jumbo1wall9000targets 0.6, 0.1 (a dense field). On the Aim Lab run, against the hits read from Aim Lab's POINTS number
-(it adds 10 a hit and takes about 5 a miss): 211 kills, 194 right, 17 extra, 12 missed. Score, shots, misses, accuracy
-and sensitivity are not available, and the misses check is skipped.
+The old rules, checked on small_v7's tracks against the stats files (precision, recall, a kill within 3 frames): 1w4ts
+0.99, 0.99; ClickTrack Vertical 2t 1.00, 0.97; 10 Sphere 0.81, 0.82 (156 kills for 155, but often 4 to 6 frames early at
+120 fps: the tiny target is lost under the crosshair just before the click); Pokeball 1 0.67, 0.70; Pokeball 5 0.64,
+0.61; Jumbo1wall9000targets 0.6, 0.1 (a dense field). On the Aim Lab run, against the hits read from Aim Lab's POINTS
+number (it adds 10 a hit and takes about 5 a miss): 211 kills, 194 right, 17 extra, 12 missed. Score, shots, misses,
+accuracy and sensitivity are not available, and the misses check is skipped.
 
 A recording named other than KovOBS's way (`Scenario - Score - date`) gets no score unless the part after the
 scenario starts with a number.

@@ -24,6 +24,8 @@ python python/model/test_model.py              # the detector's tests
 python python/model/eval_vods.py <model>       # static runs against their stats files (the app's native review of the
                                                # model's _u8in export; --python: python/review.py with a .pt or .onnx)
 python python/model/eval_moving.py name=<model> ...      # every scenario kind against the stats files (--python too)
+python python/model/eval_video_alone.py [model]  # the video-alone kill finder on 48 runs against their stats files
+                                               # (tracks kept per model; --retrack after a change to the tracking)
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
 bun run build                                  # every mode's build: ui/dist/browser, server, desktop
@@ -64,7 +66,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 - **Large jobs need an explicit go.** Training a model, long GPU runs or a new subsystem start only after the user says
   so.
 - **Correctness first.** The user wants near-100% accuracy, even at the cost of speed. Judge a detector by the
-  stats-file checks (`eval_vods.py`, `eval_moving.py`), not only crop scores.
+  stats-file checks (`eval_vods.py`, `eval_moving.py`, `eval_video_alone.py`), not only crop scores.
 - **Bun for JavaScript** tools, not Node.
 - **Angular for speed.** No zone.js. OnPush everywhere (Angular 22's default: never set `Eager`). Prefer signals for
   state (RxJS is allowed where it fits better). Data comes through `HttpClient` (which sends with `fetch`, Angular's
@@ -259,4 +261,12 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   through the app's native pipeline by default (--python: the old one).
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
-  Rust prototype in `python/model/rust/` becomes the start of the core's detector).
+  Rust prototype in `python/model/rust/` becomes the start of the core's detector); with a stats file, the flick paths
+  and the count of flicks measured could gain from the video-alone finder's repairs (matching.rs `Paths`: a false camera
+  turn at a kill, a target merged with the next): untested; measure on the stats-file runs (Smoothbot Switch Robots:
+  41 flicks for 54 kills); the camera's turn at a kill fixed at its source (src/track.rs `view_shift` lines another
+  target up with a dead one on a plain wall), for every review; the video-alone benchmark has only 8 switching runs
+  (VT DriftTS breaks into many tracks); the UI does not show the device a review ran on (/api/job `device`); a partial
+  upload a server crash leaves (`.incoming-*.part` in the uploads folder) is never cleaned up; the flick table (16
+  columns, 1,190 px) scrolls in its box at every width; at 1024 px the run's title is squeezed by the toolbar;
+  python/model/infer.py still uses the fixed threshold, not the model's settings file (the `--python` path).
