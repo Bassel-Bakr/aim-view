@@ -11,10 +11,11 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{Answer, Library, modified, read_json, write_json};
-use crate::review::{Request, TimeWindow, review};
+use crate::review::{Request, TimeWindow, add_device, review};
 use crate::run_window::{RunMarks, covers};
 
-/// A review job: its stage, how far it is (frames), and at the end its time or its error.
+/// A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded ("DirectML",
+/// "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error.
 #[derive(Clone, Serialize)]
 pub struct Job {
     stage: String,
@@ -25,11 +26,13 @@ pub struct Job {
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device: Option<String>,
 }
 
 impl Job {
     pub(crate) fn new(stage: &str, model: &str) -> Job {
-        Job { stage: stage.into(), done: 0, total: 1, seconds: None, error: None, model: model.into() }
+        Job { stage: stage.into(), done: 0, total: 1, seconds: None, error: None, model: model.into(), device: None }
     }
 }
 
@@ -120,25 +123,39 @@ impl Library {
         drop(jobs);
         let started = Instant::now();
         let first = json!(*job.lock().map_err(|_| "the job is broken".to_string())?);
+        let id = id.to_string();
         std::thread::spawn(move || {
             let progress = |stage: &str, done: usize, total: usize| {
                 if let Ok(mut j) = job.lock() {
                     (j.stage, j.done, j.total) = (stage.into(), done, total);
                 }
             };
-            let outcome = crate::ffmpeg::ensure(|mb, of| progress("ffmpeg", mb, of)).and_then(|()| review(&req, &progress)).and_then(|r| {
+            let on_device = |device: &'static str| {
+                if let Ok(mut j) = job.lock() {
+                    add_device(j.device.get_or_insert_with(String::new), device);
+                }
+            };
+            let reviewed = crate::ffmpeg::ensure(|mb, of| progress("ffmpeg", mb, of)).and_then(|()| review(&req, &progress, &on_device));
+            let outcome = reviewed.and_then(|r| {
                 write_json(&out.join("tracks.json"), &r.tracks).map_err(|f| f.message)?;
                 write_json(&out.join("readings.json"), &r.readings).map_err(|f| f.message)?;
                 write_json(&out.join("hud.json"), &r.hud).map_err(|f| f.message)?;
                 crate::finder::keep_with_review(&out, r.found.as_ref())
             });
             if let Ok(mut j) = job.lock() {
+                // one line in the log for each review: the model, the device it ran on, and the time or the error
+                let on = j.device.as_ref().map_or(String::new(), |d| format!(" on {d}"));
                 match outcome {
                     Ok(()) => {
                         (j.stage, j.done, j.total) = ("done".into(), 1, 1);
-                        j.seconds = Some((started.elapsed().as_secs_f64() * 10.0).round() / 10.0);
+                        let seconds = (started.elapsed().as_secs_f64() * 10.0).round() / 10.0;
+                        j.seconds = Some(seconds);
+                        println!("reviewed {id}: {model}{on}, {seconds} s");
                     }
-                    Err(e) => (j.stage, j.error) = ("error".into(), Some(e)),
+                    Err(e) => {
+                        println!("the review of {id} failed ({model}{on}): {e}");
+                        (j.stage, j.error) = ("error".into(), Some(e));
+                    }
                 }
             }
         });

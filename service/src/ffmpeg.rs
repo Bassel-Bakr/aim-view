@@ -1,11 +1,12 @@
-//! ffmpeg for the review, from where the configuration says (config.rs: `Ffmpeg`): the PATH, a folder, or installed
-//! the way KovOBS installs it (ffmpeg-sidecar): downloaded into a folder the first time a review needs it, and
-//! unpacked there (the desktop app does not ship it). On Windows the download is BtbN's GPL build, which has the dav1d
+//! ffmpeg for the review, from where the configuration says (config.rs: `Ffmpeg`): the PATH, a folder, or found the
+//! way KovOBS finds it: the PATH's ffmpeg and ffprobe when both run, else (ffmpeg-sidecar) downloaded into a folder
+//! the first time a review needs it, and unpacked there (the desktop app does not ship it). On Windows the download is BtbN's GPL build, which has the dav1d
 //! AV1 decoder: gyan.dev's essentials build (KovOBS's) decodes AV1 with libaom, 2.5 times slower. Until a library sets
 //! it (the examples), ffmpeg comes from the PATH.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, RwLock};
+use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use ffmpeg_sidecar::download::{
     FfmpegDownloadProgressEvent, download_ffmpeg_package_with_progress, ffmpeg_download_url, unpack_ffmpeg,
@@ -29,9 +30,23 @@ fn source() -> Ffmpeg {
     SOURCE.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Whether the PATH has an ffmpeg and an ffprobe that run: asked once a process.
+fn on_path() -> bool {
+    static FOUND: OnceLock<bool> = OnceLock::new();
+    *FOUND.get_or_init(|| {
+        let runs = |name: &str| {
+            let mut cmd = Command::new(name);
+            cmd.arg("-version").stdout(Stdio::null()).stderr(Stdio::null());
+            cmd.status().is_ok_and(|s| s.success())
+        };
+        runs("ffmpeg") && runs("ffprobe")
+    })
+}
+
 /// One of ffmpeg's programs ("ffmpeg", "ffprobe").
 pub fn program(name: &str) -> PathBuf {
     match source() {
+        Ffmpeg::Download(_) if on_path() => PathBuf::from(name),
         Ffmpeg::Folder(folder) | Ffmpeg::Download(folder) => folder.join(format!("{name}{}", std::env::consts::EXE_SUFFIX)),
         Ffmpeg::Path => PathBuf::from(name),
     }
@@ -51,10 +66,13 @@ fn installed(folder: &Path, url: &str) -> bool {
     source.trim() == url && program("ffmpeg").is_file() && program("ffprobe").is_file()
 }
 
-/// Installs ffmpeg when it is to be downloaded and is not yet (or an older build is). `progress` hears the megabytes
+/// Installs ffmpeg when it is to be downloaded, the PATH has none, and it is not yet installed (or an older build is). `progress` hears the megabytes
 /// downloaded, of how many.
 pub fn ensure(progress: impl Fn(usize, usize)) -> Result<(), String> {
     let Ffmpeg::Download(ref folder) = source() else { return Ok(()) };
+    if on_path() {
+        return Ok(());
+    }
     let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
     let url = download_url()?;
     if installed(folder, url) {

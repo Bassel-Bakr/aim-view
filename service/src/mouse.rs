@@ -36,8 +36,23 @@ mod win {
 }
 
 /// This computer's offset from UTC (local minus UTC, seconds) at a moment (seconds since 1970), daylight saving time
-/// included, as Python's local time conversions take it. 0 off Windows.
+/// included, as Python's local time conversions take it: Windows' time zone, or on Linux and macOS the system's (TZ,
+/// else /etc/localtime), read by the C library's localtime_r. 0 where it cannot be read.
 pub fn utc_offset_at(secs: f64) -> i64 {
+    #[cfg(unix)]
+    {
+        unsafe extern "C" {
+            // POSIX's (the libc crate declares it only for Windows)
+            fn tzset();
+        }
+        let t = secs.floor() as libc::time_t;
+        // SAFETY: tm is plain data that localtime_r fills; tzset reads the time zone (nothing here changes TZ)
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        unsafe { tzset() };
+        if !unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
+            return tm.tm_gmtoff as i64;
+        }
+    }
     #[cfg(windows)]
     {
         // FILETIME: 100 ns steps since 1601
@@ -127,6 +142,27 @@ mod tests {
     fn offsets_are_whole_quarter_hours() {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
         assert_eq!(utc_offset_at(now) % 900, 0);
+    }
+
+    /// Off Windows the offset follows the system's time zone and its daylight saving time: New York's (as a POSIX TZ,
+    /// which needs no time zone files), in a child process of this test, so no other test sees TZ change.
+    #[cfg(unix)]
+    #[test]
+    fn offsets_follow_the_time_zone() {
+        if std::env::var_os("AIMVIEW_TZ_CHILD").is_some() {
+            assert_eq!(utc_offset_at(1_704_067_200.0), -5 * 3600, "2024-01-01 00:00 UTC: EST");
+            assert_eq!(utc_offset_at(1_719_792_000.0), -4 * 3600, "2024-07-01 00:00 UTC: EDT");
+            assert_eq!(crate::library::local_stamp(1_719_792_000.0), "2024.06.30-20.00.00");
+            return;
+        }
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "mouse::tests::offsets_follow_the_time_zone"])
+            .env("AIMVIEW_TZ_CHILD", "1")
+            .env("TZ", "EST5EDT,M3.2.0,M11.1.0")
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && said.contains("1 passed"), "{said}{}", String::from_utf8_lossy(&out.stderr));
     }
 
     #[test]

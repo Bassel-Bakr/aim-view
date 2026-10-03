@@ -17,7 +17,7 @@ use aimview_service::{ApiRequest, Config, Layout, Library, api};
 use serde_json::{Value, json};
 
 fn ask(lib: &Arc<Library>, method: &str, path: &str, body: &str) -> (u16, Value) {
-    let res = api::handle(lib, &ApiRequest { method, path_and_query: path, range: None, body: body.as_bytes() });
+    let res = api::handle(lib, &ApiRequest { method, path_and_query: path, range: None, body: body.as_bytes(), upload: None });
     let body = serde_json::from_slice(&res.body).unwrap_or_else(|_| json!(String::from_utf8_lossy(&res.body)));
     (res.status, body)
 }

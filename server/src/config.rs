@@ -37,8 +37,11 @@ impl Device {
 pub enum FfmpegChoice {
     /// The PATH's
     Path,
-    /// The one in this folder, or one downloaded into it
+    /// The one in this folder (named by the user); when it has none, as `Auto`
     Folder(PathBuf),
+    /// None named, as KovOBS finds it: the PATH's when it has ffmpeg and ffprobe, else the one in this folder (the data
+    /// folder's), downloaded into it before the first review
+    Auto(PathBuf),
 }
 
 /// The command line. Each flag overrides the same setting in the settings file.
@@ -76,8 +79,8 @@ pub struct Flags {
     /// Where the detector runs [default: auto]
     #[arg(long, value_enum)]
     pub device: Option<Device>,
-    /// ffmpeg: "path" for the one on the PATH, or a folder: the ffmpeg in it, or one downloaded into it when it has
-    /// none (BtbN's build, with the dav1d AV1 decoder) [default: ffmpeg in the data folder]
+    /// ffmpeg: "path" for the one on the PATH only, or a folder: the ffmpeg in it [default: the PATH's when it has one,
+    /// else ffmpeg/ in the data folder, downloaded there when missing (BtbN's build, with the dav1d AV1 decoder)]
     #[arg(long, value_name = "FOLDER|path")]
     pub ffmpeg: Option<PathBuf>,
     /// The server-mode UI build (`bun run build:server`) [default: the repo's ui/dist/server/browser]
@@ -165,7 +168,7 @@ impl Settings {
             ],
             models: repo.join("python").join("model").join("exports"),
             device: Device::Auto,
-            ffmpeg: FfmpegChoice::Folder(repo.join("test_out").join("ffmpeg")),
+            ffmpeg: FfmpegChoice::Auto(repo.join("test_out").join("ffmpeg")),
             ui: repo.join("ui").join("dist").join("server").join("browser"),
             old: repo.join("python").join("app"),
             token: None,
@@ -215,12 +218,12 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
         return Err("the token may hold only letters, digits and - . _ ~".into());
     }
     let data = path(flags.data, file.data).unwrap_or(defaults.data);
-    // "path": the PATH's ffmpeg; without a choice, the data folder's (which follows --data)
+    // "path": the PATH's ffmpeg; without a choice, the PATH's or else the data folder's (which follows --data)
     let is_path = |p: &PathBuf| p.as_os_str().eq_ignore_ascii_case("path");
     let ffmpeg = match flags.ffmpeg.or(file.ffmpeg.map(|p| if is_path(&p) { p } else { from_file(base, p) })) {
         Some(p) if is_path(&p) => FfmpegChoice::Path,
         Some(p) if !p.as_os_str().is_empty() => FfmpegChoice::Folder(p),
-        _ => FfmpegChoice::Folder(data.join("ffmpeg")),
+        _ => FfmpegChoice::Auto(data.join("ffmpeg")),
     };
     let host = flags.host.or(file.host).unwrap_or(defaults.host);
     if host.is_empty() {
@@ -329,7 +332,7 @@ mod tests {
         assert_eq!(s.ffmpeg, FfmpegChoice::Path);
         // ffmpeg follows the data folder
         let s = resolve(flags(&["--data", "d"]), FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
-        assert_eq!(s.ffmpeg, FfmpegChoice::Folder(Path::new("d").join("ffmpeg")));
+        assert_eq!(s.ffmpeg, FfmpegChoice::Auto(Path::new("d").join("ffmpeg")));
         let file = parse_file("ffmpeg = \"PATH\"").unwrap();
         let s = resolve(Flags::default(), file, Path::new("base"), Settings::defaults()).unwrap();
         assert_eq!(s.ffmpeg, FfmpegChoice::Path);

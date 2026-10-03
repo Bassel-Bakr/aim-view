@@ -2,7 +2,9 @@
 //! stamps, and a recording's folder name (python/server.py: NAME, STATS_NAME, stamp_seconds, cache_dir).
 
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
 use std::sync::OnceLock;
+#[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A recording's name as KovOBS writes it: "<scenario> - <score> - <yyyy.mm.dd-hh.mm.ss>.mp4": (scenario, score, stamp).
@@ -91,9 +93,7 @@ pub(crate) fn free_name(p: PathBuf) -> PathBuf {
 
 /// A time (seconds since 1970) as a local file-name stamp, for a video added with a name of its own.
 pub fn local_stamp(secs: f64) -> String {
-    static OFFSET: OnceLock<i64> = OnceLock::new();
-    let offset = *OFFSET.get_or_init(local_offset);
-    let t = secs as i64 + offset;
+    let t = secs as i64 + offset_at(secs);
     let (days, rem) = (t.div_euclid(86_400), t.rem_euclid(86_400));
     // the civil date from days since 1970 (Howard Hinnant's algorithm)
     let z = days + 719_468;
@@ -108,7 +108,21 @@ pub fn local_stamp(secs: f64) -> String {
     format!("{year:04}.{month:02}.{day:02}-{:02}.{:02}.{:02}", rem / 3600, rem / 60 % 60, rem % 60)
 }
 
+/// This computer's offset from UTC in seconds for a local stamp: on Windows its time zone's now (read once), elsewhere
+/// the system's time zone's at that time, daylight saving time included (mouse.rs: `utc_offset_at`).
+#[cfg(windows)]
+fn offset_at(_secs: f64) -> i64 {
+    static OFFSET: OnceLock<i64> = OnceLock::new();
+    *OFFSET.get_or_init(local_offset)
+}
+
+#[cfg(not(windows))]
+fn offset_at(secs: f64) -> i64 {
+    crate::mouse::utc_offset_at(secs)
+}
+
 /// This computer's offset from UTC in seconds (its time zone, now).
+#[cfg(windows)]
 fn local_offset() -> i64 {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
     #[cfg(windows)]
@@ -159,7 +173,7 @@ mod tests {
         assert_eq!(stamp_seconds("2000.01.01-00.00.10"), Some(10.0));
         assert_eq!(stamp_seconds("2000.03.01-00.00.00"), Some(60.0 * 86_400.0));
         assert_eq!(stamp_seconds("0026.06.01-00.00.00"), stamp_seconds("2026.06.01-00.00.00"));
-        assert_eq!(local_stamp(946_684_800.0 - local_offset() as f64), "2000.01.01-00.00.00");
+        assert_eq!(local_stamp(946_684_800.0 - offset_at(946_684_800.0) as f64), "2000.01.01-00.00.00");
         assert_eq!(slug("a/1wall - x (2).mp4"), "1wall_-_x_2_");
     }
 }

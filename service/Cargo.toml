@@ -31,3 +31,7 @@ zip = { version = "4.6", default-features = false, features = ["deflate"] }
 [target.'cfg(windows)'.dependencies]
 # its prebuilt library is downloaded at build time
 ort = { version = "=2.0.0-rc.10", features = ["directml"] }
+
+[target.'cfg(unix)'.dependencies]
+# the local time zone's offset at a given time (localtime_r), for local time stamps off Windows
+libc = "0.2"

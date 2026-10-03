@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use aimview::scenario::Facts;
 use serde_json::{Value, json};
@@ -130,6 +131,26 @@ impl Library {
     /// A video added from this computer (kept in the uploads), or a stats file for a recording (`id`), which it is then
     /// paired with. Nothing is overwritten.
     pub fn upload(&self, name: &str, id: Option<&str>, body: &[u8]) -> Answer<Value> {
+        self.add_upload(name, id, |dest| std::fs::write(dest, body))
+    }
+
+    /// The same for an upload already on disk (`file`, from `spool`, written as it arrived): it is moved into place,
+    /// never read into memory.
+    pub fn upload_file(&self, name: &str, id: Option<&str>, file: &Path) -> Answer<Value> {
+        self.add_upload(name, id, |dest| std::fs::rename(file, dest).or_else(|_| std::fs::copy(file, dest).and_then(|_| std::fs::remove_file(file))))
+    }
+
+    /// A new file in the uploads folder for an upload's body, written as it arrives (the HTTP server does so), which
+    /// `upload_file` then moves into place. Its name is not a video's or a stats file's: the list never shows it.
+    pub fn spool(&self) -> Answer<PathBuf> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        std::fs::create_dir_all(self.uploads()).map_err(|e| e.to_string())?;
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        Ok(self.uploads().join(format!(".incoming-{}-{n}.part", std::process::id())))
+    }
+
+    /// An upload's checks and its place in the uploads; `save` writes it there.
+    fn add_upload(&self, name: &str, id: Option<&str>, save: impl FnOnce(&Path) -> std::io::Result<()>) -> Answer<Value> {
         let name = Path::new(name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let ext = Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
         let (dest, id) = if ext == "csv" {
@@ -142,7 +163,7 @@ impl Library {
             return Err(Failure::bad(format!("not a video or a stats .csv: {name}")));
         };
         std::fs::create_dir_all(dest.parent().unwrap_or(&self.uploads())).map_err(|e| e.to_string())?;
-        std::fs::write(&dest, body).map_err(|e| e.to_string())?;
+        save(&dest).map_err(|e| e.to_string())?;
         let saved = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         match id {
             None => Ok(json!({ "id": format!("uploads/{saved}"), "saved": saved })),

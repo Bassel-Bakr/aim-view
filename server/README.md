@@ -30,7 +30,7 @@ With no settings, the server runs on the machine Aim View is made on:
 | Scenario folders | `--scenarios` (several) | KovaaK's `Saved\SaveGames\Scenarios` and `steamapps\workshop\content\824270` |
 | Models | `--models` | the repo's `python/model/exports` (`models.json` is found in the folder above) |
 | Device | `--device` | `auto`; also `directml`, `cuda`, `cpu` |
-| ffmpeg | `--ffmpeg` | `ffmpeg/` in the data folder; `path` for the PATH's |
+| ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg/` in the data folder; `path` for the PATH's only |
 | UI build | `--ui` | the repo's `ui/dist/server/browser` |
 | The old page, at /old/ | `--old` | the repo's `python/app` |
 | Token | `--token` | none |
@@ -54,13 +54,16 @@ token = "a-long-random-string"
 The data folder holds what the server writes: each recording's reviews and marks (`vod_app/`), uploads
 (`vod_uploads/`), the detector labels of submitted cut-offs (`vod_model/hand/cutoff/`), the raw mouse logs (`mouse/`)
 and ffmpeg (`ffmpeg/`). The Python server used the same layout in `test_out/`, so the reviews and marks it kept are
-read as they are. Python's scripts open the same library through `aimview-tool` (`python/aimview_tools.py`).
+read as they are. Python's scripts open the same library through `aimview-tool` (`python/aimview_tools.py`). An
+upload is written into the uploads folder as it arrives, so it takes little memory however large it is.
 
 ## ffmpeg
 
-The review reads the video's frames through ffmpeg. With a folder (the default), the server uses the ffmpeg in it, or
-downloads one into it before the first review: BtbN's build, which decodes AV1 with dav1d. gyan.dev's essentials
-build decodes AV1 with libaom, 2.5 times slower, and ignores `-skip_frame nokey`. `--ffmpeg path` uses the PATH's.
+The review reads the video's frames through ffmpeg. By default the server finds it as KovOBS does: first the PATH's
+ffmpeg and ffprobe, when both run; else the ones in `ffmpeg/` in the data folder; else it downloads them there before
+the first review: BtbN's build, which decodes AV1 with dav1d. gyan.dev's essentials build decodes AV1 with libaom, 2.5
+times slower, and ignores `-skip_frame nokey`. `--ffmpeg <folder>` uses the ffmpeg in that folder (when it has none,
+the PATH's, else a download into it). `--ffmpeg path` uses the PATH's only. The start-up log says which one it uses.
 
 ## The device
 
@@ -96,4 +99,6 @@ they are. Use it on a network you trust (your home network, or a VPN), never ope
 ## Logs
 
 One line per API request (method, path, status, time), never a body or a query. The UI's files, video ranges and
-review progress (`/api/job`) are logged only when they fail.
+review progress (`/api/job`) are logged only when they fail. Each review adds one line when it ends: the recording, the
+model and the device the detector ran on (with `--device auto`, the CPU when the GPU could not start it), and the time
+or the error. `/api/job` also names the device (`device`) once the detector has loaded.

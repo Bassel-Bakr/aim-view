@@ -1,7 +1,7 @@
 //! The review service (aimview-service) behind the HTTP side: the settings as its `Config`, each call as its
 //! `ApiRequest`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use aimview_service::{ApiRequest, Config, Ffmpeg, Layout, Library};
@@ -18,9 +18,14 @@ impl Api for Service {
             path_and_query: &call.path_and_query,
             range: call.range.as_deref(),
             body: &call.body,
+            upload: call.upload.as_deref(),
         };
         let r = aimview_service::handle(&self.0, &request);
         Reply { status: r.status, headers: r.headers, body: r.body }
+    }
+
+    fn spool(&self) -> Result<PathBuf, String> {
+        self.0.spool().map_err(|f| f.message)
     }
 }
 
@@ -44,11 +49,11 @@ fn config(s: &Settings) -> Config {
             Device::Cuda => aimview_service::Device::Cuda,
             Device::Cpu => aimview_service::Device::Cpu,
         },
-        // a folder's own ffmpeg is used as it is; an empty folder gets the download
+        // a named folder's own ffmpeg is used as it is; else the PATH's when it has one, or the folder's download
         ffmpeg: match &s.ffmpeg {
             FfmpegChoice::Path => Ffmpeg::Path,
             FfmpegChoice::Folder(f) if has_ffmpeg(f) => Ffmpeg::Folder(f.clone()),
-            FfmpegChoice::Folder(f) => Ffmpeg::Download(f.clone()),
+            FfmpegChoice::Folder(f) | FfmpegChoice::Auto(f) => Ffmpeg::Download(f.clone()),
         },
     }
 }
@@ -61,20 +66,33 @@ pub fn open(s: &Settings) -> Result<Arc<dyn Api>, String> {
     if matches!(s.device, Device::DirectMl) && !cfg!(windows) {
         return Err("--device directml is for Windows: use cuda or cpu".into());
     }
-    let config = config(s);
-    let ffmpeg = match &config.ffmpeg {
+    let lib = Library::open(config(s))?;
+    println!("{}", ffmpeg_line(&lib.config().ffmpeg));
+    Ok(Arc::new(Service(lib)))
+}
+
+/// Where the reviews' ffmpeg comes from, for the log. For the download, the PATH's is used when it has one (the
+/// service asks once, here).
+fn ffmpeg_line(source: &Ffmpeg) -> String {
+    match source {
         Ffmpeg::Path => "ffmpeg: the PATH's".to_string(),
         Ffmpeg::Folder(f) => format!("ffmpeg: {}", f.display()),
-        Ffmpeg::Download(f) => format!("ffmpeg: downloaded into {} before the first review", f.display()),
-    };
-    let lib = Library::open(config)?;
-    println!("{ffmpeg}");
-    Ok(Arc::new(Service(lib)))
+        Ffmpeg::Download(f) => {
+            let program = aimview_service::ffmpeg::program("ffmpeg");
+            if !program.starts_with(f) {
+                "ffmpeg: the PATH's".to_string()
+            } else if program.is_file() {
+                format!("ffmpeg: {} (the PATH has none)", f.display())
+            } else {
+                format!("ffmpeg: downloaded into {} before the first review (the PATH has none)", f.display())
+            }
+        }
+    }
 }
 
 /// The model and the device the reviews use, as the API tells them (/api/info).
 pub fn describe(api: &dyn Api, device: Device) -> String {
-    let call = Call { method: "GET".into(), path_and_query: "/api/info".into(), range: None, body: Default::default() };
+    let call = Call { method: "GET".into(), path_and_query: "/api/info".into(), range: None, body: Default::default(), upload: None };
     let info: serde_json::Value = serde_json::from_slice(&api.handle(&call).body).unwrap_or_default();
     let name = |key: &str| info[key].as_str().unwrap_or("?").to_string();
     let fallback = if device == Device::Auto { ", or the CPU when the GPU cannot start it" } else { "" };

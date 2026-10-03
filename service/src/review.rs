@@ -97,6 +97,20 @@ pub struct Reviewed {
 /// Where a review stands: its stage ("looking" at the key frames, "tracking", "linking"), frames done, of how many.
 pub type Progress<'a> = &'a (dyn Fn(&str, usize, usize) + Sync);
 
+/// Told the device each run's detector runs on ("DirectML", "CUDA" or "CPU") once it has loaded: with `Device::Auto`
+/// the CPU when the GPU could not start it.
+pub type DeviceNote<'a> = &'a (dyn Fn(&'static str) + Sync);
+
+/// Adds a device to the devices a review ran on: "DirectML", or "DirectML and CPU" when its runs' differ.
+pub fn add_device(devices: &mut String, device: &str) {
+    if !devices.split(" and ").any(|d| d == device) {
+        if !devices.is_empty() {
+            devices.push_str(" and ");
+        }
+        devices.push_str(device);
+    }
+}
+
 /// A run of the recording's frames: from a key frame's time (`from`) to the next run's (`to`, None for the last),
 /// its first frame's index in the recording and how many frames it has.
 #[derive(Clone, Debug, PartialEq)]
@@ -169,8 +183,8 @@ pub(crate) fn frame_bytes(info: &VideoInfo) -> usize {
     info.width * info.height + 2 * info.width.div_ceil(2) * info.height.div_ceil(2)
 }
 
-/// Reviews a recording: its tracks and readings.
-pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
+/// Reviews a recording: its tracks and readings. `on_device` is told where each run's detector runs.
+pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Result<Reviewed, String> {
     let info = probe(&req.video)?;
     if info.times.is_empty() {
         return Err("the video has no frames".into());
@@ -201,7 +215,7 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
             .map(|(i, (run, hud))| {
                 let skip = if i == 0 { run.first } else { 0 };
                 let (info, fixed, done) = (&info, &fixed, &done);
-                s.spawn(move || review_run(req, info, fixed, run, hud, skip, done, total, progress))
+                s.spawn(move || review_run(req, info, fixed, run, hud, skip, done, total, progress, on_device))
             })
             .collect();
         running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a run of the review failed".into()))).collect()
@@ -210,7 +224,7 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     let mut tracker = req.tracker();
     let mut camera = req.camera_watch(&fixed);
     let mut hud = HudWatch::new(info.width, info.height, info.full);
-    let mut device = "";
+    let mut devices = String::new();
     for (run, part) in runs.iter().zip(parts) {
         let part = part?;
         if tracker.add_part(part.track) != run.frames {
@@ -218,7 +232,7 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
         }
         camera.join(part.camera);
         hud.join(part.hud);
-        device = part.device;
+        add_device(&mut devices, part.device);
     }
     let frames = tracker.finish();
     let readings = camera.finish(&frames);
@@ -229,7 +243,7 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
         return Err("the HUD watch's runs do not join up".into());
     }
     let share = fixed.iter().map(|&v| v as f64).sum::<f64>() / fixed.len() as f64;
-    let detector = format!("onnxruntime ({device})");
+    let detector = format!("onnxruntime ({devices})");
     let (window, version, areas) = (req.window, aimview::track::REVIEW_VERSION, req.areas.clone());
     let tracks = Tracks { fps: info.fps, frames, fixed: share, detector, window, version, areas };
     let found = finding.join().map_err(|_| "the area finder failed")?;
@@ -311,6 +325,7 @@ fn review_run(
     done: &AtomicUsize,
     total: usize,
     progress: Progress,
+    on_device: DeviceNote,
 ) -> Result<RunPart, String> {
     let rgb_bytes = W * H * 3;
     let batch = req.batch.max(1);
@@ -318,6 +333,7 @@ fn review_run(
     let mut frames = Frames::open(&req.video, (run.first > 0).then_some(run.from), Some(run.frames + extra))?;
     let mut detector = Detector::new(&req.model, batch, fixed, req.device)?;
     let device = detector.device;
+    on_device(device);
     let mut started = req.tracker();
     started.start_at(run.first);
     let tracker = Mutex::new(started);

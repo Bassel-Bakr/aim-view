@@ -209,9 +209,10 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   The excluded areas (the run page's Excluded areas editor: draw, move, type; Find areas and Detect fresh; KovOBS's
   layout; area types; platform/area-labels.ts) work in every mode, and a review tracks with the recording's areas
   (tracked again when they change). The area finder (src/areas.rs, python/areas.py's port) reads the key frames the
-  review decodes for the fixed map (90 frames over the run when it has fewer than 24), and learns from saved areas:
-  equal to Python's on 17 recordings (every area, map and kind) and on the 1,788 examples' leave-one-out. An area of
-  type challenge_results (the end screen, at the end or between runs) is left out only while it shows (src/popup.rs
+  review decodes for the fixed map (90 frames over the run when it has fewer than 24; the browser reads them in a
+  worker of its own, area-finder.worker.ts, after the review or for Find areas without one, and keeps what it found),
+  and learns from saved areas: equal to Python's on 17 recordings (every area, map and kind) and on the 1,788
+  examples' leave-one-out. An area of type challenge_results (the end screen, at the end or between runs) is left out only while it shows (src/popup.rs
   `END_SCREEN`; left out all the time it hid VT FlyTS: 0 of 5 kills, now 5 of 5). The labelling tools (the area queue,
   Skip, Not an aim trainer; platform/labelling.ts) too; in the browser the examples and types are kept there and load
   from and download to area_examples.jsonl and area_kinds.json. The raw mouse log (src/mouse.rs, mouse_read.py's port,
@@ -241,11 +242,15 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   core, ONNX Runtime with DirectML (1.84 ms a frame for full_v3; the CPU when there is no GPU), split into two runs
   as in the browser. av1: 12.7 s in the app (the browser 16 s), 20 frames apart from Python's (GPU noise), the same 66
   kills. `cargo run -p aimview-service --release --example track -- <video> <model> <out>` reviews without the app.
-  ffmpeg is not shipped: the first review downloads it into the app's local data folder as KovOBS does (service/src/
+  ffmpeg is not shipped: as KovOBS does, the review uses the PATH's ffmpeg and ffprobe when both run, else the first
+  review downloads them into the app's local data folder (service/src/
   ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
-  python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
-  DirectML.dll in the installer.
+  python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). The installer ships what
+  the review needs beside the exe (desktop/installer-hooks.nsh): DirectML.dll (the ort crate's, newer than Windows'
+  own) and the VC++ runtime ONNX Runtime loads (msvcp140, msvcp140_1, vcruntime140, vcruntime140_1; desktop/build.rs
+  copies them from the newest Visual Studio). ONNX Runtime is linked into the exe. Checked: installed silently into
+  a folder, the app reviewed a recording on DirectML with every one of these DLLs loaded from that folder.
 - The Angular app does everything the old page (`python/app/`, now at /old/ on the Rust server) did, the player's
   full screen (F, Escape) included; the old page stays until the user retires it. Server mode stays (a stronger
   machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review

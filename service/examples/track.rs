@@ -30,7 +30,7 @@ fn main() {
     let out = PathBuf::from(&a[3]);
     std::fs::create_dir_all(&out).unwrap();
     let t = Instant::now();
-    let reviewed = review(&req, &|stage, done, total| eprint!("\r{stage} {done}/{total}      ")).unwrap_or_else(|e| panic!("{e}"));
+    let reviewed = review(&req, &|stage, done, total| eprint!("\r{stage} {done}/{total}      "), &|_| {}).unwrap_or_else(|e| panic!("{e}"));
     eprintln!("\nreviewed in {:.1} s with {}", t.elapsed().as_secs_f64(), reviewed.tracks.detector);
     let hud = reviewed.hud.as_ref().map_or("not read".into(), |h| format!("{:?}, {} kills", h.game, h.kills.len()));
     eprintln!("{} frames; the HUD: {hud}", reviewed.tracks.frames.len());

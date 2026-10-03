@@ -3,15 +3,17 @@
 //! can take a while (the review itself runs in the background, polled with /api/job).
 
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
 use axum::Router;
-use axum::body::{Body, Bytes};
+use axum::body::{Body, Bytes, HttpBody};
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE, SET_COOKIE};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio_util::io::ReaderStream;
 
 use crate::access::{Access, Verdict};
@@ -23,6 +25,9 @@ pub struct Call {
     pub path_and_query: String,
     pub range: Option<String>,
     pub body: Bytes,
+    /// An upload's body, written to this file as it arrived (`body` is then empty). The API moves it into place; what
+    /// it leaves is removed after it answers.
+    pub upload: Option<PathBuf>,
 }
 
 /// The review API's answer. `headers` hold its Content-Type.
@@ -35,6 +40,8 @@ pub struct Reply {
 /// The review API (aimview_service::api, or a stand-in in the tests).
 pub trait Api: Send + Sync + 'static {
     fn handle(&self, call: &Call) -> Reply;
+    /// A new file for an upload's body (POST /api/upload), on the disk the API keeps the uploads on.
+    fn spool(&self) -> Result<PathBuf, String>;
 }
 
 pub struct App {
@@ -46,7 +53,7 @@ pub struct App {
     pub old: PathBuf,
 }
 
-/// Every path goes through `answer`; uploads (a whole video) have no size limit.
+/// Every path goes through `answer`; uploads (a whole video) have no size limit: they go to disk as they arrive.
 pub fn router(app: Arc<App>) -> Router {
     Router::new().fallback(answer).with_state(app).layer(DefaultBodyLimit::disable())
 }
@@ -98,8 +105,22 @@ async fn route(app: &App, req: Request) -> Response {
 
 async fn call_api(app: &App, req: Request) -> Response {
     let (parts, body) = req.into_parts();
-    let Ok(body) = axum::body::to_bytes(body, usize::MAX).await else {
-        return text(StatusCode::BAD_REQUEST, "the request's body could not be read\n");
+    // an upload (a whole video, gigabytes) is written to a file as it arrives; the other bodies are small
+    let (body, upload) = if parts.method == Method::POST && parts.uri.path() == "/api/upload" {
+        let file = match app.api.spool() {
+            Ok(f) => f,
+            Err(e) => return text(StatusCode::INTERNAL_SERVER_ERROR, format!("the upload has nowhere to go: {e}\n")),
+        };
+        if let Err(failed) = spool(body, &file).await {
+            let _ = tokio::fs::remove_file(&file).await;
+            return failed;
+        }
+        (Bytes::new(), Some(file))
+    } else {
+        match axum::body::to_bytes(body, usize::MAX).await {
+            Ok(b) => (b, None),
+            Err(_) => return text(StatusCode::BAD_REQUEST, "the request's body could not be read\n"),
+        }
     };
     let call = Call {
         // HEAD is GET without the body, which the HTTP library leaves out
@@ -107,9 +128,15 @@ async fn call_api(app: &App, req: Request) -> Response {
         path_and_query: parts.uri.path_and_query().map_or("/", |p| p.as_str()).into(),
         range: parts.headers.get(RANGE).and_then(|r| r.to_str().ok()).map(String::from),
         body,
+        upload: upload.clone(),
     };
     let api = app.api.clone();
-    let Ok(reply) = tokio::task::spawn_blocking(move || api.handle(&call)).await else {
+    let answered = tokio::task::spawn_blocking(move || api.handle(&call)).await;
+    if let Some(file) = upload {
+        // the API moved it into place, or did not take it
+        let _ = tokio::fs::remove_file(&file).await;
+    }
+    let Ok(reply) = answered else {
         return text(StatusCode::INTERNAL_SERVER_ERROR, "the review service failed on this request\n");
     };
     let mut response = Response::new(Body::from(reply.body));
@@ -125,6 +152,22 @@ async fn call_api(app: &App, req: Request) -> Response {
         }
     }
     response
+}
+
+/// Writes a request's body to `file` as it arrives, so an upload of any size takes little memory; on failure, the
+/// answer to give (the body broke off, or the file could not be written).
+async fn spool(mut body: Body, file: &Path) -> Result<(), Response> {
+    let unwritten = |e: std::io::Error| text(StatusCode::INTERNAL_SERVER_ERROR, format!("the upload could not be written: {e}\n"));
+    let mut out = BufWriter::with_capacity(1 << 20, tokio::fs::File::create(file).await.map_err(unwritten)?);
+    while let Some(frame) = std::future::poll_fn(|cx| Pin::new(&mut body).poll_frame(cx)).await {
+        let frame = frame.map_err(|e| text(StatusCode::BAD_REQUEST, format!("the upload broke off: {e}\n")))?;
+        if let Ok(data) = frame.into_data() {
+            out.write_all(&data).await.map_err(unwritten)?;
+        }
+    }
+    // all of it on disk, and the file closed, before the API moves it
+    out.flush().await.map_err(unwritten)?;
+    Ok(())
 }
 
 /// A file, streamed, with its type and length; None when it cannot be opened.
@@ -197,12 +240,9 @@ mod tests {
 
     impl Api for Echo {
         fn handle(&self, call: &Call) -> Reply {
-            self.calls.lock().unwrap().push((
-                call.method.clone(),
-                call.path_and_query.clone(),
-                call.range.clone(),
-                call.body.to_vec(),
-            ));
+            // an upload's body is read back from its file
+            let body = call.upload.as_ref().map_or_else(|| call.body.to_vec(), |f| std::fs::read(f).unwrap());
+            self.calls.lock().unwrap().push((call.method.clone(), call.path_and_query.clone(), call.range.clone(), body));
             Reply {
                 status: if call.path_and_query.starts_with("/video") { 206 } else { 200 },
                 headers: vec![
@@ -212,6 +252,10 @@ mod tests {
                 ],
                 body: b"{}".to_vec(),
             }
+        }
+
+        fn spool(&self) -> Result<PathBuf, String> {
+            Ok(std::env::temp_dir().join(format!("aimview-server-upload-{}.part", std::process::id())))
         }
     }
 
@@ -307,6 +351,19 @@ mod tests {
         assert_eq!(calls[0], ("POST".into(), "/api/run?id=a%20b".into(), Some("bytes=5-".into()), b"{\"start\":1}".to_vec()));
         assert_eq!(calls[1].1, "/video?id=x");
         assert_eq!(calls[2].1, "/api/nothing");
+    }
+
+    #[tokio::test]
+    async fn an_upload_reaches_the_api_as_a_file() {
+        let (echo, router) = app(None);
+        let video: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+        let req = Request::post("/api/upload?name=a.mp4").header(HOST, "127.0.0.1:8770").body(Body::from(video.clone())).unwrap();
+        let response = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let calls = echo.calls.lock().unwrap();
+        assert_eq!(calls[0].1, "/api/upload?name=a.mp4");
+        assert!(calls[0].3 == video, "the file holds the whole body");
+        assert!(!echo.spool().unwrap().exists(), "the file the API left is removed");
     }
 
     #[tokio::test]

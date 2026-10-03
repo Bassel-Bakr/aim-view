@@ -59,6 +59,8 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             path_and_query: at,
             range: req.headers().get("Range").and_then(|r| r.to_str().ok()),
             body: req.body(),
+            // the window's request comes whole, its body already in memory: an upload is written from it
+            upload: None,
         }),
     })
 }

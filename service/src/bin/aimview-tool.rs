@@ -404,7 +404,7 @@ fn review_video(lib: &Library, line: &Line) -> Result<Value, Failure> {
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();
     aimview_service::ffmpeg::ensure(|mb, of| progress.show("ffmpeg", mb, of))?;
-    let r = review(&req, &|stage, done, total| progress.show(stage, done, total))?;
+    let r = review(&req, &|stage, done, total| progress.show(stage, done, total), &|_| {})?;
     let seconds = started.elapsed().as_secs_f64();
     progress.finish(seconds);
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;

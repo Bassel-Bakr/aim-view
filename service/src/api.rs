@@ -16,12 +16,15 @@ use crate::library::{Answer, Failure, Library};
 const VIDEO_CHUNK: u64 = 4 << 20;
 
 /// A request: its method ("GET", "POST"), its path with its query ("/api/report?id=..."), its Range header if any, and
-/// its body.
+/// its body (in memory, or for an upload a file).
 pub struct ApiRequest<'a> {
     pub method: &'a str,
     pub path_and_query: &'a str,
     pub range: Option<&'a str>,
     pub body: &'a [u8],
+    /// An upload's body as a file instead, written to disk as it arrived (the HTTP server streams /api/upload's body
+    /// into `Library::spool`'s file): /api/upload moves it into place. None: the body is `body`.
+    pub upload: Option<&'a Path>,
 }
 
 /// A response: its status, its headers (Content-Type always; for a video Accept-Ranges and Content-Range) and its body.
@@ -78,7 +81,13 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
         (true, "/api/run") => id().and_then(|id| lib.set_marks(&id, &body())),
         (false, "/api/stats") => id().and_then(|id| lib.stats_info(&id, query("q").as_deref())),
         (true, "/api/stats") => id().and_then(|id| lib.set_stats(&id, &body())),
-        (true, "/api/upload") => lib.upload(&query("name").unwrap_or_default(), query("id").as_deref(), req.body),
+        (true, "/api/upload") => {
+            let (name, of) = (query("name").unwrap_or_default(), query("id"));
+            match req.upload {
+                Some(file) => lib.upload_file(&name, of.as_deref(), file),
+                None => lib.upload(&name, of.as_deref(), req.body),
+            }
+        }
         (false, "/api/mouse") => id().and_then(|id| lib.mouse_measures(&id)),
         (false, "/api/info") => Ok(json!({ "detector": lib.model(), "device": lib.config().device.name() })),
         (false, "/api/exclude") => lib.exclude_answer(query("id").as_deref(), query("layout").as_deref() == Some("kovobs")),

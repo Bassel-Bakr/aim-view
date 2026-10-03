@@ -93,7 +93,7 @@ async fn run(settings: config::Settings, file: Option<PathBuf>) -> ExitCode {
     // python/server.py does at its start
     let warm = api.clone();
     tokio::task::spawn_blocking(move || {
-        let list = http::Call { method: "GET".into(), path_and_query: "/api/vods".into(), range: None, body: Default::default() };
+        let list = http::Call { method: "GET".into(), path_and_query: "/api/vods".into(), range: None, body: Default::default(), upload: None };
         warm.handle(&list);
     });
     let app = Arc::new(http::App { api, access, ui: settings.ui.clone(), old: settings.old.clone() });
