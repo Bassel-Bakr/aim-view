@@ -77,7 +77,30 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         (true, "/api/stats") => id().and_then(|id| lib.set_stats(&id, &body())),
         (true, "/api/upload") => lib.upload(&query("name").unwrap_or_default(), query("id").as_deref(), req.body()),
         (true, "/api/folder") => pick_folder(lib),
+        (false, "/api/mouse") => id().and_then(|id| crate::mouse::measures(lib, &id)),
+        (false, "/api/mouse/logger") => Ok(crate::mouse::logger_state()),
+        (true, "/api/mouse/logger") => crate::mouse::set_logger(query("on").as_deref() == Some("1")),
+        (false, "/api/info") => Ok(json!({ "detector": lib.settings().model, "device": "directml" })),
+        (false, "/api/exclude") => lib.exclude_answer(query("id").as_deref(), query("layout").as_deref() == Some("kovobs")),
+        (true, "/api/exclude") => id().and_then(|id| lib.set_exclude(&id, req.body())),
+        (false, "/api/find_areas") => id().and_then(|id| lib.find_areas(&id, query("copy").as_deref().unwrap_or("1") == "1")),
+        (true, "/api/area_kinds") => lib.save_kind(&body()),
+        (false, "/api/label_queue") => lib.label_queue(),
+        (true, "/api/label_skip") => id().and_then(|id| lib.skip_label(&id)),
+        (true, "/api/not_aim") => id().and_then(|id| lib.set_not_aim(&id, query("on").as_deref().unwrap_or("1") == "1")),
+        (false, "/api/faint") => id().map(|id| lib.faint(&id)),
+        (true, "/api/faint") => id().and_then(|id| lib.set_faint(&id, &body(), None)),
+        (false, "/api/faint_queue") => lib.faint_queue(),
+        (true, "/api/faint_skip") => id().and_then(|id| lib.skip_faint(&id)),
+        (true, "/api/faint_submit") => id().and_then(|id| lib.submit_faint(&id, offset(query("offset"))?)),
         _ => Err(Failure::missing(format!("not found: {path}"))),
+    })
+}
+
+/// A cut-off's offset from the query (python/server.py: `float(q.get("offset", 0.3))`).
+fn offset(q: Option<String>) -> Answer<f64> {
+    q.map_or(Ok(aimview::faint::DEFAULT_OFFSET), |o| {
+        o.trim().parse().map_err(|_| Failure::bad(format!("could not convert string to float: '{o}'")))
     })
 }
 

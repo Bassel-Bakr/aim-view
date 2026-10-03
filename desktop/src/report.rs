@@ -14,14 +14,15 @@ fn read(p: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(p).ok()?).ok()
 }
 
-/// The report of the review in `dir` of `video`, with its stats file when it has one, the user's run marks and the
-/// scenario's facts; None when the folder has no tracks.
+/// The report of the review in `dir` of `video`, with its stats file when it has one, the user's run marks, the
+/// scenario's facts and the user's faint-target cut-off (faint.json: {on, offset}); None when the folder has no tracks.
 pub fn work_out(
     dir: &Path,
     video: &Path,
     stats: Option<&Path>,
     run: Option<RunMarks>,
     facts: Option<&Facts>,
+    faint: Option<Value>,
 ) -> Result<Option<Value>, String> {
     let Some(tracks) = read(&dir.join("tracks.json")) else { return Ok(None) };
     let readings = read(&dir.join("readings.json")).unwrap_or(json!({ "camera": [], "countdown": [] }));
@@ -42,6 +43,7 @@ pub fn work_out(
         "limit": facts.and_then(|f| f.limit),
         "camera": readings["camera"],
         "countdown": readings["countdown"],
+        "faint": faint,
     });
     let outcome: Value = serde_json::from_slice(&aimview::review::review_json(&serde_json::to_vec(&request).map_err(|e| e.to_string())?))
         .map_err(|e| e.to_string())?;

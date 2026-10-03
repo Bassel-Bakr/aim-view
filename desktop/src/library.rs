@@ -50,10 +50,10 @@ pub type Answer<T> = Result<T, Failure>;
 /// What the user set, kept in the data folder: the VODs folder (OBS's recordings, one folder per scenario), KovaaK's
 /// folder (FPSAimTrainer, holding stats/ and the scenarios) and the model new reviews use.
 #[derive(Clone, Serialize, Deserialize)]
-struct Settings {
+pub(crate) struct Settings {
     vods: Option<PathBuf>,
     kovaak: PathBuf,
-    model: String,
+    pub(crate) model: String,
 }
 
 impl Default for Settings {
@@ -103,7 +103,7 @@ struct Pick {
 }
 
 pub struct Library {
-    data: PathBuf,
+    pub(crate) data: PathBuf,
     models: PathBuf,
     settings: Mutex<Settings>,
     stats: Mutex<StatsIndex>,
@@ -223,7 +223,7 @@ impl Library {
         }
     }
 
-    fn settings(&self) -> Settings {
+    pub(crate) fn settings(&self) -> Settings {
         self.settings.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
@@ -326,7 +326,7 @@ impl Library {
         Ok(p)
     }
 
-    fn review_dir(&self, id: &str) -> PathBuf {
+    pub(crate) fn review_dir(&self, id: &str) -> PathBuf {
         self.data.join("reviews").join(slug(id))
     }
 
@@ -361,9 +361,15 @@ impl Library {
         self.stats_for(&scenario, &stamp)
     }
 
+    /// The recording's stats file (see `stats_of`), for the mouse log's measures (mouse.rs).
+    pub fn stats_path(&self, id: &str) -> Option<PathBuf> {
+        let video = self.resolve(id).ok()?;
+        self.stats_of(id, &video)
+    }
+
     /// The review to show: (model, folder): the chosen model's, else the newest by another model; with none, the
     /// chosen model's folder for a new one.
-    fn shown(&self, id: &str) -> (String, PathBuf) {
+    pub(crate) fn shown(&self, id: &str) -> (String, PathBuf) {
         let model = self.settings().model;
         let models = self.review_dir(id).join("models");
         let own = models.join(&model);
@@ -397,7 +403,7 @@ impl Library {
 
     /// The recordings, newest first (python/server.py: Library.list).
     pub fn recordings(&self) -> Answer<Value> {
-        let mut out: Vec<Value> = Vec::new();
+        let (mut out, not_aim): (Vec<Value>, _) = (Vec::new(), self.not_aim());
         if let Some(vods) = self.settings().vods {
             for folder in std::fs::read_dir(&vods).into_iter().flatten().flatten() {
                 if !folder.path().is_dir() {
@@ -411,7 +417,7 @@ impl Library {
                     out.push(json!({
                         "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
                         "mtime": modified(&p), "size": p.metadata().map_or(0, |m| m.len()),
-                        "stats": self.stats_of(&id, &p).is_some(), "analysed": self.reviewed(&id), "not_aim": false,
+                        "stats": self.stats_of(&id, &p).is_some(), "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
                     }));
                 }
             }
@@ -433,7 +439,7 @@ impl Library {
             out.push(json!({
                 "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
                 "mtime": modified(&p), "size": p.metadata().map_or(0, |m| m.len()),
-                "stats": self.stats_of(&id, &p).is_some(), "uploaded": true, "analysed": self.reviewed(&id), "not_aim": false,
+                "stats": self.stats_of(&id, &p).is_some(), "uploaded": true, "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
             }));
         }
         out.sort_by(|a, b| b["mtime"].as_f64().unwrap_or(0.0).total_cmp(&a["mtime"].as_f64().unwrap_or(0.0)));
@@ -582,7 +588,7 @@ impl Library {
         }
         let video = self.resolve(id)?;
         let (shown, dir) = self.shown(id);
-        if !again && dir.join("tracks.json").is_file() {
+        if !again && dir.join("tracks.json").is_file() && self.tracked_with_areas(id, &dir) {
             return Ok(json!(Job::new("done", &shown)));
         }
         let model = self.settings().model;
@@ -594,7 +600,7 @@ impl Library {
         let runs = if std::thread::available_parallelism().map_or(1, |n| n.get()) >= 8 { 2 } else { 1 };
         // the user's run window: only its part of the video is tracked
         let window = RunMarks::read(&self.review_dir(id)).tracked(facts.and_then(|f| f.limit));
-        let req = Request { video, model: self.model_file(&model), batch: 4, cap, runs, window };
+        let req = Request { video, model: self.model_file(&model), batch: 4, cap, runs, window, areas: self.exclude_boxes(id)? };
         let job = Arc::new(Mutex::new(Job::new("starting", &model)));
         jobs.insert(id.to_string(), job.clone());
         drop(jobs);
@@ -609,7 +615,8 @@ impl Library {
             let outcome = crate::ffmpeg::ensure(|mb, of| progress("ffmpeg", mb, of)).and_then(|()| review(&req, &progress)).and_then(|r| {
                 write_json(&out.join("tracks.json"), &r.tracks).map_err(|f| f.message)?;
                 write_json(&out.join("readings.json"), &r.readings).map_err(|f| f.message)?;
-                write_json(&out.join("hud.json"), &r.hud).map_err(|f| f.message)
+                write_json(&out.join("hud.json"), &r.hud).map_err(|f| f.message)?;
+                crate::finder::keep_with_review(&out, r.found.as_ref())
             });
             if let Ok(mut j) = job.lock() {
                 match outcome {
@@ -663,7 +670,7 @@ impl Library {
             .map(|(s, _, _)| s.to_lowercase());
         let facts = scenario.and_then(|s| self.facts().get(&s).cloned());
         let run = RunMarks::read(&self.review_dir(id));
-        let Some(mut report) = crate::report::work_out(&dir, &video, stats.as_deref(), Some(run), facts.as_ref())? else {
+        let Some(mut report) = crate::report::work_out(&dir, &video, stats.as_deref(), Some(run), facts.as_ref(), Some(self.faint(id)))? else {
             return Ok(Value::Null);
         };
         report["review_model"] = json!(model);
@@ -672,7 +679,7 @@ impl Library {
 }
 
 /// A time (seconds since 1970) as a local file-name stamp, for a video added with a name of its own.
-fn local_stamp(secs: f64) -> String {
+pub(crate) fn local_stamp(secs: f64) -> String {
     static OFFSET: OnceLock<i64> = OnceLock::new();
     let offset = *OFFSET.get_or_init(local_offset);
     let t = secs as i64 + offset;

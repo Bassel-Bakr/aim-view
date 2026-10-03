@@ -9,11 +9,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, mpsc};
 use std::thread;
 
-use aimview::camera::{COUNTDOWN_ROWS, CameraPart, CameraWatch, VideoReadings};
+use aimview::areas::{AreaFinder, Found, sample_frames};
+use aimview::camera::{COUNTDOWN_ROWS, CameraPart, CameraWatch, VideoReadings, excluded};
 use aimview::convert::{Converter, DST_H as H, DST_W as W};
 use aimview::fixed::FixedMap;
 use aimview::hud::{HudPart, HudReading, HudWatch};
-use aimview::track::TrackFrame;
+use aimview::track::{Mask, TrackFrame};
 use aimview::tracker::{TrackPart, Tracker};
 use serde::Serialize;
 
@@ -26,8 +27,8 @@ pub const LEAST_RUN: usize = 600;
 const PROGRESS_EVERY: usize = 60;
 
 /// What to review: the video, the detector model (its _u8in export), the frames it takes at once, the scenario's
-/// target count (0: not known), the runs to split the recording into, and the part of the video to track (the user's
-/// run window with a margin; None: all of it).
+/// target count (0: not known), the runs to split the recording into, the part of the video to track (the user's
+/// run window with a margin; None: all of it), and the areas it leaves out (the recording's, areas.rs).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
@@ -35,7 +36,11 @@ pub struct Request {
     pub cap: usize,
     pub runs: usize,
     pub window: Option<TimeWindow>,
+    pub areas: Vec<AreaBox>,
 }
+
+/// An area the review leaves out: [x0, y0, x1, y1] as shares of the frame, and its kind's id.
+pub type AreaBox = (f64, f64, f64, f64, String);
 
 /// A part of a video, in seconds.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, serde::Deserialize)]
@@ -73,13 +78,17 @@ pub struct Tracks {
     pub window: Option<TimeWindow>,
     /// The review's version (aimview::track::REVIEW_VERSION).
     pub version: u32,
+    /// The areas it left out (a review is made again when the recording's change).
+    pub areas: Vec<AreaBox>,
 }
 
-/// A review's tracks, the video's readings, and what the HUD read (None: no HUD was read).
+/// A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas the area finder
+/// found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames then).
 pub struct Reviewed {
     pub tracks: Tracks,
     pub readings: VideoReadings,
     pub hud: Option<HudReading>,
+    pub found: Option<Found>,
 }
 
 /// Where a review stands: its stage ("looking" at the key frames, "tracking", "linking"), frames done, of how many.
@@ -132,8 +141,28 @@ pub fn split_runs(times: &[f64], keys: &[f64], parts: usize, least: usize, range
         .collect()
 }
 
+impl Request {
+    /// The areas as the tracker takes them.
+    fn rects(&self) -> Vec<[f64; 4]> {
+        self.areas.iter().map(|a| [a.0, a.1, a.2, a.3]).collect()
+    }
+
+    /// The tracker for the areas: the challenge's end screen among them is left out only while it shows.
+    fn tracker(&self) -> Tracker {
+        let ends: Vec<bool> = self.areas.iter().map(|a| a.4 == aimview::popup::END_SCREEN).collect();
+        Tracker::new(self.rects(), self.cap).end_screens(&ends)
+    }
+
+    /// The camera watch, its tiles kept clear of the areas (KovOBS's layout when there are none, as python/review.py
+    /// does) and of the fixed map.
+    fn camera_watch(&self, fixed: &[u8]) -> CameraWatch {
+        let rects = if self.areas.is_empty() { aimview::geometry::overlay_shares() } else { self.rects() };
+        CameraWatch::new(&excluded(Mask::without(&rects).kept(), fixed))
+    }
+}
+
 /// The size of one frame as ffmpeg gives it (YUV 4:2:0 at the video's size).
-fn frame_bytes(info: &VideoInfo) -> usize {
+pub(crate) fn frame_bytes(info: &VideoInfo) -> usize {
     info.width * info.height + 2 * info.width.div_ceil(2) * info.height.div_ceil(2)
 }
 
@@ -149,7 +178,16 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     progress("looking", 0, total);
     // each run's HUD watch reads every key frame before its frames
     let mut huds: Vec<HudWatch> = runs.iter().map(|_| HudWatch::new(info.width, info.height, info.full)).collect();
-    let fixed = fixed_map(&req.video, &info, |y| huds.iter_mut().for_each(|h| h.add_key(y)))?;
+    // the area finder reads the same key frames, when there are enough of them (python/areas.py: sample)
+    let mut finder = sample_frames(info.keys.len(), &info.times, info.duration).is_none().then(AreaFinder::new);
+    let fixed = fixed_map(&req.video, &info, |small, y| {
+        huds.iter_mut().for_each(|h| h.add_key(y));
+        if let Some(f) = finder.as_mut() {
+            f.add(small);
+        }
+    })?;
+    let session = huds.first_mut().and_then(HudWatch::session_box);
+    let finding = thread::spawn(move || finder.map(|f| f.finish(session)));
     let done = AtomicUsize::new(0);
     let parts: Vec<Result<RunPart, String>> = thread::scope(|s| {
         let running: Vec<_> = runs
@@ -166,8 +204,8 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
         running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a run of the review failed".into()))).collect()
     });
     progress("linking", total, total);
-    let mut tracker = Tracker::kovobs(req.cap);
-    let mut camera = CameraWatch::for_recording(&fixed);
+    let mut tracker = req.tracker();
+    let mut camera = req.camera_watch(&fixed);
     let mut hud = HudWatch::new(info.width, info.height, info.full);
     let mut device = "";
     for (run, part) in runs.iter().zip(parts) {
@@ -189,19 +227,20 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     }
     let share = fixed.iter().map(|&v| v as f64).sum::<f64>() / fixed.len() as f64;
     let detector = format!("onnxruntime ({device})");
-    let tracks =
-        Tracks { fps: info.fps, frames, fixed: share, detector, window: req.window, version: aimview::track::REVIEW_VERSION };
-    Ok(Reviewed { tracks, readings, hud: hud.finish() })
+    let (window, version, areas) = (req.window, aimview::track::REVIEW_VERSION, req.areas.clone());
+    let tracks = Tracks { fps: info.fps, frames, fixed: share, detector, window, version, areas };
+    let found = finding.join().map_err(|_| "the area finder failed")?;
+    Ok(Reviewed { tracks, readings, hud: hud.finish(), found })
 }
 
 /// A key frame: at 720p for the fixed map, and as decoded (the HUD watches read its Y plane).
 type KeyFrame = (Vec<u8>, Vec<u8>);
 
-/// The fixed map, from the key frames (as python/review.py builds it), and each key frame's Y plane at the video's size
-/// handed to `key`, in order. Each key frame is decoded on its own, from its exact time (ffmpeg's libaom ignores
+/// The fixed map, from the key frames (as python/review.py builds it), and each key frame handed to `key`, in order: at
+/// 1280 x 720 (YUV 4:2:0), and its Y plane at the video's size. Each key frame is decoded on its own, from its exact time (ffmpeg's libaom ignores
 /// `-skip_frame nokey` and gives every frame), a few at once: decoder i takes every AT_ONCE-th key frame from the i-th
 /// and waits while its next one is not wanted yet, so only a few whole frames are held at a time.
-fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8])) -> Result<Vec<u8>, String> {
+pub(crate) fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8], &[u8])) -> Result<Vec<u8>, String> {
     const AT_ONCE: usize = 4;
     thread::scope(|s| {
         let (decoders, decoded): (Vec<_>, Vec<_>) = (0..AT_ONCE.min(info.keys.len()))
@@ -234,7 +273,7 @@ fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8])) -> Resu
             for i in 0..info.keys.len() {
                 let (small, yuv) = decoded[i % AT_ONCE].recv().map_err(|_| "a key frame failed".to_string())??;
                 map.add(&small);
-                key(&yuv[..info.width * info.height]);
+                key(&small, &yuv[..info.width * info.height]);
             }
             Ok(map.map())
         })();
@@ -276,7 +315,7 @@ fn review_run(
     let mut frames = Frames::open(&req.video, (run.first > 0).then_some(run.from), Some(run.frames + extra))?;
     let mut detector = Detector::new(&req.model, batch, fixed)?;
     let device = detector.device;
-    let mut started = Tracker::kovobs(req.cap);
+    let mut started = req.tracker();
     started.start_at(run.first);
     let tracker = Mutex::new(started);
     let (rows_from, rows_to) = (COUNTDOWN_ROWS.0 * W * 3, COUNTDOWN_ROWS.1 * W * 3);
@@ -308,7 +347,7 @@ fn review_run(
             Ok(())
         });
         let watching = s.spawn(move || {
-            let mut camera = CameraWatch::for_recording(fixed);
+            let mut camera = req.camera_watch(fixed);
             camera.skip(skip);
             hud.skip(skip);
             let mut convert = Converter::new(info.width, info.height, info.matrix, info.full);

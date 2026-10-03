@@ -20,3 +20,5 @@ rfd = "0.15"
 # ffmpeg downloaded into the app's folder on first need, as KovOBS gets it (not shipped with the app)
 ffmpeg-sidecar = "2.5.2"
 anyhow = "1"
+# NumPy's .npz files (zips of arrays), as python/ writes and reads them
+zip = { version = "4.6", default-features = false, features = ["deflate"] }

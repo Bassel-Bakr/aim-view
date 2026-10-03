@@ -9,8 +9,8 @@ use std::process::{Child, ChildStdout, Command, Stdio};
 use aimview::convert::Matrix;
 use serde::Deserialize;
 
-/// What a recording is: its frames' size, rate and colours, and every frame's time (from 0 on, in order: the edit
-/// list's pre-roll before 0 is not shown) and the key frames' times, in seconds.
+/// What a recording is: its frames' size, rate and colours, every frame's time (from 0 on, in order: the edit list's
+/// pre-roll before 0 is not shown), the key frames' times, and its duration as ffprobe gives it, in seconds.
 pub struct VideoInfo {
     pub width: usize,
     pub height: usize,
@@ -19,12 +19,20 @@ pub struct VideoInfo {
     pub full: bool,
     pub times: Vec<f64>,
     pub keys: Vec<f64>,
+    pub duration: f64,
 }
 
 #[derive(Deserialize)]
 struct Probe {
     streams: Vec<ProbeStream>,
     packets: Vec<ProbePacket>,
+    #[serde(default)]
+    format: ProbeFormat,
+}
+
+#[derive(Default, Deserialize)]
+struct ProbeFormat {
+    duration: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -58,7 +66,8 @@ fn tool(name: &str) -> Command {
 pub fn probe(video: &Path) -> Result<VideoInfo, String> {
     let out = tool("ffprobe")
         .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags"])
-        .args(["-show_entries", "stream=width,height,r_frame_rate,color_space,color_range", "-of", "json"])
+        .args(["-show_entries", "stream=width,height,r_frame_rate,color_space,color_range"])
+        .args(["-show_entries", "format=duration", "-of", "json"])
         .arg(video)
         .output()
         .map_err(|e| format!("ffprobe could not start: {e}"))?;
@@ -95,6 +104,7 @@ pub fn probe(video: &Path) -> Result<VideoInfo, String> {
         fps,
         matrix,
         full: s.color_range.as_deref() == Some("pc"),
+        duration: p.format.duration.and_then(|d| d.parse().ok()).unwrap_or_else(|| times.last().copied().unwrap_or(0.0)),
         times,
         keys,
     })
