@@ -125,8 +125,8 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
   float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
-  (2560x1440): 146 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call; 41.3 s
-  for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
+  (2560x1440): 178 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
+  outputs read back while the next call is sent; 34.0 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
   test_out/browser_check/profile.html times each stage). The model panel lets the user pick the frames at once (1, 2,
   4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml).
   The clicking

@@ -24,7 +24,10 @@ import { BrowserDevice, FrameFormat, ReviewMessage, ReviewRequest } from './revi
 /** onnxruntime-web, either build: for the GPU (WebGPU) or the CPU (WebAssembly). Both have the same API. */
 type Ort = typeof import('onnxruntime-web/wasm');
 
-/** The detector: onnxruntime-web's build, its session, and where it runs. */
+/**
+ * The detector: onnxruntime-web's build, its session, and where it runs. On the GPU its outputs stay there until read
+ * back, so the next call can be sent while one call's maps come back.
+ */
 interface Detector {
   ort: Ort;
   session: InferenceSession;
@@ -45,7 +48,10 @@ addEventListener('message', (e: MessageEvent<ReviewRequest>) => {
   );
 });
 
-/** A frame's planes written into the core's memory as YUV 4:2:0 (Y, U, V), whatever layout the decoder gave. */
+/**
+ * A frame's planes written into the core's memory as YUV 4:2:0 (Y, U, V), whatever layout the decoder gave. An I420
+ * frame (the software decoder's) is copied by the decoder straight into place, packed; another, through scratch.
+ */
 async function writeI420(
   sample: VideoSample,
   core: Core,
@@ -53,39 +59,44 @@ async function writeI420(
   scratch: Uint8Array,
 ): Promise<void> {
   const { width: w, height: h } = sample.visibleRect;
-  const layout = await sample.copyTo(scratch);
+  if (sample.format === 'I420') {
+    const [cw, ch] = [w >> 1, h >> 1];
+    const packed: PlaneLayout[] = [
+      { offset: 0, stride: w },
+      { offset: w * h, stride: cw },
+      { offset: w * h + cw * ch, stride: cw },
+    ];
+    // the core's memory can grow while the copy waits (the tracker takes a call's maps meanwhile): copy again then
+    for (;;) {
+      const memory = core.x.memory.buffer;
+      try {
+        await sample.copyTo(core.bytes(block), { layout: packed, rect: sample.visibleRect });
+      } catch (e) {
+        if (core.x.memory.buffer === memory) throw e;
+      }
+      if (core.x.memory.buffer === memory) return;
+    }
+  }
+  if (sample.format !== 'NV12') {
+    throw new Error(
+      `The decoder gave ${sample.format ?? 'an unknown'} frames; the review reads 8-bit YUV 4:2:0`,
+    );
+  }
+  // NV12 (a hardware decoder's): the luma as it is, the chroma's interleaved U and V apart
+  const [yp, up] = await sample.copyTo(scratch);
   const out = core.bytes(block);
-  const [yp, up] = layout;
   for (let r = 0; r < h; r++)
     out.set(scratch.subarray(yp.offset + r * yp.stride, yp.offset + r * yp.stride + w), r * w);
   const cw = w >> 1;
   const ch = h >> 1;
   const u0 = w * h;
   const v0 = u0 + cw * ch;
-  if (sample.format === 'I420') {
-    const vp = layout[2];
-    for (let r = 0; r < ch; r++) {
-      out.set(
-        scratch.subarray(up.offset + r * up.stride, up.offset + r * up.stride + cw),
-        u0 + r * cw,
-      );
-      out.set(
-        scratch.subarray(vp.offset + r * vp.stride, vp.offset + r * vp.stride + cw),
-        v0 + r * cw,
-      );
+  for (let r = 0; r < ch; r++) {
+    const row = up.offset + r * up.stride;
+    for (let c = 0; c < cw; c++) {
+      out[u0 + r * cw + c] = scratch[row + 2 * c];
+      out[v0 + r * cw + c] = scratch[row + 2 * c + 1];
     }
-  } else if (sample.format === 'NV12') {
-    for (let r = 0; r < ch; r++) {
-      const row = up.offset + r * up.stride;
-      for (let c = 0; c < cw; c++) {
-        out[u0 + r * cw + c] = scratch[row + 2 * c];
-        out[v0 + r * cw + c] = scratch[row + 2 * c + 1];
-      }
-    }
-  } else {
-    throw new Error(
-      `The decoder gave ${sample.format ?? 'an unknown'} frames; the review reads 8-bit YUV 4:2:0`,
-    );
   }
 }
 
@@ -130,6 +141,7 @@ async function startDetector(req: ReviewRequest): Promise<Detector> {
       const ort = await loadOrt('webgpu', req.ortPath);
       const session = await ort.InferenceSession.create(req.modelUrl, {
         executionProviders: ['webgpu'],
+        preferredOutputLocation: 'gpu-buffer',
       });
       return { ort, session, device: 'webgpu' };
     } catch {
@@ -216,8 +228,9 @@ async function review(req: ReviewRequest): Promise<void> {
   };
 
   // 2. every frame: the detector, then the tracker. The detector takes req.batch frames in one call (faster on most
-  // GPUs, the same boxes); while it works on them, the next ones are decoded and converted. The tracker takes each
-  // frame's maps in order, one call in the detector at a time.
+  // GPUs, the same boxes); while it works on them, the next ones are decoded and converted. One call is sent at a time
+  // (the WebGPU build cannot run two at once); on the GPU a call returns once it is queued and its maps are read back
+  // after, so two can be on their way. The tracker takes each frame's maps in order.
   const gw = W / 4;
   const gh = H / 4;
   const score = core.reserve(gw * gh * 4);
@@ -229,24 +242,36 @@ async function review(req: ReviewRequest): Promise<void> {
   const [rowsStart, rowsEnd] = [(rows & 0xffff) * W * 3, (rows >> 16) * W * 3];
   const batch = Math.max(1, req.batch);
   const frameBytes = W * H * 3;
-  let waiting: Uint8Array[] = [];
-  const detect = (frames: Uint8Array[]): Promise<void> => {
-    const k = frames.length;
-    const all = new Uint8Array(k * frameBytes);
-    frames.forEach((f, i) => all.set(f, i * frameBytes));
+  const onGpu = device === 'webgpu';
+  const depth = onGpu ? 2 : 1;
+  // the frames for the next call, each copied once into its place in the call's input
+  let waiting = new Uint8Array(batch * frameBytes);
+  let count = 0;
+  let sending: Promise<unknown> = Promise.resolve();
+  /** One call's score and reg maps, read back, for k frames. */
+  const detect = (all: Uint8Array, k: number): Promise<Float32Array[]> => {
     const feeds = { rgb: new ort.Tensor('uint8', all, [k, H, W, 3]), fixed: fixedFor(k) };
-    return session.run(feeds).then((out) => {
-      const scores = out['score'].data as Float32Array;
-      const regs = out['reg'].data as Float32Array;
-      for (let i = 0; i < k; i++) {
-        core.floats(score).set(scores.subarray(i * gw * gh, (i + 1) * gw * gh));
-        core.floats(reg).set(regs.subarray(i * 4 * gw * gh, (i + 1) * 4 * gw * gh));
-        core.x.tracker_push_maps(tracker, score.ptr, reg.ptr, gw, gh);
-        if (++n % PROGRESS_EVERY === 0)
-          say({ kind: 'progress', stage: 'tracking', done: n, total });
-      }
-    });
+    const sent = sending.then(() => session.run(feeds));
+    sending = sent.catch(() => undefined);
+    return sent.then(async (out) =>
+      onGpu
+        ? [
+            (await out['score'].getData(true)) as Float32Array,
+            (await out['reg'].getData(true)) as Float32Array,
+          ]
+        : [out['score'].data as Float32Array, out['reg'].data as Float32Array],
+    );
   };
+  /** A call's maps to the tracker, frame by frame. */
+  const toTracker = ([scores, regs]: Float32Array[]) => {
+    for (let i = 0; i < scores.length / (gw * gh); i++) {
+      core.floats(score).set(scores.subarray(i * gw * gh, (i + 1) * gw * gh));
+      core.floats(reg).set(regs.subarray(i * 4 * gw * gh, (i + 1) * 4 * gw * gh));
+      core.x.tracker_push_maps(tracker, score.ptr, reg.ptr, gw, gh);
+      if (++n % PROGRESS_EVERY === 0) say({ kind: 'progress', stage: 'tracking', done: n, total });
+    }
+  };
+  const inFlight: Promise<unknown>[] = [];
   const videoFrames = samples.samples()[Symbol.asyncIterator]();
   let next = videoFrames.next();
   let detecting: Promise<void> = Promise.resolve();
@@ -269,14 +294,19 @@ async function review(req: ReviewRequest): Promise<void> {
     new Uint8Array(copy).set(core.bytes(rgb).subarray(rowsStart, rowsEnd), lumaBytes);
     camera.send(copy);
     core.x.tracker_watch(tracker, rgb.ptr);
-    waiting.push(core.bytes(rgb).slice());
-    if (waiting.length < batch) continue;
-    await detecting;
-    detecting = detect(waiting);
-    waiting = [];
+    waiting.set(core.bytes(rgb), count++ * frameBytes);
+    if (count < batch) continue;
+    while (inFlight.length >= depth) await inFlight.shift();
+    const maps = detect(waiting, count);
+    // a call that fails stops the review at the next wait; the chain says so again at the end
+    inFlight.push(maps);
+    detecting = detecting.then(() => maps).then(toTracker);
+    detecting.catch(() => undefined);
+    waiting = new Uint8Array(batch * frameBytes);
+    count = 0;
   }
   await detecting;
-  if (waiting.length) await detect(waiting);
+  if (count) toTracker(await detect(waiting.subarray(0, count * frameBytes), count));
   say({ kind: 'progress', stage: 'linking', done: n, total });
   const framesText = core.takeText(core.x.tracker_finish(tracker));
   const frames = JSON.parse(framesText) as TrackFrame[];
