@@ -22,3 +22,11 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 lto = true
 codegen-units = 1
 opt-level = 3
+
+# `cargo test --profile quick`: optimized like release (the parity tests need fast code), without the whole-program
+# optimization that makes each release build slow. The same arithmetic, so the same results.
+[profile.quick]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

@@ -22,7 +22,8 @@ bun run build                                  # every mode's build: ui/dist/bro
 bun run test:ui                                # the UI's tests
 bun run lint:ui                                # ESLint (angular-eslint's recommended set, plus the rules below)
 bun run format                                 # Prettier, over ui/
-cargo test --release                           # the Rust core, checked against Python's results (test_out/parity/)
+cargo test --profile quick                     # the Rust core, checked against Python's results (test_out/parity/)
+                                               # (--release gives the same results; its builds take 40 s, quick's 3 s)
 python tests/fixtures.py <video> [--areas exclude.json]   # Python's results stage by stage, for those checks
 bun run assets                                 # the core as WebAssembly and the models, into ui/generated/
 ```
