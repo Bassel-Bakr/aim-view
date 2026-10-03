@@ -129,7 +129,8 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   outputs read back while the next call is sent; 32.2 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
   test_out/browser_check/profile.html times each stage). The model panel lets the user pick the frames at once (1, 2,
   4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml); the 2:1 RGB conversion takes 16 pixels at a time
-  there (0.93 ms a frame, the same bytes: test_out/browser_check/rgb-bench.html).
+  there (0.93 ms a frame, the same bytes: test_out/browser_check/rgb-bench.html), and 32 at a time natively where
+  the CPU has AVX2 (0.29 ms; `avx2_rows_give_the_tables` checks every value against the tables).
   The clicking
   review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
   gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number

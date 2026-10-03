@@ -231,8 +231,8 @@ struct RgbTables {
     gu: [i64; 256],
     bu: [i64; 256],
     gv: [i64; 256],
-    /// The same tables as formulas, for code that computes them (the browser's 2:1 rows).
-    #[cfg_attr(not(all(target_arch = "wasm32", target_feature = "simd128")), allow(dead_code))]
+    /// The same tables as formulas, for code that computes them (the 2:1 rows with SIMD).
+    #[cfg_attr(not(any(target_arch = "x86_64", all(target_arch = "wasm32", target_feature = "simd128"))), allow(dead_code))]
     formula: RgbFormula,
 }
 
@@ -240,7 +240,7 @@ struct RgbTables {
 /// t[c] = a + ((c * k) >> 16) (`tab` in RgbTables::new), with the green one the sum of gu and gv. All in i32: every value
 /// they reach fits.
 #[derive(Clone, Copy)]
-#[cfg_attr(not(all(target_arch = "wasm32", target_feature = "simd128")), allow(dead_code))]
+#[cfg_attr(not(any(target_arch = "x86_64", all(target_arch = "wasm32", target_feature = "simd128"))), allow(dead_code))]
 struct RgbFormula {
     y_base: i32,
     y_step: i32,
@@ -589,20 +589,121 @@ impl Converter {
 
 /// One row of the 2:1 conversion: each output pixel the rounded mean of a 2 x 2 luma block, each pair of pixels the
 /// rounded mean of two chroma samples, through RgbTables. Where the CPU has WebAssembly SIMD (the browser), 16 pixels
-/// at a time with the tables as formulas (RgbFormula); else a pixel at a time with the tables. The same integer
-/// arithmetic either way, so the same bytes (tests: convert_parity natively, test_out/browser_check/rgb-bench.html in
-/// the browser).
+/// at a time with the tables as formulas (RgbFormula); where it has AVX2 (the desktop app on x86-64), 32 at a time the
+/// same way; else a pixel at a time with the tables. The same integer arithmetic every way, so the same bytes (tests:
+/// convert_parity and avx2_rows_give_the_tables natively, test_out/browser_check/rgb-bench.html in the browser).
 mod lanes {
     use super::{DST_W, RgbTables};
 
     #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
     pub fn half_row(y0: &[u8], y1: &[u8], ur: &[u8], vr: &[u8], row: &mut [u8], t: &RgbTables) {
+        #[cfg(target_arch = "x86_64")]
+        if std::arch::is_x86_feature_detected!("avx2") {
+            // SAFETY: the CPU has AVX2
+            return unsafe { avx2::half_row(y0, y1, ur, vr, row, t) };
+        }
+        table_row(y0, y1, ur, vr, row, t)
+    }
+
+    /// A pixel at a time, through the tables.
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    pub fn table_row(y0: &[u8], y1: &[u8], ur: &[u8], vr: &[u8], row: &mut [u8], t: &RgbTables) {
         for k in 0..DST_W / 2 {
             let uu = ((ur[2 * k] as u32 + ur[2 * k + 1] as u32 + 1) >> 1) as u8;
             let vv = ((vr[2 * k] as u32 + vr[2 * k + 1] as u32 + 1) >> 1) as u8;
             for i in [2 * k, 2 * k + 1] {
                 let s = y0[2 * i] as u32 + y0[2 * i + 1] as u32 + y1[2 * i] as u32 + y1[2 * i + 1] as u32;
                 t.rgb(((s + 2) >> 2) as u8, uu, vv, &mut row[i * 3..i * 3 + 3]);
+            }
+        }
+    }
+
+    /// The browser's 16 lanes twice over: AVX2 works on two 128-bit halves, so each half takes 16 of the 32 pixels
+    /// and does what the WebAssembly code does, and only the loads and stores cross between the halves.
+    #[cfg(target_arch = "x86_64")]
+    pub mod avx2 {
+        use super::{DST_W, RgbTables};
+        use std::arch::x86_64::*;
+
+        /// The byte shuffles that put one channel of 16 pixels at its places in bytes 16m to 16m + 16 of their 48 RGB
+        /// bytes ([m][channel], the same in both halves; 0x80 gives a zero).
+        const SPREAD: [[[u8; 32]; 3]; 3] = {
+            let mut s = [[[0x80u8; 32]; 3]; 3];
+            let mut at = 0;
+            while at < 48 {
+                let (m, j) = (at / 16, at % 16);
+                s[m][at % 3][j] = (at / 3) as u8;
+                s[m][at % 3][j + 16] = (at / 3) as u8;
+                at += 1;
+            }
+            s
+        };
+
+        #[target_feature(enable = "avx2")]
+        pub fn half_row(y0: &[u8], y1: &[u8], ur: &[u8], vr: &[u8], row: &mut [u8], t: &RgbTables) {
+            assert!(y0.len() >= 2 * DST_W && y1.len() >= 2 * DST_W && ur.len() >= DST_W && vr.len() >= DST_W);
+            assert!(row.len() >= 3 * DST_W && DST_W.is_multiple_of(32));
+            let f = t.formula;
+            let s32 = _mm256_set1_epi32;
+            let (base, step, zero, top, ones) = (s32(f.y_base), s32(f.y_step), s32(0), s32(255), _mm256_set1_epi8(1));
+            // SAFETY: each load reads the 32 bytes its slice is cut to, each store writes the 32 bytes its slice is cut to
+            let load = |p: &[u8]| unsafe { _mm256_loadu_si256(p[..32].as_ptr().cast()) };
+            let store = |p: &mut [u8], v: __m256i| unsafe { _mm256_storeu_si256(p[..32].as_mut_ptr().cast(), v) };
+            let spread: [[__m256i; 3]; 3] = SPREAD.map(|m| m.map(|c| load(&c)));
+            // a chroma table at 8 values: a + ((c * k) >> 16)
+            let table = |(a, k): (i32, i32), c: __m256i| _mm256_add_epi32(s32(a), _mm256_srai_epi32::<16>(_mm256_mullo_epi32(c, s32(k))));
+            // the y table at 8 indexes
+            let level = |i: __m256i| {
+                let l = _mm256_srai_epi32::<16>(_mm256_add_epi32(base, _mm256_mullo_epi32(i, step)));
+                _mm256_min_epi32(_mm256_max_epi32(l, zero), top)
+            };
+            let px = |off: __m256i, y: __m256i| level(_mm256_add_epi32(off, y));
+            // pairs of bytes summed into 16 bits
+            let pairs = |a: __m256i| _mm256_maddubs_epi16(a, ones);
+            let mean4 = |a: __m256i, b: __m256i| {
+                _mm256_srli_epi16::<2>(_mm256_add_epi16(_mm256_add_epi16(pairs(a), pairs(b)), _mm256_set1_epi16(2)))
+            };
+            let mean2 = |a: __m256i| _mm256_srli_epi16::<1>(_mm256_add_epi16(pairs(a), _mm256_set1_epi16(1)));
+            for k in 0..DST_W / 32 {
+                // pixels 0 to 15 of the 32 (8 in each half), then 16 to 31
+                let ma = mean4(load(&y0[64 * k..]), load(&y1[64 * k..]));
+                let mb = mean4(load(&y0[64 * k + 32..]), load(&y1[64 * k + 32..]));
+                // each half's 16 pixels: its first 8 (0 to 7, 16 to 23), then its last 8 (8 to 15, 24 to 31)
+                let ya = _mm256_permute2x128_si256::<0x20>(ma, mb);
+                let yb = _mm256_permute2x128_si256::<0x31>(ma, mb);
+                // the 16 pairs' chroma: 8 in each half
+                let (uu, vv) = (mean2(load(&ur[32 * k..])), mean2(load(&vr[32 * k..])));
+                let (u0, u1) = (_mm256_unpacklo_epi16(uu, zero), _mm256_unpackhi_epi16(uu, zero));
+                let (v0, v1) = (_mm256_unpacklo_epi16(vv, zero), _mm256_unpackhi_epi16(vv, zero));
+                // each pair's offsets, pairs 0 to 3 and 4 to 7 of each half
+                let (r0, r1) = (table(f.rv, v0), table(f.rv, v1));
+                let g0 = _mm256_add_epi32(table(f.gu, u0), table(f.gv, v0));
+                let g1 = _mm256_add_epi32(table(f.gu, u1), table(f.gv, v1));
+                let (b0, b1) = (table(f.bu, u0), table(f.bu, u1));
+                // each half's 16 pixels' luma, 4 at a time
+                let y = [
+                    _mm256_unpacklo_epi16(ya, zero),
+                    _mm256_unpackhi_epi16(ya, zero),
+                    _mm256_unpacklo_epi16(yb, zero),
+                    _mm256_unpackhi_epi16(yb, zero),
+                ];
+                let channel = |p0: __m256i, p1: __m256i| {
+                    let l0 = px(_mm256_unpacklo_epi32(p0, p0), y[0]);
+                    let l1 = px(_mm256_unpackhi_epi32(p0, p0), y[1]);
+                    let l2 = px(_mm256_unpacklo_epi32(p1, p1), y[2]);
+                    let l3 = px(_mm256_unpackhi_epi32(p1, p1), y[3]);
+                    _mm256_packus_epi16(_mm256_packs_epi32(l0, l1), _mm256_packs_epi32(l2, l3))
+                };
+                let rgb = [channel(r0, r1), channel(g0, g1), channel(b0, b1)];
+                // each half's 48 RGB bytes, 16 at a time
+                let out = spread.map(|s| {
+                    let r = _mm256_shuffle_epi8(rgb[0], s[0]);
+                    _mm256_or_si256(_mm256_or_si256(r, _mm256_shuffle_epi8(rgb[1], s[1])), _mm256_shuffle_epi8(rgb[2], s[2]))
+                });
+                // the first half's 48 bytes, then the second's
+                store(&mut row[96 * k..], _mm256_permute2x128_si256::<0x20>(out[0], out[1]));
+                store(&mut row[96 * k + 32..], _mm256_permute2x128_si256::<0x30>(out[2], out[0]));
+                store(&mut row[96 * k + 64..], _mm256_permute2x128_si256::<0x31>(out[1], out[2]));
             }
         }
     }
@@ -687,7 +788,7 @@ fn mean2x2(src: &[u8], sw: usize, dst: &mut [u8], w: usize, h: usize) {
 mod tests {
     use super::*;
 
-    /// The formulas the browser's 2:1 rows compute must give every table entry, for every matrix and range.
+    /// The formulas the 2:1 rows with SIMD compute must give every table entry, for every matrix and range.
     #[test]
     fn formulas_give_the_tables() {
         for matrix in [Matrix::Bt709, Matrix::Bt601, Matrix::Fcc, Matrix::Smpte240m, Matrix::Bt2020] {
@@ -705,6 +806,58 @@ mod tests {
                     assert_eq!(line(f.gu, ci) as i64, t.gu[c]);
                     assert_eq!(line(f.bu, ci) as i64, t.bu[c]);
                     assert_eq!(line(f.gv, ci) as i64, t.gv[c]);
+                }
+            }
+        }
+    }
+
+    /// The AVX2 rows must give the tables' bytes: for every matrix and range, every luma, U and V mean at every place
+    /// in a row (rows of 2 x 2 blocks of one value), and rows of noise for the rounding of the means.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn avx2_rows_give_the_tables() {
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            eprintln!("no AVX2 on this CPU");
+            return;
+        }
+        let (mut y0, mut y1, mut ur, mut vr) = (vec![0u8; 2 * DST_W], vec![0u8; 2 * DST_W], vec![0u8; DST_W], vec![0u8; DST_W]);
+        let (mut got, mut want) = (vec![0u8; 3 * DST_W], vec![0u8; 3 * DST_W]);
+        let mut seed = 1u32;
+        let mut noise = || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 24) as u8
+        };
+        for matrix in [Matrix::Bt709, Matrix::Bt601, Matrix::Fcc, Matrix::Smpte240m, Matrix::Bt2020] {
+            for full in [false, true] {
+                let t = RgbTables::new(matrix, full);
+                let mut check = |y0: &[u8], y1: &[u8], ur: &[u8], vr: &[u8], what: &str| {
+                    lanes::table_row(y0, y1, ur, vr, &mut want, &t);
+                    // SAFETY: the CPU has AVX2
+                    unsafe { lanes::avx2::half_row(y0, y1, ur, vr, &mut got, &t) };
+                    let at = got.iter().zip(&want).position(|(a, b)| a != b);
+                    assert!(at.is_none(), "{matrix:?} full={full} {what}: byte {at:?} differs");
+                };
+                // pair p: U = p % 256, V = (v + 3p) % 256; pixel i: luma (2s + i % 2 + 7p) % 256. Over v and s every
+                // U meets every V and every luma.
+                for v in 0..256 {
+                    for p in 0..DST_W / 2 {
+                        ur[2 * p..2 * p + 2].fill((p % 256) as u8);
+                        vr[2 * p..2 * p + 2].fill(((v + 3 * p) % 256) as u8);
+                    }
+                    for s in 0..128 {
+                        for i in 0..DST_W {
+                            let y = ((2 * s + i % 2 + 7 * (i / 2)) % 256) as u8;
+                            y0[2 * i..2 * i + 2].fill(y);
+                            y1[2 * i..2 * i + 2].fill(y);
+                        }
+                        check(&y0, &y1, &ur, &vr, &format!("v={v} s={s}"));
+                    }
+                }
+                for n in 0..2000 {
+                    for b in y0.iter_mut().chain(y1.iter_mut()).chain(ur.iter_mut()).chain(vr.iter_mut()) {
+                        *b = noise();
+                    }
+                    check(&y0, &y1, &ur, &vr, &format!("noise {n}"));
                 }
             }
         }
