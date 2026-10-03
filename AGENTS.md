@@ -1,7 +1,9 @@
 # Aim View: agent guide
 
-Aim View reviews aim trainer recordings: `python/review.py` is the pipeline, `python/server.py` and `python/app/` the web app,
-`python/model/` the trained target detector. Read `README.md` first, then `python/README.md` (how the review works) and
+Aim View reviews aim trainer recordings. The review core is Rust (`src/`), the shared service that answers the review
+API is `service/` (the desktop app, the Rust server and the Python server all serve it), the UI is Angular (`ui/`), and
+`python/model/` trains the target detector. `python/review.py` is the old Python pipeline, kept as the parity tests'
+reference. Read `README.md` first, then `python/README.md` (how the review works) and
 `python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
 `python/model/REPRODUCE.md`.
 
@@ -12,10 +14,16 @@ are in `README.md` ("Where it's going").
 ## Commands
 
 ```bash
-python python/server.py --port 8770            # the review app, http://127.0.0.1:8770/
+python -m pip install --force-reinstall ./python-bindings   # the aimview module (python-bindings/): the service for
+                                               # Python, built by maturin as release; python/server.py needs it
+bun run server                                 # the Rust review server (server/, aimview-server), http://127.0.0.1:8770/
+                                               # (bun run build:server first; flags or aimview-server.toml: server/README.md)
+python python/server.py --port 8770            # the same API from Python (the aimview module over HTTP)
+                                               # (the server-mode build at /, the old page at /old/)
 python python/model/test_model.py              # the detector's tests
-python python/model/eval_vods.py <model.pt>    # static runs against their stats files
-python python/model/eval_moving.py name=<model.pt> ...   # every scenario kind against the stats files
+python python/model/eval_vods.py <model>       # static runs against their stats files (the app's native review of the
+                                               # model's _u8in export; --python: python/review.py with a .pt or .onnx)
+python python/model/eval_moving.py name=<model> ...      # every scenario kind against the stats files (--python too)
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
 bun run build                                  # every mode's build: ui/dist/browser, server, desktop
@@ -200,22 +208,31 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   page shows the measures. Windows throttles a background logger to about 125 events a second unless
   RawMouseThrottleEnabled is 0. Measured (stats files): the user's areas against KovOBS's change nothing on 14 of 15
   runs; no exclusion is worse on uploads; the cut-off does not improve accuracy.
+- The service (service/, aimview-service): the review server's API without Tauri, `api::handle` over a `Library`
+  opened with a `Config` (the data folder in the app's layout or Python's test_out/ layout, the VODs, stats and
+  scenario folders, the models, the device: DirectML, CUDA behind the `cuda` feature, or the CPU). Three servers serve
+  it: the desktop app over its own protocol, server/ (aimview-server: HTTP, the server-mode UI build, a token for
+  anything beyond this machine) and python/server.py through the Python bindings (python-bindings/, PyO3, the `aimview`
+  module, which training's scripts also use; the old Python server is python/retired/server.py). Checked against the
+  old Python server on a copy of test_out: the same answers and byte-equal files (scratchpad apicheck scripts).
 - The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
   (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
-  (desktop/src/api.rs over a custom protocol: no network port, nothing outside the app reaches it; library.rs: the VODs
-  folder chosen in the system's dialog, KovaaK's stats files and scenarios read from disk, the models it ships, each
+  (desktop/src/protocol.rs over a custom protocol, to the service: no network port, nothing outside the app reaches
+  it; the service's library: the VODs folder chosen in the system's dialog, KovaaK's stats files and scenarios read from disk, the models it ships, each
   recording's reviews in the app's data folder, the report worked out by the core as the browser does). The review
-  runs natively (review.rs): ffmpeg's frames through a pipe (the video's own YUV, as python/review.py reads them), the
+  runs natively (service/src/review.rs): ffmpeg's frames through a pipe (the video's own YUV, as python/review.py reads them), the
   core, ONNX Runtime with DirectML (1.84 ms a frame for full_v3; the CPU when there is no GPU), split into two runs
   as in the browser. av1: 12.7 s in the app (the browser 16 s), 20 frames apart from Python's (GPU noise), the same 66
-  kills. `cargo run -p aimview-desktop --release --example track -- <video> <model> <out>` reviews without the app.
-  ffmpeg is not shipped: the first review downloads it into the app's local data folder as KovOBS does (desktop/src/
+  kills. `cargo run -p aimview-service --release --example track -- <video> <model> <out>` reviews without the app.
+  ffmpeg is not shipped: the first review downloads it into the app's local data folder as KovOBS does (service/src/
   ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
   python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
   DirectML.dll in the installer.
-- The old page (`python/app/`) and python/server.py: the Angular app does everything they do but the player's Full
-  screen (F, Escape). They retire, with server mode, once that is ported. Training (`python/model/`) stays in Python.
+- The Angular app does everything the old page (`python/app/`, now at /old/ on python/server.py) did, the player's
+  full screen (F, Escape) included; the old page stays until the user retires it. Server mode stays (a stronger
+  machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review
+  through the app's native pipeline by default (--python: the old one).
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
   Rust prototype in `python/model/rust/` becomes the start of the core's detector).

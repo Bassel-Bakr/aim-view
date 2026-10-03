@@ -54,7 +54,8 @@ JavaScript package (the core's WebAssembly build).
 | Path | What it holds |
 | --- | --- |
 | `python/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
-| `python/server.py` | The review web app's server (port 8770) and its JSON API. |
+| `python/server.py` | The review API from Python (port 8770), a thin layer over the Rust service through the `aimview` module. |
+| `service/`, `server/`, `python-bindings/` | The review API in Rust (shared by every server), the Rust HTTP server, and its Python bindings. |
 | `python/app/` | The web app: `index.html`, `style.css`, `app.js` (plain HTML, CSS and JavaScript, no build step). |
 | `python/hud.py`, `python/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
 | `python/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
@@ -69,11 +70,13 @@ JavaScript package (the core's WebAssembly build).
 ## Run the app
 
 ```bash
-python python/server.py --port 8770
+bun run build:server
+bun run server
 ```
 
-Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
-`stats` folder. The detector runs on an NVIDIA GPU through PyTorch, or on the CPU through ONNX Runtime.
+Then open http://127.0.0.1:8770/ (`python python/server.py --port 8770` serves the same, from Python, once the
+`aimview` module is installed: `python -m pip install ./python-bindings`). It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
+`stats` folder. The detector runs through ONNX Runtime: DirectML on Windows, CUDA on Linux (the `cuda` feature), or the CPU.
 
 The new Angular app runs in browser mode (everything in the browser) or in server mode (its data from that server):
 
