@@ -32,6 +32,14 @@ opt-level = 3
 [profile.dev.package."*"]
 opt-level = 3
 
+# `bun run assets`: the core as WebAssembly for development, optimized like release without the whole-program
+# optimization (a rebuild in about 9 s, not 55). `bun run build` and `--release` build it as release, the build to time.
+[profile.wasm-dev]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
 # `cargo test --profile quick`: optimized like release (the parity tests need fast code), without the whole-program
 # optimization that makes each release build slow. The same arithmetic, so the same results.
 [profile.quick]

@@ -9,9 +9,11 @@ const root = join(import.meta.dir, '..');
 const out = join(root, 'ui', 'generated');
 rmSync(out, { recursive: true, force: true });
 
-await $`cargo build --release --target wasm32-unknown-unknown`.cwd(root).quiet();
+// --release: the shipped build (whole-program optimization, slow to build); else the quick one for development
+const profile = process.argv.includes('--release') ? 'release' : 'wasm-dev';
+await $`cargo build --profile ${profile} --target wasm32-unknown-unknown`.cwd(root).quiet();
 mkdirSync(join(out, 'core'), { recursive: true });
-copyFileSync(join(root, 'target/wasm32-unknown-unknown/release/aimview.wasm'), join(out, 'core/aimview.wasm'));
+copyFileSync(join(root, `target/wasm32-unknown-unknown/${profile}/aimview.wasm`), join(out, 'core/aimview.wasm'));
 
 // the models the model panel offers (python/model/models.json), each as its _u8in export
 const exports = join(root, 'python/model/exports');
