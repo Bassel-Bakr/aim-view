@@ -17,6 +17,7 @@ export interface CoreExports {
   converter_yuv420p(converter: number, yuv: number, len: number, out: number): void;
   converter_luma(converter: number, y: number, len: number, out: number): void;
   camera_rgb_rows(): number;
+  review_version(): number;
   converter_free(converter: number): void;
   fixed_new(): number;
   fixed_add(fixed: number, yuv: number): void;
@@ -29,6 +30,13 @@ export interface CoreExports {
   camera_part(camera: number): number;
   camera_skip(camera: number, frames: number): void;
   camera_add_part(camera: number, part: number, len: number): number;
+  hud_new(w: number, h: number, full: number): number;
+  hud_add_key(hud: number, y: number, len: number): void;
+  hud_add(hud: number, y: number, len: number): void;
+  hud_skip(hud: number, frames: number): void;
+  hud_part(hud: number): number;
+  hud_add_part(hud: number, part: number, len: number): number;
+  hud_finish(hud: number): number;
 }
 
 /** A block of the core's memory, reserved until freed. */

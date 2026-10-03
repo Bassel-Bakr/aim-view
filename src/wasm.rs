@@ -189,6 +189,12 @@ pub unsafe extern "C" fn converter_luma(c: *mut Converter, y: *const u8, y_len: 
     c.luma(y, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) });
 }
 
+/// The review's version (src/track.rs: `REVIEW_VERSION`), which the page keeps with a review's tracks.
+#[unsafe(no_mangle)]
+pub extern "C" fn review_version() -> u32 {
+    crate::track::REVIEW_VERSION
+}
+
 /// The rows of a frame's RGB the camera watch reads (the countdown bar's), as from + (to << 16).
 #[unsafe(no_mangle)]
 pub extern "C" fn camera_rgb_rows() -> u32 {
@@ -320,4 +326,73 @@ pub unsafe extern "C" fn camera_finish(c: *mut crate::camera::CameraWatch, frame
     let frames: Vec<TrackFrame> =
         serde_json::from_slice(unsafe { std::slice::from_raw_parts(frames, len) }).unwrap_or_default();
     bytes_out(serde_json::to_vec(&c.finish(&frames)).unwrap_or_default())
+}
+
+/// A HUD watch (src/hud.rs) for a recording of `w` x `h` pixels; `full`: its Y spans 0..255.
+#[unsafe(no_mangle)]
+pub extern "C" fn hud_new(w: usize, h: usize, full: u32) -> *mut crate::hud::HudWatch {
+    Box::into_raw(Box::new(crate::hud::HudWatch::new(w, h, full != 0)))
+}
+
+/// One key frame's Y plane (`w` x `h` bytes), before any frame.
+///
+/// # Safety
+/// `hud` from `hud_new`; `y` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_add_key(hud: *mut crate::hud::HudWatch, y: *const u8, len: usize) {
+    unsafe { &mut *hud }.add_key(unsafe { std::slice::from_raw_parts(y, len) });
+}
+
+/// One frame's Y plane (`w` x `h` bytes), in order.
+///
+/// # Safety
+/// `hud` from `hud_new`; `y` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_add(hud: *mut crate::hud::HudWatch, y: *const u8, len: usize) {
+    unsafe { &mut *hud }.add(unsafe { std::slice::from_raw_parts(y, len) });
+}
+
+/// Frames not reviewed before the first (a review from part way in): `HudWatch::skip`.
+///
+/// # Safety
+/// `hud` from `hud_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_skip(hud: *mut crate::hud::HudWatch, frames: usize) {
+    unsafe { &mut *hud }.skip(frames);
+}
+
+/// The run's part of the watch as JSON (`HudPart`), and frees the watch. Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `hud` from `hud_new`, not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_part(hud: *mut crate::hud::HudWatch) -> *mut u8 {
+    let hud = unsafe { Box::from_raw(hud) };
+    bytes_out(serde_json::to_vec(&hud.part()).unwrap_or_default())
+}
+
+/// The next run's part (`hud_part`'s JSON), after the frames the watch has (`HudWatch::join`). Returns the watch's
+/// frames after it; none when the part cannot be read.
+///
+/// # Safety
+/// `hud` from `hud_new`; `part` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_add_part(hud: *mut crate::hud::HudWatch, part: *const u8, len: usize) -> usize {
+    let hud = unsafe { &mut *hud };
+    let Ok(part) = serde_json::from_slice::<crate::hud::HudPart>(unsafe { std::slice::from_raw_parts(part, len) }) else {
+        return 0;
+    };
+    hud.join(part);
+    hud.frames()
+}
+
+/// What the HUD read as JSON (`HudReading`, or null without a readable HUD), and frees the watch. Free the result as
+/// `tracker_finish`'s.
+///
+/// # Safety
+/// `hud` from `hud_new`, not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hud_finish(hud: *mut crate::hud::HudWatch) -> *mut u8 {
+    let hud = unsafe { Box::from_raw(hud) };
+    bytes_out(serde_json::to_vec(&hud.finish()).unwrap_or_default())
 }

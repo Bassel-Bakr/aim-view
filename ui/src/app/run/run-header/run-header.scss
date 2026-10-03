@@ -11,8 +11,9 @@
     @apply flex flex-wrap items-center gap-x-4 font-display text-title leading-tight font-bold;
   }
 
+  // a badge (themes/controls.scss), at the size of the line under the title rather than the title's
   .source {
-    @apply rounded-pill border border-border-strong px-5 py-1 text-xs font-medium text-secondary;
+    @apply text-xs font-medium;
   }
 
   .sub {

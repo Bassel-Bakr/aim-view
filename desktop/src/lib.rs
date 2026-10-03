@@ -6,6 +6,7 @@ pub mod api;
 pub mod detector;
 pub mod ffmpeg;
 pub mod library;
+pub mod report;
 pub mod review;
 pub mod run_window;
 pub mod video;

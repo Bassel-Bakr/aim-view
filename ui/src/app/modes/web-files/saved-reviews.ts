@@ -1,15 +1,19 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { Tracks } from '../../api';
-import { VideoReadings } from '../wasm/review-messages';
+import { HudReading, VideoReadings } from '../wasm/review-messages';
 import { BrowserStore } from './browser-store';
 
 const INDEX = 'review-index';
 const KEY = 'review:';
 
-/** A recording's tracks and video readings, as the browser review found them, and the model that found them. */
+/**
+ * A recording's tracks, video readings and what its HUD read (null: nothing), as the browser review found them, and the
+ * model that found them. A review saved before the HUD was read has no `hud`: it reads as null.
+ */
 export interface SavedReview {
   tracks: Tracks;
   readings: VideoReadings;
+  hud?: HudReading | null;
   model: string;
 }
 
@@ -28,7 +32,7 @@ const key = (file: File, model: string) => `${KEY}${fingerprint(file)}|${model}`
 
 /**
  * The browser review's results, kept in this browser (IndexedDB) so a run is not reviewed again after a reload: each
- * recording's tracks and video readings, one review per model, as the review server keeps them. The report is not
+ * recording's tracks, video readings and HUD reading, one review per model, as the review server keeps them. The report is not
  * kept: it is worked out again from them and the stats file, so it follows the review code. Clearing the list keeps
  * them, so the same file added again finds its reviews.
  */

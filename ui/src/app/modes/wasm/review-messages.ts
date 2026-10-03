@@ -32,43 +32,63 @@ export interface FrameFormat {
 }
 
 /**
- * The camera worker's start: where the core is, the frames' format, the fixed map (1280 x 720), and the frames before
- * the review's first, which it does not see (a review from part way in; 0 but for the first run of such a review).
+ * The camera worker's opening, before the key frames: where the core is and the frames' format. It makes the HUD watch,
+ * which reads every key frame before any frame (for where the HUD's boxes are).
  */
-export interface CameraStart extends FrameFormat {
-  kind: 'start';
+export interface WatchOpen extends FrameFormat {
+  kind: 'open';
   coreUrl: string;
+}
+
+/** A key frame, in the fixed map's pass: its decoded Y plane (the recording's size). Its buffer comes back once read. */
+export interface KeyFrame {
+  kind: 'key';
+  frame: ArrayBuffer;
+}
+
+/**
+ * The camera watch's start, after the key frames: the fixed map (1280 x 720), and the frames before the review's first,
+ * which neither watch sees (a review from part way in; 0 but for the first run of such a review).
+ */
+export interface CameraStart {
+  kind: 'start';
   fixed: Uint8Array;
   skip: number;
 }
 
 /**
- * A frame, as much of it as the camera watch reads: the decoded Y plane (the recording's size), then the rows of its
- * 720p RGB the countdown test reads (core: camera_rgb_rows). Its buffer comes back once read.
+ * A frame, as much of it as the watches read: the decoded Y plane (the recording's size; the HUD watch reads it as it
+ * is), then the rows of its 720p RGB the countdown test reads (core: camera_rgb_rows). Its buffer comes back once read.
  */
 export interface CameraFrame {
   kind: 'frame';
   frame: ArrayBuffer;
 }
 
-/** No more frames: the watch's part comes back. */
+/** No more frames: the watches' parts come back. */
 export interface CameraFinish {
   kind: 'finish';
 }
 
-/** What the review worker tells the camera worker. */
-export type CameraTask = CameraStart | CameraFrame | CameraFinish;
+/** What the review worker tells the camera worker, in this order: open, key frames, start, frames, finish. */
+export type CameraTask = WatchOpen | KeyFrame | CameraStart | CameraFrame | CameraFinish;
 
-/** A frame's buffer, read and free again. */
+/** A frame's (or key frame's) buffer, read and free again. */
 export interface CameraFree {
   kind: 'free';
   frame: ArrayBuffer;
 }
 
-/** The watch's part of the run (src/wasm.rs: camera_part's JSON), once every frame is read. */
+/** The camera and HUD watches' parts of the run (src/wasm.rs: camera_part's and hud_part's JSON). */
+export interface WatchParts {
+  camera: string;
+  hud: string;
+}
+
+/** The watches' parts, once every frame is read. */
 export interface CameraDone {
   kind: 'part';
-  part: string;
+  part: WatchParts;
 }
 
 export interface ReviewProgress {
@@ -91,17 +111,44 @@ export interface VideoReadings {
   countdown: boolean[];
 }
 
+/** Which game's HUD was read (src/hud.rs: HudGame). */
+export type HudGame = 'kovaak' | 'aimlab';
+
+/** The run's totals as the HUD shows them at the end; hits and shots null where the Accuracy line was not read. */
+export interface HudFinal {
+  kills: number;
+  hits: number | null;
+  shots: number | null;
+}
+
+/**
+ * What the HUD read (src/hud.rs: HudReading): the frame of each kill, shot and hit (the tracks' frame indexes), the
+ * totals at the end, the share of the count's steps that were plausible, and Aim Lab's points (null for KovaaK's).
+ */
+export interface HudReading {
+  game: HudGame;
+  kills: number[];
+  shots: number[];
+  hits: number[];
+  final: HudFinal;
+  checked: number;
+  points: number | null;
+}
+
 /**
  * A run's part of the review, for the page to join with the other runs' in order (core-module.ts: joinRuns): its
- * frames, its tracker's and camera watch's parts (src/wasm.rs: tracker_part and camera_part's JSON), and what every
- * run finds the same: the frame rate, the fixed map (1280 x 720), where the detector ran and the key frames read.
+ * frames, its tracker's, camera watch's and HUD watch's parts (src/wasm.rs: tracker_part, camera_part and hud_part's
+ * JSON), and what every run finds the same: the frame rate, the fixed map (1280 x 720), the frames' format, where the
+ * detector ran and the key frames read.
  */
 export interface RunPart {
   frames: number;
   track: string;
   camera: string;
+  hud: string;
   fps: number;
   fixed: Uint8Array;
+  format: FrameFormat;
   device: BrowserDevice;
   keyFrames: number;
 }

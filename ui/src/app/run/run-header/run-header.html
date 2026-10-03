@@ -1,7 +1,9 @@
 @let r = recording();
 <h2 class="title">
   {{ r.scenario }}
-  <span class="source" [title]="sourceDetail() ?? ''">{{ source() }}</span>
+  <span class="source" appBadge [tone]="sourceTone()" [title]="sourceDetail() ?? ''">{{
+    source()
+  }}</span>
 </h2>
 <p class="sub">
   @if (r.score !== null) {

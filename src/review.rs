@@ -1,16 +1,21 @@
-//! The review of a run with its stats file (review.py: `review`): a clicking run's flicks, or a tracking run's time
-//! on the target.
+//! The review of a run (review.py: `review`): a clicking run's flicks, or a tracking run's time on the target. The
+//! kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without a readable
+//! HUD, from the video alone.
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{CX, CY, H, K, W};
-use crate::matching::{appearances, crosshair_spots, match_times, Flick, KillSource, PathPoint};
+use crate::hud::{HudGame, HudReading};
+use crate::matching::{
+    appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
+};
 use crate::measure::{choices, measure, target_radius, Measure};
 use crate::stats_file::StatsFile;
 use crate::summary::{judge, summarize, Issue, Mode, Summary};
-use crate::track::Tracks;
+use crate::track::{REVIEW_VERSION, Tracks};
 use crate::tracking::{CameraReading, TrackSummary, countdown_end, stats_length, track_summary};
 
 /// The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees come from.
@@ -39,6 +44,9 @@ pub struct Report {
     pub appeared: BTreeMap<String, i64>,
     pub crosshair: Vec<(f64, f64)>,
     pub run: Option<serde_json::Value>,
+    /// Kept by an older version of the review (`REVIEW_VERSION`): review again for what it lacks.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub outdated: bool,
 }
 
 /// A review's results: the flicks matched to the kills (flicks.json) and the report.
@@ -47,20 +55,82 @@ pub struct Reviewed {
     pub report: Report,
 }
 
-/// Reviews a clicking run from its tracks and its stats file's text. `video` and `stats` are the names the report
-/// gives; `run` is the user's run marks, kept as given.
+/// Where a run's kills come from: its stats file (its name and text), or, for a run without one, the HUD read in the
+/// video (None where it did not read).
+#[derive(Clone, Copy)]
+pub enum KillTimes<'a> {
+    Stats { name: &'a str, text: &'a str },
+    Unpaired { hud: Option<&'a HudReading> },
+}
+
+/// The scenario and the score a recording's name gives ("<scenario> - <score> - <time>"); other recorders name files
+/// freely, so either can be missing.
+fn name_parts(video: &str) -> (String, Option<String>) {
+    let stem = std::path::Path::new(video).file_stem().map_or(Cow::Borrowed(video), |s| s.to_string_lossy());
+    let mut parts: Vec<&str> = stem.rsplitn(3, " - ").collect();
+    parts.reverse();
+    let score = parts.get(1).and_then(|s| {
+        let s = s.trim_start();
+        let digits = |t: &str| t.len() - t.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let whole = digits(s);
+        let frac = s[whole..].strip_prefix('.').map_or(0, |r| match digits(r) {
+            0 => 0,
+            d => d + 1,
+        });
+        (whole > 0).then(|| s[..whole + frac].to_string())
+    });
+    (parts[0].to_string(), score)
+}
+
+/// The shots each HUD kill took. The Accuracy row can update up to a third of a second after the Kill Count, so a shot
+/// can land in the next kill's stretch: in one-hit scenarios (hits about equal to kills) each kill is one hit plus the
+/// misses in its stretch; otherwise the shots in its stretch.
+fn hud_shots(h: &HudReading) -> Vec<i64> {
+    let count = |frames: &[i64]| {
+        let mut c: BTreeMap<i64, i64> = BTreeMap::new();
+        for &f in frames {
+            *c.entry(f).or_default() += 1;
+        }
+        c
+    };
+    let (shots, hits) = (count(&h.shots), count(&h.hits));
+    let spans = std::iter::once(-1).chain(h.kills.iter().copied()).zip(h.kills.iter().copied());
+    // two kills on one frame (the count went up by two) leave the second an empty stretch
+    let within =
+        |c: &BTreeMap<i64, i64>, a: i64, b: i64| if a < b { c.range(a + 1..=b).map(|(_, &n)| n).sum() } else { 0 };
+    if !h.hits.is_empty() && h.hits.len() as f64 <= 1.2 * h.kills.len() as f64 {
+        let miss: BTreeMap<i64, i64> = shots
+            .iter()
+            .map(|(&f, &n)| (f, n - hits.get(&f).copied().unwrap_or(0)))
+            .filter(|&(_, n)| n > 0)
+            .collect();
+        spans.map(|(a, b)| 1 + within(&miss, a, b)).collect()
+    } else {
+        spans.map(|(a, b)| within(&shots, a, b)).collect()
+    }
+}
+
+/// Reviews a clicking run from its tracks and its kill times. `video` is the recording's name (the report gives it,
+/// and without a stats file the scenario and the score come from it); `run` is the user's run marks, kept as given.
 pub fn review_clicks(
     tracks: &Tracks,
-    stats_text: &str,
+    kills: KillTimes,
     video: &str,
-    stats: &str,
     run: Option<serde_json::Value>,
 ) -> Result<Reviewed, String> {
-    let file = StatsFile::parse(stats_text);
-    let kills = file.kills()?;
-    let (flicks, mut info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
-    info.source = Some(KillSource::Stats);
-    let mut per_kill = kills.shots.clone();
+    let (flicks, info, meta, mut per_kill, stats) = match kills {
+        KillTimes::Stats { name, text } => {
+            let file = StatsFile::parse(text);
+            let kills = file.kills()?;
+            let (flicks, mut info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
+            info.source = Some(KillSource::Stats);
+            (flicks, info, file.meta, kills.shots, Some(name))
+        }
+        KillTimes::Unpaired { hud } => {
+            let (flicks, info, meta, per_kill) = unpaired_kills(tracks, hud, video);
+            (flicks, info, meta, per_kill, None)
+        }
+    };
     per_kill.sort();
     if per_kill.is_empty() {
         per_kill.push(1);
@@ -69,10 +139,10 @@ pub fn review_clicks(
     let ms = measure(&flicks, tracks.fps, r);
     let mode = if per_kill[per_kill.len() / 2] > 3 { Mode::Hold } else { Mode::Click };
     let ch = choices(tracks, &flicks);
-    let summary = summarize(&ms, &ch, &file.meta, info, r, mode)?;
+    let summary = summarize(&ms, &ch, &meta, info, r, mode)?;
     let report = Report {
         video: video.into(),
-        stats: Some(stats.into()),
+        stats: stats.map(Into::into),
         issues: judge(&summary),
         summary,
         flicks: ms,
@@ -83,8 +153,47 @@ pub fn review_clicks(
         appeared: appearances(tracks, 0.5, 1.0).appeared.into_iter().map(|(t, i)| (t.to_string(), i)).collect(),
         crosshair: crosshair_spots(&tracks.frames),
         run,
+        outdated: false,
     };
     Ok(Reviewed { flicks, report })
+}
+
+/// A clicking run's kills without a stats file: from the HUD, with its shots and totals (the score from the file name,
+/// or Aim Lab's points), else from the video alone (no score, shots, misses or accuracy). Returns the flicks, how they
+/// matched, the stats file's facts the HUD gives, and each kill's shots.
+fn unpaired_kills(
+    tracks: &Tracks,
+    hud: Option<&HudReading>,
+    video: &str,
+) -> (Vec<Flick>, MatchInfo, HashMap<String, String>, Vec<i64>) {
+    let (scenario, score) = name_parts(video);
+    let mut meta = HashMap::from([("Scenario".to_string(), scenario)]);
+    // Aim Lab counts hits: in a task whose targets take several hits, the video's kills are the kills
+    let hud = hud.filter(|h| {
+        !h.kills.is_empty()
+            && (h.game != HudGame::Aimlab || h.kills.len() as f64 <= 1.3 * match_video(tracks).0.len() as f64)
+    });
+    let Some(h) = hud else {
+        let (flicks, info) = match_video(tracks);
+        return (flicks, info, meta, Vec::new());
+    };
+    let shots = hud_shots(h);
+    // Aim Lab's crosshair is marked as a target by every model: its tracks were taken for the killed target. In
+    // KovaaK's runs they stay: a target held under the crosshair looks like them
+    let aimlab = h.game == HudGame::Aimlab;
+    let t = if aimlab { Cow::Owned(without_ghosts(tracks)) } else { Cow::Borrowed(tracks) };
+    let times: Vec<f64> = h.kills.iter().map(|&f| f as f64 / tracks.fps).collect();
+    let (flicks, mut info) = match_times(&t, &times, &shots, 0.25, Some(0.0));
+    info.source = Some(if aimlab { KillSource::Aimlab } else { KillSource::Hud });
+    meta.insert("Kills".into(), h.totals.kills.to_string());
+    if let Some(s) = score.or_else(|| h.points.map(|p| p.to_string())) {
+        meta.insert("Score".into(), s);
+    }
+    if let (Some(hits), Some(all)) = (h.totals.hits, h.totals.shots) {
+        meta.insert("Hit Count".into(), hits.to_string());
+        meta.insert("Miss Count".into(), (all - hits).to_string());
+    }
+    (flicks, info, meta, shots)
 }
 
 /// A tracking run's report, as report.json keeps it: the summary, with the clicking run's parts empty.
@@ -103,6 +212,8 @@ pub struct TrackReport {
     pub crosshair: Vec<(f64, f64)>,
     pub run: Option<serde_json::Value>,
     pub limit: Option<f64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub outdated: bool,
 }
 
 /// What a tracking run reads from its video besides the tracks: per frame the camera's reading, and whether KovaaK's
@@ -112,32 +223,46 @@ pub struct VideoReadings<'a> {
     pub countdown: &'a [bool],
 }
 
-/// Reviews a tracking run from its tracks, its stats file and its video's readings. `limit`: the scenario's time
-/// limit (seconds), which the stats file's own length overrides.
+/// Reviews a tracking run from its tracks, its kill times (bots that die) and its video's readings. `limit`: the
+/// scenario's time limit (seconds), which the stats file's own length overrides.
 pub fn review_tracking(
     tracks: &Tracks,
-    stats_text: &str,
+    kills: KillTimes,
     video: &str,
-    stats: &str,
     limit: Option<f64>,
     readings: VideoReadings,
     run: Option<serde_json::Value>,
 ) -> Result<TrackReport, String> {
-    let file = StatsFile::parse(stats_text);
     let fps = tracks.fps;
-    let limit = stats_length(stats, &file).or(limit);
-    let (mut deaths, mut start) = (Vec::new(), None);
-    if !file.rows.is_empty() {
-        // bots that die: their kills, matched in the video, and the challenge's start on the video's clock
-        let kills = file.kills()?;
-        let (flicks, info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
-        deaths = flicks.iter().map(|f| f.kill_frame).collect();
-        if let Some(off) = info.offset
-            && info.matched > 0
-        {
-            start = Some((off * fps).round_ties_even() as i64);
+    let (mut deaths, mut start, mut limit) = (Vec::new(), None, limit);
+    let (meta, stats, source) = match kills {
+        KillTimes::Stats { name, text } => {
+            let file = StatsFile::parse(text);
+            limit = stats_length(name, &file).or(limit);
+            if !file.rows.is_empty() {
+                // bots that die: their kills, matched in the video, and the challenge's start on the video's clock
+                let kills = file.kills()?;
+                let (flicks, info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
+                deaths = flicks.iter().map(|f| f.kill_frame).collect();
+                if let Some(off) = info.offset
+                    && info.matched > 0
+                {
+                    start = Some((off * fps).round_ties_even() as i64);
+                }
+            }
+            (file.meta, Some(name), KillSource::Stats)
         }
-    }
+        KillTimes::Unpaired { hud } => {
+            let meta = HashMap::from([("Scenario".to_string(), name_parts(video).0)]);
+            match hud.filter(|h| h.game == HudGame::Kovaak && !h.kills.is_empty()) {
+                Some(h) => {
+                    deaths = h.kills.clone();
+                    (meta, None, KillSource::Hud)
+                }
+                None => (meta, None, KillSource::Video),
+            }
+        }
+    };
     if start.is_none()
         && let Some(l) = limit.filter(|&l| l != 0.0)
     {
@@ -146,16 +271,15 @@ pub fn review_tracking(
         start = countdown_end(readings.countdown, fps, until).map(|i| i as i64);
     }
     // the user's own window comes first
-    let mut limit = limit;
     if let Some(marks) = run.as_ref() {
         let (first, length) = run_window(marks, fps, limit);
         start = first.or(start);
         limit = length;
     }
-    let summary = track_summary(tracks, &file.meta, limit, Some(readings.camera), &deaths, start, KillSource::Stats);
+    let summary = track_summary(tracks, &meta, limit, Some(readings.camera), &deaths, start, source);
     Ok(TrackReport {
         video: video.into(),
-        stats: Some(stats.into()),
+        stats: stats.map(Into::into),
         summary,
         issues: Vec::new(),
         flicks: Vec::new(),
@@ -167,6 +291,7 @@ pub fn review_tracking(
         crosshair: Vec::new(),
         run,
         limit,
+        outdated: false,
     })
 }
 
@@ -190,15 +315,20 @@ pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (O
     }
 }
 
-/// What the page asks the core to review: the tracks, the video's name, the stats file's name and text, the user's
-/// run marks; for a tracking run also the scenario's time limit and the video's readings.
+/// What the page asks the core to review: the tracks, the video's name, the stats file's name and text (empty without
+/// one), what the HUD read, the user's run marks; for a tracking run also the scenario's time limit and the video's
+/// readings.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
     pub tracks: Tracks,
     pub video: String,
+    #[serde(default)]
     pub stats: String,
+    #[serde(default)]
     pub stats_text: String,
+    #[serde(default)]
+    pub hud: Option<HudReading>,
     #[serde(default)]
     pub run: Option<serde_json::Value>,
     #[serde(default)]
@@ -228,12 +358,19 @@ pub enum Outcome {
 }
 
 fn review_request(r: ReviewRequest) -> Result<AnyReport, String> {
+    let kills = if r.stats_text.is_empty() {
+        KillTimes::Unpaired { hud: r.hud.as_ref() }
+    } else {
+        KillTimes::Stats { name: &r.stats, text: &r.stats_text }
+    };
+    let outdated = r.tracks.version < REVIEW_VERSION;
     if r.tracking {
         let readings = VideoReadings { camera: &r.camera, countdown: &r.countdown };
-        review_tracking(&r.tracks, &r.stats_text, &r.video, &r.stats, r.limit, readings, r.run)
-            .map(|t| AnyReport::Track(Box::new(t)))
+        let t = review_tracking(&r.tracks, kills, &r.video, r.limit, readings, r.run)?;
+        Ok(AnyReport::Track(Box::new(TrackReport { outdated, ..t })))
     } else {
-        review_clicks(&r.tracks, &r.stats_text, &r.video, &r.stats, r.run).map(|c| AnyReport::Click(Box::new(c.report)))
+        let c = review_clicks(&r.tracks, kills, &r.video, r.run)?;
+        Ok(AnyReport::Click(Box::new(Report { outdated, ..c.report })))
     }
 }
 

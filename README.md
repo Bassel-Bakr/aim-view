@@ -17,8 +17,9 @@ Aim View will run three ways from one code base:
 
 The parts:
 
-- **Review core:** Rust. It is built natively for the desktop app and as WebAssembly for the browser. The Python code
-  stays the reference: the core replaces nothing until its reports match Python's on every recording.
+- **Review core:** Rust. It is built natively for the desktop app and as WebAssembly for the browser. It is checked
+  against KovaaK's stats files, the ground truth. Python's review is a cross-check while it lasts; `python/model/`
+  stays for training the detector.
 - **UI:** Angular 22, shared by all three. Each way of running supplies its own services for recordings, stats files,
   models and the review (`ui/src/app/platform/` holds what they must do, `ui/src/app/modes/` how each mode does it).
   A build carries only its own mode's code.

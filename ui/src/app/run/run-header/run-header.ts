@@ -1,14 +1,16 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { Recording, Report, Source } from '../../api';
+import { Badge, BadgeTone } from '../../controls/badge';
 import { formatSize } from '../../format';
 import { StampPipe } from '../../stamp-pipe';
 
+/** Where a review's kills came from, as its label says it. */
 const SOURCES: Record<Source, string> = {
-  stats: 'Stats file',
-  hud: 'Session HUD',
-  aimlab: 'Aim Lab HUD',
-  video: 'Video only',
+  stats: 'Kills from the stats file',
+  hud: "Kills read from KovaaK's HUD",
+  aimlab: "Kills read from Aim Lab's HUD",
+  video: 'Kills from the video alone (no score, shots or accuracy)',
 };
 
 const SOURCE_DETAILS: Record<Source, string> = {
@@ -21,7 +23,7 @@ const SOURCE_DETAILS: Record<Source, string> = {
 /** The open recording's title and data source, and its score, time and size. */
 @Component({
   selector: 'app-run-header',
-  imports: [DecimalPipe, StampPipe],
+  imports: [Badge, DecimalPipe, StampPipe],
   templateUrl: './run-header.html',
   styleUrl: './run-header.scss',
 })
@@ -40,4 +42,8 @@ export class RunHeader {
     const s = this.report()?.summary.info.source;
     return s ? SOURCE_DETAILS[s] : null;
   });
+  /** Good when the kills are the stats file's, as exact as the review gets. */
+  protected readonly sourceTone = computed<BadgeTone>(() =>
+    this.report()?.summary.info.source === 'stats' ? 'good' : 'neutral',
+  );
 }

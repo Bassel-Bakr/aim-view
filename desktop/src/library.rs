@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use aimview::scenario::{Facts, Kind};
+use aimview::scenario::Facts;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -608,7 +608,8 @@ impl Library {
             };
             let outcome = crate::ffmpeg::ensure(|mb, of| progress("ffmpeg", mb, of)).and_then(|()| review(&req, &progress)).and_then(|r| {
                 write_json(&out.join("tracks.json"), &r.tracks).map_err(|f| f.message)?;
-                write_json(&out.join("readings.json"), &r.readings).map_err(|f| f.message)
+                write_json(&out.join("readings.json"), &r.readings).map_err(|f| f.message)?;
+                write_json(&out.join("hud.json"), &r.hud).map_err(|f| f.message)
             });
             if let Ok(mut j) = job.lock() {
                 match outcome {
@@ -652,35 +653,19 @@ impl Library {
         std::fs::read(self.shown(id).1.join("tracks.json")).ok()
     }
 
-    /// The shown review's report, worked out by the core from its tracks and the stats file (as the browser does);
-    /// None without a review or a stats file.
+    /// The shown review's report, worked out by the core (report.rs) from its tracks and the stats file, or without
+    /// one from what the HUD read, else from the video alone; None without a review.
     pub fn report(&self, id: &str) -> Answer<Value> {
         let video = self.resolve(id)?;
         let (model, dir) = self.shown(id);
-        let Some(tracks) = read_json::<Value>(&dir.join("tracks.json")) else { return Ok(Value::Null) };
-        let Some(stats) = self.stats_of(id, &video) else { return Ok(Value::Null) };
-        let readings: Value = read_json(&dir.join("readings.json")).unwrap_or(json!({ "camera": [], "countdown": [] }));
-        let stats_text = std::fs::read(&stats).map_err(|e| e.to_string())?;
+        let stats = self.stats_of(id, &video);
         let scenario = parse_name(&video.with_extension("mp4").file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
             .map(|(s, _, _)| s.to_lowercase());
         let facts = scenario.and_then(|s| self.facts().get(&s).cloned());
-        let request = json!({
-            "tracks": tracks,
-            "statsText": String::from_utf8_lossy(&stats_text),
-            "video": video.file_name().map(|n| n.to_string_lossy().into_owned()),
-            "stats": stats.file_name().map(|n| n.to_string_lossy().into_owned()),
-            "run": Some(RunMarks::read(&self.review_dir(id))).filter(RunMarks::is_set),
-            "tracking": facts.as_ref().is_some_and(|f| f.kind == Kind::Tracking),
-            "limit": facts.as_ref().and_then(|f| f.limit),
-            "camera": readings["camera"],
-            "countdown": readings["countdown"],
-        });
-        let outcome: Value = serde_json::from_slice(&aimview::review::review_json(&serde_json::to_vec(&request).map_err(|e| e.to_string())?))
-            .map_err(|e| e.to_string())?;
-        if let Some(e) = outcome["error"].as_str() {
-            return Err(e.to_string().into());
-        }
-        let mut report = outcome["report"].clone();
+        let run = RunMarks::read(&self.review_dir(id));
+        let Some(mut report) = crate::report::work_out(&dir, &video, stats.as_deref(), Some(run), facts.as_ref())? else {
+            return Ok(Value::Null);
+        };
         report["review_model"] = json!(model);
         Ok(report)
     }

@@ -1,8 +1,8 @@
 //! A recording's review on this computer (the browser's review worker, natively): ffmpeg decodes the frames, the core
 //! converts them to ffmpeg's 720p RGB and luma byte for byte, the detector runs on the GPU (DirectML), the tracker
-//! keeps and links the targets, and the camera watch reads the camera's turn. A recording is split into runs at key
-//! frames (`split_runs`, as ui/src/app/modes/wasm/split-runs.ts), reviewed at once and joined: one ffmpeg decoder is
-//! the limit, as one browser decoder was.
+//! keeps and links the targets, the camera watch reads the camera's turn and the HUD watch the game's on-screen counts.
+//! A recording is split into runs at key frames (`split_runs`, as ui/src/app/modes/wasm/split-runs.ts), reviewed at
+//! once and joined: one ffmpeg decoder is the limit, as one browser decoder was.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,6 +12,7 @@ use std::thread;
 use aimview::camera::{COUNTDOWN_ROWS, CameraPart, CameraWatch, VideoReadings};
 use aimview::convert::{Converter, DST_H as H, DST_W as W};
 use aimview::fixed::FixedMap;
+use aimview::hud::{HudPart, HudReading, HudWatch};
 use aimview::track::TrackFrame;
 use aimview::tracker::{TrackPart, Tracker};
 use serde::Serialize;
@@ -70,12 +71,15 @@ pub struct Tracks {
     pub detector: String,
     /// The part of the video tracked, when only part of it was; the frames outside are empty.
     pub window: Option<TimeWindow>,
+    /// The review's version (aimview::track::REVIEW_VERSION).
+    pub version: u32,
 }
 
-/// A review's tracks and the video's readings.
+/// A review's tracks, the video's readings, and what the HUD read (None: no HUD was read).
 pub struct Reviewed {
     pub tracks: Tracks,
     pub readings: VideoReadings,
+    pub hud: Option<HudReading>,
 }
 
 /// Where a review stands: its stage ("looking" at the key frames, "tracking", "linking"), frames done, of how many.
@@ -143,17 +147,20 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     let runs = split_runs(&info.times, &info.keys, req.runs.max(1), LEAST_RUN, range);
     let total = runs.iter().map(|r| r.frames).sum();
     progress("looking", 0, total);
-    let fixed = fixed_map(&req.video, &info)?;
+    // each run's HUD watch reads every key frame before its frames
+    let mut huds: Vec<HudWatch> = runs.iter().map(|_| HudWatch::new(info.width, info.height, info.full)).collect();
+    let fixed = fixed_map(&req.video, &info, |y| huds.iter_mut().for_each(|h| h.add_key(y)))?;
     let done = AtomicUsize::new(0);
     let parts: Vec<Result<RunPart, String>> = thread::scope(|s| {
         let running: Vec<_> = runs
             .iter()
+            .zip(huds)
             .enumerate()
-            // a review from part way in: the first run's camera watch has nothing before its first frame
-            .map(|(i, run)| {
+            // a review from part way in: the first run's camera and HUD watches have nothing before its first frame
+            .map(|(i, (run, hud))| {
                 let skip = if i == 0 { run.first } else { 0 };
                 let (info, fixed, done) = (&info, &fixed, &done);
-                s.spawn(move || review_run(req, info, fixed, run, skip, done, total, progress))
+                s.spawn(move || review_run(req, info, fixed, run, hud, skip, done, total, progress))
             })
             .collect();
         running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a run of the review failed".into()))).collect()
@@ -161,6 +168,7 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     progress("linking", total, total);
     let mut tracker = Tracker::kovobs(req.cap);
     let mut camera = CameraWatch::for_recording(&fixed);
+    let mut hud = HudWatch::new(info.width, info.height, info.full);
     let mut device = "";
     for (run, part) in runs.iter().zip(parts) {
         let part = part?;
@@ -168,6 +176,7 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
             return Err("the review's runs do not join up".into());
         }
         camera.join(part.camera);
+        hud.join(part.hud);
         device = part.device;
     }
     let frames = tracker.finish();
@@ -175,66 +184,87 @@ pub fn review(req: &Request, progress: Progress) -> Result<Reviewed, String> {
     if readings.countdown.len() != frames.len() {
         return Err("the camera watch's runs do not join up".into());
     }
+    if hud.frames() != frames.len() {
+        return Err("the HUD watch's runs do not join up".into());
+    }
     let share = fixed.iter().map(|&v| v as f64).sum::<f64>() / fixed.len() as f64;
     let detector = format!("onnxruntime ({device})");
-    let tracks = Tracks { fps: info.fps, frames, fixed: share, detector, window: req.window };
-    Ok(Reviewed { tracks, readings })
+    let tracks =
+        Tracks { fps: info.fps, frames, fixed: share, detector, window: req.window, version: aimview::track::REVIEW_VERSION };
+    Ok(Reviewed { tracks, readings, hud: hud.finish() })
 }
 
-/// The fixed map, from the key frames (as python/review.py builds it). Each key frame is decoded on its own, from its
-/// exact time (ffmpeg's libaom ignores `-skip_frame nokey` and gives every frame), a few at once, and added in order.
-fn fixed_map(video: &Path, info: &VideoInfo) -> Result<Vec<u8>, String> {
+/// A key frame: at 720p for the fixed map, and as decoded (the HUD watches read its Y plane).
+type KeyFrame = (Vec<u8>, Vec<u8>);
+
+/// The fixed map, from the key frames (as python/review.py builds it), and each key frame's Y plane at the video's size
+/// handed to `key`, in order. Each key frame is decoded on its own, from its exact time (ffmpeg's libaom ignores
+/// `-skip_frame nokey` and gives every frame), a few at once: decoder i takes every AT_ONCE-th key frame from the i-th
+/// and waits while its next one is not wanted yet, so only a few whole frames are held at a time.
+fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8])) -> Result<Vec<u8>, String> {
     const AT_ONCE: usize = 4;
-    let per = info.keys.len().div_ceil(AT_ONCE).max(1);
-    let small: Vec<Result<Vec<Vec<u8>>, String>> = thread::scope(|s| {
-        let running: Vec<_> = info
-            .keys
-            .chunks(per)
-            .map(|keys| {
-                s.spawn(move || {
+    thread::scope(|s| {
+        let (decoders, decoded): (Vec<_>, Vec<_>) = (0..AT_ONCE.min(info.keys.len()))
+            .map(|first| {
+                let (sender, decoded) = mpsc::sync_channel::<Result<KeyFrame, String>>(1);
+                let decoder = s.spawn(move || {
                     let mut convert = Converter::new(info.width, info.height, info.matrix, info.full);
-                    let mut yuv = vec![0u8; frame_bytes(info)];
-                    keys.iter()
-                        .map(|&t| {
+                    for &t in info.keys.iter().skip(first).step_by(AT_ONCE) {
+                        let frame = (|| {
+                            let mut yuv = vec![0u8; frame_bytes(info)];
                             let mut frames = Frames::open(video, (t > info.times[0]).then_some(t), Some(1))?;
                             if !frames.next_into(&mut yuv)? {
                                 return Err(format!("the key frame at {t:.3} s could not be decoded"));
                             }
                             let mut small = vec![0u8; W * H * 3 / 2];
                             convert.yuv420p(&yuv, &mut small);
-                            Ok(small)
-                        })
-                        .collect()
-                })
+                            Ok((small, yuv))
+                        })();
+                        let failed = frame.is_err();
+                        if sender.send(frame).is_err() || failed {
+                            break;
+                        }
+                    }
+                });
+                (decoder, decoded)
             })
-            .collect();
-        running.into_iter().map(|r| r.join().unwrap_or_else(|_| Err("a key frame failed".into()))).collect()
-    });
-    let mut map = FixedMap::default();
-    for frames in small {
-        for frame in frames? {
-            map.add(&frame);
+            .unzip();
+        let taken = (|| {
+            let mut map = FixedMap::default();
+            for i in 0..info.keys.len() {
+                let (small, yuv) = decoded[i % AT_ONCE].recv().map_err(|_| "a key frame failed".to_string())??;
+                map.add(&small);
+                key(&yuv[..info.width * info.height]);
+            }
+            Ok(map.map())
+        })();
+        // the decoders stop once nothing takes their frames
+        drop(decoded);
+        for d in decoders {
+            let _ = d.join();
         }
-    }
-    Ok(map.map())
+        taken
+    })
 }
 
-/// A run's part of the review: its tracker's and camera watch's parts, and where its detector ran.
+/// A run's part of the review: its tracker's, camera watch's and HUD watch's parts, and where its detector ran.
 struct RunPart {
     track: TrackPart,
     camera: CameraPart,
+    hud: HudPart,
     device: &'static str,
 }
 
 /// One run: this thread decodes and converts each frame and watches its areas; a detector thread takes the frames a
-/// batch at a time and hands their maps to the tracker in order; a camera thread reads the camera's turn. A run but
-/// the last also reads the next run's first frame, for the camera's turn into it.
+/// batch at a time and hands their maps to the tracker in order; a camera thread reads the camera's turn and the HUD
+/// from each frame's Y plane. A run but the last also reads the next run's first frame, for the camera's turn into it.
 #[allow(clippy::too_many_arguments)]
 fn review_run(
     req: &Request,
     info: &VideoInfo,
     fixed: &[u8],
     run: &Run,
+    mut hud: HudWatch,
     skip: usize,
     done: &AtomicUsize,
     total: usize,
@@ -253,9 +283,11 @@ fn review_run(
     // a batch's frames, and how many of them are the run's (the rest of the last batch is left over)
     let (to_detector, batches) = mpsc::sync_channel::<(Vec<u8>, usize)>(2);
     let (spare_tx, spare) = mpsc::channel::<Vec<u8>>();
-    // a frame's luma and its countdown rows
+    // a frame's Y plane (at the video's size) and its countdown rows; the Y planes come back to be filled again
+    let y_bytes = info.width * info.height;
     let (to_camera, camera_frames) = mpsc::sync_channel::<(Vec<u8>, Vec<u8>)>(8);
-    let camera = thread::scope(|s| {
+    let (spare_y_tx, spare_y) = mpsc::channel::<Vec<u8>>();
+    let (camera, hud) = thread::scope(|s| {
         let shared = &tracker;
         let detecting = s.spawn(move || -> Result<(), String> {
             let (gw, gh) = (W / 4, H / 4);
@@ -278,12 +310,18 @@ fn review_run(
         let watching = s.spawn(move || {
             let mut camera = CameraWatch::for_recording(fixed);
             camera.skip(skip);
+            hud.skip(skip);
+            let mut convert = Converter::new(info.width, info.height, info.matrix, info.full);
+            let mut luma = vec![0u8; W * H];
             let mut rgb = vec![0u8; rgb_bytes];
-            for (luma, rows) in camera_frames {
+            for (y, rows) in camera_frames {
+                convert.luma(&y, &mut luma);
                 rgb[rows_from..rows_to].copy_from_slice(&rows);
                 camera.add(&luma, &rgb);
+                hud.add(&y);
+                let _ = spare_y_tx.send(y);
             }
-            camera.part()
+            (camera.part(), hud.part())
         });
         let decoded = (|| -> Result<usize, String> {
             let stopped = || "the detector stopped".to_string();
@@ -294,9 +332,9 @@ fn review_run(
             let (mut count, mut seen) = (0, 0);
             while frames.next_into(&mut yuv)? {
                 convert.rgb24(&yuv, &mut rgb);
-                let mut luma = vec![0u8; W * H];
-                convert.luma(&yuv[..info.width * info.height], &mut luma);
-                to_camera.send((luma, rgb[rows_from..rows_to].to_vec())).map_err(|_| "the camera watch stopped")?;
+                let mut y = spare_y.try_recv().unwrap_or_else(|_| vec![0u8; y_bytes]);
+                y.copy_from_slice(&yuv[..y_bytes]);
+                to_camera.send((y, rgb[rows_from..rows_to].to_vec())).map_err(|_| "the camera watch stopped")?;
                 seen += 1;
                 if seen > run.frames {
                     break;
@@ -318,16 +356,16 @@ fn review_run(
         drop(to_detector);
         drop(to_camera);
         let detected = detecting.join().unwrap_or_else(|_| Err("the detector failed".into()));
-        let camera = watching.join().map_err(|_| "the camera watch failed")?;
+        let watched = watching.join().map_err(|_| "the camera watch failed")?;
         detected?;
         let seen = decoded?;
         if seen != run.frames + extra {
             return Err(format!("the run from {:.3} s gave {seen} frames where it has {}", run.from, run.frames + extra));
         }
-        Ok(camera)
+        Ok(watched)
     })?;
     let track = tracker.into_inner().map_err(|_| "the tracker failed")?.part();
-    Ok(RunPart { track, camera, device })
+    Ok(RunPart { track, camera, hud, device })
 }
 
 #[cfg(test)]

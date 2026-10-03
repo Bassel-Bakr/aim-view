@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use aimview::review::review_clicks;
+use aimview::review::{KillTimes, review_clicks};
 use aimview::track::Tracks;
 
 mod common;
@@ -29,7 +29,7 @@ fn clicking_review_matches_python() {
             eprintln!("no {stats}");
             continue;
         };
-        let got = review_clicks(&tracks, &stats_text, want["video"].as_str().unwrap(), stats, None).unwrap();
+        let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, want["video"].as_str().unwrap(), None).unwrap();
         let mut diff = Diff::default();
         compare("flicks.json", &serde_json::to_value(&got.flicks).unwrap(), &read(&dir.join("flicks.json")), &mut diff);
         compare("measures.json", &serde_json::to_value(&got.report.flicks).unwrap(), &read(&dir.join("measures.json")), &mut diff);

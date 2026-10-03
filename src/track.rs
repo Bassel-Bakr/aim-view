@@ -151,11 +151,22 @@ pub struct TrackFrame {
     pub s: Option<Vec<f64>>,
 }
 
-/// A recording's tracks, as tracks.json keeps them: the frame rate and each frame's targets.
+/// The review's version: one more each time what a review keeps changes (the tracks, the camera's readings, the HUD's),
+/// so a review kept by an older one is known (its report says `outdated`). 2: the HUD is read.
+pub const REVIEW_VERSION: u32 = 2;
+
+/// A recording's tracks, as tracks.json keeps them: the frame rate, each frame's targets, and the review's version
+/// (0 where it is not given: Python's, and the browser's and the desktop app's before version 2).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tracks {
     pub fps: f64,
     pub frames: Vec<TrackFrame>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub version: u32,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 /// A target matched to a track, as the next frame sees it.

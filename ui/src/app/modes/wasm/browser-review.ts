@@ -7,6 +7,7 @@ import { SavedMarks } from '../web-files/saved-marks';
 import { fingerprint, SavedReview, SavedReviews } from '../web-files/saved-reviews';
 import { ScenarioFacts } from '../web-files/scenario-facts';
 import { StatsCsv } from '../web-files/stats-csv';
+import { StatsFolder } from '../web-files/stats-folder';
 import { CoreModule } from './core-module';
 import { BrowserDevice, ReviewMessage, ReviewRequest, RunPart } from './review-messages';
 import { covers, trackedWindow } from './split-runs';
@@ -16,9 +17,9 @@ const NO_SCENARIOS =
   "Without this scenario's file the review does not know its target count or kind (a tracking run is reviewed as a " +
   "clicking one). Give KovaaK's scenario folders with Stats folder at the top.";
 const NO_STATS =
-  "Pair this run with its stats file to review it in the browser: choose KovaaK's stats folder with Stats folder " +
-  'at the top, or its .csv in the stats file panel. Runs without one (read from the HUD or the video alone) are ' +
-  'not reviewed here yet.';
+  'No stats file: the review reads the kills from the HUD, or from the video alone. Pair the run with its stats ' +
+  "file for an exact review: choose KovaaK's stats folder with Stats folder at the top, or its .csv in the stats " +
+  'file panel.';
 const DEFAULT_MODEL = 'full_v3';
 const DEVICE_NAMES: Record<BrowserDevice, string> = { webgpu: 'WebGPU', wasm: 'WebAssembly' };
 /**
@@ -44,8 +45,8 @@ export interface ShownReview {
 }
 
 /**
- * What a report is worked out from: the review shown, the video's and scenario's names, the stats file, and the user's
- * run window.
+ * What a report is worked out from: the review shown, the video's and scenario's names, the stats file (null: none),
+ * and the user's run window.
  */
 export interface ReportParams extends ShownReview {
   video: string;
@@ -67,10 +68,10 @@ const foundKey = (id: string, model: string) => `${id}\n${model}`;
 
 /**
  * The review in the browser: the detector (onnxruntime-web) and the review core (Rust, as WebAssembly). A worker
- * (review.worker.ts) finds the tracks; the core on the page measures them against the stats file, so a stats file
- * paired later gives a report without finding the tracks again. The tracks are saved in this browser (SavedReviews),
- * one review per model: a recording shows the chosen model's review, else its latest, without being reviewed again
- * after a reload. Clicking and tracking runs with a stats file so far.
+ * (review.worker.ts) finds the tracks and reads the HUD; the core on the page measures them against the stats file,
+ * or without one against what the HUD read (else the video alone), so a stats file paired later gives a report
+ * without finding the tracks again. The tracks are saved in this browser (SavedReviews), one review per model: a
+ * recording shows the chosen model's review, else its latest, without being reviewed again after a reload.
  */
 @Injectable({ providedIn: 'root' })
 export class BrowserReview implements ReviewEngine {
@@ -80,6 +81,7 @@ export class BrowserReview implements ReviewEngine {
   private readonly core = inject(CoreModule);
   private readonly saved = inject(SavedReviews);
   private readonly savedMarks = inject(SavedMarks);
+  private readonly statsFolder = inject(StatsFolder);
   private readonly runs = new Map<string, BrowserRun>();
   /** The reviews in memory, by foundKey: made here, or read from the saved reviews. */
   private readonly found = signal<ReadonlyMap<string, SavedReview>>(new Map());
@@ -87,17 +89,23 @@ export class BrowserReview implements ReviewEngine {
   private readonly restoring = new Map<string, Promise<SavedReview | null>>();
 
   unavailable(id: string): string | null {
-    const f = this.local.find(id);
-    if (!f) return NOT_OPEN;
-    return f.stats ? null : NO_STATS;
+    return this.local.find(id) ? null : NOT_OPEN;
   }
 
-  /** A scenario no scenario file gives is reviewed as Python reviews it: no target count, a clicking run. */
+  /**
+   * A run with no stats file, while KovaaK's stats folder is not given (it would pair one), is reviewed from the HUD or
+   * the video alone. A scenario no scenario file gives is reviewed as Python reviews it: no target count, a clicking
+   * run.
+   */
   caveat(id: string): string | null {
     const f = this.local.find(id);
-    if (!f?.stats || this.scenarios.get(localRecording(f).scenario)) return null;
+    if (!f) return null;
+    const notes: string[] = [];
+    if (!f.stats && !this.statsFolder.ready()) notes.push(NO_STATS);
     const from = this.scenarios.sources();
-    return from.has('scenarios') && from.has('workshop') ? null : NO_SCENARIOS;
+    const known = from.has('scenarios') && from.has('workshop');
+    if (!known && !this.scenarios.get(localRecording(f).scenario)) notes.push(NO_SCENARIOS);
+    return notes.join(' ') || null;
   }
 
   report(id: () => string | undefined): ResourceRef<Report | null | undefined> {
@@ -119,19 +127,20 @@ export class BrowserReview implements ReviewEngine {
     return resource({
       params,
       loader: async ({ params: p }) => {
-        if (!p.stats || !p.model) return null;
+        if (!p.model) return null;
         const found = p.found ?? (await this.restore(p.id, p.model));
         if (!found) return null;
         const facts = this.scenarios.get(p.scenario);
         const report = await this.core.report({
           tracks: found.tracks,
-          statsText: p.stats.text,
+          statsText: p.stats?.text ?? '',
           video: p.video,
-          stats: p.stats.name,
+          stats: p.stats?.name ?? '',
           run: p.marks,
           tracking: facts?.kind === 'tracking',
           limit: facts?.limit ?? null,
           ...found.readings,
+          hud: found.hud ?? null,
         });
         return { ...report, review_model: found.model };
       },
@@ -228,8 +237,9 @@ export class BrowserReview implements ReviewEngine {
         fixed: first.fixed.reduce((a, v) => a + v, 0) / first.fixed.length,
         detector: `onnxruntime-web (${DEVICE_NAMES[first.device]})`,
         window,
+        version: joined.version,
       };
-      const review: SavedReview = { tracks, readings: joined.readings, model };
+      const review: SavedReview = { tracks, readings: joined.readings, hud: joined.hud, model };
       this.found.update((all) => new Map(all).set(foundKey(id, model), review));
       // kept for the next visit; a browser that cannot keep it still shows it now
       this.saved.save(local.file, review).catch((err: unknown) => console.warn(err));

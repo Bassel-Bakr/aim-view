@@ -4,6 +4,12 @@
     @if (reviewedBy(); as note) {
       <p class="by">{{ note }}</p>
     }
+    @if (report()?.outdated) {
+      <p class="by">
+        Made by an older version of Aim View: review again for the newest results (the HUD's kills,
+        shots and accuracy for a run without a stats file).
+      </p>
+    }
   </div>
   <div class="toolbar">
     @if (!review.unavailable()) {

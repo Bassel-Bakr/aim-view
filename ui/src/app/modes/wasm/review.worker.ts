@@ -3,8 +3,9 @@
 // frame into the exact pixels ffmpeg gives Python (the core's converter), finds the targets with the detector model
 // (onnxruntime-web, WebAssembly) and tracks them (the core's tracker, which also watches the excluded areas for
 // pop-ups). python/review.py's track_model, step by step: the fixed map from the key frames, then every frame. Frames
-// before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each frame also goes to the
-// camera worker (the camera's turn and KovaaK's countdown bar, which a tracking run's review reads).
+// before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each key frame and each frame
+// also goes to the camera worker (the camera's turn and KovaaK's countdown bar, which a tracking run's review reads,
+// and the HUD, which a review without a stats file reads).
 import {
   ALL_FORMATS,
   BlobSource,
@@ -258,8 +259,8 @@ async function startCapture(
 }
 
 /**
- * One run of the recording (split-runs.ts): its frames' tracks and camera readings, as parts the page joins with the
- * other runs'. A run but the last also reads the next run's first frame, for the camera's turn into it.
+ * One run of the recording (split-runs.ts): its frames' tracks, camera readings and HUD, as parts the page joins with
+ * the other runs'. A run but the last also reads the next run's first frame, for the camera's turn into it.
  */
 async function review(req: ReviewRequest): Promise<void> {
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(req.file) });
@@ -279,14 +280,21 @@ async function review(req: ReviewRequest): Promise<void> {
   const { ort, device } = detector;
   let session = detector.session;
   const samples = new VideoSampleSink(track, await decoderOptions(track));
+  const camera = new CameraLink(req.camera);
+  // the rows of a frame's RGB the countdown test reads, which go to the camera worker after its Y plane
+  const rows = core.x.camera_rgb_rows();
+  const [rowsStart, rowsEnd] = [(rows & 0xffff) * W * 3, (rows >> 16) * W * 3];
 
-  // the converter, made for the first frame's size and colours; the buffers it reads and fills
+  // the converter, made for the first frame's size and colours (the camera worker opens with them); the buffers it
+  // reads and fills, and the camera worker's (a frame's Y plane and countdown rows; a key frame's Y plane)
   let converter = 0;
   // set inside prepare(): "as" keeps TypeScript from taking it for null for good
   let format = null as FrameFormat | null;
   let size = 0;
   let yuv: CoreBlock | null = null;
   let scratch = new Uint8Array(0);
+  let lumaBytes = 0;
+  let cameraBytes = 0;
   const yuv720 = core.reserve((W * H * 3) / 2);
   const rgb = core.reserve(W * H * 3);
   const prepare = (s: VideoSample) => {
@@ -301,12 +309,15 @@ async function review(req: ReviewRequest): Promise<void> {
       converter = core.x.converter_new(w, h, format.matrix, format.full);
       size = (w * h * 3) / 2;
       yuv = core.reserve(size);
+      lumaBytes = w * h;
+      cameraBytes = lumaBytes + rowsEnd - rowsStart;
+      camera.open({ kind: 'open', coreUrl: req.coreUrl, ...format });
     }
     if (scratch.length < s.allocationSize()) scratch = new Uint8Array(s.allocationSize());
     return yuv as CoreBlock;
   };
 
-  // 1. the fixed map, from the key frames (ffmpeg -skip_frame nokey)
+  // 1. the fixed map, from the key frames (ffmpeg -skip_frame nokey); each key frame's Y plane to the HUD watch
   say({ kind: 'progress', stage: 'looking', done: 0, total });
   const packets = new EncodedPacketSink(track);
   const fixedBuilder = core.x.fixed_new();
@@ -320,6 +331,9 @@ async function review(req: ReviewRequest): Promise<void> {
     s.close();
     core.x.converter_yuv420p(converter, block.ptr, size, yuv720.ptr);
     core.x.fixed_add(fixedBuilder, yuv720.ptr);
+    const key = await camera.take(cameraBytes);
+    new Uint8Array(key).set(core.bytes(block).subarray(0, lumaBytes));
+    camera.sendKey(key);
     keyFrames++;
   }
   const fixedBlock = core.reserve(W * H);
@@ -327,10 +341,9 @@ async function review(req: ReviewRequest): Promise<void> {
   const fixed = core.bytes(fixedBlock).slice();
   core.free(fixedBlock);
   if (!format) throw new Error('The video has no frames');
-  const camera = new CameraLink(req.camera);
-  // a review from part way in: the first run's camera watch has nothing before its first frame
+  // a review from part way in: the first run's watches have nothing before its first frame
   const skip = req.run === 0 ? run.first : 0;
-  camera.start({ kind: 'start', coreUrl: req.coreUrl, fixed, skip, ...format });
+  camera.start({ kind: 'start', fixed, skip });
   // the fixed map once for each frame of a call: the detector takes up to req.batch frames at once
   const fixedAll = (k: number) => {
     const all = new Uint8Array(k * W * H);
@@ -369,9 +382,6 @@ async function review(req: ReviewRequest): Promise<void> {
   const tracker = core.x.tracker_new_kovobs(req.cap ?? 0);
   core.x.tracker_start_at(tracker, run.first);
   let n = 0;
-  const lumaBytes = format.width * format.height;
-  const rows = core.x.camera_rgb_rows();
-  const [rowsStart, rowsEnd] = [(rows & 0xffff) * W * 3, (rows >> 16) * W * 3];
   const frameBytes = W * H * 3;
   const mapFloats = gw * gh;
   const onGpu = device === 'webgpu';
@@ -441,7 +451,7 @@ async function review(req: ReviewRequest): Promise<void> {
     await writeI420(s, core, block, scratch);
     s.close();
     core.x.converter_rgb24(converter, block.ptr, size, rgb.ptr);
-    const copy = await camera.take(lumaBytes + rowsEnd - rowsStart);
+    const copy = await camera.take(cameraBytes);
     new Uint8Array(copy).set(core.bytes(block).subarray(0, lumaBytes));
     new Uint8Array(copy).set(core.bytes(rgb).subarray(rowsStart, rowsEnd), lumaBytes);
     camera.send(copy);
@@ -498,10 +508,10 @@ async function review(req: ReviewRequest): Promise<void> {
     throw new Error(`The run from ${run.from} s gave ${n} frames where it has ${run.frames}`);
   }
   const trackPart = core.takeText(core.x.tracker_part(tracker));
-  const cameraPart = await camera.finish();
+  const watched = await camera.finish();
   if (converter) core.x.converter_free(converter);
   say({
     kind: 'part',
-    part: { frames: n, track: trackPart, camera: cameraPart, fps, fixed, device, keyFrames },
+    part: { frames: n, track: trackPart, ...watched, fps, fixed, format, device, keyFrames },
   });
 }

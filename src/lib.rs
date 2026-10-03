@@ -6,6 +6,7 @@ pub mod convert;
 pub mod detect;
 pub mod fixed;
 pub mod geometry;
+pub mod hud;
 pub mod matching;
 pub mod measure;
 pub mod popup;

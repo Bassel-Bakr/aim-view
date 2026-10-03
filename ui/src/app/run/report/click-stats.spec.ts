@@ -4,6 +4,7 @@ import {
   distanceRows,
   killStats,
   killsPerMinute,
+  runHeadline,
   runStats,
   sortedIssues,
   sourceNote,
@@ -113,5 +114,34 @@ describe('click stats', () => {
       { name: 'up-left', n: 3, interval: 0.4, distance: 9.87, short: 0, past: 0, beyond: -0.012 },
     ]);
     expect(d).toMatchObject({ toward: '↖ up-left', distance: '9.9°', beyond: '−12 ms' });
+  });
+
+  it('shows a run from the video alone (no score, shots, misses or accuracy) with dashes', () => {
+    // python/review.py's summarize without a stats file: the meta has only the scenario
+    const video = {
+      scenario: 'Probe',
+      score: null,
+      kills: 40,
+      misses: null,
+      shots: null,
+      accuracy: null,
+      fps_avg: null,
+      sens: null,
+      radius: 0.45,
+      measured: 38,
+      median_interval: 0.5,
+      info: { source: 'video', matched: 40, kills_stats: null },
+    } as ClickSummary;
+    const cards = runStats(video, { share: null, total: 0, extra: 0 });
+    const tiles = runHeadline(video, []);
+    const shown = [...cards, ...tiles].map((x) => `${x.label}: ${x.value}`);
+    expect(shown).toContain('Score: –');
+    expect(shown).toContain('Accuracy: –');
+    expect(shown).toContain('Misses: –');
+    expect(shown).toContain('More kills with the best path: ≈ 0.0');
+    expect(tiles.find((t) => t.label === 'Kills')?.note).toBe('');
+    const text = [...shown, ...tiles.map((t) => t.note), sourceNote(video)].join(' ');
+    expect(text).not.toMatch(/NaN|undefined|null/);
+    expect(sourceNote(video)).toContain('40 kills found in the video alone');
   });
 });

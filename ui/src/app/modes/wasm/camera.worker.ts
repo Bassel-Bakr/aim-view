@@ -1,20 +1,26 @@
 /// <reference lib="webworker" />
-// The camera watch (src/camera.rs) in a worker of its own, beside the review worker: each frame's turn of the camera and
-// whether KovaaK's countdown bar shows. The review worker sends it, over a port between the two, every frame's decoded
-// Y plane and the rows of its RGB the countdown test reads; this worker makes the 720p luma with its own copy of the
-// core (the same converter, so the same bytes) and sends the buffer back. In the review worker the watch held up the
-// detector (av1: 76 frames a second with it there, 99 to 119 without it). The luma alone and the review worker's RGB
-// rows, instead of every frame converted to RGB and YUV here, keep it light.
+// The camera watch (src/camera.rs) and the HUD watch (src/hud.rs) in a worker of their own, beside the review worker:
+// each frame's turn of the camera, whether KovaaK's countdown bar shows, and what the HUD reads (the kills, shots and
+// hits of a run without a stats file, and a check on one with it). The review worker sends it, over a port between the
+// two, every key frame's decoded Y plane in the fixed map's pass (the HUD watch finds its boxes from them), then every
+// frame's Y plane and the rows of its RGB the countdown test reads; this worker makes the 720p luma with its own copy
+// of the core (the same converter, so the same bytes) and sends each buffer back. In the review worker the watch held
+// up the detector (av1: 76 frames a second with it there, 99 to 119 without it). The luma alone and the review
+// worker's RGB rows, instead of every frame converted to RGB and YUV here, keep it light.
 import { Core, CoreBlock } from './core';
-import { CameraReply, CameraStart, CameraTask } from './review-messages';
+import { CameraReply, CameraStart, CameraTask, WatchOpen, WatchParts } from './review-messages';
 
 const W = 1280;
 const H = 720;
 
-/** The watch, once started: the core, its converter and camera, and the buffers they read and fill. */
+/**
+ * The watches, once opened: the core, its converter, the HUD watch, the camera watch (0 until started, after the key
+ * frames), and the buffers they read and fill.
+ */
 interface Watch {
   core: Core;
   converter: number;
+  hud: number;
   camera: number;
   /** The decoded Y plane, its 720p luma, and a 720p RGB frame of which only the countdown rows are filled. */
   source: CoreBlock;
@@ -35,13 +41,18 @@ function serve(port: MessagePort): void {
     const task = e.data;
     queue = queue
       .then(async () => {
-        if (task.kind === 'start') {
-          watch = await start(task);
+        if (task.kind === 'open') {
+          watch = await open(task);
           return;
         }
         const w = watch;
-        if (!w) throw new Error('The camera watch was not started');
-        if (task.kind === 'frame') {
+        if (!w) throw new Error('The camera worker was not opened');
+        if (task.kind === 'key') {
+          readKey(w, task.frame);
+          say({ kind: 'free', frame: task.frame }, [task.frame]);
+        } else if (task.kind === 'start') {
+          start(w, task);
+        } else if (task.kind === 'frame') {
           read(w, task.frame);
           say({ kind: 'free', frame: task.frame }, [task.frame]);
         } else {
@@ -54,18 +65,14 @@ function serve(port: MessagePort): void {
   };
 }
 
-async function start(t: CameraStart): Promise<Watch> {
+async function open(t: WatchOpen): Promise<Watch> {
   const core = await Core.load(t.coreUrl);
-  const fixed = core.reserve(W * H);
-  core.bytes(fixed).set(t.fixed);
-  const camera = core.x.camera_new(fixed.ptr);
-  core.free(fixed);
-  if (t.skip) core.x.camera_skip(camera, t.skip);
   const rows = core.x.camera_rgb_rows();
   return {
     core,
     converter: core.x.converter_new(t.width, t.height, t.matrix, t.full),
-    camera,
+    hud: core.x.hud_new(t.width, t.height, t.full),
+    camera: 0,
     source: core.reserve(t.width * t.height),
     luma: core.reserve(W * H),
     rgb: core.reserve(W * H * 3),
@@ -73,17 +80,41 @@ async function start(t: CameraStart): Promise<Watch> {
   };
 }
 
-/** One frame: its 720p luma (ffmpeg's pixels) and its countdown rows, then the watch. */
+/** A key frame's Y plane, to the HUD watch. */
+function readKey(w: Watch, frame: ArrayBuffer): void {
+  w.core.bytes(w.source).set(new Uint8Array(frame, 0, w.source.len));
+  w.core.x.hud_add_key(w.hud, w.source.ptr, w.source.len);
+}
+
+/** The camera watch, from the fixed map; both watches skip the frames before the review's first. */
+function start(w: Watch, t: CameraStart): void {
+  const fixed = w.core.reserve(W * H);
+  w.core.bytes(fixed).set(t.fixed);
+  w.camera = w.core.x.camera_new(fixed.ptr);
+  w.core.free(fixed);
+  if (t.skip) {
+    w.core.x.camera_skip(w.camera, t.skip);
+    w.core.x.hud_skip(w.hud, t.skip);
+  }
+}
+
+/** One frame: the HUD watch reads its Y plane; the camera watch, its 720p luma (ffmpeg's pixels) and countdown rows. */
 function read(w: Watch, frame: ArrayBuffer): void {
+  if (!w.camera) throw new Error('The camera watch was not started');
   const y = w.source.len;
   w.core.bytes(w.source).set(new Uint8Array(frame, 0, y));
   w.core.bytes(w.rgb).set(new Uint8Array(frame, y), w.rowsAt);
+  w.core.x.hud_add(w.hud, w.source.ptr, y);
   w.core.x.converter_luma(w.converter, w.source.ptr, y, w.luma.ptr);
   w.core.x.camera_add(w.camera, w.luma.ptr, w.rgb.ptr);
 }
 
-/** The watch's part of the run (the page joins the runs' parts and works out the readings); the watch is done. */
-function finish(w: Watch): string {
+/** The watches' parts of the run (the page joins the runs' parts and works out the readings); the watches are done. */
+function finish(w: Watch): WatchParts {
+  if (!w.camera) throw new Error('The camera watch was not started');
   w.core.x.converter_free(w.converter);
-  return w.core.takeText(w.core.x.camera_part(w.camera));
+  return {
+    camera: w.core.takeText(w.core.x.camera_part(w.camera)),
+    hud: w.core.takeText(w.core.x.hud_part(w.hud)),
+  };
 }

@@ -50,4 +50,13 @@ describe('track stats', () => {
   it('shows each change as a gain in accuracy', () => {
     expect(whatIfRows([{ what: "Don't trail", gain: 0.075, how: 'x' }])[0].gain).toBe('+7.5%');
   });
+
+  it('shows a run without a stats file (no score or accuracy) with dashes', () => {
+    const s = trackStats({ ...SUMMARY, score: null, accuracy: null, fps_avg: null });
+    const shown = s.map((x) => `${x.label}: ${x.value}`);
+    expect(shown).toContain('Score: –');
+    expect(shown).toContain('Accuracy (stats file): –');
+    expect(shown).toContain('Game FPS: –');
+    expect(shown.join(' ')).not.toMatch(/NaN|undefined|null/);
+  });
 });

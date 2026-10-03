@@ -100,8 +100,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 - The detector is full_v3 (`infer.BEST`), trained on every scenario kind; small_v13 is the small one for speed.
 - The plan: the app runs three ways from one code base (browser only, browser with the Python server, desktop). The UI
   is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
-  desktop app (Tauri 2) and as WebAssembly for the browser. Python stays the reference: the core replaces nothing
-  until its reports match Python's on every recording.
+  desktop app (Tauri 2) and as WebAssembly for the browser. The ground truth is KovaaK's stats files, not Python: a
+  new feature is checked against them (for a run without one, on runs that have one, with the file left out). Python's
+  review stays a cross-check while it lasts; `python/model/` stays for training the detector. The Python server and
+  the old page retire once the Angular app does what they do.
 - Done: the layout (`python/`, the Rust crate at the root, `ui/`). In `ui/`: the recordings list, and the run page
   (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline),
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
@@ -163,8 +165,18 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   empty ones), and track again when a new window reaches past the tracked one. The core measures a tracking run from it
   as Python does (review.rs `run_window`). av1 with 0:20 to 0:40: the same boxes and camera readings inside the window
   as the whole review, 7.2 s against 14.2 s in the browser, 6.7 s against 10.4 s natively.
-  Not in the browser yet: runs without a stats file (KovaaK's HUD, Aim Lab's, the video alone), and the user's other
-  marks (faint cut-off, areas).
+  Runs without a stats file, in the browser and the desktop app: every review also reads the HUD (src/hud.rs: KovaaK's
+  session box, else Aim Lab's POINTS and TIME boxes, the digits learned from the recording) beside the camera watch,
+  from each frame's Y plane; the runs' HUD parts are joined like the camera's. Without a stats file the kills, shots
+  and hits come from the HUD, else from the video alone (matching.rs `match_video`; review.rs `KillTimes`), and the
+  run page says which. Checked against stats files: on 27 recordings the HUD's kill count equals the file's on all
+  27, its hits and shots on 22 (the rest: a lightning gun's last redraw, a bot whose hits KovaaK counts apart, a last
+  miss after the last redraw), its kill frames within a frame on 25. The video alone finds 76% of the kills within 3
+  frames. The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
+  recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
+  `REVIEW_VERSION`, 2 since the HUD): a report from an older one says `outdated` and the run page asks for a new
+  review.
+  Not in the browser yet: the user's other marks (faint cut-off, areas).
 - The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
   (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
   (desktop/src/api.rs over a custom protocol: no network port, nothing outside the app reaches it; library.rs: the VODs
@@ -178,7 +190,7 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
   python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). Not there yet:
-  DirectML.dll in the installer, the user's other marks (faint cut-off, areas), runs without a stats file.
+  DirectML.dll in the installer, the user's other marks (faint cut-off, areas).
 - The old page (`python/app/`) stays the working UI until the Angular app does everything it does.
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the

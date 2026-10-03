@@ -109,9 +109,9 @@ export type Source = 'stats' | 'hud' | 'aimlab' | 'video';
 
 export interface ReportInfo {
   source?: Source;
-  /** Kills matched to a target in the video, and kills the source counted. */
+  /** Kills matched to a target in the video, and kills the source counted (null: none counted, the video alone). */
   matched?: number;
-  kills_stats?: number;
+  kills_stats?: number | null;
 }
 
 /** A target's place from the crosshair, in degrees: [x, y]. */
@@ -302,6 +302,8 @@ export interface ReportBase {
   fps: number;
   geometry: Geometry;
   review_model: string | null;
+  /** Kept by an older version of the review (the core's reports only): reviewing again gives what it lacks. */
+  outdated?: boolean;
 }
 
 /** The user's marks for where a run starts and ends, in seconds; null where the review finds it. */
@@ -361,6 +363,8 @@ export interface Tracks {
   detector?: string;
   /** The part of the video tracked, when only part of it was (the user's run window); the frames outside are empty. */
   window?: TimeWindow | null;
+  /** The review's version (src/track.rs: `REVIEW_VERSION`); none from Python, or from before reviews kept it. */
+  version?: number;
 }
 
 /** A part of a video, in seconds. */
