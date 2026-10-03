@@ -19,6 +19,7 @@ import {
 import { BrowserStore } from './browser-store';
 import { KovaakFolders } from './kovaak-folders';
 import { FolderEntry, RecordingsFolder } from './recordings-folder';
+import { SavedReviews } from './saved-reviews';
 import { ScenarioFacts } from './scenario-facts';
 import { StatsFolder } from './stats-folder';
 import { isCsv, isMp4, isVideo, toMp4 } from './video-files';
@@ -130,12 +131,16 @@ export class LocalFiles implements RecordingSource {
   private readonly recordingsFolder = inject(RecordingsFolder);
   private readonly kovaak = inject(KovaakFolders);
   private readonly store = inject(BrowserStore);
+  private readonly saved = inject(SavedReviews);
   private kept: KeptPairs = {};
   readonly files = signal<LocalFile[]>([]);
   readonly recordings = computed<Recording[]>(() => {
     const facts = this.scenarios.byName();
     const kindOf = (s: string) => facts.get(s.toLowerCase())?.kind ?? null;
-    return this.files().map((f) => localRecording(f, kindOf));
+    return this.files().map((f) => {
+      const r = localRecording(f, kindOf);
+      return r.analysed || !this.saved.has(f.file) ? r : { ...r, analysed: true };
+    });
   });
   /** The recordings folder is being read and nothing is listed yet. */
   readonly loading = computed(() => this.recordingsFolder.state().busy && !this.files().length);
