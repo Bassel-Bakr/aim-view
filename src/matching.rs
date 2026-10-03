@@ -765,6 +765,7 @@ impl Paths {
 /// - it is the crosshair (`ghosts`);
 /// - three or more steady tracks (5 frames or more, not continued) end within a frame of it (the run ended or
 ///   restarted); flickering false detections, such as a game's HUD text, do not count;
+/// - its blob is less than a tenth of the run's typical target (a hit marker or a spark, not a target);
 /// - another kill was found within 3 frames (the same kill twice).
 ///
 /// Tracks the camera's turn fooled at a kill are split first (`Paths::repair`). A flick's path joins the pieces of
@@ -781,11 +782,9 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
         .filter(|v| !v.is_empty())
         .map(|v| crate::statistics::median(&v))
         .collect();
-    let r = if areas.len() >= 5 {
-        crate::geometry::degrees((crate::statistics::median(&areas) / std::f64::consts::PI).sqrt() / crate::geometry::K)
-    } else {
-        0.43
-    };
+    // the run's typical target: its median blob area (None with fewer than 5 tracks) and radius
+    let typical = (areas.len() >= 5).then(|| crate::statistics::median(&areas));
+    let r = typical.map_or(0.43, |a| crate::geometry::degrees((a / std::f64::consts::PI).sqrt() / crate::geometry::K));
     let near = (r + 0.25).max(0.6);
     let cum = paths.repair(frames, near);
     let follows = paths.continued(&cum, fps, r, near);
@@ -811,6 +810,11 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
             chain.push(b);
         }
         if chain.iter().map(|c| paths.points[c].len()).sum::<usize>() < 3 {
+            continue;
+        }
+        // a blob less than a tenth of the typical target is no target (a hit marker, a spark)
+        let size: Vec<f64> = chain.iter().flat_map(|&c| paths.near_areas(c)).collect();
+        if typical.is_some_and(|a| !size.is_empty() && crate::statistics::median(&size) < 0.1 * a) {
             continue;
         }
         cands.push((e, hypot(x, y), tid, chain));
