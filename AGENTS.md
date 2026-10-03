@@ -126,9 +126,10 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
   float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
   (2560x1440): 178 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
-  outputs read back while the next call is sent; 34.0 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
+  outputs read back while the next call is sent; 32.2 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
   test_out/browser_check/profile.html times each stage). The model panel lets the user pick the frames at once (1, 2,
-  4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml).
+  4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml); the 2:1 RGB conversion takes 16 pixels at a time
+  there (0.93 ms a frame, the same bytes: test_out/browser_check/rgb-bench.html).
   The clicking
   review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
   gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number

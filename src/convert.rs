@@ -231,6 +231,23 @@ struct RgbTables {
     gu: [i64; 256],
     bu: [i64; 256],
     gv: [i64; 256],
+    /// The same tables as formulas, for code that computes them (the browser's 2:1 rows).
+    #[cfg_attr(not(all(target_arch = "wasm32", target_feature = "simd128")), allow(dead_code))]
+    formula: RgbFormula,
+}
+
+/// RgbTables as formulas: y[i] = ((y_base + i * y_step) >> 16) clamped to 0..255, and each chroma table
+/// t[c] = a + ((c * k) >> 16) (`tab` in RgbTables::new), with the green one the sum of gu and gv. All in i32: every value
+/// they reach fits.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_feature = "simd128")), allow(dead_code))]
+struct RgbFormula {
+    y_base: i32,
+    y_step: i32,
+    rv: (i32, i32),
+    gu: (i32, i32),
+    bu: (i32, i32),
+    gv: (i32, i32),
 }
 
 impl RgbTables {
@@ -247,9 +264,8 @@ impl RgbTables {
         let scale = |k: i64| cdiv(k * 65536 + 0x8000, cy.max(1));
         let (crv, cbu, cgu, cgv) = (scale(crv), scale(cbu), scale(cgu), scale(cgv));
         let yoffs = if full { 384 } else { 326 } + 512;
-        let y = (0..2048i64)
-            .map(|i| ((-(384i64 << 16) - 512 * cy - oy + i * cy + 0x8000) >> 16).clamp(0, 255) as u8)
-            .collect();
+        let y_base = -(384i64 << 16) - 512 * cy - oy + 0x8000;
+        let y = (0..2048i64).map(|i| ((y_base + i * cy) >> 16).clamp(0, 255) as u8).collect();
         let tab = |k: i64, off: i64| {
             let mut t = [0i64; 256];
             for (c, v) in t.iter_mut().enumerate() {
@@ -257,7 +273,22 @@ impl RgbTables {
             }
             t
         };
-        RgbTables { y, rv: tab(crv, yoffs), gu: tab(cgu, yoffs), bu: tab(cbu, yoffs), gv: tab(cgv, 0) }
+        let line = |k: i64, off: i64| ((off - (k >> 9)) as i32, k as i32);
+        RgbTables {
+            y,
+            rv: tab(crv, yoffs),
+            gu: tab(cgu, yoffs),
+            bu: tab(cbu, yoffs),
+            gv: tab(cgv, 0),
+            formula: RgbFormula {
+                y_base: y_base as i32,
+                y_step: cy as i32,
+                rv: line(crv, yoffs),
+                gu: line(cgu, yoffs),
+                bu: line(cbu, yoffs),
+                gv: line(cgv, 0),
+            },
+        }
     }
 
     fn rgb(&self, y: u8, u: u8, v: u8, out: &mut [u8]) {
@@ -450,21 +481,14 @@ impl Converter {
         }
     }
 
-    /// Exactly 2:1 (2560 x 1440): the filters reduce to plain rounded means, the same bytes much faster.
+    /// Exactly 2:1 (2560 x 1440): the filters reduce to plain rounded means, the same bytes much faster. A row at a
+    /// time (lanes::half_row).
     fn half_rgb24(&self, y: &[u8], u: &[u8], v: &[u8], out: &mut [u8]) {
         let (w, cw) = (self.w, self.w / 2);
         for r in 0..DST_H {
             let (y0, y1) = (&y[2 * r * w..(2 * r + 1) * w], &y[(2 * r + 1) * w..(2 * r + 2) * w]);
             let (ur, vr) = (&u[r * cw..(r + 1) * cw], &v[r * cw..(r + 1) * cw]);
-            let row = &mut out[r * DST_W * 3..(r + 1) * DST_W * 3];
-            for k in 0..DST_W / 2 {
-                let uu = ((ur[2 * k] as u32 + ur[2 * k + 1] as u32 + 1) >> 1) as u8;
-                let vv = ((vr[2 * k] as u32 + vr[2 * k + 1] as u32 + 1) >> 1) as u8;
-                for i in [2 * k, 2 * k + 1] {
-                    let s = y0[2 * i] as u32 + y0[2 * i + 1] as u32 + y1[2 * i] as u32 + y1[2 * i + 1] as u32;
-                    self.tables.rgb(((s + 2) >> 2) as u8, uu, vv, &mut row[i * 3..i * 3 + 3]);
-                }
-            }
+            lanes::half_row(y0, y1, ur, vr, &mut out[r * DST_W * 3..(r + 1) * DST_W * 3], &self.tables);
         }
     }
 
@@ -563,13 +587,126 @@ impl Converter {
     }
 }
 
+/// One row of the 2:1 conversion: each output pixel the rounded mean of a 2 x 2 luma block, each pair of pixels the
+/// rounded mean of two chroma samples, through RgbTables. Where the CPU has WebAssembly SIMD (the browser), 16 pixels
+/// at a time with the tables as formulas (RgbFormula); else a pixel at a time with the tables. The same integer
+/// arithmetic either way, so the same bytes (tests: convert_parity natively, test_out/browser_check/rgb-bench.html in
+/// the browser).
+mod lanes {
+    use super::{DST_W, RgbTables};
+
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    pub fn half_row(y0: &[u8], y1: &[u8], ur: &[u8], vr: &[u8], row: &mut [u8], t: &RgbTables) {
+        for k in 0..DST_W / 2 {
+            let uu = ((ur[2 * k] as u32 + ur[2 * k + 1] as u32 + 1) >> 1) as u8;
+            let vv = ((vr[2 * k] as u32 + vr[2 * k + 1] as u32 + 1) >> 1) as u8;
+            for i in [2 * k, 2 * k + 1] {
+                let s = y0[2 * i] as u32 + y0[2 * i + 1] as u32 + y1[2 * i] as u32 + y1[2 * i + 1] as u32;
+                t.rgb(((s + 2) >> 2) as u8, uu, vv, &mut row[i * 3..i * 3 + 3]);
+            }
+        }
+    }
+
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    use core::arch::wasm32::*;
+
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    pub fn half_row(y0: &[u8], y1: &[u8], ur: &[u8], vr: &[u8], row: &mut [u8], t: &RgbTables) {
+        assert!(y0.len() >= 2 * DST_W && y1.len() >= 2 * DST_W && ur.len() >= DST_W && vr.len() >= DST_W);
+        assert!(row.len() >= 3 * DST_W && DST_W.is_multiple_of(16));
+        let f = t.formula;
+        let s32 = i32x4_splat;
+        let (base, step, zero, top) = (s32(f.y_base), s32(f.y_step), s32(0), s32(255));
+        // a chroma table at 4 values: a + ((c * k) >> 16)
+        let table = |(a, k): (i32, i32), c: v128| i32x4_add(s32(a), i32x4_shr(i32x4_mul(c, s32(k)), 16));
+        // the y table at 4 indexes
+        let level = |i: v128| i32x4_min(i32x4_max(i32x4_shr(i32x4_add(base, i32x4_mul(i, step)), 16), zero), top);
+        // 4 pixels' channel from their pairs' offsets (pairs p, p, p+1, p+1) and their luma
+        let px = |off: v128, y: v128| level(i32x4_add(off, y));
+        for k in 0..DST_W / 16 {
+            // SAFETY: the loads read 32 bytes at 32k of y0 and y1 and 16 bytes at 16k of ur and vr, and the stores
+            // write 48 bytes at 48k of row, all within the lengths asserted above; unaligned access is allowed
+            unsafe {
+                let load = |p: *const u8| v128_load(p as *const v128);
+                let mean4 = |a: v128, b: v128| {
+                    let s = u16x8_add(u16x8_extadd_pairwise_u8x16(a), u16x8_extadd_pairwise_u8x16(b));
+                    u16x8_shr(u16x8_add(s, u16x8_splat(2)), 2)
+                };
+                let ya = mean4(load(y0.as_ptr().add(32 * k)), load(y1.as_ptr().add(32 * k)));
+                let yb = mean4(load(y0.as_ptr().add(32 * k + 16)), load(y1.as_ptr().add(32 * k + 16)));
+                let mean2 = |a: v128| u16x8_shr(u16x8_add(u16x8_extadd_pairwise_u8x16(a), u16x8_splat(1)), 1);
+                let (uu, vv) = (mean2(load(ur.as_ptr().add(16 * k))), mean2(load(vr.as_ptr().add(16 * k))));
+                let (u0, u1) = (u32x4_extend_low_u16x8(uu), u32x4_extend_high_u16x8(uu));
+                let (v0, v1) = (u32x4_extend_low_u16x8(vv), u32x4_extend_high_u16x8(vv));
+                // each pair's offsets, pairs 0 to 3 and 4 to 7
+                let (r0, r1) = (table(f.rv, v0), table(f.rv, v1));
+                let (g0, g1) = (i32x4_add(table(f.gu, u0), table(f.gv, v0)), i32x4_add(table(f.gu, u1), table(f.gv, v1)));
+                let (b0, b1) = (table(f.bu, u0), table(f.bu, u1));
+                // the 16 pixels' luma, 4 at a time
+                let y = [
+                    u32x4_extend_low_u16x8(ya),
+                    u32x4_extend_high_u16x8(ya),
+                    u32x4_extend_low_u16x8(yb),
+                    u32x4_extend_high_u16x8(yb),
+                ];
+                let channel = |p0: v128, p1: v128| {
+                    let l0 = px(i32x4_shuffle::<0, 0, 1, 1>(p0, p0), y[0]);
+                    let l1 = px(i32x4_shuffle::<2, 2, 3, 3>(p0, p0), y[1]);
+                    let l2 = px(i32x4_shuffle::<0, 0, 1, 1>(p1, p1), y[2]);
+                    let l3 = px(i32x4_shuffle::<2, 2, 3, 3>(p1, p1), y[3]);
+                    u8x16_narrow_i16x8(i16x8_narrow_i32x4(l0, l1), i16x8_narrow_i32x4(l2, l3))
+                };
+                let (r, g, b) = (channel(r0, r1), channel(g0, g1), channel(b0, b1));
+                // R, G and B interleaved: 48 bytes, R G and B of pixel 0, then of pixel 1, and so on
+                let rg0 = i8x16_shuffle::<0, 16, 0, 1, 17, 0, 2, 18, 0, 3, 19, 0, 4, 20, 0, 5>(r, g);
+                let out0 = i8x16_shuffle::<0, 1, 16, 3, 4, 17, 6, 7, 18, 9, 10, 19, 12, 13, 20, 15>(rg0, b);
+                let rg1 = i8x16_shuffle::<21, 0, 6, 22, 0, 7, 23, 0, 8, 24, 0, 9, 25, 0, 10, 26>(r, g);
+                let out1 = i8x16_shuffle::<0, 21, 2, 3, 22, 5, 6, 23, 8, 9, 24, 11, 12, 25, 14, 15>(rg1, b);
+                let rg2 = i8x16_shuffle::<0, 11, 27, 0, 12, 28, 0, 13, 29, 0, 14, 30, 0, 15, 31, 0>(r, g);
+                let out2 = i8x16_shuffle::<26, 1, 2, 27, 4, 5, 28, 7, 8, 29, 10, 11, 30, 13, 14, 31>(rg2, b);
+                let dst = row.as_mut_ptr().add(48 * k) as *mut v128;
+                v128_store(dst, out0);
+                v128_store(dst.add(1), out1);
+                v128_store(dst.add(2), out2);
+            }
+        }
+    }
+}
+
 /// The rounded mean of each 2 x 2 block of a plane (src is 2w x 2h).
 fn mean2x2(src: &[u8], sw: usize, dst: &mut [u8], w: usize, h: usize) {
     for r in 0..h {
-        let (a, b) = (&src[2 * r * sw..], &src[(2 * r + 1) * sw..]);
-        for i in 0..w {
-            let s = a[2 * i] as u32 + a[2 * i + 1] as u32 + b[2 * i] as u32 + b[2 * i + 1] as u32;
-            dst[r * w + i] = ((s + 2) >> 2) as u8;
+        let (a, b) = (&src[2 * r * sw..2 * r * sw + 2 * w], &src[(2 * r + 1) * sw..(2 * r + 1) * sw + 2 * w]);
+        for ((d, a), b) in dst[r * w..(r + 1) * w].iter_mut().zip(a.chunks_exact(2)).zip(b.chunks_exact(2)) {
+            *d = ((a[0] as u32 + a[1] as u32 + b[0] as u32 + b[1] as u32 + 2) >> 2) as u8;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The formulas the browser's 2:1 rows compute must give every table entry, for every matrix and range.
+    #[test]
+    fn formulas_give_the_tables() {
+        for matrix in [Matrix::Bt709, Matrix::Bt601, Matrix::Fcc, Matrix::Smpte240m, Matrix::Bt2020] {
+            for full in [false, true] {
+                let t = RgbTables::new(matrix, full);
+                let f = t.formula;
+                for i in 0..2048i32 {
+                    let y = ((f.y_base + i * f.y_step) >> 16).clamp(0, 255) as u8;
+                    assert_eq!(y, t.y[i as usize], "y[{i}]");
+                }
+                let line = |(a, k): (i32, i32), c: i32| a + ((c * k) >> 16);
+                for c in 0..256usize {
+                    let ci = c as i32;
+                    assert_eq!(line(f.rv, ci) as i64, t.rv[c]);
+                    assert_eq!(line(f.gu, ci) as i64, t.gu[c]);
+                    assert_eq!(line(f.bu, ci) as i64, t.bu[c]);
+                    assert_eq!(line(f.gv, ci) as i64, t.gv[c]);
+                }
+            }
         }
     }
 }
