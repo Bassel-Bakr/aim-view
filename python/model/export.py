@@ -61,7 +61,9 @@ class ExportedU8(nn.Module):
         self.inner = Exported(model)
 
     def forward(self, rgb, fixed):
-        x = torch.cat([rgb.permute(0, 3, 1, 2).float() / 255.0, fixed[:, None].float()], 1)
+        # the fixed map to float before its channel axis: onnxruntime's WebGPU build has no Unsqueeze for uint8, and a
+        # node left on the CPU rules out graph capture (the same values either way)
+        x = torch.cat([rgb.permute(0, 3, 1, 2).float() / 255.0, fixed.float()[:, None]], 1)
         return self.inner(x)
 
 

@@ -126,9 +126,12 @@ glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
   float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
-  (2560x1440): 178 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
-  outputs read back while the next call is sent; 32.2 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
-  test_out/browser_check/profile.html times each stage). The model panel lets the user pick the frames at once (1, 2,
+  (2560x1440): 271 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
+  outputs read back while the next call is sent; 22.3 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
+  test_out/browser_check/profile.html times each stage). On the GPU the session uses graph capture (onnxruntime records
+  the model's GPU work once and replays it), NHWC convolutions, no extra validation and a fixed input size
+  (review.worker.ts, `gpuOptions`); graph capture needs every node on the GPU, so the _u8in exports cast the fixed map
+  to float before its Unsqueeze (onnxruntime's WebGPU build has none for uint8). The model panel lets the user pick the frames at once (1, 2,
   4, 8), kept for each of GPU and CPU: machines differ. The core is built with WebAssembly SIMD (.cargo/config.toml); the 2:1 RGB conversion takes 16 pixels at a time
   there (0.93 ms a frame, the same bytes: test_out/browser_check/rgb-bench.html), and 32 at a time natively where
   the CPU has AVX2 (0.29 ms; `avx2_rows_give_the_tables` checks every value against the tables).
