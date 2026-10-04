@@ -19,8 +19,9 @@ PEAK_WINDOW = 3                 # cells: a peak is the largest score in its 3 x 
 MAX_DETECTIONS = 100            # detections kept per image at most, the strongest
 
 
-def conv_bn(in_channels, out_channels, kernel=3, stride=1, groups=1, dilation=1):
-    return nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel, stride, dilation * (kernel // 2),
+def conv_bn(in_channels, out_channels, kernel=3, stride=1, groups=1, dilation=1, padding=None):
+    padding = dilation * (kernel // 2) if padding is None else padding
+    return nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel, stride, padding,
                                    dilation=dilation, groups=groups, bias=False),
                          nn.BatchNorm2d(out_channels), nn.ReLU(inplace=True))
 
@@ -43,12 +44,18 @@ class Block(nn.Module):
 class Detector(nn.Module):
     """The network. Its attribute names (stem, s4, s8, s16, lat16, lat8, head) are the checkpoints' keys."""
 
-    def __init__(self, widths=(16, 32, 48, 64), blocks=(2, 2, 2), head=32):
+    def __init__(self, widths=(16, 32, 48, 64), blocks=(2, 2, 2), head=32, stem="conv"):
         super().__init__()
         stem_channels, channels4, channels8, channels16 = widths
-        self.stem = conv_bn(INPUT_CHANNELS, stem_channels, 3, 2)             # stride 2
-        self.s4 = nn.Sequential(Block(stem_channels, channels4, 2), *[Block(channels4, channels4)
-                                                                      for _ in range(blocks[0])])
+        if stem == "patch":
+            # each 4 x 4 pixels to one cell at once: no map at stride 2, where most of the memory traffic was
+            self.stem = conv_bn(INPUT_CHANNELS, stem_channels, STRIDE, STRIDE, padding=0)
+            first_stride = 1
+        else:
+            self.stem = conv_bn(INPUT_CHANNELS, stem_channels, 3, 2)         # stride 2
+            first_stride = 2
+        self.s4 = nn.Sequential(Block(stem_channels, channels4, first_stride), *[Block(channels4, channels4)
+                                                                                 for _ in range(blocks[0])])
         self.s8 = nn.Sequential(Block(channels4, channels8, 2), *[Block(channels8, channels8) for _ in range(blocks[1])])
         self.s16 = nn.Sequential(Block(channels8, channels16, 2),
                                  *[Block(channels16, channels16, dilation=2) for _ in range(blocks[2])])
@@ -70,7 +77,7 @@ class Detector(nn.Module):
 
 def build(config):
     model = config["model"]
-    return Detector(tuple(model["widths"]), tuple(model["blocks"]), model["head"])
+    return Detector(tuple(model["widths"]), tuple(model["blocks"]), model["head"], model.get("stem", "conv"))
 
 
 def prepare(rgb, fixed):
