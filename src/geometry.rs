@@ -30,13 +30,10 @@ pub const OVERLAY: [[u32; 4]; 8] = [
 ];
 
 /// The KovOBS overlay as shares of the frame, as `OVERLAY_SHARES` holds them (each pixel bound divided once).
-pub fn overlay_shares() -> Vec<[f64; 4]> {
-    OVERLAY
-        .iter()
-        .map(|&[x0, y0, x1, y1]| {
-            [x0 as f64 / W as f64, y0 as f64 / H as f64, x1 as f64 / W as f64, y1 as f64 / H as f64]
-        })
-        .collect()
+pub fn overlay_shares() -> [[f64; 4]; OVERLAY.len()] {
+    OVERLAY.map(|[x0, y0, x1, y1]| {
+        [x0 as f64 / W as f64, y0 as f64 / H as f64, x1 as f64 / W as f64, y1 as f64 / H as f64]
+    })
 }
 
 /// CPython's `math.degrees`: the angle times `180 / pi` rounded once, which can differ in the last bit from Rust's

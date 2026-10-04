@@ -209,8 +209,8 @@ impl Review {
             convert: f.converter(),
             camera,
             hud,
-            luma: vec![0; W * H],
-            rgb: vec![0; W * H * 3],
+            luma: vec![0; W * H].try_into().unwrap(),
+            rgb: vec![0; W * H * 3].try_into().unwrap(),
             y_bytes: f.width * f.height,
             from: r.from,
             reads: r.reads(),
@@ -248,7 +248,7 @@ impl Review {
     /// The camera watch, its tiles kept clear of the areas (KovOBS's layout when there are none, as python/review.py
     /// does) and of the fixed map.
     fn camera(&self, fixed: &[u8]) -> CameraWatch {
-        let rects = if self.setup.areas.is_empty() { crate::geometry::overlay_shares() } else { self.rects() };
+        let rects = if self.setup.areas.is_empty() { crate::geometry::overlay_shares().to_vec() } else { self.rects() };
         CameraWatch::new(&excluded(Mask::without(&rects).kept(), fixed))
     }
 }
@@ -344,8 +344,8 @@ pub struct RunWatching {
     convert: Converter,
     camera: CameraWatch,
     hud: HudWatch,
-    luma: Vec<u8>,
-    rgb: Vec<u8>,
+    luma: Box<[u8; W * H]>,
+    rgb: Box<[u8; W * H * 3]>,
     y_bytes: usize,
     from: f64,
     reads: usize,
@@ -364,9 +364,9 @@ impl RunWatching {
     /// format's size), and its countdown rows (`countdown_bytes` of its 720p RGB24). The camera watch reads its 720p
     /// luma, the same bytes as ffmpeg's.
     pub fn frame(&mut self, y: &[u8], rows: &[u8]) {
-        self.convert.luma(&y[..self.y_bytes], &mut self.luma);
+        self.convert.luma(&y[..self.y_bytes], &mut self.luma[..]);
         self.rgb[countdown_bytes()].copy_from_slice(rows);
-        self.camera.add(&self.luma, &self.rgb);
+        self.camera.add(&self.luma[..], &self.rgb[..]);
         self.hud.add(y);
         self.read += 1;
     }

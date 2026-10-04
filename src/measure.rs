@@ -245,16 +245,19 @@ const PROFILE_POINTS: usize = 26;
 pub struct FlickProfile {
     pub n: usize,
     pub step: f64,
-    pub mean: Vec<f64>,
-    pub p25: Vec<f64>,
-    pub p75: Vec<f64>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]
+    pub mean: [f64; PROFILE_POINTS],
+    #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]
+    pub p25: [f64; PROFILE_POINTS],
+    #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]
+    pub p75: [f64; PROFILE_POINTS],
     pub peak_at: f64,
     pub braking: f64,
 }
 
 /// One flick's curve at the profile's points (a share of its peak), when its peak comes and how long it brakes.
 struct Shape {
-    at: Vec<f64>,
+    at: [f64; PROFILE_POINTS],
     peak_at: f64,
     braking: f64,
 }
@@ -272,14 +275,12 @@ fn shape(c: &SpeedCurve) -> Option<Shape> {
     }
     let stop = (p..v.len()).find(|&i| v[i] < 0.15 * peak).unwrap_or(v.len() - 1);
     let high = (p..=stop).rev().find(|&i| v[i] >= 0.9 * peak).unwrap_or(p);
-    let at = (0..PROFILE_POINTS)
-        .map(|k| {
-            let x = k as f64 * PROFILE_STEP * c.end as f64;
-            let i = x.floor() as usize;
-            let s = if i + 1 < v.len() { v[i] + (v[i + 1] - v[i]) * (x - i as f64) } else { v[v.len() - 1] };
-            s / peak
-        })
-        .collect();
+    let at = std::array::from_fn(|k| {
+        let x = k as f64 * PROFILE_STEP * c.end as f64;
+        let i = x.floor() as usize;
+        let s = if i + 1 < v.len() { v[i] + (v[i + 1] - v[i]) * (x - i as f64) } else { v[v.len() - 1] };
+        s / peak
+    });
     Some(Shape { at, peak_at: p as f64 / c.end as f64, braking: (stop - high) as f64 / c.end as f64 })
 }
 
@@ -290,7 +291,7 @@ pub fn flick_profile(ms: &[Measure]) -> Option<FlickProfile> {
         return None;
     }
     let column = |k: usize| shapes.iter().map(|s| s.at[k]).collect::<Vec<f64>>();
-    let points = |f: &dyn Fn(&[f64]) -> f64| (0..PROFILE_POINTS).map(|k| round(f(&column(k)), 3)).collect();
+    let points = |f: &dyn Fn(&[f64]) -> f64| std::array::from_fn(|k| round(f(&column(k)), 3));
     let middle = |f: &dyn Fn(&Shape) -> f64| round(median(&shapes.iter().map(f).collect::<Vec<f64>>()), 3);
     Some(FlickProfile {
         n: shapes.len(),

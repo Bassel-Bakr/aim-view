@@ -44,6 +44,8 @@ pub const NONE: &str = "none";
 pub const K: usize = 5;
 /// One frame: YUV 4:2:0 at 1280 x 720.
 pub const FRAME: usize = W * H * 3 / 2;
+/// The features of an area (`features`).
+pub const FEATURES: usize = 7;
 
 const SESSION: &str = "Session stats";
 const ZOOMED: &str = "Zoomed crosshair";
@@ -89,7 +91,7 @@ fn fps_frames(times: &[f64], duration: f64, n: usize) -> Vec<usize> {
 pub struct Area {
     #[serde(rename = "box")]
     pub bounds: [f64; 4],
-    pub feat: Vec<f64>,
+    pub feat: [f64; FEATURES],
     pub rule: String,
 }
 
@@ -126,7 +128,7 @@ impl<'de> Deserialize<'de> for SavedBox {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Example {
     pub rec: String,
-    pub feat: Vec<f64>,
+    pub feat: [f64; FEATURES],
     pub kind: String,
 }
 
@@ -155,8 +157,8 @@ pub struct Found {
 /// python/areas.py keeps them (areas_maps.npz). As JSON each map is packed (`pack`) and in base64.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Maps {
-    stand: Vec<u8>,
-    change: Vec<u8>,
+    stand: Box<[u8; W * H]>,
+    change: Box<[u8; W * H]>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -169,8 +171,8 @@ struct MapsText {
 
 impl Serialize for Maps {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        MapsText { w: W, h: H, stand: base64(&pack(&self.stand, W, H)), change: base64(&pack(&self.change, W, H)) }
-            .serialize(s)
+        let text = |map: &[u8]| base64(&pack(map, W, H));
+        MapsText { w: W, h: H, stand: text(&self.stand[..]), change: text(&self.change[..]) }.serialize(s)
     }
 }
 
@@ -182,27 +184,27 @@ impl<'de> Deserialize<'de> for Maps {
         }
         let plane =
             |s: &str| unbase64(s).and_then(|b| unpack(&b, W, H)).ok_or_else(|| D::Error::custom("maps: unreadable"));
-        Ok(Maps { stand: plane(&t.stand)?, change: plane(&t.change)? })
+        Maps::new(plane(&t.stand)?, plane(&t.change)?).ok_or_else(|| D::Error::custom("maps: not 1280 x 720"))
     }
 }
 
 impl Maps {
     /// From the two maps' bytes (W x H each, row by row); None when a size is wrong.
     pub fn new(stand: Vec<u8>, change: Vec<u8>) -> Option<Maps> {
-        (stand.len() == W * H && change.len() == W * H).then_some(Maps { stand, change })
+        Some(Maps { stand: stand.try_into().ok()?, change: change.try_into().ok()? })
     }
 
     pub fn stand(&self) -> &[u8] {
-        &self.stand
+        &self.stand[..]
     }
 
     pub fn change(&self) -> &[u8] {
-        &self.change
+        &self.change[..]
     }
 
     /// An area's features from the maps as kept (python/areas.py's learn, with maps() reading the npz back: the
     /// stand-out map as float32 shares of 255, the change map as float32).
-    pub fn features(&self, b: &[f64; 4]) -> Vec<f64> {
+    pub fn features(&self, b: &[f64; 4]) -> [f64; FEATURES] {
         features(
             b,
             |i| self.stand[i] as f32 / 255.0 >= FIXED as f32,
@@ -223,14 +225,14 @@ impl Maps {
 #[derive(Clone, Debug)]
 pub struct AreaFinder {
     /// Per pixel, the frames it stood out in.
-    counts: Vec<u16>,
+    counts: Box<[u16; W * H]>,
     /// Each frame's Y plane.
     ys: Vec<Vec<u8>>,
 }
 
 impl Default for AreaFinder {
     fn default() -> AreaFinder {
-        AreaFinder { counts: vec![0; W * H], ys: Vec::new() }
+        AreaFinder { counts: vec![0; W * H].try_into().unwrap(), ys: Vec::new() }
     }
 }
 
@@ -274,10 +276,11 @@ impl AreaFinder {
         }
         let pairs = n.saturating_sub(1);
         let change: Vec<f64> = sums.iter().map(|&s| if pairs > 0 { s as f64 / pairs as f64 } else { 0.0 }).collect();
-        let maps = Maps {
-            stand: stand.iter().map(|&s| (s * 255.0).round_ties_even() as u8).collect(),
-            change: change.iter().map(|&c| c.clamp(0.0, 255.0) as u8).collect(),
-        };
+        let maps = Maps::new(
+            stand.iter().map(|&s| (s * 255.0).round_ties_even() as u8).collect(),
+            change.iter().map(|&c| c.clamp(0.0, 255.0) as u8).collect(),
+        )
+        .expect("W x H maps");
         let fixed: Vec<bool> = stand.iter().map(|&s| s >= FIXED).collect();
         // the view hardly moved (a probe run): the room itself stays put, and overlays cannot be told from it
         let still = fixed.iter().filter(|&&f| f).count() as f64 / (W * H) as f64 > 0.15;
@@ -354,7 +357,7 @@ fn find_areas(
             let rule = if zoomed(b, ys) {
                 ZOOMED.to_string()
             } else {
-                rule_kind(b, &feat, session_box.as_ref(), aim.as_deref()).to_string()
+                rule_kind(b, &feat, session_box.as_ref(), aim.as_ref()).to_string()
             };
             Area { bounds: b.map(|v| round(v, 4)), feat, rule }
         })
@@ -363,29 +366,27 @@ fn find_areas(
 
 /// Aim Lab's POINTS and TIME boxes where their values stand out, and the ACCURACY box after them (as wide as POINTS);
 /// None unless both are there.
-fn aim_boxes(stand: &[f64], fixed: &[bool]) -> Option<Vec<([f64; 4], &'static str)>> {
+fn aim_boxes(stand: &[f64], fixed: &[bool]) -> Option<AimBoxes> {
     let band = AIM_BAND;
     let (yb0, yb1) = ((band[1] * H as f64) as usize, (band[3] * H as f64) as usize);
     let sxa = (band[2] - band[0]) / AW as f64;
     if !fixed[yb0 * W..yb1 * W].iter().any(|&f| f) {
         return None;
     }
-    let mut aim = Vec::new();
-    for ((c0, c1), kind) in [(AIM_POINTS, SESSION), (AIM_TIME, "Timer")] {
+    let [Some(points), Some(time)] = [(AIM_POINTS, SESSION), (AIM_TIME, "Timer")].map(|((c0, c1), kind)| {
         let b = [band[0] + c0 as f64 * sxa, band[1], band[0] + c1 as f64 * sxa, band[3]];
         let (xa, xb) = ((b[0] * W as f64) as usize, (b[2] * W as f64) as usize);
-        if (yb0..yb1).any(|y| stand[y * W + xa..y * W + xb].iter().any(|&s| s >= FIXED)) {
-            aim.push((b, kind));
-        }
-    }
-    if aim.len() != 2 {
+        (yb0..yb1).any(|y| stand[y * W + xa..y * W + xb].iter().any(|&s| s >= FIXED)).then_some((b, kind))
+    }) else {
         return None;
-    }
-    let w = aim[0].0[2] - aim[0].0[0];
-    let x = aim[1].0[2] + 0.005;
-    aim.push(([x, band[1], x + w, band[3]], SESSION));
-    Some(aim)
+    };
+    let w = points.0[2] - points.0[0];
+    let x = time.0[2] + 0.005;
+    Some([points, time, ([x, band[1], x + w, band[3]], SESSION)])
 }
+
+/// Aim Lab's POINTS, TIME and ACCURACY boxes and their kinds.
+pub type AimBoxes = [([f64; 4], &'static str); 3];
 
 /// The fixed pixels grown into areas: closed over GAP pixels, then grown by GAP / 2 (SciPy's binary_closing and
 /// binary_dilation with the 4-neighbour cross; the closing's erosion counts the pixels past the frame's edge as
@@ -495,7 +496,7 @@ fn rect(b: &[f64; 4]) -> Rect {
 /// the share of it that is fixed, how much it changes over the run (the change map's mean / 40), and its text rows
 /// (up to 12, / 12), each rounded to 4 decimals. `fixed`: whether a pixel is fixed; `change`: the change map's mean
 /// over a non-empty box, / 40.
-fn features(b: &[f64; 4], fixed: impl Fn(usize) -> bool, change: impl Fn(Rect) -> f64) -> Vec<f64> {
+fn features(b: &[f64; 4], fixed: impl Fn(usize) -> bool, change: impl Fn(Rect) -> f64) -> [f64; FEATURES] {
     let r = rect(b);
     let (w, size) = (r.x1 - r.x0, r.size());
     let count: usize = (r.y0..r.y1).map(|y| (r.x0..r.x1).filter(|&x| fixed(y * W + x)).count()).sum();
@@ -505,7 +506,6 @@ fn features(b: &[f64; 4], fixed: impl Fn(usize) -> bool, change: impl Fn(Rect) -
     let (share, ch) = if size > 0 { (count as f64 / size as f64, change(r)) } else { (0.0, 0.0) };
     [(b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0, b[2] - b[0], b[3] - b[1], share, ch, rows.min(12) as f64 / 12.0]
         .map(|v| round(v, 4))
-        .to_vec()
 }
 
 /// Text rows in an area: runs of rows with more than one fixed pixel, at least 3 rows tall (python/areas.py:
@@ -704,15 +704,15 @@ pub fn iou(a: &[f64; 4], b: &[f64; 4]) -> f64 {
 /// `session`: KovaaK's session box; `aim`: Aim Lab's boxes and their kinds.
 pub fn rule_kind(
     b: &[f64; 4],
-    feat: &[f64],
+    feat: &[f64; FEATURES],
     session: Option<&[f64; 4]>,
-    aim: Option<&[([f64; 4], &'static str)]>,
+    aim: Option<&AimBoxes>,
 ) -> &'static str {
-    let [cx, cy, w, h, fixed, _, rows] = [0, 1, 2, 3, 4, 5, 6].map(|i| feat.get(i).copied().unwrap_or(0.0));
+    let [cx, cy, w, h, fixed, _, rows] = *feat;
     if session.is_some_and(|s| inside(b, s) > 0.5) {
         return SESSION;
     }
-    for (a, kind) in aim.unwrap_or_default() {
+    for (a, kind) in aim.into_iter().flatten() {
         if inside(b, a) > 0.3 {
             return kind;
         }
@@ -746,13 +746,13 @@ pub fn rule_kind(
 /// that lies in no saved one an example of "none" (the user removed it). Without them, each found area takes the kind
 /// of the saved area that fits it best.
 pub fn learn(rec: &str, found: &[Area], saved: &[SavedBox], maps: Option<&Maps>) -> Vec<Example> {
-    let example = |feat: Vec<f64>, kind: &str| Example { rec: rec.to_string(), feat, kind: kind.to_string() };
+    let example = |feat: [f64; FEATURES], kind: &str| Example { rec: rec.to_string(), feat, kind: kind.to_string() };
     if let Some(m) = maps {
         let mut ex: Vec<Example> =
             saved.iter().map(|b| example(m.features(&b.bounds), b.kind.as_deref().unwrap_or("other"))).collect();
         for a in found {
             if !saved.iter().any(|b| inside(&a.bounds, &b.bounds) > 0.5) {
-                ex.push(example(a.feat.clone(), NONE));
+                ex.push(example(a.feat, NONE));
             }
         }
         return ex;
@@ -771,7 +771,7 @@ pub fn learn(rec: &str, found: &[Area], saved: &[SavedBox], maps: Option<&Maps>)
                 Some((_, j)) => saved[j].kind.as_deref().unwrap_or("Other"),
                 None => NONE,
             };
-            example(a.feat.clone(), kind)
+            example(a.feat, kind)
         })
         .collect()
 }
@@ -1469,7 +1469,7 @@ mod tests {
     use super::*;
 
     fn found(b: [f64; 4], rule: &str) -> Area {
-        Area { bounds: b, feat: vec![0.5; 7], rule: rule.into() }
+        Area { bounds: b, feat: [0.5; 7], rule: rule.into() }
     }
 
     #[test]
@@ -1515,8 +1515,11 @@ mod tests {
         assert_eq!(py_float(123456789012345.0), "123456789012345.0");
         assert_eq!(py_str("uploads/1902 \u{ff5c} #2.mp4"), "\"uploads/1902 \\uff5c #2.mp4\"");
         assert_eq!(py_str("a\"b\\\n\u{1f600}"), "\"a\\\"b\\\\\\n\\ud83d\\ude00\"");
-        let e = Example { rec: "r".into(), feat: vec![0.5, 0.0833], kind: "clock".into() };
-        assert_eq!(example_line(&e), r#"{"rec": "r", "feat": [0.5, 0.0833], "kind": "clock"}"#);
+        let e = Example { rec: "r".into(), feat: [0.5, 0.0833, 0.1, 0.0, 1.0, 0.25, 0.0], kind: "clock".into() };
+        assert_eq!(
+            example_line(&e),
+            r#"{"rec": "r", "feat": [0.5, 0.0833, 0.1, 0.0, 1.0, 0.25, 0.0], "kind": "clock"}"#
+        );
     }
 
     #[test]
@@ -1582,7 +1585,7 @@ mod tests {
     #[test]
     fn rules_name_areas_by_place() {
         let feat = |cx: f64, cy: f64, w: f64, h: f64, fixed: f64, rows: f64| {
-            vec![cx, cy, w, h, fixed, 0.1, round(rows / 12.0, 4)]
+            [cx, cy, w, h, fixed, 0.1, round(rows / 12.0, 4)]
         };
         let b = [0.0, 0.0, 0.1, 0.1];
         assert_eq!(rule_kind(&b, &feat(0.5, 0.05, 0.05, 0.04, 0.4, 1.0), None, None), "Timer");
@@ -1601,7 +1604,7 @@ mod tests {
     fn the_learner_votes_and_leaves_removed_areas_out() {
         let ex = |rec: &str, x: f64, kind: &str| Example {
             rec: rec.into(),
-            feat: vec![x, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+            feat: [x, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
             kind: kind.into(),
         };
         let examples = vec![
@@ -1612,7 +1615,7 @@ mod tests {
             ex("e", 0.49, "none"),
         ];
         let mut a = found([0.0, 0.0, 0.1, 0.1], "Other");
-        a.feat = vec![0.5, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1];
+        a.feat = [0.5, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1];
         let named = predict(std::slice::from_ref(&a), &examples, K);
         assert_eq!((named[0].kind.as_str(), named[0].by.as_str()), ("clock", "learned"));
         // too few examples: the rules
@@ -1636,7 +1639,7 @@ mod tests {
         let maps = Maps::new(vec![255; W * H], vec![40; W * H]).unwrap();
         let ex = learn("r", &f, &saved, Some(&maps));
         assert_eq!(ex.iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(), ["clock", "other", NONE]);
-        assert_eq!(ex[0].feat, vec![0.1, 0.1, 0.2, 0.2, 1.0, 1.0, 0.0833]);
+        assert_eq!(ex[0].feat, [0.1, 0.1, 0.2, 0.2, 1.0, 1.0, 0.0833]);
         let old = "{\"rec\": \"q\", \"feat\": [1.0], \"kind\": \"x\"}\n{\"rec\": \"kovobs:r\", \"feat\": [1.0], \"kind\": \"x\"}\n";
         let lines = merge(old, "r", &ex);
         assert_eq!(lines.lines().count(), 4);

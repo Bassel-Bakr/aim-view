@@ -321,7 +321,7 @@ fn vsum(hs: &[i32], width: usize, f: &Filter, r: usize, start: i32, acc: &mut [i
 /// ff_yuv2rgb_c_init_tables() for 24 bits, no brightness, contrast and saturation 1: for 8-bit Y, U, V,
 /// R = y[rv[V] + Y], G = y[gu[U] + gv[V] + Y], B = y[bu[U] + Y].
 struct RgbTables {
-    y: Vec<u8>,
+    y: [u8; 2048],
     rv: [i64; 256],
     gu: [i64; 256],
     bu: [i64; 256],
@@ -360,7 +360,7 @@ impl RgbTables {
         let (crv, cbu, cgu, cgv) = (scale(crv), scale(cbu), scale(cgu), scale(cgv));
         let yoffs = if full { 384 } else { 326 } + 512;
         let y_base = -(384i64 << 16) - 512 * cy - oy + 0x8000;
-        let y = (0..2048i64).map(|i| ((y_base + i * cy) >> 16).clamp(0, 255) as u8).collect();
+        let y = std::array::from_fn(|i| ((y_base + i as i64 * cy) >> 16).clamp(0, 255) as u8);
         let tab = |k: i64, off: i64| {
             let mut t = [0i64; 256];
             for (c, v) in t.iter_mut().enumerate() {

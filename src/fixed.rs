@@ -60,13 +60,13 @@ pub fn contrast(yuv: &[u8]) -> Vec<f32> {
 /// Counts, per pixel, the key frames it stands out in.
 #[derive(Clone, Debug)]
 pub struct FixedMap {
-    counts: Vec<u16>,
+    counts: Box<[u16; W * H]>,
     frames: usize,
 }
 
 impl Default for FixedMap {
     fn default() -> Self {
-        FixedMap { counts: vec![0; W * H], frames: 0 }
+        FixedMap { counts: vec![0; W * H].try_into().unwrap(), frames: 0 }
     }
 }
 

@@ -19,17 +19,17 @@ pub struct RawBox {
 
 /// Where targets count in a frame: every pixel but the excluded areas (W x H, row by row).
 #[derive(Clone, Debug, PartialEq)]
-pub struct Mask(Vec<bool>);
+pub struct Mask(Box<[bool; W * H]>);
 
 impl Mask {
     /// Whether each pixel (row by row, 1280 x 720) is kept.
     pub fn kept(&self) -> &[bool] {
-        &self.0
+        &self.0[..]
     }
 
     /// Everywhere but the boxes, given as shares of the frame [x0, y0, x1, y1] (python/review.py: `mask_of`).
     pub fn without(boxes: &[[f64; 4]]) -> Mask {
-        let mut m = vec![true; W * H];
+        let mut m: Box<[bool; W * H]> = vec![true; W * H].try_into().unwrap();
         let at = |share: f64, size: usize| ((share * size as f64).round_ties_even() as usize).min(size);
         for &[x0, y0, x1, y1] in boxes {
             for y in at(y0, H)..at(y1, H) {

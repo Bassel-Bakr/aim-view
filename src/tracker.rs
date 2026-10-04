@@ -57,7 +57,7 @@ impl Tracker {
 
     /// With the KovOBS overlay excluded (the default areas).
     pub fn kovobs(cap: usize) -> Tracker {
-        Tracker::new(crate::geometry::overlay_shares(), cap)
+        Tracker::new(crate::geometry::overlay_shares().to_vec(), cap)
     }
 
     /// The run starts at frame `first` of the recording: call before its first frame.

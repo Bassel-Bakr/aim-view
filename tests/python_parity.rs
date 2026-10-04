@@ -27,5 +27,5 @@ fn kovobs_overlay_matches_python() {
         return;
     };
     let want: Vec<[f64; 4]> = serde_json::from_str(&text).unwrap();
-    assert_eq!(aimview::geometry::overlay_shares(), want);
+    assert_eq!(want, aimview::geometry::overlay_shares());
 }

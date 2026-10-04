@@ -20,6 +20,8 @@ const T: usize = 80;
 const TILES: usize = 18;
 const COLS: usize = 6 * T;
 const BINS: usize = T / 2 + 1;
+/// The grid's cells: 3 tiles down, 6 across.
+const CELLS: usize = COLS * 3 * T;
 const THR: f32 = 0.08;
 
 /// Each tile's shift since the frame before (degrees, the room's move on screen), or None where its peak is too low.
@@ -27,35 +29,36 @@ pub type TileShifts = [Option<(f32, f32)>; TILES];
 
 /// The grid's bilinear gather (top-left pixel and weights per grid cell), each tile's center, and the Hann window.
 struct Grid {
-    i00: Vec<usize>,
-    fx: Vec<f32>,
-    fy: Vec<f32>,
+    i00: Box<[usize; CELLS]>,
+    fx: Box<[f32; CELLS]>,
+    fy: Box<[f32; CELLS]>,
     taz: [f64; TILES],
     tel: [f64; TILES],
-    hann: Vec<f32>,
+    hann: Box<[f32; T * T]>,
 }
 
 impl Grid {
     fn new() -> Grid {
-        let az: Vec<f64> = (0..COLS).map(|c| (c as f64 - (3 * T) as f64 + 0.5) * STEP).collect();
-        let el: Vec<f64> = (0..3 * T).map(|r| (1.5 * T as f64 - r as f64 - 0.5) * STEP).collect();
+        let az: [f64; COLS] = std::array::from_fn(|c| (c as f64 - (3 * T) as f64 + 0.5) * STEP);
+        let el: [f64; 3 * T] = std::array::from_fn(|r| (1.5 * T as f64 - r as f64 - 0.5) * STEP);
         let mut g = Grid {
-            i00: Vec::with_capacity(COLS * 3 * T),
-            fx: Vec::with_capacity(COLS * 3 * T),
-            fy: Vec::with_capacity(COLS * 3 * T),
+            i00: vec![0; CELLS].try_into().unwrap(),
+            fx: vec![0.0; CELLS].try_into().unwrap(),
+            fy: vec![0.0; CELLS].try_into().unwrap(),
             taz: [0.0; TILES],
             tel: [0.0; TILES],
-            hann: Vec::with_capacity(T * T),
+            hann: vec![0.0; T * T].try_into().unwrap(),
         };
-        for &e in &el {
-            for &a in &az {
+        for (r, &e) in el.iter().enumerate() {
+            for (c, &a) in az.iter().enumerate() {
+                let p = r * COLS + c;
                 let px = CX + K * radians(a).tan();
                 let py = CY - radians(e).tan() * K.hypot(px - CX);
                 let (x0, y0) = (px.floor(), py.floor());
-                g.fx.push((px - x0) as f32);
-                g.fy.push((py - y0) as f32);
+                g.fx[p] = (px - x0) as f32;
+                g.fy[p] = (py - y0) as f32;
                 let (x0, y0) = ((x0 as i64).clamp(0, W as i64 - 2), (y0 as i64).clamp(0, H as i64 - 2));
-                g.i00.push(y0 as usize * W + x0 as usize);
+                g.i00[p] = y0 as usize * W + x0 as usize;
             }
         }
         for k in 0..TILES {
@@ -64,12 +67,12 @@ impl Grid {
             g.tel[k] = el[r..r + T].iter().sum::<f64>() / T as f64;
         }
         // np.hanning
-        let w: Vec<f64> = (0..T)
-            .map(|i| 0.5 + 0.5 * (std::f64::consts::PI * (2 * i as i64 + 1 - T as i64) as f64 / (T - 1) as f64).cos())
-            .collect();
-        for &a in &w {
-            for &b in &w {
-                g.hann.push((a * b) as f32);
+        let w: [f64; T] = std::array::from_fn(|i| {
+            0.5 + 0.5 * (std::f64::consts::PI * (2 * i as i64 + 1 - T as i64) as f64 / (T - 1) as f64).cos()
+        });
+        for (i, &a) in w.iter().enumerate() {
+            for (j, &b) in w.iter().enumerate() {
+                g.hann[i * T + j] = (a * b) as f32;
             }
         }
         g
@@ -378,7 +381,7 @@ pub fn countdown_showing(rgb: &[u8]) -> bool {
     let track_f = TRACK.map(|v| v as f64);
     let mut fill_c = [0.0; 3];
     for (k, f) in fill_c.iter_mut().enumerate() {
-        let mut v: Vec<i32> = (y0 + 6..y0 + 27).flat_map(|y| (x0 + 2..x0 + 6).map(move |x| (x, y))).map(|(x, y)| px(x, y)[k]).collect();
+        let mut v: [i32; 21 * 4] = std::array::from_fn(|j| px(x0 + 2 + j % 4, y0 + 6 + j / 4)[k]);
         v.sort();
         *f = (v[v.len() / 2 - 1] + v[v.len() / 2]) as f64 / 2.0;
     }

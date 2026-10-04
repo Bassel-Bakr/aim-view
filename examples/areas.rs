@@ -99,7 +99,7 @@ fn pure(dir: &str, refs: &str, names: Vec<String>) {
         .iter()
         .map(|e| {
             let rest: Vec<_> = ex.iter().filter(|o| o.rec != e.rec).cloned().collect();
-            let one = Area { bounds: [0.0; 4], feat: e.feat.clone(), rule: "?".into() };
+            let one = Area { bounds: [0.0; 4], feat: e.feat, rule: "?".into() };
             predict(&[one], &rest, K).first().map_or(NONE.to_string(), |a| a.kind.clone())
         })
         .collect();

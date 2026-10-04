@@ -381,8 +381,8 @@ fn layout(med: &[f64]) -> (Option<Layout>, Option<SessionRows>) {
     let mut lab = vec![0u32; BW * BH];
     let mut stack = Vec::new();
     for (sx, sy) in seeds {
-        let patch: Vec<usize> = (sy..sy + 8).flat_map(|y| (sx..sx + 8).map(move |x| y * BW + x)).collect();
-        let level = median(&mut patch.iter().map(|&i| med[i]).collect::<Vec<f64>>());
+        let patch: [usize; 64] = std::array::from_fn(|k| (sy + k / 8) * BW + sx + k % 8);
+        let level = median(&mut patch.map(|i| med[i]));
         let near = |i: usize| (med[i] - level).abs() < 15.0;
         if (patch.iter().filter(|&&i| near(i)).count() as f64) < 0.9 * 64.0 {
             continue;
@@ -512,8 +512,8 @@ fn value_glyphs(band: &[u8], w: usize, start: Option<usize>) -> Vec<Cut> {
     let p = percentile(&dist, n, 99.5) / 2.0;
     let (thr, top) = (25f64.max(0.5 * p), 25f64.max(p));
     let d = |v: u8| (2 * v as i32 - bg2).unsigned_abs() as f64 / 2.0;
-    let is_ink: Vec<bool> = (0..=255u8).map(|v| d(v) > thr).collect();
-    let level: Vec<f32> = (0..=255u8).map(|v| (d(v) / top).clamp(0.0, 1.0) as f32).collect();
+    let is_ink: [bool; 256] = std::array::from_fn(|v| d(v as u8) > thr);
+    let level: [f32; 256] = std::array::from_fn(|v| (d(v as u8) / top).clamp(0.0, 1.0) as f32);
     let ink: Vec<bool> = band.iter().map(|&v| is_ink[v as usize]).collect();
     let strength: Vec<f32> = band.iter().map(|&v| level[v as usize]).collect();
     let mut col = vec![0usize; w];
@@ -1009,7 +1009,7 @@ impl HudWatch {
 struct Shapes<'a> {
     store: &'a Store,
     same: f64,
-    shapes: Vec<Vec<f32>>,
+    shapes: Vec<[f32; GLYPH]>,
     norms: Vec<f64>,
     count: Vec<u32>,
     /// Bumped whenever a shape changes; each image's most alike shape is kept with the version it was found at.
@@ -1034,8 +1034,9 @@ impl<'a> Shapes<'a> {
         }
     }
 
-    fn glyph(&self, image: u32) -> Vec<f32> {
-        self.store.image(image).iter().map(|&b| b as f32 / 255.0).collect()
+    fn glyph(&self, image: u32) -> [f32; GLYPH] {
+        let image = self.store.image(image);
+        std::array::from_fn(|k| image[k] as f32 / 255.0)
     }
 
     fn best(&self, image: u32) -> Option<usize> {
@@ -1085,9 +1086,9 @@ impl<'a> Shapes<'a> {
         k as i32
     }
 
-    fn unit(&self, k: usize) -> Vec<f32> {
+    fn unit(&self, k: usize) -> [f32; GLYPH] {
         let n = self.norms[k].max(1e-6) as f32;
-        self.shapes[k].iter().map(|v| v / n).collect()
+        self.shapes[k].map(|v| v / n)
     }
 }
 
@@ -1365,8 +1366,8 @@ fn marks(
     band: usize,
     shapes: &mut Shapes,
     digits: &[Option<u8>],
-) -> Option<[Vec<f32>; 2]> {
-    let mut sums = [vec![0f32; GLYPH], vec![0f32; GLYPH]];
+) -> Option<[[f32; GLYPH]; 2]> {
+    let mut sums = [[0f32; GLYPH]; 2];
     let mut counts = [0; 2];
     for &l in lines {
         let read = by_likeness(store, l, band, shapes, digits);
@@ -1392,7 +1393,7 @@ fn marks(
     }
     Some(sums.map(|s| {
         let n = norm(s.iter().copied()).max(1e-6) as f32;
-        s.into_iter().map(|v| v / n).collect()
+        s.map(|v| v / n)
     }))
 }
 
@@ -1406,14 +1407,14 @@ fn accuracy(
     band: usize,
     shapes: &mut Shapes,
     digits: &[Option<u8>],
-    marks: Option<&[Vec<f32>; 2]>,
+    marks: Option<&[[f32; GLYPH]; 2]>,
 ) -> Option<(i64, i64)> {
     let read = match marks {
         None => by_likeness(store, l, band, shapes, digits),
         Some(marks) => {
-            let protos: Vec<(Vec<f32>, Option<u8>)> = (0..digits.len())
+            let protos: Vec<([f32; GLYPH], Option<u8>)> = (0..digits.len())
                 .filter_map(|k| digits[k].map(|d| (shapes.unit(k), Some(d))))
-                .chain(marks.iter().map(|m| (m.clone(), None)))
+                .chain(marks.iter().map(|&m| (m, None)))
                 .collect();
             store.lines[l as usize]
                 .iter()
@@ -1421,7 +1422,7 @@ fn accuracy(
                 .map(|g| {
                     let img = shapes.glyph(g.image);
                     let n = norm(img.iter().copied()).max(1e-6) as f32;
-                    let u: Vec<f32> = img.iter().map(|x| x / n).collect();
+                    let u = img.map(|x| x / n);
                     protos
                         .iter()
                         .map(|(p, d)| (dot(&u, p), *d))
@@ -1485,7 +1486,7 @@ fn aimlab(store: &Store) -> Option<HudReading> {
     }
     let (shapes, digits) = found?;
     // POINTS: each glyph is the most alike digit shape (a minus sign is short and wide)
-    let protos: Vec<(Vec<f32>, u8)> =
+    let protos: Vec<([f32; GLYPH], u8)> =
         digits.iter().enumerate().filter_map(|(k, d)| d.map(|d| (shapes.unit(k), d))).collect();
     let mut read: HashMap<u32, Option<i64>> = HashMap::new();
     let vals: Vec<Option<i64>> = store
@@ -1503,7 +1504,7 @@ fn aimlab(store: &Store) -> Option<HudReading> {
                     }
                     let img = shapes.glyph(g.image);
                     let n = norm(img.iter().copied()).max(1e-6) as f32;
-                    let u: Vec<f32> = img.iter().map(|x| x / n).collect();
+                    let u = img.map(|x| x / n);
                     let (sim, d) = protos
                         .iter()
                         .map(|(p, d)| (dot(&u, p), *d))

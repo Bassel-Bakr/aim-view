@@ -149,7 +149,7 @@ pub fn tracked_areas(dir: &Path) -> Option<Vec<[f64; 4]>> {
     let tracks: Value = serde_json::from_slice(&crate::disk::read(dir.join("tracks.json")).ok()?).ok()?;
     Some(match tracks["areas"].as_array() {
         Some(boxes) => boxes.iter().filter_map(rect).collect(),
-        None => aimview::geometry::overlay_shares(),
+        None => aimview::geometry::overlay_shares().to_vec(),
     })
 }
 
@@ -276,7 +276,7 @@ impl Library {
     pub fn exclude_areas(&self, id: &str) -> Vec<[f64; 4]> {
         match self.exclude_boxes(id) {
             Ok(boxes) => boxes.iter().map(|b| [b.0, b.1, b.2, b.3]).collect(),
-            Err(_) => aimview::geometry::overlay_shares(),
+            Err(_) => aimview::geometry::overlay_shares().to_vec(),
         }
     }
 

@@ -447,7 +447,7 @@ pub unsafe extern "C" fn camera_new_areas(
     let flat = unsafe { std::slice::from_raw_parts(areas, 4 * areas_len) };
     let mut rects: Vec<[f64; 4]> = flat.chunks_exact(4).map(|b| [b[0], b[1], b[2], b[3]]).collect();
     if rects.is_empty() {
-        rects = crate::geometry::overlay_shares();
+        rects = crate::geometry::overlay_shares().to_vec();
     }
     let fixed = unsafe { std::slice::from_raw_parts(fixed, DST_W * DST_H) };
     let keep = crate::track::Mask::without(&rects);

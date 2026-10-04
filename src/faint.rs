@@ -195,7 +195,7 @@ pub fn cutoff_crops(r: &CutoffRequest) -> Vec<CutoffCrop> {
     let ex: Vec<[f64; 4]> = r
         .exclude
         .clone()
-        .unwrap_or_else(overlay_shares)
+        .unwrap_or_else(|| overlay_shares().to_vec())
         .iter()
         .map(|b| [b[0] * w, b[1] * h, b[2] * w, b[3] * h])
         .collect();

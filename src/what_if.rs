@@ -223,11 +223,8 @@ fn covered(m: &Measure) -> Option<(f64, f64)> {
 }
 
 /// The measures in each distance group (summary.rs: `DISTANCES`) that have a flick speed.
-fn by_distance(ms: &[Measure]) -> Vec<Vec<(f64, f64)>> {
-    DISTANCES
-        .iter()
-        .map(|&(lo, hi)| ms.iter().filter(|m| lo as f64 <= m.d0 && m.d0 < hi as f64).filter_map(covered).collect())
-        .collect()
+fn by_distance(ms: &[Measure]) -> [Vec<(f64, f64)>; DISTANCES.len()] {
+    DISTANCES.map(|(lo, hi)| ms.iter().filter(|m| lo as f64 <= m.d0 && m.d0 < hi as f64).filter_map(covered).collect())
 }
 
 /// Each flick at the speed of the fastest quarter (the 75th percentile) of its distance group's flicks.
@@ -256,7 +253,7 @@ fn land(ms: &[Measure], r: f64) -> Option<Saving> {
 /// Each direction's flicks at its best direction's speed. A flick's speed is taken against its distance group's median
 /// (groups of 3 or more), so near and far directions compare fairly; directions need 5% of the flicks and 3 or more.
 fn direction(ms: &[Measure]) -> Option<Saving> {
-    let mut groups: Vec<Vec<(f64, f64)>> = vec![Vec::new(); DIRECTIONS.len()];
+    let mut groups: [Vec<(f64, f64)>; DIRECTIONS.len()] = Default::default();
     for &(lo, hi) in DISTANCES.iter() {
         let g: Vec<(&Measure, (f64, f64))> = ms
             .iter()
