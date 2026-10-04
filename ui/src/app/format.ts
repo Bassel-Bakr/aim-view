@@ -10,8 +10,8 @@ export const KIND_LABELS: Record<Kind, string> = {
 };
 
 /** 13278 as "13,278", 889.26 as "889.26". */
-export function formatNumber(v: number): string {
-  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+export function formatNumber(value: number): string {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 /**
@@ -19,23 +19,29 @@ export function formatNumber(v: number): string {
  * KovOBS recordings from June 2026 carry the year 0026.
  */
 export function formatStamp(stamp: string, thisYear = new Date().getFullYear()): string {
-  const m = /^(\d{4})\.(\d\d)\.(\d\d)-(\d\d)\.(\d\d)/.exec(stamp);
-  if (!m) return stamp;
-  const year = m[1].startsWith('00') ? `20${m[1].slice(2)}` : m[1];
-  const day = `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}`;
-  return `${day}${Number(year) === thisYear ? '' : ` ${year}`}, ${m[4]}:${m[5]}`;
+  const match = /^(\d{4})\.(\d\d)\.(\d\d)-(\d\d)\.(\d\d)/.exec(stamp);
+  if (!match) return stamp;
+  const year = match[1].startsWith('00') ? `20${match[1].slice(2)}` : match[1];
+  const day = `${MONTHS[Number(match[2]) - 1]} ${Number(match[3])}`;
+  return `${day}${Number(year) === thisYear ? '' : ` ${year}`}, ${match[4]}:${match[5]}`;
 }
 
 /** Bytes as "68 MB". */
 export function formatSize(bytes: number): string {
-  return `${Math.round(bytes / 1e6)} MB`;
+  return `${Math.round(bytes / BYTES_PER_MB)} MB`;
 }
 
 const NONE = '–';
+const BYTES_PER_MB = 1e6;
+const MS_PER_SECOND = 1000;
+const PERCENT = 100;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+const SECONDS_PER_DAY = 86400;
 
 /** Seconds as "425 ms". */
 export function formatMs(seconds: number | null | undefined): string {
-  return seconds == null ? NONE : `${Math.round(1000 * seconds)} ms`;
+  return seconds == null ? NONE : `${Math.round(MS_PER_SECOND * seconds)} ms`;
 }
 
 /** Seconds as milliseconds under a second ("167 ms"), else seconds ("1.25 s"). */
@@ -46,7 +52,7 @@ export function formatSeconds(seconds: number | null | undefined): string {
 
 /** A share as "79%". */
 export function formatPercent(share: number | null | undefined): string {
-  return share == null ? NONE : `${Math.round(100 * share)}%`;
+  return share == null ? NONE : `${Math.round(PERCENT * share)}%`;
 }
 
 /** Degrees as "0.48°". */
@@ -61,29 +67,34 @@ export function formatSpeed(degPerSecond: number | null | undefined): string {
 
 /** How far one time is from another: "at the same time", "12 s after", "3 min before", "2 h after", "4 days before". */
 export function formatOffset(seconds: number): string {
-  const a = Math.abs(seconds);
-  if (a < 1) return 'at the same time';
-  const days = Math.round(a / 86400);
+  const apart = Math.abs(seconds);
+  if (apart < 1) return 'at the same time';
+  const days = Math.round(apart / SECONDS_PER_DAY);
   const size =
-    a < 60
-      ? `${Math.round(a)} s`
-      : a < 3600
-        ? `${Math.round(a / 60)} min`
-        : a < 86400
-          ? `${Math.round(a / 3600)} h`
+    apart < SECONDS_PER_MINUTE
+      ? `${Math.round(apart)} s`
+      : apart < SECONDS_PER_HOUR
+        ? `${Math.round(apart / SECONDS_PER_MINUTE)} min`
+        : apart < SECONDS_PER_DAY
+          ? `${Math.round(apart / SECONDS_PER_HOUR)} h`
           : `${days} ${days === 1 ? 'day' : 'days'}`;
   return `${size} ${seconds < 0 ? 'before' : 'after'}`;
 }
 
 /** A count, or a dash when there is none. */
-export function formatCount(v: number | null | undefined): string {
-  return v == null ? NONE : formatNumber(v);
+export function formatCount(value: number | null | undefined): string {
+  return value == null ? NONE : formatNumber(value);
 }
+
+/** The arrows for the eight directions, from right round to down-right, each 45 degrees on from the one before. */
+const ARROWS = '→↗↑↖←↙↓↘';
+const FULL_TURN_DEG = 360;
+const ARROW_STEP_DEG = FULL_TURN_DEG / ARROWS.length;
 
 /** A flick's direction in degrees (0 right, 90 up) as one of eight arrows. */
 export function arrow(direction: number): string {
-  const a = ((direction % 360) + 360) % 360;
-  return '→↗↑↖←↙↓↘'[Math.round(a / 45) % 8];
+  const angleDeg = ((direction % FULL_TURN_DEG) + FULL_TURN_DEG) % FULL_TURN_DEG;
+  return ARROWS[Math.round(angleDeg / ARROW_STEP_DEG) % ARROWS.length];
 }
 
 export const DIRECTION_ARROWS: Record<Direction, string> = {
@@ -98,8 +109,8 @@ export const DIRECTION_ARROWS: Record<Direction, string> = {
 };
 
 /** Where a flick landed, against a target of radius r: on target, an underflick (the degrees still to go) or an overflick (past the far edge). */
-export function formatEnded(endLeft: number, r: number): string {
-  if (endLeft > r) return `underflick ${endLeft.toFixed(1)}°`;
-  if (endLeft < -r) return `overflick ${(-endLeft - r).toFixed(1)}°`;
+export function formatEnded(endLeft: number, radiusDeg: number): string {
+  if (endLeft > radiusDeg) return `underflick ${endLeft.toFixed(1)}°`;
+  if (endLeft < -radiusDeg) return `overflick ${(-endLeft - radiusDeg).toFixed(1)}°`;
   return 'on target';
 }

@@ -49,27 +49,29 @@ async function render(source: LinkSource): Promise<ComponentFixture<LinkForm>> {
   return fixture;
 }
 
-const el = (f: ComponentFixture<LinkForm>) => f.nativeElement as HTMLElement;
+const el = (fixture: ComponentFixture<LinkForm>) => fixture.nativeElement as HTMLElement;
 
 /** Types or pastes a link into the field. */
-async function enter(f: ComponentFixture<LinkForm>, url: string, paste: boolean): Promise<void> {
-  const input = el(f).querySelector('input[aria-label=Link]') as HTMLInputElement;
+async function enter(
+  fixture: ComponentFixture<LinkForm>,
+  url: string,
+  paste: boolean,
+): Promise<void> {
+  const input = el(fixture).querySelector('input[aria-label=Link]') as HTMLInputElement;
   input.value = url;
   input.dispatchEvent(new Event('input'));
   if (paste) input.dispatchEvent(new Event('paste'));
-  await new Promise((r) => setTimeout(r));
-  await f.whenStable();
+  await new Promise((resolve) => setTimeout(resolve));
+  await fixture.whenStable();
 }
 
-async function submit(f: ComponentFixture<LinkForm>): Promise<void> {
-  el(f).querySelector('form')?.dispatchEvent(new Event('submit'));
-  await new Promise((r) => setTimeout(r));
-  await f.whenStable();
+async function submit(fixture: ComponentFixture<LinkForm>): Promise<void> {
+  el(fixture).querySelector('form')?.dispatchEvent(new Event('submit'));
+  await new Promise((resolve) => setTimeout(resolve));
+  await fixture.whenStable();
 }
 
-describe('LinkForm', () => {
-  afterEach(() => history.replaceState(null, '', '/'));
-
+describe('qualityLabel', () => {
   it('names a quality by what is known of it', () => {
     expect(qualityLabel(QUALITIES.formats[0])).toBe('2560x1440 · 60 fps · AV1 · 412 MB');
     expect(qualityLabel(QUALITIES.formats[1])).toBe('1280x720 · 30 fps · H.264');
@@ -80,24 +82,28 @@ describe('LinkForm', () => {
       qualityLabel({ id: 'hls', width: null, height: 1080, fps: null, codec: null, size: null }),
     ).toBe('1080p');
   });
+});
+
+describe('LinkForm', () => {
+  afterEach(() => history.replaceState(null, '', '/'));
 
   it('reads a pasted link, offers its qualities with the best chosen, and adds the one picked', async () => {
     const source = new LinkSource();
-    const f = await render(source);
-    await enter(f, LINK, true);
-    const select = el(f).querySelector('select') as HTMLSelectElement;
-    expect([...select.options].map((o) => o.textContent?.trim())).toEqual([
+    const fixture = await render(source);
+    await enter(fixture, LINK, true);
+    const select = el(fixture).querySelector('select') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.textContent?.trim())).toEqual([
       '2560x1440 · 60 fps · AV1 · 412 MB (best)',
       '1280x720 · 30 fps · H.264',
     ]);
     expect(select.value).toBe('400');
-    expect(el(f).textContent).toContain(
+    expect(el(fixture).textContent).toContain(
       'The sharpest source and the highest frame rate review best',
     );
     select.value = '136';
     select.dispatchEvent(new Event('input'));
     select.dispatchEvent(new Event('change'));
-    await submit(f);
+    await submit(fixture);
     expect(source.added).toEqual([[LINK, '136']]);
     expect(TestBed.inject(Library).selectedId()).toBe(ADDED);
   });
@@ -105,38 +111,38 @@ describe('LinkForm', () => {
   it('adds a link with nothing to choose at once', async () => {
     const source = new LinkSource();
     source.answer = { title: 'clip.mp4', duration: null, formats: [] };
-    const f = await render(source);
-    await enter(f, 'https://cdn.example.com/clip.mp4', false);
-    await submit(f);
-    expect(el(f).querySelector('select')).toBeNull();
+    const fixture = await render(source);
+    await enter(fixture, 'https://cdn.example.com/clip.mp4', false);
+    await submit(fixture);
+    expect(el(fixture).querySelector('select')).toBeNull();
     expect(source.added).toEqual([['https://cdn.example.com/clip.mp4', null]]);
   });
 
   it('with qualities to choose from, Add first shows them', async () => {
     const source = new LinkSource();
-    const f = await render(source);
-    await enter(f, LINK, false);
-    await submit(f);
-    expect(el(f).querySelector('select')).not.toBeNull();
+    const fixture = await render(source);
+    await enter(fixture, LINK, false);
+    await submit(fixture);
+    expect(el(fixture).querySelector('select')).not.toBeNull();
     expect(source.added).toEqual([]);
-    await submit(f);
+    await submit(fixture);
     expect(source.added).toEqual([[LINK, '400']]);
   });
 
   it('says why a link cannot be read, and adds nothing', async () => {
     const source = new LinkSource();
     source.answer = new Error('yt-dlp cannot read this link: Private video');
-    const f = await render(source);
-    await enter(f, LINK, true);
-    expect(el(f).querySelector('[role=alert]')?.textContent).toContain('Private video');
-    await submit(f);
+    const fixture = await render(source);
+    await enter(fixture, LINK, true);
+    expect(el(fixture).querySelector('[role=alert]')?.textContent).toContain('Private video');
+    await submit(fixture);
     expect(source.added).toEqual([]);
   });
 
   it('takes only web links', async () => {
-    const f = await render(new LinkSource());
-    await enter(f, 'youtube.com/watch?v=abc', false);
-    const add = el(f).querySelector('button[type=submit]') as HTMLButtonElement;
+    const fixture = await render(new LinkSource());
+    await enter(fixture, 'youtube.com/watch?v=abc', false);
+    const add = el(fixture).querySelector('button[type=submit]') as HTMLButtonElement;
     expect(add.disabled).toBe(true);
   });
 });

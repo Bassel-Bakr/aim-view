@@ -17,44 +17,46 @@ async function render(): Promise<ComponentFixture<Recordings>> {
   return fixture;
 }
 
-const el = (f: ComponentFixture<Recordings>) => f.nativeElement as HTMLElement;
-const texts = (f: ComponentFixture<Recordings>, selector: string) =>
-  [...el(f).querySelectorAll(selector)].map((n) => n.textContent?.replace(/\s+/g, ' ').trim());
+const el = (fixture: ComponentFixture<Recordings>) => fixture.nativeElement as HTMLElement;
+const texts = (fixture: ComponentFixture<Recordings>, selector: string) =>
+  [...el(fixture).querySelectorAll(selector)].map((node) =>
+    node.textContent?.replace(/\s+/g, ' ').trim(),
+  );
 
 describe('Recordings', () => {
   afterEach(() => history.replaceState(null, '', '/'));
 
   it('offers a chip per kind of run, with its count', async () => {
-    const f = await render();
-    expect(texts(f, '.chip')).toEqual(['All 3', 'Static 1', 'Tracking 2']);
+    const fixture = await render();
+    expect(texts(fixture, '.chip')).toEqual(['All 3', 'Static 1', 'Tracking 2']);
   });
 
   it('filters by kind and by name', async () => {
-    const f = await render();
-    (el(f).querySelectorAll('.chip')[2] as HTMLButtonElement).click();
-    await f.whenStable();
-    expect(texts(f, '.name')).toEqual(['Controlsphere', 'Air Tracking 180']);
-    const input = el(f).querySelector('input') as HTMLInputElement;
+    const fixture = await render();
+    (el(fixture).querySelectorAll('.chip')[2] as HTMLButtonElement).click();
+    await fixture.whenStable();
+    expect(texts(fixture, '.name')).toEqual(['Controlsphere', 'Air Tracking 180']);
+    const input = el(fixture).querySelector('input') as HTMLInputElement;
     input.value = 'air';
     input.dispatchEvent(new Event('input'));
-    await f.whenStable();
-    expect(texts(f, '.name')).toEqual(['Air Tracking 180']);
+    await fixture.whenStable();
+    expect(texts(fixture, '.name')).toEqual(['Air Tracking 180']);
   });
 
   it('moves the selection with the arrow keys and marks it for screen readers', async () => {
-    const f = await render();
-    const list = el(f).querySelector('[role=listbox]') as HTMLElement;
+    const fixture = await render();
+    const list = el(fixture).querySelector('[role=listbox]') as HTMLElement;
     list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
     list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    await f.whenStable();
+    await fixture.whenStable();
     expect(TestBed.inject(Library).selectedId()).toBe('t1');
     expect(list.getAttribute('aria-activedescendant')).toBe('rec-1');
-    expect(el(f).querySelector('#rec-1')?.getAttribute('aria-selected')).toBe('true');
+    expect(el(fixture).querySelector('#rec-1')?.getAttribute('aria-selected')).toBe('true');
   });
 
   it('says what each recording is, in words', async () => {
-    const f = await render();
-    const meta = texts(f, '.meta');
+    const fixture = await render();
+    const meta = texts(fixture, '.meta');
     expect(meta[0]).toContain('reviewed');
     expect(meta[1]).not.toContain('reviewed');
     expect(meta[2]).toContain('no stats');

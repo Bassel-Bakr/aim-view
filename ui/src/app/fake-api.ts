@@ -37,7 +37,7 @@ export class Status {
   ) {}
 }
 
-const settle = () => new Promise((r) => setTimeout(r));
+const settle = () => new Promise((resolve) => setTimeout(resolve));
 
 /**
  * Answers the app's pending requests as the review server would: each path in routes with its JSON (or what its

@@ -1,3 +1,5 @@
+// The mouse reader's JSON (mouse-api.ts) numbers each kill and counts each spread's kills as `n`.
+/* eslint-disable id-length */
 import { MouseKill, MouseRun } from './mouse-api';
 
 /** A kill as the reader measures it, for tests: the first of a run, unless overrides say otherwise. */

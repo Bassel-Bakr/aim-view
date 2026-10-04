@@ -70,7 +70,7 @@ export class Recordings {
   protected readonly kindLabels = KIND_LABELS;
   /** Every row's height (the virtual scroll lays the rows out by it). */
   protected readonly rowHeight = rowHeight();
-  protected readonly byId = (_: number, r: Recording): string => r.id;
+  protected readonly byId = (_index: number, recording: Recording): string => recording.id;
   protected readonly query = signal('');
   protected readonly kind = signal<KindFilter>('all');
 
@@ -78,24 +78,26 @@ export class Recordings {
 
   protected readonly chips = computed<KindChip[]>(() => {
     const all = this.all();
-    const kinds = KIND_ORDER.map((k): KindChip => ({
-      key: k,
-      label: KIND_LABELS[k],
-      count: all.filter((r) => r.kind === k).length,
-    })).filter((c) => c.count > 0);
+    const kinds = KIND_ORDER.map((kind): KindChip => ({
+      key: kind,
+      label: KIND_LABELS[kind],
+      count: all.filter((recording) => recording.kind === kind).length,
+    })).filter((chip) => chip.count > 0);
     return [{ key: 'all', label: 'All', count: all.length }, ...kinds];
   });
 
   protected readonly shown = computed<Recording[]>(() => {
-    const q = this.query().trim().toLowerCase();
+    const search = this.query().trim().toLowerCase();
     const kind = this.kind();
     return this.all().filter(
-      (r) => (kind === 'all' || r.kind === kind) && (!q || r.scenario.toLowerCase().includes(q)),
+      (recording) =>
+        (kind === 'all' || recording.kind === kind) &&
+        (!search || recording.scenario.toLowerCase().includes(search)),
     );
   });
 
   protected readonly activeId = computed<string | null>(() => {
-    const i = this.shown().findIndex((r) => r.id === this.library.selectedId());
+    const i = this.shown().findIndex((recording) => recording.id === this.library.selectedId());
     return i < 0 ? null : `rec-${i}`;
   });
 
@@ -108,28 +110,28 @@ export class Recordings {
   constructor() {
     // the selected row in view, scrolled the least: a row out of view is not in the page to scroll into view
     afterRenderEffect(() => {
-      const i = this.shown().findIndex((r) => r.id === this.library.selectedId());
-      const v = this.viewport();
-      if (i < 0 || !v) return;
+      const i = this.shown().findIndex((recording) => recording.id === this.library.selectedId());
+      const viewport = this.viewport();
+      if (i < 0 || !viewport) return;
       const top = i * this.rowHeight;
-      const from = v.measureScrollOffset('top');
-      const height = v.getViewportSize();
-      if (top < from) v.scrollToOffset(top);
+      const from = viewport.measureScrollOffset('top');
+      const height = viewport.getViewportSize();
+      if (top < from) viewport.scrollToOffset(top);
       else if (top + this.rowHeight > from + height)
-        v.scrollToOffset(top + this.rowHeight - height);
+        viewport.scrollToOffset(top + this.rowHeight - height);
     });
   }
 
-  protected selectRow(e: MouseEvent): void {
-    const row = (e.target as HTMLElement).closest<HTMLElement>('[role=option]');
+  protected selectRow(event: MouseEvent): void {
+    const row = (event.target as HTMLElement).closest<HTMLElement>('[role=option]');
     if (row) this.library.selectedId.set(this.shown()[Number(row.dataset['i'])].id);
   }
 
-  protected moveSelection(e: KeyboardEvent): void {
+  protected moveSelection(event: KeyboardEvent): void {
     const list = this.shown();
-    const at = list.findIndex((r) => r.id === this.library.selectedId());
+    const at = list.findIndex((recording) => recording.id === this.library.selectedId());
     let to: number;
-    switch (e.key) {
+    switch (event.key) {
       case 'ArrowDown':
         to = at + 1;
         break;
@@ -151,15 +153,21 @@ export class Recordings {
       default:
         return;
     }
-    e.preventDefault();
+    event.preventDefault();
     if (list.length)
       this.library.selectedId.set(list[Math.max(0, Math.min(list.length - 1, to))].id);
   }
 
   /** Ctrl K (Cmd K on a Mac) from anywhere: the filter, its text selected. */
-  protected focusSearch(e: KeyboardEvent): void {
-    if (e.key.toLowerCase() !== 'k' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-    e.preventDefault();
+  protected focusSearch(event: KeyboardEvent): void {
+    if (
+      event.key.toLowerCase() !== 'k' ||
+      !(event.ctrlKey || event.metaKey) ||
+      event.altKey ||
+      event.shiftKey
+    )
+      return;
+    event.preventDefault();
     const input = this.search().nativeElement;
     input.focus();
     input.select();

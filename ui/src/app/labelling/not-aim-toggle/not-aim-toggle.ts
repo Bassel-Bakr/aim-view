@@ -21,8 +21,8 @@ export class NotAimToggle {
   protected async toggleNotAim(): Promise<void> {
     this.saving.set(true);
     try {
-      const r = this.recording();
-      await this.queue.setNotAim(r.id, !r.not_aim);
+      const recording = this.recording();
+      await this.queue.setNotAim(recording.id, !recording.not_aim);
     } finally {
       this.saving.set(false);
     }

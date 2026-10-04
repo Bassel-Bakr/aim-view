@@ -26,11 +26,16 @@ export interface QualityChoice {
 const WEB_LINK = /^https?:\/\/\S+$/i;
 
 /** A quality as "2560x1440 · 60 fps · AV1 · 412 MB", with what is known of it. */
-export function qualityLabel(f: LinkFormat): string {
-  const frame = f.width && f.height ? `${f.width}x${f.height}` : f.height ? `${f.height}p` : null;
-  const size = !f.size ? null : f.size < 1e6 ? 'under 1 MB' : formatSize(f.size);
-  const parts = [frame, f.fps ? `${Math.round(f.fps)} fps` : null, f.codec, size];
-  return parts.filter((p) => p !== null).join(' · ') || f.id;
+export function qualityLabel(format: LinkFormat): string {
+  const frame =
+    format.width && format.height
+      ? `${format.width}x${format.height}`
+      : format.height
+        ? `${format.height}p`
+        : null;
+  const size = !format.size ? null : format.size < 1e6 ? 'under 1 MB' : formatSize(format.size);
+  const parts = [frame, format.fps ? `${Math.round(format.fps)} fps` : null, format.codec, size];
+  return parts.filter((part) => part !== null).join(' · ') || format.id;
 }
 
 /**
@@ -49,24 +54,27 @@ export class LinkForm {
   protected readonly source = this.library.source;
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   protected readonly model = signal<LinkFields>({ url: '', format: '' });
-  protected readonly fields = form(this.model, (p) => {
-    required(p.url);
-    pattern(p.url, WEB_LINK);
+  protected readonly fields = form(this.model, (path) => {
+    required(path.url);
+    pattern(path.url, WEB_LINK);
   });
   /** The server that downloads links for this browser, where the mode has one. */
   protected readonly server = this.source.linkServer && form(this.source.linkServer);
   private readonly read = signal<ReadLink | null>(null);
   /** What the link in the field offers, once it is read. */
   protected readonly info = computed(() => {
-    const r = this.read();
-    return r && r.url === this.model().url.trim() ? r.info : null;
+    const lastRead = this.read();
+    return lastRead && lastRead.url === this.model().url.trim() ? lastRead.info : null;
   });
   /** The qualities to pick from, best first; none when there is only one. */
   protected readonly choices = computed<QualityChoice[]>(() => {
     const formats = this.info()?.formats ?? [];
     return formats.length < 2
       ? []
-      : formats.map((f, i) => ({ id: f.id, label: qualityLabel(f) + (i === 0 ? ' (best)' : '') }));
+      : formats.map((format, i) => ({
+          id: format.id,
+          label: qualityLabel(format) + (i === 0 ? ' (best)' : ''),
+        }));
   });
   /** What is being done ("Reading the link"), or null. */
   protected readonly busy = signal<string | null>(null);
@@ -96,10 +104,10 @@ export class LinkForm {
     try {
       const info = await this.source.linkInfo(url);
       this.read.set({ url, info });
-      this.model.update((m) => ({ ...m, format: info.formats[0]?.id ?? '' }));
+      this.model.update((current) => ({ ...current, format: info.formats[0]?.id ?? '' }));
       return info;
-    } catch (e) {
-      this.problem.set(errorMessage(e));
+    } catch (error) {
+      this.problem.set(errorMessage(error));
       return null;
     } finally {
       this.busy.set(null);
@@ -127,8 +135,8 @@ export class LinkForm {
       this.model.set({ url: '', format: '' });
       this.read.set(null);
       this.close();
-    } catch (e) {
-      this.problem.set(errorMessage(e));
+    } catch (error) {
+      this.problem.set(errorMessage(error));
     } finally {
       this.busy.set(null);
     }

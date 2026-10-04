@@ -43,14 +43,14 @@ export class Upload {
   protected readonly source = this.library.source;
   /** What is being done, in words with how far it is (items done of how many, or a share), for the top bar. */
   protected readonly busy = computed<BusyNote | null>(() => {
-    const t = this.source.transfer();
-    if (t) {
-      const far = t.count
-        ? `: ${formatCount(t.count.done)} of ${formatCount(t.count.total)}`
-        : t.share === null
+    const transfer = this.source.transfer();
+    if (transfer) {
+      const far = transfer.count
+        ? `: ${formatCount(transfer.count.done)} of ${formatCount(transfer.count.total)}`
+        : transfer.share === null
           ? '…'
-          : `: ${formatPercent(t.share)}`;
-      return { text: `${t.label}${far}`, share: t.share };
+          : `: ${formatPercent(transfer.share)}`;
+      return { text: `${transfer.label}${far}`, share: transfer.share };
     }
     const opening = this.opening();
     return opening ? { text: `${opening}…`, share: null } : null;
@@ -65,7 +65,7 @@ export class Upload {
   constructor() {
     // dragover fires many times a second: a plain listener, so it never runs change detection
     const document = inject(DOCUMENT);
-    const allowDrop = (e: DragEvent) => e.preventDefault();
+    const allowDrop = (event: DragEvent) => event.preventDefault();
     document.addEventListener('dragover', allowDrop);
     inject(DestroyRef).onDestroy(() => {
       document.removeEventListener('dragover', allowDrop);
@@ -94,10 +94,10 @@ export class Upload {
   private async listFolder(step: () => Promise<void>): Promise<void> {
     try {
       await step();
-      const n = this.source.recordings().length;
-      if (n) this.show(`${n} recordings in the list`, false);
-    } catch (e) {
-      this.show(`Could not open the folder: ${errorMessage(e)}`, true);
+      const count = this.source.recordings().length;
+      if (count) this.show(`${count} recordings in the list`, false);
+    } catch (error) {
+      this.show(`Could not open the folder: ${errorMessage(error)}`, true);
     }
   }
 
@@ -118,12 +118,12 @@ export class Upload {
     if (!files.length) return;
     choose(files).then(
       () => this.show("KovaaK's stats folder is read", false),
-      (e: unknown) => this.show(`Could not read the folder: ${errorMessage(e)}`, true),
+      (error: unknown) => this.show(`Could not read the folder: ${errorMessage(error)}`, true),
     );
   }
 
-  protected showDropZone(e: DragEvent): void {
-    if (!e.dataTransfer?.types.includes('Files')) return;
+  protected showDropZone(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes('Files')) return;
     this.depth++;
     this.dragging.set(true);
   }
@@ -134,19 +134,19 @@ export class Upload {
     this.dragging.set(false);
   }
 
-  protected dropFiles(e: DragEvent): void {
-    e.preventDefault();
+  protected dropFiles(event: DragEvent): void {
+    event.preventDefault();
     this.depth = 0;
     this.dragging.set(false);
-    const files = [...(e.dataTransfer?.files ?? [])];
+    const files = [...(event.dataTransfer?.files ?? [])];
     if (files.length) void this.open(files);
   }
 
   /** Adds the videos among files and opens the first; a stats file alone pairs with the open recording. */
   private async open(files: File[]): Promise<void> {
     const id = this.library.selectedId();
-    const videos = files.filter((f) => /\.(mp4|mkv|mov|webm)$/i.test(f.name));
-    const csvs = files.filter((f) => /\.csv$/i.test(f.name));
+    const videos = files.filter((file) => /\.(mp4|mkv|mov|webm)$/i.test(file.name));
+    const csvs = files.filter((file) => /\.csv$/i.test(file.name));
     try {
       if (!videos.length && csvs.length === 1 && id !== null) {
         const change = await this.stats.pairFile(id, csvs[0]);
@@ -166,8 +166,8 @@ export class Upload {
       const bad = added.notStats.length ? ` · not a stats file: ${added.notStats.join(', ')}` : '';
       const what = videos.length === 1 ? videos[0].name : `${videos.length} recordings`;
       this.show(`Added ${what}${bad}`, !!bad);
-    } catch (e) {
-      this.show(`Could not add the files: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.show(`Could not add the files: ${errorMessage(error)}`, true);
     }
   }
 

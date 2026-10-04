@@ -10,18 +10,25 @@ export interface LoggerStatus {
   failed: boolean;
 }
 
+const MS_PER_SECOND = 1000;
+/** A logger that cannot start ends at once: the switch looks again this long after starting it. */
+const LOOK_AGAIN_MS = 1500;
+
 /** Seconds since 1970 as a local "16:20". */
 function clock(seconds: number): string {
-  const d = new Date(seconds * 1000);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const date = new Date(seconds * MS_PER_SECOND);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 /** The line beside the switch, from the logger's state. */
-export function loggerStatus(s: MouseLoggerState): LoggerStatus | null {
-  if (s.error) return { text: s.error, failed: true };
-  if (s.on)
-    return { text: `logging since ${s.since == null ? '…' : clock(s.since)}`, failed: false };
-  const last = s.last;
+export function loggerStatus(state: MouseLoggerState): LoggerStatus | null {
+  if (state.error) return { text: state.error, failed: true };
+  if (state.on)
+    return {
+      text: `logging since ${state.since == null ? '…' : clock(state.since)}`,
+      failed: false,
+    };
+  const last = state.last;
   if (!last) return null;
   if (last.error) return { text: `last log: ${last.error}`, failed: true };
   const throttled = last.throttled ? ', throttled by Windows' : '';
@@ -53,26 +60,25 @@ export class MouseSwitch {
   protected readonly status = computed<LoggerStatus | null>(() => {
     const failed = this.failure();
     if (failed) return { text: failed, failed: true };
-    const s = this.current();
-    return s ? loggerStatus(s) : null;
+    const state = this.current();
+    return state ? loggerStatus(state) : null;
   });
   /** What the switch does, where the logs go, and Windows' throttle setting. */
   protected readonly hint = computed(() => {
-    const s = this.current();
-    const where = s?.folder ? ` into ${s.folder}` : '';
-    return `Logs the raw mouse in the background while you play${where}. ${s?.throttle ?? ''}`;
+    const state = this.current();
+    const where = state?.folder ? ` into ${state.folder}` : '';
+    return `Logs the raw mouse in the background while you play${where}. ${state?.throttle ?? ''}`;
   });
 
   protected async toggle(): Promise<void> {
     this.busy.set(true);
     this.failure.set(null);
     try {
-      const s = await this.logs.setLogger(!this.on());
-      this.state.set(s);
-      // a logger that cannot start ends at once: look again shortly
-      if (s.on) setTimeout(() => this.state.reload(), 1500);
-    } catch (e) {
-      this.failure.set(errorMessage(e));
+      const state = await this.logs.setLogger(!this.on());
+      this.state.set(state);
+      if (state.on) setTimeout(() => this.state.reload(), LOOK_AGAIN_MS);
+    } catch (error) {
+      this.failure.set(errorMessage(error));
     } finally {
       this.busy.set(false);
     }

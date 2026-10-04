@@ -1,4 +1,4 @@
-import { Model, ModelList, ModelSpeed } from '../api';
+import { Check, Model, ModelList, ModelSpeed } from '../api';
 import { formatNumber } from '../format';
 import { modelName } from '../services/models';
 
@@ -48,15 +48,15 @@ export type Better = 'low' | 'high' | null;
 
 const EMPTY: ModelCell = { text: null, detail: null, best: false };
 
-function column(m: Model, chosen: string): ModelColumn {
+function column(model: Model, chosen: string): ModelColumn {
   return {
-    name: m.name,
-    label: m.label,
-    useLabel: modelName(m.name),
-    size: m.kb != null ? `${m.kb} KB` : 'PyTorch file only',
-    isDefault: m.default === true,
-    inUse: m.name === chosen,
-    available: m.available,
+    name: model.name,
+    label: model.label,
+    useLabel: modelName(model.name),
+    size: model.kb != null ? `${model.kb} KB` : 'PyTorch file only',
+    isDefault: model.default === true,
+    inUse: model.name === chosen,
+    available: model.available,
   };
 }
 
@@ -65,7 +65,7 @@ function proseRow(label: string, values: (string | undefined)[]): ModelRow {
     label,
     about: null,
     prose: true,
-    cells: values.map((v) => (v ? { text: v, detail: null, best: false } : EMPTY)),
+    cells: values.map((value) => (value ? { text: value, detail: null, best: false } : EMPTY)),
   };
 }
 
@@ -74,89 +74,96 @@ export function numberRow(
   label: string,
   about: string | null,
   values: (number | null)[],
-  show: (v: number, i: number) => CellText,
+  show: (value: number, i: number) => CellText,
   better: Better,
 ): ModelRow {
-  const have = values.filter((v): v is number => v !== null);
+  const have = values.filter((value): value is number => value !== null);
   const best =
     better && have.length > 1 ? (better === 'low' ? Math.min(...have) : Math.max(...have)) : null;
   return {
     label,
     about,
     prose: false,
-    cells: values.map((v, i) => (v === null ? EMPTY : { ...show(v, i), best: v === best })),
+    cells: values.map((value, i) =>
+      value === null ? EMPTY : { ...show(value, i), best: value === best },
+    ),
   };
 }
 
 const plain = (text: string): CellText => ({ text, detail: null });
 
 /**
+ * A check's row: each model's result on it. Tracking's is an error (lowest best, its mean beside it); the others count
+ * flicks (highest best, the kills matched beside them).
+ */
+function checkRow(check: Check, models: Model[]): ModelRow {
+  const results = models.map((model) => model.checks?.[check.key] ?? null);
+  const values = results.map((result) => (result ? result[1] : null));
+  if (check.key === 'tracking') {
+    return numberRow(
+      check.name,
+      check.what,
+      values,
+      (value, i) => ({ text: value.toFixed(3), detail: `mean ${results[i]?.[0].toFixed(3)}` }),
+      'low',
+    );
+  }
+  return numberRow(
+    check.of ? `${check.name} (${formatNumber(check.of)} kills)` : check.name,
+    check.what,
+    values,
+    (value, i) => ({
+      text: `${formatNumber(value)} flicks`,
+      detail: `${formatNumber(results[i]?.[0] ?? 0)} matched`,
+    }),
+    'high',
+  );
+}
+
+/**
  * The model panel's table: what each model was trained on, is best and weak at, its result on every check, its speed
  * on each runtime and its size. Older models (each replaced by a newer one) are listed apart.
  */
 export function modelTable(list: ModelList): ModelTable {
-  const main = list.models.filter((m) => !m.older);
-  const checks = list.checks.map((c) => {
-    const got = main.map((m) => m.checks?.[c.key] ?? null);
-    const values = got.map((g) => (g ? g[1] : null));
-    if (c.key === 'tracking') {
-      return numberRow(
-        c.name,
-        c.what,
-        values,
-        (v, i) => ({ text: v.toFixed(3), detail: `mean ${got[i]?.[0].toFixed(3)}` }),
-        'low',
-      );
-    }
-    return numberRow(
-      c.of ? `${c.name} (${formatNumber(c.of)} kills)` : c.name,
-      c.what,
-      values,
-      (v, i) => ({
-        text: `${formatNumber(v)} flicks`,
-        detail: `${formatNumber(got[i]?.[0] ?? 0)} matched`,
-      }),
-      'high',
-    );
-  });
-  const speed = (key: keyof ModelSpeed) => main.map((m) => m.speed_ms?.[key] ?? null);
-  const ms = (v: number) => plain(`${v} ms`);
+  const main = list.models.filter((model) => !model.older);
+  const speed = (key: keyof ModelSpeed) => main.map((model) => model.speed_ms?.[key] ?? null);
+  const ms = (value: number) => plain(`${value} ms`);
   return {
-    columns: main.map((m) => column(m, list.chosen)),
+    columns: main.map((model) => column(model, list.chosen)),
     rows: [
       proseRow(
         'Trained on',
-        main.map((m) => m.trained),
+        main.map((model) => model.trained),
       ),
       proseRow(
         'Best at',
-        main.map((m) => m.best),
+        main.map((model) => model.best),
       ),
       proseRow(
         'Weak at',
-        main.map((m) => m.weak),
+        main.map((model) => model.weak),
       ),
-      ...checks,
+      ...list.checks.map((check) => checkRow(check, main)),
       numberRow('GPU, per frame', 'PyTorch, batches of 16', speed('gpu'), ms, 'low'),
       numberRow('CPU, per frame', 'ONNX Runtime, fp32, 4 threads', speed('cpu'), ms, 'low'),
       numberRow('Browser, per frame', 'onnxruntime-web, WASM', speed('browser'), ms, 'low'),
       numberRow(
         'Parameters',
         null,
-        main.map((m) => m.params ?? null),
-        (v) => plain(formatNumber(v)),
+        main.map((model) => model.params ?? null),
+        (value) => plain(formatNumber(value)),
         null,
       ),
       numberRow(
         'File size',
         'The fp32 ONNX file',
-        main.map((m) => m.kb ?? null),
-        (v) => plain(`${v} KB`),
+        main.map((model) => model.kb ?? null),
+        (value) => plain(`${value} KB`),
         null,
       ),
     ],
     notes: `${list.checked_on} ${list.speed}`,
     unavailable: list.unavailable ?? 'Needs the GPU',
-    older: list.models.filter((m) => m.older).map((m) => column(m, list.chosen)),
+    older: list.models.filter((model) => model.older).map((model) => column(model, list.chosen)),
   };
 }

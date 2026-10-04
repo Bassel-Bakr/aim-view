@@ -51,8 +51,8 @@ export class ModelChoice {
     this.status.set(`Loading ${modelName(name)}…`);
     try {
       await this.models.pick(name);
-    } catch (e) {
-      this.status.set(`Could not switch: ${errorMessage(e)}`);
+    } catch (error) {
+      this.status.set(`Could not switch: ${errorMessage(error)}`);
       return;
     } finally {
       this.switching.set(false);

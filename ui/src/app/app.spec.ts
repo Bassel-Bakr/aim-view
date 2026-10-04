@@ -37,10 +37,14 @@ describe('App', () => {
   });
 
   it('opens the recording the link names', async () => {
-    const r = recording({ id: 'x/Controlsphere.mp4', scenario: 'Controlsphere', kind: 'tracking' });
-    history.replaceState(null, '', `/?id=${encodeURIComponent(r.id)}`);
+    const opened = recording({
+      id: 'x/Controlsphere.mp4',
+      scenario: 'Controlsphere',
+      kind: 'tracking',
+    });
+    history.replaceState(null, '', `/?id=${encodeURIComponent(opened.id)}`);
     const el = await render({
-      '/api/vods': [r],
+      '/api/vods': [opened],
       '/api/report': null,
       '/api/job': { stage: 'none' },
     });

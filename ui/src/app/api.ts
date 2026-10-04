@@ -169,8 +169,8 @@ export type TrackReport = Omit<CoreTrackReport, 'run'> & ReportBase;
 export type Report = ClickReport | TrackReport;
 
 /** A clicking run's report (click or hold mode: every run but a tracking one), as the old page read them. */
-export function isClickReport(r: Report | null | undefined): r is ClickReport {
-  return !!r && r.mode !== 'track';
+export function isClickReport(report: Report | null | undefined): report is ClickReport {
+  return !!report && report.mode !== 'track';
 }
 
 /** Every target in every frame (/api/tracks). */
@@ -367,7 +367,8 @@ export interface ApiError {
 }
 
 /** What went wrong with a request: the server's own message when it sent one ({error}), else the request's. */
-export function errorMessage(e: unknown): string {
-  if (e instanceof HttpErrorResponse) return (e.error as ApiError | null)?.error ?? e.message;
-  return e instanceof Error ? e.message : String(e);
+export function errorMessage(error: unknown): string {
+  if (error instanceof HttpErrorResponse)
+    return (error.error as ApiError | null)?.error ?? error.message;
+  return error instanceof Error ? error.message : String(error);
 }
