@@ -150,8 +150,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 - **Readable code.** The Rust core began as a line-for-line port of `python/review.py` and kept its short NumPy-style
   names; code is now written for the next person who reads it. Names say what a thing is, with its unit where it has
   one (`shift_deg`, `kill_frame`, `radius_px`). Single letters only for loop counters (`i`, `j`), coordinates (`x`,
-  `y`) and a comparison's two sides (`a`, `b`). Short forms only when they are the domain's own words: `fps`, `hud`,
-  `px`, `deg`, `ms`, `ttk`, `fov`, `rgb`, `yuv`. A number with a meaning is a named constant
+  `y`) and a comparison's two sides (`a`, `b`). Short forms only from GLOSSARY.md, which names every domain
+  word and the type that holds it. A number with a meaning is a named constant
   (`const MAX_GAP_FRAMES: usize = 2`). Every file starts with a comment on what it does, where its data comes from and
   where it goes; a function's doc gives its units. Comments say why, not what: if a comment says what, rename instead.
   Functions stay under about 60 lines. Clippy (`min_ident_chars`, `too_many_lines`, `cognitive_complexity`), ESLint
