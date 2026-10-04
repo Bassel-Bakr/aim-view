@@ -78,6 +78,20 @@ fn number(value: &str, allow_minus: bool) -> Option<f64> {
     if end == 0 { None } else { value[..end].parse().ok() }
 }
 
+/// A scenario file's text. KovaaK's saves some scenarios as UTF-16 (360 Tracking OW2, Strinova ADAD): those, by their
+/// byte-order mark, are read as UTF-16; any other file as UTF-8, invalid bytes replaced.
+pub fn text_of(bytes: &[u8]) -> String {
+    let utf16 = |text: &[u8], unit: fn([u8; 2]) -> u16| {
+        let units: Vec<u16> = text.chunks_exact(2).map(|pair| unit([pair[0], pair[1]])).collect();
+        String::from_utf16_lossy(&units)
+    };
+    match bytes {
+        [0xFF, 0xFE, text @ ..] => utf16(text, u16::from_le_bytes),
+        [0xFE, 0xFF, text @ ..] => utf16(text, u16::from_be_bytes),
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
 /// The facts of one scenario file's text. The kind comes from the game's AimTypeTag and AimSubTypeTag; an untagged
 /// (older) file is tracking when its first weapon fires fully automatic, static clicking when no bot can move (every
 /// MaxSpeed 0), and dynamic clicking otherwise.
@@ -172,6 +186,20 @@ mod tests {
     fn reads_a_file_with_no_characters() {
         assert_eq!(facts("Name=x\r\nTimelimit=60\r\n").kind, Kind::Dynamic);
         assert_eq!(characters("Name=x").count(), 0);
+    }
+
+    /// A file saved as UTF-16 (little-endian, with its mark, as 360 Tracking OW2.sce is) keeps its tags.
+    #[test]
+    fn reads_a_utf16_file() {
+        let text = "Name=x
+AimTypeTag=Tracking
+Timelimit=60.0
+";
+        let little: Vec<u8> = [0xFF, 0xFE].into_iter().chain(text.encode_utf16().flat_map(u16::to_le_bytes)).collect();
+        let big: Vec<u8> = [0xFE, 0xFF].into_iter().chain(text.encode_utf16().flat_map(u16::to_be_bytes)).collect();
+        assert_eq!(facts(&text_of(&little)).kind, Kind::Tracking);
+        assert_eq!(facts(&text_of(&big)).limit, Some(60.0));
+        assert_eq!(text_of(text.as_bytes()), text);
     }
 
     #[test]

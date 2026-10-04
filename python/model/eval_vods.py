@@ -22,7 +22,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import old_review  # noqa: E402
 
 STATS = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats"
 DEFAULT = [
@@ -51,11 +50,11 @@ def u8in(model):
 
 def native_review(lib, video, model, out, stats):
     """The app's review of a video (aimview_tools: Library.review_video) with the model, and its report. The scenario's
-    facts come from its file (old_review.scenario_facts, target_counts)."""
+    facts come from its file, as the core reads it (Library.scenario_facts, target_counts)."""
     scenario = Path(video).stem.rsplit(" - ", 2)[0].lower()
-    kind, limit = old_review.scenario_facts().get(scenario, (None, None))
+    kind, limit = lib.scenario_facts().get(scenario, (None, None))
     return lib.review_video(video, str(model), str(out), stats=stats, kind=kind, limit=limit,
-                            cap=old_review.target_counts().get(scenario))["report"]
+                            cap=lib.target_counts().get(scenario))["report"]
 
 
 def library():

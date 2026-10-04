@@ -22,6 +22,8 @@ const USAGE: &str = r#"aimview-tool: Aim View's library and native review for sc
 aimview-tool recordings [library options]
     Every recording, newest first, as /api/vods lists it, with its video, its folder in the data folder (dir), the
     stats file it uses (stats_file) and the one its scenario and time stamp give (stats_found).
+aimview-tool scenarios [library options]
+    Every scenario's facts by its lower-case name, from the scenario folders: {kind, limit, targets, reload}.
 aimview-tool lookup [library options] [--video FILE]... [--id ID]... [--run SCENARIO STAMP]...
     Videos (their recording's id, folder and stats file; for a video outside the library, the stats file its name
     gives), recordings by id, and the stats files of runs by scenario and time stamp.
@@ -444,7 +446,7 @@ fn main() -> ExitCode {
     };
     let Some(command) = args.first() else { return usage("no command") };
     let options: &[Options] = match command.as_str() {
-        "recordings" => &[LIBRARY],
+        "recordings" | "scenarios" => &[LIBRARY],
         "lookup" => &[LIBRARY, LOOKUP],
         "review" => &[LIBRARY, REVIEW],
         "help" | "--help" | "-h" => {
@@ -462,6 +464,7 @@ fn main() -> ExitCode {
     }
     let answer = config(&line).and_then(|c| Library::open(c).map_err(Failure::from)).and_then(|lib| match command.as_str() {
         "recordings" => recordings(&lib),
+        "scenarios" => Ok(lib.scenarios()),
         "lookup" => Ok(lookup(&lib, &line)),
         _ => review_video(&lib, &line),
     });

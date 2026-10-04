@@ -248,15 +248,15 @@ pub unsafe extern "C" fn fixed_finish(f: *mut FixedMap, out: *mut u8) {
     unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) }.copy_from_slice(&f.map());
 }
 
-/// A scenario file's facts (its text, UTF-8, at least up to "[Map Data]"), as JSON: {kind, limit, targets}. Free the
-/// result as `tracker_finish`'s.
+/// A scenario file's facts (its bytes, UTF-8 or UTF-16 with its mark, at least up to "[Map Data]"), as JSON: {kind,
+/// limit, targets}. Free the result as `tracker_finish`'s.
 ///
 /// # Safety
 /// `text` must hold `len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scenario_facts(text: *const u8, len: usize) -> *mut u8 {
     let bytes = unsafe { std::slice::from_raw_parts(text, len) };
-    let facts = crate::scenario::facts(&String::from_utf8_lossy(bytes));
+    let facts = crate::scenario::facts(&crate::scenario::text_of(bytes));
     bytes_out(serde_json::to_vec(&facts).unwrap_or_default())
 }
 

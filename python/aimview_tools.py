@@ -174,6 +174,25 @@ class Library:
             return _path(self.by_id[found]["stats_file"])
         return _path(run("lookup", *self.options, "--video", video)["videos"][0]["stats_file"])
 
+    def scenarios(self):
+        """Every scenario's facts by lower-case name, as the core reads the scenario folders (aimview-tool scenarios:
+        {kind, limit, targets, reload}; a UTF-16 file read as UTF-16). Read once."""
+        if getattr(self, "_scenarios", None) is None:
+            self._scenarios = run("scenarios", *self.options)
+        return self._scenarios
+
+    def scenario_kinds(self):
+        """{scenario: kind}, as old_review.scenario_kinds gives them."""
+        return {name: facts["kind"] for name, facts in self.scenarios().items()}
+
+    def scenario_facts(self):
+        """{scenario: (kind, time limit)}, as old_review.scenario_facts gives them."""
+        return {name: (facts["kind"], facts["limit"]) for name, facts in self.scenarios().items()}
+
+    def target_counts(self):
+        """{scenario: targets alive at once}, as old_review.target_counts gives them."""
+        return {name: facts["targets"] for name, facts in self.scenarios().items() if facts["targets"] is not None}
+
     def load_stats_index(self):
         """Nothing to do: the stats files were paired when the library opened."""
 

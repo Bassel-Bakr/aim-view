@@ -100,11 +100,16 @@ impl Library {
         for p in files {
             let Ok(bytes) = crate::disk::read(&p) else { continue };
             let name = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
-            out.insert(name, aimview::scenario::facts(&String::from_utf8_lossy(&bytes)));
+            out.insert(name, aimview::scenario::facts(&aimview::scenario::text_of(&bytes)));
         }
         let out = Arc::new(out);
         *cached = Some(out.clone());
         out
+    }
+
+    /// Every scenario's facts by lower-case name, as JSON (aimview-tool scenarios).
+    pub fn scenarios(&self) -> Value {
+        json!(*self.facts())
     }
 
     /// The facts of a video's scenario (from its name), if its scenario file was found.

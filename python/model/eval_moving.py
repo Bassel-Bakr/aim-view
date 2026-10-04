@@ -45,8 +45,8 @@ def stats_of(v):
         return None
 
 
-def picks():
-    kinds = old_review.scenario_kinds()
+def picks(lib):
+    kinds = lib.scenario_kinds()
     out = {"static": [(v, str(stats_of(v))) for v in STATIC if stats_of(v)],
            "dynamic": [], "switching": [], "tracking": []}
     for d in sorted(Path(KOVOBS).iterdir()):
@@ -92,9 +92,9 @@ def parse_args(args):
 def main():
     lib = eval_vods.library()
     program = eval_video_alone.review_program()
-    pick = picks()
-    facts = old_review.scenario_facts()
-    counts = old_review.target_counts()
+    pick = picks(lib)
+    facts = lib.scenario_facts()
+    counts = lib.target_counts()
     res = {}
     os.makedirs("test_out/vod_model/eval", exist_ok=True)
     models, reports = parse_args(sys.argv[1:])

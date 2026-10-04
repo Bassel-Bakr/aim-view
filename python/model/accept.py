@@ -57,7 +57,6 @@ import eval_moving  # noqa: E402
 import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import infer  # noqa: E402
-import old_review  # noqa: E402
 
 EXPORTS = HERE / "exports"
 MODELS = HERE / "models.json"
@@ -182,7 +181,7 @@ def moving(m, pick, lib, program):
             sys.exit(f"{cache.relative_to(ROOT)} is older than {', '.join(stale)}: move it to a retired/ folder and "
                      "run again to track with this model")
         tracks = pickle.load(open(cache, "rb"))
-    facts, counts, fresh = old_review.scenario_facts(), old_review.target_counts(), []
+    facts, counts, fresh = lib.scenario_facts(), lib.target_counts(), []
     for vs in pick.values():
         for v, _ in vs:
             if v not in tracks:
@@ -395,7 +394,8 @@ def main():
     say(f"{m.name} against {best}, the best model")
     con = contract(m)
     scorer, programs = pin_programs(m.name)
-    lib, pick = eval_vods.library(), eval_moving.picks()
+    lib = eval_vods.library()
+    pick = eval_moving.picks(lib)
     cand = evaluate(m, pick, lib, scorer, programs)
     base = cand if b.name == m.name else evaluate(b, pick, lib, scorer, programs)
     rows = judge(cand, base, con)
