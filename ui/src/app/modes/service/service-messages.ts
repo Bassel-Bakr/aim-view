@@ -69,8 +69,18 @@ export interface MountAsk {
   vods: VodsMount | null;
 }
 
+/**
+ * KovaaK's files the user chose this visit, shown at /kovaak at once (read where they are, until the page closes), over
+ * the copies this browser keeps (a copy into /kovaak, FilesAsk's copy, keeps them for later visits).
+ */
+export interface KovaakAsk {
+  kind: 'kovaak';
+  id: number;
+  files: ChosenFile[];
+}
+
 /** What the page tells the service's worker. */
-export type ServiceTask = ServiceStart | ServiceAsk | FilesAsk | MountAsk;
+export type ServiceTask = ServiceStart | ServiceAsk | FilesAsk | MountAsk | KovaakAsk;
 
 /** A folder's entry: its name, and whether it is a folder. */
 export type DirEntry = [name: string, dir: boolean];

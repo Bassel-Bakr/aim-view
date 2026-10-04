@@ -90,6 +90,11 @@ export class ServiceHost {
     await this.send((id) => ({ kind: 'mount', id, vods }));
   }
 
+  /** Shows KovaaK's files chosen this visit at /kovaak at once, over the copies this browser keeps. */
+  async showKovaak(files: ChosenFile[]): Promise<void> {
+    await this.send((id) => ({ kind: 'kovaak', id, files }));
+  }
+
   private send(
     task: (id: number) => ServiceTask,
     progress?: TaskProgress,
@@ -127,6 +132,9 @@ export class ServiceHost {
     };
     worker.postMessage(start);
     this.worker = worker;
+    // the reviews, areas and copies live in this browser's storage: ask it to keep them when the disk runs low (the
+    // browser decides; Chrome grants it without asking for a site the user uses)
+    void navigator.storage?.persist?.().catch(() => false);
     return worker;
   }
 

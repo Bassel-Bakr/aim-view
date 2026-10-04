@@ -36,9 +36,10 @@ function kovaakFiles(files: readonly File[]): ChosenFile[] {
 
 /**
  * KovaaK's folders, chosen by the user as files (a folder input: Chrome's folder picker refuses folders under Program
- * Files, where KovaaK's is), copied into this browser for the review service (/kovaak): only the files new or changed
- * since the last copy. The service then reads them again (POST /api/kovaak?changed=1): each run finds its stats file,
- * each scenario its kind, time limit and target count.
+ * Files, where KovaaK's is). The review service reads them where they are at once, for this visit (/kovaak shows them
+ * over the copies kept), and reads them again (POST /api/kovaak?changed=1): each run finds its stats file, each
+ * scenario its kind, time limit and target count. Then, in the background, the files new or changed since the last
+ * copy are copied into this browser for later visits, a few large packs rather than a file each.
  */
 @Service()
 export class KovaakCopy {
@@ -66,21 +67,32 @@ export class KovaakCopy {
     this.found.set(new Set(FOLDER_ROLES.filter((_, k) => has[k])));
   }
 
-  /** Copies the folders chosen as files into this browser, then has the service read them again. */
+  /**
+   * Has the service read the folders chosen as files at once, then copies them into this browser in the background
+   * (the top bar follows the copy; nothing waits for it).
+   */
   async copy(files: readonly File[]): Promise<void> {
     const chosen = kovaakFiles(files);
     if (!chosen.length)
       throw new Error("No stats or scenario files of KovaaK's in the folder chosen");
-    const label = "Copying KovaaK's files into this browser";
+    await this.files.showKovaak(chosen);
+    await firstValueFrom(this.http.post('/api/kovaak', null, { params: { changed: '1' } }));
+    await this.look();
+    void this.keep(chosen);
+  }
+
+  /** Copies the files chosen into this browser for later visits (only those new or changed since the last copy). */
+  private async keep(chosen: ChosenFile[]): Promise<void> {
+    const label = "Keeping KovaaK's files in this browser for later visits";
     this.transfer.set({ label, share: null });
     try {
       await this.files.copyIn(KOVAAK, chosen, (done, total) =>
         this.transfer.set({ label, share: total ? done / total : null, count: { done, total } }),
       );
-      await firstValueFrom(this.http.post('/api/kovaak', null, { params: { changed: '1' } }));
+    } catch (e) {
+      console.warn("KovaaK's files were not kept in this browser:", e);
     } finally {
       this.transfer.set(null);
     }
-    await this.look();
   }
 }

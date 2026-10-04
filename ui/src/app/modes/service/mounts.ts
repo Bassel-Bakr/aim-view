@@ -305,6 +305,241 @@ export class FilesMount implements MountFs {
   }
 }
 
+/** A file kept in a pack: the pack's number, where the file starts in it, its length, and its time (ms since 1970). */
+type PackedFile = [pack: number, at: number, len: number, modified: number];
+
+/** The packs' index (index.json): each file by its path below the mount, and the next pack's number. */
+interface PackIndex {
+  next: number;
+  files: Record<string, PackedFile>;
+}
+
+/** A pack holds at most this many bytes, or PACK_FILES files. */
+const PACK_BYTES = 32 << 20;
+const PACK_FILES = 4000;
+const PACK_INDEX = 'index.json';
+
+/** Bytes written into a file of a folder, replacing it (the worker's sync access handle: one open, one flush). */
+async function writeWhole(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+  parts: Uint8Array[],
+): Promise<void> {
+  const out = await (await dir.getFileHandle(name, { create: true })).createSyncAccessHandle();
+  try {
+    out.truncate(0);
+    let at = 0;
+    for (const part of parts) at += out.write(part, { at });
+    out.flush();
+  } finally {
+    out.close();
+  }
+}
+
+/**
+ * Copies kept in a few large files (packs) and an index (index.json), read-only to the service: thousands of small
+ * files are written far faster this way than one file each (a file each took 100 ms or more on a busy machine). A file
+ * copied again goes into a new pack; its old copy stays in its pack, unread.
+ */
+export class PackStore {
+  private index: Promise<PackIndex> | null = null;
+  /** Each folder's entries by name: a file's place, or null for a folder. */
+  private tree = new Map<string, Map<string, PackedFile | null>>();
+  private readonly packs = new Map<number, Promise<File>>();
+
+  constructor(private readonly root: Promise<FileSystemDirectoryHandle>) {}
+
+  private read(): Promise<PackIndex> {
+    this.index ??= this.root
+      .then((dir) => dir.getFileHandle(PACK_INDEX))
+      .then((h) => h.getFile())
+      .then((f) => f.text())
+      .then((text) => JSON.parse(text) as PackIndex)
+      .catch((): PackIndex => ({ next: 0, files: {} }))
+      .then((index) => {
+        this.tree = treeOf(index.files);
+        return index;
+      });
+    return this.index;
+  }
+
+  /** A path's file (its place), a folder (null), or nothing there (undefined). */
+  async at(names: string[]): Promise<PackedFile | null | undefined> {
+    await this.read();
+    if (!names.length) return null;
+    return this.tree.get(names.slice(0, -1).join('/'))?.get(names[names.length - 1]);
+  }
+
+  async file(names: string[]): Promise<File> {
+    const place = await this.at(names);
+    if (!place) throw notFound(names.join('/'));
+    const [pack, at, len, modified] = place;
+    let file = this.packs.get(pack);
+    if (!file) {
+      file = this.root.then((dir) => dir.getFileHandle(`${pack}.pack`)).then((h) => h.getFile());
+      this.packs.set(pack, file);
+    }
+    return new File([(await file).slice(at, at + len)], names[names.length - 1], {
+      lastModified: modified,
+    });
+  }
+
+  async list(names: string[]): Promise<DirEntry[] | null> {
+    await this.read();
+    const entries = this.tree.get(names.join('/'));
+    return entries ? [...entries].map(([name, f]): DirEntry => [name, f === null]) : null;
+  }
+
+  /**
+   * Copies the files new or changed (size or time) since the last copy into new packs; each pack's files are read
+   * first, then the pack and the index are written in one turn of the worker's queue. Resolves to how many it copied.
+   */
+  async copy(
+    files: readonly ChosenFile[],
+    turn: <T>(step: () => Promise<T>) => Promise<T>,
+    progress: Progress,
+  ): Promise<CopyDone> {
+    const index = await this.read();
+    const fresh = files.filter(({ path, file }) => {
+      const kept = index.files[path];
+      return !kept || kept[2] !== file.size || kept[3] !== file.lastModified;
+    });
+    let done = 0;
+    while (done < fresh.length) {
+      progress(done, fresh.length);
+      const batch: ChosenFile[] = [];
+      let bytes = 0;
+      for (const f of fresh.slice(done)) {
+        if (batch.length && (batch.length >= PACK_FILES || bytes + f.file.size > PACK_BYTES)) break;
+        batch.push(f);
+        bytes += f.file.size;
+      }
+      const parts = await Promise.all(
+        batch.map(async (f) => new Uint8Array(await f.file.arrayBuffer())),
+      );
+      await turn(async () => {
+        const dir = await this.root;
+        const pack = index.next++;
+        await writeWhole(dir, `${pack}.pack`, parts);
+        let at = 0;
+        batch.forEach(({ path, file }, k) => {
+          index.files[path] = [pack, at, parts[k].length, file.lastModified];
+          at += parts[k].length;
+        });
+        await writeWhole(dir, PACK_INDEX, [new TextEncoder().encode(JSON.stringify(index))]);
+        this.tree = treeOf(index.files);
+      });
+      done += batch.length;
+    }
+    progress(fresh.length, fresh.length);
+    return { copied: fresh.length };
+  }
+}
+
+/** Each folder's entries by name, from the files' paths: a file's place, or null for a folder. */
+function treeOf(files: Record<string, PackedFile>): Map<string, Map<string, PackedFile | null>> {
+  const tree = new Map<string, Map<string, PackedFile | null>>([['', new Map()]]);
+  for (const [path, place] of Object.entries(files)) {
+    const names = path.split('/').filter(Boolean);
+    names.forEach((name, k) => {
+      const dir = names.slice(0, k).join('/');
+      const entries = tree.get(dir) ?? new Map<string, PackedFile | null>();
+      tree.set(dir, entries);
+      entries.set(name, k === names.length - 1 ? place : null);
+    });
+  }
+  return tree;
+}
+
+/**
+ * KovaaK's files (/kovaak), read-only to the service: the files the user chose this visit, read where they are at
+ * once; under them the copies this browser keeps for later visits, in packs; under those the copies an earlier
+ * version kept one file each. A file is read from the first of them that has it, and a folder lists them all.
+ */
+export class KovaakMount implements MountFs {
+  readonly writable = false;
+  private chosen: FilesMount | null = null;
+
+  constructor(
+    readonly packs: PackStore,
+    private readonly older: DirMount,
+  ) {}
+
+  /** The files chosen this visit, shown at once over the kept copies. */
+  show(files: readonly ChosenFile[]): void {
+    this.chosen = new FilesMount(files);
+  }
+
+  /** The first answer of the layers that has the path. */
+  private async first<T>(
+    names: string[],
+    get: (fs: MountFs | PackStore) => Promise<T>,
+  ): Promise<T> {
+    for (const fs of [this.chosen, this.packs, this.older]) {
+      if (!fs) continue;
+      try {
+        return await get(fs);
+      } catch (e) {
+        if (asFsError(e, names.join('/')).code !== NOT_FOUND) throw e;
+      }
+    }
+    throw notFound(names.join('/'));
+  }
+
+  file(names: string[]): Promise<File> {
+    return this.first(names, (fs) => fs.file(names));
+  }
+
+  stat(names: string[]): Promise<FsStat> {
+    return this.first(names, async (fs) => {
+      if (fs instanceof PackStore) {
+        const place = await fs.at(names);
+        if (place === undefined) throw notFound(names.join('/'));
+        return place
+          ? { dir: false, len: place[2], modified: place[3] / 1000 }
+          : { dir: true, len: 0, modified: 0 };
+      }
+      return fs.stat(names);
+    });
+  }
+
+  async list(names: string[], limit: number): Promise<DirEntry[]> {
+    const all = new Map<string, boolean>();
+    let found = false;
+    for (const fs of [this.chosen, this.packs, this.older]) {
+      if (!fs) continue;
+      const entries =
+        fs instanceof PackStore ? await fs.list(names) : await fs.list(names, 0).catch(() => null);
+      if (!entries) continue;
+      found = true;
+      for (const [name, dir] of entries) if (!all.has(name)) all.set(name, dir);
+    }
+    if (!found) throw notFound(names.join('/'));
+    const out = [...all].map(([name, dir]): DirEntry => [name, dir]);
+    return limit ? out.slice(0, limit) : out;
+  }
+
+  write(): Promise<void> {
+    return Promise.reject(readOnly());
+  }
+
+  async mkdirs(names: string[]): Promise<void> {
+    await this.stat(names).catch(() => Promise.reject(readOnly()));
+  }
+
+  removeFile(): Promise<void> {
+    return Promise.reject(readOnly());
+  }
+
+  removeDir(): Promise<void> {
+    return Promise.reject(readOnly());
+  }
+
+  rename(): Promise<void> {
+    return Promise.reject(readOnly());
+  }
+}
+
 /** The models shipped beside the app, read over HTTP (read-only): models.json and each model's two files. */
 export class HttpMount implements MountFs {
   readonly writable = false;
@@ -519,6 +754,9 @@ export class Mounts {
     turn: <T>(step: () => Promise<T>) => Promise<T>,
     progress: Progress,
   ): Promise<CopyDone> {
+    const p = this.place(dir);
+    if (p.fs instanceof KovaakMount && !p.names.length)
+      return p.fs.packs.copy(files, turn, progress);
     const indexPath = `${dir}/${COPIED}`;
     const index = await turn(async (): Promise<CopiedIndex> => {
       try {

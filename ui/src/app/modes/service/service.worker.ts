@@ -4,10 +4,11 @@
 // contract says (mounts.ts): /data and /kovaak in the browser's private file system, /vods the VODs folder the user
 // opened, /models the models beside the app. One request runs at a time, in the order asked.
 import { moveBrowserData } from './browser-data-move';
-import { DirMount, FilesMount, FsError, HttpMount, Mounts } from './mounts';
+import { DirMount, FilesMount, FsError, HttpMount, KovaakMount, Mounts, PackStore } from './mounts';
 import {
   FilesAsk,
   FilesResult,
+  KovaakAsk,
   MountAsk,
   ServiceAnswer,
   ServiceAsk,
@@ -29,6 +30,8 @@ const FOLDER_KEY = 'recordings-folder';
 const SPOOL_OWNER = crypto.getRandomValues(new Uint32Array(1))[0] || 1;
 
 const mounts = new Mounts();
+/** KovaaK's files at /kovaak: the ones chosen this visit over the copies kept (mounted when the service starts). */
+let kovaak: KovaakMount | null = null;
 let service: Promise<ServiceModule> | null = null;
 /** Where the module is, and the config it opens with: kept to load it again after a trap. */
 let wasmUrl = '';
@@ -61,7 +64,14 @@ addEventListener('message', (e: MessageEvent<ServiceTask>) => {
     service ??= inTurn(() => start(task));
     return;
   }
-  const run = task.kind === 'ask' ? ask(task) : task.kind === 'files' ? files(task) : mount(task);
+  const run =
+    task.kind === 'ask'
+      ? ask(task)
+      : task.kind === 'files'
+        ? files(task)
+        : task.kind === 'kovaak'
+          ? showKovaak(task)
+          : mount(task);
   run.catch((err: unknown) => failure(task.id, err));
 });
 
@@ -108,7 +118,11 @@ async function fillShipped(dataUrl: string): Promise<void> {
 async function start(task: ServiceStart): Promise<ServiceModule> {
   try {
     mounts.set('data', new DirMount(privateFolder('data'), true));
-    mounts.set('kovaak', new DirMount(privateFolder('kovaak'), true));
+    kovaak = new KovaakMount(
+      new PackStore(privateFolder('kovaak-packs')),
+      new DirMount(privateFolder('kovaak'), false),
+    );
+    mounts.set('kovaak', kovaak);
     mounts.set('models', new HttpMount(task.modelsUrl));
     const folder = await rememberedFolder().catch(() => null);
     if (folder) mounts.set('vods', new DirMount(Promise.resolve(folder), false));
@@ -207,6 +221,12 @@ async function files(task: FilesAsk): Promise<void> {
           return null;
         });
   say({ kind: 'done', id: task.id, result });
+}
+
+/** Shows KovaaK's files chosen this visit at /kovaak at once. */
+async function showKovaak(task: KovaakAsk): Promise<void> {
+  await inTurn(async () => kovaak?.show(task.files));
+  say({ kind: 'done', id: task.id, result: null });
 }
 
 /** Mounts the VODs folder the user opened (or its files, or none). */

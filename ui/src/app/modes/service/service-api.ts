@@ -139,7 +139,8 @@ function json(value: FilesResult): Answered {
 
 /**
  * A task with the page's own files in the mounts (/files/<mounted path>): GET a file (the file itself), GET a folder
- * (a path ending in /: its entries, `limit` of them), PUT a file, DELETE a file, POST a copy into a folder.
+ * (a path ending in /: its entries, `limit` of them), PUT a file, DELETE a file, POST a copy into a folder; POST
+ * /files/kovaak?show=1 shows KovaaK's files chosen this visit at /kovaak at once (no copy).
  */
 async function filesAnswer(
   host: ServiceHost,
@@ -167,6 +168,10 @@ async function filesAnswer(
     return json(null);
   }
   const files = (req.body as CopyRequest | null)?.files ?? [];
+  if (req.params.get('show') === '1') {
+    await host.showKovaak(files);
+    return json(null);
+  }
   return json(await host.files('copy', path, { files }, progress));
 }
 

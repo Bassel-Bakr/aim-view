@@ -63,6 +63,12 @@ export class MountedFiles {
     await firstValueFrom(this.http.delete(filesUrl(path)));
   }
 
+  /** Shows KovaaK's files chosen this visit at /kovaak at once, read where they are (no copy). */
+  async showKovaak(files: ChosenFile[]): Promise<void> {
+    const body: CopyRequest = { files };
+    await firstValueFrom(this.http.post(filesUrl('/kovaak'), body, { params: { show: '1' } }));
+  }
+
   /** Copies files into a folder at their paths below it: only those new or changed since the last copy. */
   copyIn(dir: string, files: ChosenFile[], progress: CopyProgress): Promise<CopyDone> {
     const body: CopyRequest = { files };
