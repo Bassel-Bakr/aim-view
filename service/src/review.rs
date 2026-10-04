@@ -43,8 +43,8 @@ const PROGRESS_EVERY: usize = 60;
 
 /// What to review: the video, the detector model (its _u8in export) and the device it runs on, the frames it takes at
 /// once, the scenario's target count (0: not known), the runs to split the recording into, the part of the video to
-/// track (the user's run window with a margin; None: all of it), and the areas it leaves out (the recording's,
-/// areas.rs).
+/// track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's, areas.rs),
+/// and a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
@@ -54,6 +54,7 @@ pub struct Request {
     pub runs: usize,
     pub window: Option<TimeWindow>,
     pub areas: Vec<AreaBox>,
+    pub keep_parts: Option<PathBuf>,
 }
 
 /// A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas the area finder
@@ -133,14 +134,39 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
     progress("linking", total, total);
     let mut joining = review.joining(&keys.fixed);
     let mut devices = String::new();
-    for part in parts {
+    for (run, part) in parts.into_iter().enumerate() {
         let part = part?;
+        if let Some(dir) = &req.keep_parts {
+            keep_part(dir, &format!("run{run}_track.json"), &as_json(&part.track)?)?;
+            keep_part(dir, &format!("run{run}_watch.json"), &as_json(&part.watch)?)?;
+        }
         joining.add(part.track, part.watch);
         add_device(&mut devices, part.device);
     }
-    let joined = joining.finish(format!("onnxruntime ({devices})"))?;
+    let detector = format!("onnxruntime ({devices})");
+    if let Some(dir) = &req.keep_parts {
+        keep_part(dir, "setup.json", &as_json(review.setup())?)?;
+        keep_part(dir, "fixed.bin", &keys.fixed)?;
+        keep_part(dir, "detector.txt", detector.as_bytes())?;
+    }
+    let joined = joining.finish(detector)?;
     let found = finding.join().map_err(|_| "the area finder failed")?;
     Ok(Reviewed { tracks: joined.tracks, readings: joined.readings, hud: joined.hud, found })
+}
+
+/// One file of a review's parts, kept before they are joined (`Request::keep_parts`): what the stages after the
+/// detector need to make the review again without the video (tests/replay.rs).
+#[cfg(feature = "native")]
+fn keep_part(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
+    std::fs::create_dir_all(dir)
+        .and_then(|()| std::fs::write(dir.join(name), bytes))
+        .map_err(|e| format!("{}: {e}", dir.join(name).display()))
+}
+
+/// A part as JSON.
+#[cfg(feature = "native")]
+fn as_json(value: &impl serde::Serialize) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(value).map_err(|e| e.to_string())
 }
 
 /// A key frame: at 720p for the fixed map, and as decoded (the HUD reads its Y plane).

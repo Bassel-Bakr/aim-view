@@ -129,8 +129,9 @@ impl FrameFormat {
 /// What a review is set up from: the video's frame rate, every frame's time and the key frames' (from 0 on, in order)
 /// and the frames' format; the scenario's target count (0: not known), the areas the review leaves out, the part of
 /// the video to track (None: all of it), the runs to split it into, and the detector model's settings (its settings
-/// file; today's values without one).
-#[derive(Clone, Debug, Deserialize)]
+/// file; today's values without one). Kept as JSON with a review's parts (tests/replay.rs), without the model's settings:
+/// the parts' boxes are already decoded.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ReviewSetup"))]
 pub struct Setup {
     pub fps: f64,

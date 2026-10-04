@@ -400,6 +400,7 @@ fn review_video(lib: &Library, line: &Line) -> Result<Value, Failure> {
         runs: line.number("runs")?.unwrap_or(if threads >= 8 { 2 } else { 1 }),
         window,
         areas,
+        keep_parts: None,
     };
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();

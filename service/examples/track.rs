@@ -3,6 +3,7 @@
 //! the HUD's reading or the video alone.
 //! cargo run -p aimview-service --release --example track -- <video> <model _u8in.onnx> <out folder> [cap] [runs] [batch]
 //! [window start] [window end] (seconds: only that part is tracked; "-" for none) [stats file] [exclude.json]
+//! [--parts <folder>] (the review's parts kept there before they are joined, for tests/replay.rs)
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -10,7 +11,9 @@ use std::time::Instant;
 use aimview_service::review::{Request, TimeWindow, review};
 
 fn main() {
-    let a: Vec<String> = std::env::args().collect();
+    let mut a: Vec<String> = std::env::args().collect();
+    let parts = a.iter().position(|v| v == "--parts");
+    let parts = parts.map(|i| PathBuf::from(a.drain(i..i + 2).nth(1).expect("--parts <folder>")));
     let arg = |i: usize, default: usize| a.get(i).and_then(|v| v.parse().ok()).unwrap_or(default);
     let seconds = |i: usize| a.get(i).and_then(|v| v.parse::<f64>().ok());
     let window = seconds(7).zip(seconds(8)).map(|(start, end)| TimeWindow { start, end });
@@ -26,6 +29,7 @@ fn main() {
         areas: a.get(10).map_or_else(aimview_service::areas::kovobs_areas, |f| {
             serde_json::from_slice(&std::fs::read(f).expect("the areas file")).expect("an exclude.json")
         }),
+        keep_parts: parts,
     };
     let out = PathBuf::from(&a[3]);
     std::fs::create_dir_all(&out).unwrap();

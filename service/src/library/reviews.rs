@@ -176,6 +176,7 @@ impl Library {
             runs,
             window,
             areas: self.exclude_boxes(id)?,
+            keep_parts: None,
         })
     }
 

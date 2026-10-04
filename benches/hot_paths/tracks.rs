@@ -21,6 +21,11 @@ const CLUTTERED: [(&str, &str); 2] = [
     ),
 ];
 
+/// A detector's box from a fixture's row: [cx, cy, w, h, score], float32 values.
+fn raw_box(v: &[f64]) -> RawBox {
+    RawBox { cx: v[0] as f32, cy: v[1] as f32, w: v[2] as f32, h: v[3] as f32, score: v[4] as f32 }
+}
+
 /// The targets of each frame of a run's tracks, as `link` took them (places to 4 decimals, boxes to 3).
 fn spots(tracks: &Tracks) -> Vec<Vec<Spot>> {
     tracks
@@ -52,9 +57,7 @@ pub fn track(c: &mut Criterion) {
         let boxes: Vec<Vec<RawBox>> = raw
             .iter()
             .map(|f| {
-                f.iter()
-                    .map(|v| RawBox { cx: v[0] as f32, cy: v[1] as f32, w: v[2] as f32, h: v[3] as f32, score: v[4] as f32 })
-                    .collect()
+                f.iter().map(|v| raw_box(v)).collect()
             })
             .collect();
         g.bench_function("keep_av1", |b| {
