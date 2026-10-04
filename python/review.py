@@ -203,37 +203,74 @@ def detect(buf, mask=None, cross=None):
     return uniq
 
 
+SPIKE, SPIKE_RATIO = 1.0, 3.0      # a frame's shift is a spike past 1 deg and 3 times the shifts either side (link)
+
+
+def _view_shift(prev, pts):
+    """How far the view moved since the frame before (link)."""
+    shift = (0.0, 0.0)
+    if prev and pts:
+        # every pairing of a spot before with a spot now is a candidate shift; the one most pairings agree with
+        # (within 0.35 deg) wins, and the shift is their mean (numpy: the frames can hold a dozen spots or more)
+        A = np.array([(a[1], a[2]) for a in prev])
+        B = np.array([(b[0], b[1]) for b in pts])
+        D = (B[None, :, :] - A[:, None, :]).reshape(-1, 2)
+        ok = np.hypot(D[:, 0], D[:, 1]) <= 6.0
+        if ok.any() and len(D) <= 2500:
+            M = np.hypot(*(D[:, None, :] - D[None, :, :]).transpose(2, 0, 1)) < 0.35
+            counts = np.where(ok, M.sum(axis=1), -1)
+            inl = D[M[int(np.argmax(counts))]]
+            shift = (float(inl[:, 0].mean()), float(inl[:, 1].mean()))
+    return shift
+
+
+def _follow(prev, pts, shift, next_id):
+    """The frame's targets given ids (link): each track before, moved by the shift, takes the nearest target now
+    within 0.5 deg; a target nobody took starts a new track. Returns them and the next free id."""
+    cur, used = [], set()
+    for a in prev:
+        px, py = a[1] + shift[0], a[2] + shift[1]
+        cand = [(math.hypot(b[0] - px, b[1] - py), j) for j, b in enumerate(pts) if j not in used]
+        if cand:
+            d, j = min(cand)
+            if d < 0.5:
+                used.add(j)
+                cur.append((a[0], *pts[j]))
+    for j, b in enumerate(pts):
+        if j not in used:
+            cur.append((next_id, *b))
+            next_id += 1
+    return cur, next_id
+
+
+def _linked(prev, pts, shift):
+    """How many of the tracks before take a target now with this shift (link)."""
+    return len(pts) - _follow(prev, pts, shift, 0)[1]
+
+
 def link(dets):
     """Track ids for the per-frame detections (lists of (x, y, area), or (x, y, area, width deg, height deg, score)
-    from the model)."""
+    from the model). Each frame's shift is found first, against the frame before as it was tracked. A kill can fool
+    it on a plain wall (another target lines up with the dead one's place for one frame): a spike, more than SPIKE
+    deg and SPIKE_RATIO times the shifts either side, is replaced by the mean of those two when that mean links as
+    many of the frame before's targets as the spike does (a spike that lines up more of them is the camera's own jerk,
+    frames captured unevenly, and stays). Then the frames are tracked with these shifts."""
+    found, next_id, prev, before = [], 0, [], []
+    for pts in dets:
+        found.append(_view_shift(prev, pts))
+        before.append(prev)
+        prev, next_id = _follow(prev, pts, found[-1], next_id)
+    size = [math.hypot(*s) for s in found]
+    shifts = list(found)
+    for j in range(1, len(found) - 1):
+        if size[j] > SPIKE and size[j] > SPIKE_RATIO * max(size[j - 1], size[j + 1]):
+            mean = ((found[j - 1][0] + found[j + 1][0]) / 2, (found[j - 1][1] + found[j + 1][1]) / 2)
+            if _linked(before[j], dets[j], mean) >= _linked(before[j], dets[j], found[j]):
+                shifts[j] = mean
     frames, next_id, prev = [], 0, []
     for fi, pts in enumerate(dets):
-        shift = (0.0, 0.0)
-        if prev and pts:
-            # every pairing of a spot before with a spot now is a candidate shift; the one most pairings agree with
-            # (within 0.35 deg) wins, and the shift is their mean (numpy: the frames can hold a dozen spots or more)
-            A = np.array([(a[1], a[2]) for a in prev])
-            B = np.array([(b[0], b[1]) for b in pts])
-            D = (B[None, :, :] - A[:, None, :]).reshape(-1, 2)
-            ok = np.hypot(D[:, 0], D[:, 1]) <= 6.0
-            if ok.any() and len(D) <= 2500:
-                M = np.hypot(*(D[:, None, :] - D[None, :, :]).transpose(2, 0, 1)) < 0.35
-                counts = np.where(ok, M.sum(axis=1), -1)
-                inl = D[M[int(np.argmax(counts))]]
-                shift = (float(inl[:, 0].mean()), float(inl[:, 1].mean()))
-        cur, used = [], set()
-        for a in prev:
-            px, py = a[1] + shift[0], a[2] + shift[1]
-            cand = [(math.hypot(b[0] - px, b[1] - py), j) for j, b in enumerate(pts) if j not in used]
-            if cand:
-                d, j = min(cand)
-                if d < 0.5:
-                    used.add(j)
-                    cur.append((a[0], *pts[j]))
-        for j, b in enumerate(pts):
-            if j not in used:
-                cur.append((next_id, *b))
-                next_id += 1
+        shift = shifts[fi]
+        cur, next_id = _follow(prev, pts, shift, next_id)
         frames.append(dict(i=fi, shift=shift, t=[(c[0], round(c[1], 4), round(c[2], 4)) for c in cur],
                            a=[c[3] for c in cur]))
         if any(len(c) > 4 for c in cur):                # the model's box sizes (deg): tracking's on-target test

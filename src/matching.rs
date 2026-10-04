@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::python::hypot;
-use crate::track::{TrackFrame, Tracks};
+use crate::track::{TrackFrame, Tracks, spikes};
 
 /// A point of a target's path: frame, x and y (degrees from the crosshair).
 pub type PathPoint = (i64, f64, f64);
@@ -526,11 +526,6 @@ struct Paths {
     areas: HashMap<u32, BTreeMap<i64, i64>>,
 }
 
-/// How far the camera's turn must jump in one frame (degrees), and how many times the turn of the frames either side,
-/// to be a spike (`Paths::repair`).
-const SPIKE: f64 = 1.0;
-const SPIKE_RATIO: f64 = 3.0;
-
 impl Paths {
     fn new(frames: &[TrackFrame]) -> Paths {
         let mut paths = Paths { ids: Vec::new(), points: HashMap::new(), areas: HashMap::new() };
@@ -569,17 +564,14 @@ impl Paths {
     /// lines up another target with the dead one's place, and the tracker hands the dead target's track on to that
     /// target (its place on screen jumps with the shift) and starts new tracks for the targets that stayed put. A
     /// track at the crosshair whose place jumps more than `near` with the frame's shift is split there when the shift
-    /// is a spike (more than `SPIKE` degrees and `SPIKE_RATIO` times the shifts either side), or when the jump is more
+    /// is a spike (`track::spikes`: since review version 3 the tracker repairs most, `link`), or when the jump is more
     /// than twice `near` and lands within `near` of a track that ended the frame before. Its head ends where the
     /// target died; its rest continues that track, else becomes a track of its own. Returns the camera's turn summed
     /// from the first frame, by frame, with each spike replaced by the mean of the frames either side.
     fn repair(&mut self, frames: &[TrackFrame], near: f64) -> Vec<(f64, f64)> {
         let cum = turned(frames);
         let n = frames.len();
-        let size: Vec<f64> = frames.iter().map(|f| hypot(f.shift.0, f.shift.1)).collect();
-        let spike: Vec<bool> = (0..n)
-            .map(|j| j >= 1 && j + 1 < n && size[j] > SPIKE && size[j] > SPIKE_RATIO * size[j - 1].max(size[j + 1]))
-            .collect();
+        let spike = spikes(&frames.iter().map(|f| f.shift).collect::<Vec<_>>());
         // the tracks seen on each frame, and those that end on it
         let mut at: Vec<Vec<u32>> = vec![Vec::new(); n];
         let mut ends: HashMap<i64, HashSet<u32>> = HashMap::new();

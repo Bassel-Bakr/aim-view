@@ -179,7 +179,9 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   as ffmpeg once the edit list's pre-roll, the frames before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV
   (src/convert.rs, byte for byte), the fixed map, the detector (onnxruntime-web, within 0.00002 px of ONNX Runtime on
   the CPU), `keep`, pop-up areas (`AreaWatch`) and `link`. All are equal to Python's to the bit except the detector's
-  float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). full_v3 on av1
+  float noise (16 of 6,038 frames differ by one pixel of area on the CPU, 27 on the GPU). `link` repairs a one-frame
+  false camera turn at a kill (another target lined up with the dead one's place): a spike in the shift, by
+  matching.rs's rule (`track::spikes`), becomes the mean of the frames either side, unless it lines up more targets. full_v3 on av1
   (2560x1440): 380 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
   outputs read back while the next call is sent; 15.9 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
   test_out/browser_check/profile.html times each stage). On the GPU, with 8 threads or more, a recording of 1,200
@@ -229,10 +231,10 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   27, its hits and shots on 22 (the rest: a lightning gun's last redraw, a bot whose hits KovaaK counts apart, a last
   miss after the last redraw), its kill frames within a frame on 25. The video alone (matching.rs `match_video`, its
   `Paths`: a false camera turn at a kill repaired, a target found again only where and as big as it was) finds 94.5%
-  of the stats files' kills within 3 frames on 47 runs (97.3% on the 18 held out; was 83%), precision 95.5% (held out
-  96.7%); switching runs are the weakest (90% precision held out). The benchmark and its notes: the session scratchpad's vbench/ (2026-10-04). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
+  of the stats files' kills within 3 frames on 47 runs (97.4% on the 18 held out; was 83%), precision 95.7% (held out
+  97.2%); switching runs are the weakest (90% precision held out). The benchmark and its notes: the session scratchpad's vbench/ (2026-10-04). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
   recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
-  `REVIEW_VERSION`, 2 since the HUD): a report from an older one says `outdated` and the run page asks for a new
+  `REVIEW_VERSION`, 3 since `link` repairs a false camera turn; 2 was the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.
   The faint-target cut-off (the run page's Cut-off and the top bar's Cut-off queue; platform/faint-cutoffs.ts, the
   core's src/faint.rs) works in every mode: the service keeps it (faint.json), and the core measures a tracking run
@@ -296,7 +298,6 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   Rust prototype in `python/model/rust/` becomes the start of the core's detector); with a stats file, the flick paths
   and the count of flicks measured could gain from the video-alone finder's repairs (matching.rs `Paths`: a false camera
   turn at a kill, a target merged with the next): untested; measure on the stats-file runs (Smoothbot Switch Robots:
-  41 flicks for 54 kills); the camera's turn at a kill fixed at its source (src/track.rs `view_shift` lines another
-  target up with a dead one on a plain wall), for every review; the video-alone benchmark has only 8 switching runs
+  41 flicks for 54 kills); the video-alone benchmark has only 8 switching runs
   (VT DriftTS breaks into many tracks);
   python/model/infer.py still uses the fixed threshold, not the model's settings file (the `--python` path).

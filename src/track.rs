@@ -158,8 +158,9 @@ pub struct TrackFrame {
 }
 
 /// The review's version: one more each time what a review keeps changes (the tracks, the camera's readings, the HUD's),
-/// so a review kept by an older one is known (its report says `outdated`). 2: the HUD is read.
-pub const REVIEW_VERSION: u32 = 2;
+/// so a review kept by an older one is known (its report says `outdated`). 2: the HUD is read. 3: a spike in the
+/// view's shift is repaired before the frames are linked (`link`).
+pub const REVIEW_VERSION: u32 = 3;
 
 /// A recording's tracks, as tracks.json keeps them: the frame rate, each frame's targets, and the review's version
 /// (0 where it is not given: Python's, and the browser's and the desktop app's before version 2).
@@ -209,45 +210,97 @@ fn view_shift(prev: &[Tracked], now: &[Spot]) -> Option<(f64, f64)> {
     Some((numpy_mean(&xs), numpy_mean(&ys)))
 }
 
-/// Track ids for the targets of each frame. Each track from the frame before is moved by the view's shift and takes
-/// the nearest target now within 0.5 degrees; a target nobody took starts a new track.
+/// How far the view's shift must jump in one frame (degrees), and how many times the shifts either side, to be a
+/// spike (`spikes`).
+const SPIKE: f64 = 1.0;
+const SPIKE_RATIO: f64 = 3.0;
+
+/// Which frames' shifts are spikes: more than `SPIKE` degrees and `SPIKE_RATIO` times the shifts either side. A kill
+/// can fool the view's shift on a plain wall: with the target at the crosshair gone, the shift lines up another target
+/// with the dead one's place for one frame.
+pub fn spikes(shifts: &[(f64, f64)]) -> Vec<bool> {
+    let n = shifts.len();
+    let size: Vec<f64> = shifts.iter().map(|s| hypot(s.0, s.1)).collect();
+    (0..n)
+        .map(|j| j >= 1 && j + 1 < n && size[j] > SPIKE && size[j] > SPIKE_RATIO * size[j - 1].max(size[j + 1]))
+        .collect()
+}
+
+/// The frame's targets given ids: each track from the frame before is moved by the view's shift and takes the nearest
+/// target now within 0.5 degrees; a target nobody took starts a new track.
+fn follow(prev: &[Tracked], now: &[Spot], shift: (f64, f64), next_id: &mut u32) -> Vec<Tracked> {
+    let mut cur = Vec::with_capacity(now.len());
+    let mut used = vec![false; now.len()];
+    for a in prev {
+        let (px, py) = (a.spot.x + shift.0, a.spot.y + shift.1);
+        let mut nearest: Option<(f64, usize)> = None;
+        for (j, b) in now.iter().enumerate() {
+            if used[j] {
+                continue;
+            }
+            let d = hypot(b.x - px, b.y - py);
+            if nearest.is_none_or(|(n, _)| d < n) {
+                nearest = Some((d, j));
+            }
+        }
+        if let Some((d, j)) = nearest
+            && d < 0.5
+        {
+            used[j] = true;
+            cur.push(Tracked { id: a.id, spot: now[j] });
+        }
+    }
+    for (j, b) in now.iter().enumerate() {
+        if !used[j] {
+            cur.push(Tracked { id: *next_id, spot: *b });
+            *next_id += 1;
+        }
+    }
+    cur
+}
+
+/// How many of the tracks before take a target now with this shift (`follow`).
+fn linked(prev: &[Tracked], now: &[Spot], shift: (f64, f64)) -> usize {
+    let mut new = 0;
+    follow(prev, now, shift, &mut new);
+    now.len() - new as usize
+}
+
+/// Track ids for the targets of each frame (`follow`). The view's shift of each frame is found first, against the
+/// frame before as it was tracked. A spike (`spikes`) is replaced by the mean of the shifts either side when that
+/// mean links as many of the frame before's targets as the spike does: a spike that lines up more of them is the
+/// camera's own jerk (frames captured unevenly), and stays. Then the frames are tracked with those shifts.
 pub fn link(frames: &[Vec<Spot>]) -> Vec<TrackFrame> {
-    let mut out = Vec::with_capacity(frames.len());
+    let mut shifts = Vec::with_capacity(frames.len());
+    let mut before = Vec::with_capacity(frames.len());
     let mut prev: Vec<Tracked> = Vec::new();
     let mut next_id = 0;
-    for (i, now) in frames.iter().enumerate() {
+    for now in frames {
         let shift = if prev.is_empty() || now.is_empty() {
             (0.0, 0.0)
         } else {
             view_shift(&prev, now).unwrap_or((0.0, 0.0))
         };
-        let mut cur = Vec::with_capacity(now.len());
-        let mut used = vec![false; now.len()];
-        for a in &prev {
-            let (px, py) = (a.spot.x + shift.0, a.spot.y + shift.1);
-            let mut nearest: Option<(f64, usize)> = None;
-            for (j, b) in now.iter().enumerate() {
-                if used[j] {
-                    continue;
-                }
-                let d = hypot(b.x - px, b.y - py);
-                if nearest.is_none_or(|(n, _)| d < n) {
-                    nearest = Some((d, j));
-                }
-            }
-            if let Some((d, j)) = nearest
-                && d < 0.5
-            {
-                used[j] = true;
-                cur.push(Tracked { id: a.id, spot: now[j] });
-            }
+        shifts.push(shift);
+        let cur = follow(&prev, now, shift, &mut next_id);
+        before.push(prev);
+        prev = cur;
+    }
+    let found = shifts.clone();
+    for (j, spike) in spikes(&found).into_iter().enumerate() {
+        if !spike {
+            continue;
         }
-        for (j, b) in now.iter().enumerate() {
-            if !used[j] {
-                cur.push(Tracked { id: next_id, spot: *b });
-                next_id += 1;
-            }
+        let mean = ((found[j - 1].0 + found[j + 1].0) / 2.0, (found[j - 1].1 + found[j + 1].1) / 2.0);
+        if linked(&before[j], &frames[j], mean) >= linked(&before[j], &frames[j], found[j]) {
+            shifts[j] = mean;
         }
+    }
+    let mut out = Vec::with_capacity(frames.len());
+    let mut prev: Vec<Tracked> = Vec::new();
+    let mut next_id = 0;
+    for (i, (now, &shift)) in frames.iter().zip(&shifts).enumerate() {
+        let cur = follow(&prev, now, shift, &mut next_id);
         let boxes: Vec<ModelBox> = cur.iter().filter_map(|c| c.spot.model).collect();
         out.push(TrackFrame {
             i,
