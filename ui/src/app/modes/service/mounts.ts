@@ -54,7 +54,8 @@ interface MountFs {
   readonly writable: boolean;
   file(names: string[]): Promise<File>;
   stat(names: string[]): Promise<FsStat>;
-  list(names: string[], limit: number): Promise<DirEntry[]>;
+  /** A folder's entries (at most limit; 0: all), with each file's size and time where the mount has them cheaply. */
+  list(names: string[], limit: number, stat?: boolean): Promise<DirEntry[]>;
   write(names: string[], data: Blob | Uint8Array, progress?: Progress): Promise<void>;
   mkdirs(names: string[]): Promise<void>;
   removeFile(names: string[]): Promise<void>;
@@ -157,13 +158,25 @@ export class DirMount implements MountFs {
     return { dir: false, len: f.size, modified: f.lastModified / 1000 };
   }
 
-  async list(names: string[], limit: number): Promise<DirEntry[]> {
-    const out: DirEntry[] = [];
-    for await (const [name, entry] of (await this.dir(names)).entries()) {
-      out.push([name, entry.kind === 'directory']);
-      if (limit && out.length >= limit) break;
+  /**
+   * The entries, and unless stat is false each file's size and time, its files read all at once: the service then
+   * needs no call a file for them (the recordings list reads thousands).
+   */
+  async list(names: string[], limit: number, stat = true): Promise<DirEntry[]> {
+    const handles: FileSystemHandle[] = [];
+    for await (const entry of (await this.dir(names)).values()) {
+      handles.push(entry);
+      if (limit && handles.length >= limit) break;
     }
-    return out;
+    return Promise.all(
+      handles.map(async (h): Promise<DirEntry> => {
+        if (h.kind === 'directory') return [h.name, true, 0, 0];
+        if (!stat) return [h.name, false, null, null];
+        // a file gone since the listing: its metadata is asked for later, and says so
+        const f = await (h as FileSystemFileHandle).getFile().catch(() => null);
+        return f ? [h.name, false, f.size, f.lastModified / 1000] : [h.name, false, null, null];
+      }),
+    );
   }
 
   /** Replaces a file; its folder must be there, as std::fs::write wants it. */
@@ -280,7 +293,9 @@ export class FilesMount implements MountFs {
   async list(names: string[], limit: number): Promise<DirEntry[]> {
     const entries = this.tree.get(names.join('/'));
     if (!entries) throw notFound(names.join('/'));
-    const out = [...entries].map(([name, f]): DirEntry => [name, f === null]);
+    const out = [...entries].map(([name, f]): DirEntry =>
+      f ? [name, false, f.size, f.lastModified / 1000] : [name, true, 0, 0],
+    );
     return limit ? out.slice(0, limit) : out;
   }
 
@@ -387,7 +402,11 @@ export class PackStore {
   async list(names: string[]): Promise<DirEntry[] | null> {
     await this.read();
     const entries = this.tree.get(names.join('/'));
-    return entries ? [...entries].map(([name, f]): DirEntry => [name, f === null]) : null;
+    return entries
+      ? [...entries].map(([name, f]): DirEntry =>
+          f ? [name, false, f[2], f[3] / 1000] : [name, true, 0, 0],
+        )
+      : null;
   }
 
   /**
@@ -504,18 +523,21 @@ export class KovaakMount implements MountFs {
   }
 
   async list(names: string[], limit: number): Promise<DirEntry[]> {
-    const all = new Map<string, boolean>();
+    const all = new Map<string, DirEntry>();
     let found = false;
     for (const fs of [this.chosen, this.packs, this.older]) {
       if (!fs) continue;
+      // the older copies' times would cost a file read each (70,000 stats files): asked for when needed
       const entries =
-        fs instanceof PackStore ? await fs.list(names) : await fs.list(names, 0).catch(() => null);
+        fs instanceof PackStore
+          ? await fs.list(names)
+          : await fs.list(names, 0, fs !== this.older).catch(() => null);
       if (!entries) continue;
       found = true;
-      for (const [name, dir] of entries) if (!all.has(name)) all.set(name, dir);
+      for (const entry of entries) if (!all.has(entry[0])) all.set(entry[0], entry);
     }
     if (!found) throw notFound(names.join('/'));
-    const out = [...all].map(([name, dir]): DirEntry => [name, dir]);
+    const out = [...all.values()];
     return limit ? out.slice(0, limit) : out;
   }
 
@@ -594,7 +616,7 @@ export class HttpMount implements MountFs {
       `detector_${m}.json`,
       `detector_${m}_u8in.onnx`,
     ]);
-    const out = ['models.json', ...files].map((n): DirEntry => [n, false]);
+    const out = ['models.json', ...files].map((n): DirEntry => [n, false, null, null]);
     return limit ? out.slice(0, limit) : out;
   }
 

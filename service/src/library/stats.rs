@@ -82,7 +82,7 @@ fn past_run(path: &Path, stamp: &str) -> Option<PastRun> {
 
 /// The user's choice of stats file for a recording (stats.json): a file and where it is, or no file.
 #[derive(Serialize, Deserialize)]
-struct Pick {
+pub(super) struct Pick {
     file: Option<String>,
     source: String,
 }
@@ -194,7 +194,7 @@ impl Library {
         Ok(serde_json::to_value(runs.into_iter().flatten().flatten().collect::<Vec<_>>()).map_err(|e| e.to_string())?)
     }
 
-    fn pairing(&self, id: &str) -> Option<Pick> {
+    pub(super) fn pairing(&self, id: &str) -> Option<Pick> {
         read_json(&self.review_dir(id).join("stats.json"))
     }
 
@@ -213,7 +213,13 @@ impl Library {
     /// The recording's stats file: the user's choice (None when it is gone), else one uploaded beside it (same name,
     /// .csv), else by name and time.
     pub(crate) fn stats_of(&self, id: &str, video: &Path) -> Option<PathBuf> {
-        if let Some(pick) = self.pairing(id) {
+        self.stats_with(self.pairing(id), id, video)
+    }
+
+    /// `stats_of` with the recording's pairing already read (None: no choice made). The recordings list reads it only
+    /// for a recording that has a folder in the data folder, where a choice is kept.
+    pub(super) fn stats_with(&self, pick: Option<Pick>, id: &str, video: &Path) -> Option<PathBuf> {
+        if let Some(pick) = pick {
             return pick.file.and_then(|f| self.stats_file(&f, &pick.source).ok()).filter(|p| crate::disk::is_file(p));
         }
         let beside = video.with_extension("csv");

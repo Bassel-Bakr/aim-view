@@ -271,11 +271,12 @@ mod imp {
         }
     }
 
-    /// An entry of a folder, as the host lists it.
+    /// An entry of a folder, as the host lists it: with its metadata when the listing gave it.
     pub struct Entry {
         name: String,
         path: PathBuf,
         dir: bool,
+        meta: Option<Metadata>,
     }
 
     impl Entry {
@@ -291,9 +292,9 @@ mod imp {
             self.dir
         }
 
-        /// Its metadata: a call to the host (the listing gives only names and kinds).
+        /// Its metadata: the listing's, else a call to the host.
         pub fn metadata(&self) -> io::Result<Metadata> {
-            metadata(&self.path)
+            self.meta.map_or_else(|| metadata(&self.path), Ok)
         }
     }
 
@@ -376,8 +377,19 @@ mod imp {
 
     pub fn read_dir(p: impl AsRef<Path>) -> io::Result<ReadDir> {
         let p = p.as_ref();
-        let listed: Vec<(String, bool)> = serde_json::from_slice(&call(Op::ReadDir, p, &[])?).map_err(|e| bad_answer("listing", e))?;
-        Ok(ReadDir(listed.into_iter().map(|(name, dir)| Entry { path: p.join(&name), name, dir }).collect::<Vec<_>>().into_iter()))
+        // [name, dir, size, time]: the size and time null when the page has none at hand
+        let listed: Vec<(String, bool, Option<f64>, Option<f64>)> =
+            serde_json::from_slice(&call(Op::ReadDir, p, &[])?).map_err(|e| bad_answer("listing", e))?;
+        Ok(ReadDir(
+            listed
+                .into_iter()
+                .map(|(name, dir, len, modified)| {
+                    let meta = len.zip(modified).map(|(len, modified)| Metadata { len: len.max(0.0) as u64, modified: Some(modified), dir });
+                    Entry { path: p.join(&name), name, dir, meta }
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+        ))
     }
 
     pub fn metadata(p: impl AsRef<Path>) -> io::Result<Metadata> {

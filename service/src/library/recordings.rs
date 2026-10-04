@@ -1,7 +1,7 @@
 //! The recordings: the list (python/server.py: Library.list), a recording's video from its id and its folder, videos
 //! and stats files added from the user's computer, and each scenario's facts from its scenario file.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -123,6 +123,13 @@ impl Library {
     /// list after (a VODs folder holds thousands, and in the browser each file read waits on the page).
     pub fn recordings(&self, quick: bool) -> Answer<Value> {
         let (mut out, not_aim): (Vec<Value>, _) = (Vec::new(), self.not_aim());
+        // the recordings with a folder in the data folder: only they can have a review or a chosen stats file, so the
+        // others need no look at the disk (in the browser each look waits on the page)
+        let kept: HashSet<String> = if quick {
+            HashSet::new()
+        } else {
+            crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()
+        };
         if let Some(vods) = self.vods() {
             for folder in crate::disk::read_dir(&vods).into_iter().flatten().flatten() {
                 if !folder.is_dir() {
@@ -137,10 +144,14 @@ impl Library {
                         out.push(quick_row(&id, &scenario, Some(score), &stamp, not_aim.contains(&id)));
                         continue;
                     }
+                    // the listing's metadata: no call a file
+                    let meta = e.metadata().ok();
+                    let has = kept.contains(&slug(&id));
+                    let pick = if has { self.pairing(&id) } else { None };
                     out.push(json!({
                         "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
-                        "mtime": modified(&p), "size": crate::disk::metadata(&p).map_or(0, |m| m.len()),
-                        "stats": self.stats_of(&id, &p).is_some(), "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
+                        "mtime": meta.and_then(|m| m.modified()).unwrap_or(0.0), "size": meta.map_or(0, |m| m.len()),
+                        "stats": self.stats_with(pick, &id, &p).is_some(), "analysed": has && self.reviewed(&id), "not_aim": not_aim.contains(&id),
                     }));
                 }
             }

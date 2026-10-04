@@ -45,5 +45,5 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 
 | Request | Where | Cost | Notes |
 | --- | --- | --- | --- |
-| The recordings list | service/src/library/recordings.rs `recordings` | native: 0.04 s quick, 0.16 s full | in the browser every file call waits on the page (Asyncify): about 5 calls a recording for the full list (metadata twice, the pairing, the review check) |
+| The recordings list | service/src/library/recordings.rs `recordings` | native: 0.04 s quick, 0.16 s full; browser, 1,701 recordings in 786 folders (a stand-in in the browser's storage): the full list 0.5 s after the quick one (2.4 s before the listing carried sizes and times) | in the browser every file call waits on the page (Asyncify): a folder's listing now carries each file's size and time, and one look at the data folder tells which recordings can have a review or a chosen stats file, so a recording without one costs no call |
 | KovaaK's stats index | service/src/library/stats.rs `with_stats` | lists the stats folder once (more than 70,000 files) | in the browser the files' times are read later, per scenario, in `history` |

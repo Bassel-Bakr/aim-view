@@ -49,3 +49,4 @@ Measured from 2026-10-02 to 2026-10-04, before 4b7ddc4. Remeasure only for a cha
 | The browser's stages | `test_out/browser_check/profile.html`, `decode-bench.html` | 380 frames a second on the GPU; one decoder about 430 |
 | KovaaK's files into the browser | browser mode, 3,000 files | shown in 14 ms, copied in 1.0 s |
 | The recordings list, native | `/api/vods?quick=1` / `/api/vods` | 0.04 s / 0.16 s |
+| The recordings list, browser | the browser build on a stand-in VODs folder in the browser's storage (the real 3,351 names in 786 folders, 1-byte files; `test_out/baselines/browser_list/`) | the full list 0.5 s after the quick one, 2.6 to 2.9 s from page load (4b7ddc4: 2.4 s after, 4.5 s from load) |

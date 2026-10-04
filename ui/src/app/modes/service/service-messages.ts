@@ -82,8 +82,11 @@ export interface KovaakAsk {
 /** What the page tells the service's worker. */
 export type ServiceTask = ServiceStart | ServiceAsk | FilesAsk | MountAsk | KovaakAsk;
 
-/** A folder's entry: its name, and whether it is a folder. */
-export type DirEntry = [name: string, dir: boolean];
+/**
+ * A folder's entry: its name, whether it is a folder, and its size and time (seconds since 1970) when the listing has
+ * them at no cost (null: the service asks for its metadata when it needs it). A folder's size and time are 0.
+ */
+export type DirEntry = [name: string, dir: boolean, len: number | null, modified: number | null];
 
 /** What a copy did: how many files it copied. */
 export interface CopyDone {
