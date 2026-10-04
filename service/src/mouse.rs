@@ -103,7 +103,7 @@ pub fn measures_in(dir: &Path, stats_path: &Path) -> Answer<Value> {
         };
         // the reader's own test, on the log's span: some kill within a second of it
         let (Some(first), Some(last)) = (stats.kills.first(), stats.kills.last()) else { return Ok(Value::Null) };
-        if last.t < wall0 - 1.0 || first.t > end + 1.0 {
+        if last.epoch_s < wall0 - 1.0 || first.epoch_s > end + 1.0 {
             continue;
         }
         let bytes = crate::disk::read(&path).map_err(|e| Failure::from(format!("{}: {e}", path.display())))?;

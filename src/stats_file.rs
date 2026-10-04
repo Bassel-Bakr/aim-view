@@ -15,7 +15,7 @@ pub struct StatsKills {
 }
 
 /// The text's lines, split where Python's `str.splitlines` splits them.
-fn lines(text: &str) -> Vec<&str> {
+pub(crate) fn lines(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let mut chars = text.char_indices().peekable();

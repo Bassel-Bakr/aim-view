@@ -419,8 +419,8 @@ fn thousands(n: f64) -> String {
 /// What mouse_log.py prints when it stops: the events, the duration, the rates and the devices, with a warning when
 /// the log looks throttled.
 pub fn logged_text(log: &MouseLog, path: &Path, names: &[String]) -> String {
-    let (n, dur) = (log.t.len(), log.duration);
-    let peak = reader::busiest_rate(&log.t, 0.1);
+    let (n, dur) = (log.times_s.len(), log.duration);
+    let peak = reader::busiest_rate(&log.times_s, 0.1);
     let mean = if dur != 0.0 { n as f64 / dur } else { 0.0 };
     let mut s = format!(
         "mouse_log: {n} events in {dur:.2} s ({mean:.1} Hz mean, busiest 100 ms {peak:.0} Hz); wrote {}\n",
@@ -428,7 +428,7 @@ pub fn logged_text(log: &MouseLog, path: &Path, names: &[String]) -> String {
     );
     for (d, h) in log.devices.iter().enumerate() {
         let name = names.get(d).map_or(String::new(), |n| format!(" {n}"));
-        let count = log.dev.iter().filter(|&&v| v as usize == d).count();
+        let count = log.device_events(d);
         s += &format!("  device {d}: handle {h:#x}, {count} events{name}\n");
     }
     if n >= 200 && peak <= 300.0 {
