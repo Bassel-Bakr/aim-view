@@ -602,7 +602,7 @@ crosshair that the automatic labels miss, which those crops count as false.
   in every recording (from the boxes fixed by hand only). The user's earlier desktop hand labels of small static
   targets show no such offset (154 pairs: median 0.05 px, size ratio 0.99).
 - **Crops mined from full_v3's own mistakes** (`data_mined`, 2026-10-04; `build_mined.py`, REPRODUCE.md step 1). Not
-  checked by eye and not trained on yet. 215 recordings with a stats file were reviewed natively (3,106 s: 131
+  trained on yet. 215 recordings with a stats file were reviewed natively (3,106 s: 131
   dynamic, 57 switching, 27 tracking; the checks' runs left out; static not reached), and strict rules mined 110
   crops from 45 of them: `kill` 23 (the killed target placed where the model lost it before a kill, from 4
   recordings), `gap` 76 (a steadily tracked target missed for 1 or 2 frames), `false_static` 7 (the crosshair's dot
@@ -611,7 +611,11 @@ crosshair that the automatic labels miss, which those crops count as false.
   were dropped as unclear (another box touching the place, more boxes than the scenario's targets, a clock that
   KovaaK's countdown does not confirm). Known wrong ones: AngelClick Revolving Avasive Easier (10 crops) and one
   VT DriftTS crop place a box on overlapping spheres (two in one box, or one with the other unlabelled); Switching
-  Humanoid (3 `false_lone` crops) takes out a box on a robot's head, and the robots have no labels.
+  Humanoid (3 `false_lone` crops) takes out a box on a robot's head, and the robots have no labels. The user checked all
+  110 by eye on the phone page the same day (`data_mined/checked_phone.jsonl`, raw answers in
+  `check_mined/phone_answers/`): every `false_static` crop was right (the crosshair's dot is no target), 3 of the 4
+  `false_lone` were wrong (the robot heads: boxed as whole robots), all 23 `kill` placements and 51 of the 76 `gap`
+  boxes needed moving or resizing, and 3 crops have no target left.
 - **Robots.** Only 2 recordings of robot targets exist: Smoothbot Switch Robots is a check run, and Close Fast
   Colosseum Robots was dropped for more labels than targets. More robot recordings are needed.
 - **Thin capsules.** The model splits a thin capsule into short boxes and can leave its end unboxed; on Centering II
