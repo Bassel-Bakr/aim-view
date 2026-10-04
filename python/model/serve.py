@@ -22,21 +22,26 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import infer  # noqa: E402
 
+WIDTH_PX, HEIGHT_PX = 1280, 720     # a frame's size when the request does not give it
+SIZE_MULTIPLE = 16                  # the network needs a frame's sides in multiples of this
+CHANNELS = 3                        # bytes a pixel in the RGB frame
+SHOWN = 4                           # --client: detections printed
+
 
 class Handler(BaseHTTPRequestHandler):
-    det = None
+    detector = None
     model = None
 
-    def log_message(self, fmt, *args):
+    def log_message(self, message_format, *args):
         pass
 
-    def reply(self, obj, code=200):
-        b = json.dumps(obj).encode()
+    def reply(self, answer, code=200):
+        body = json.dumps(answer).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(b)))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(b)
+        self.wfile.write(body)
 
     def do_GET(self):
         if urlparse(self.path).path == "/health":
@@ -44,62 +49,64 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(dict(error="not found"), 404)
 
     def do_POST(self):
-        u = urlparse(self.path)
-        if u.path != "/detect":
+        url = urlparse(self.path)
+        if url.path != "/detect":
             return self.reply(dict(error="not found"), 404)
         try:
-            q = {k: v[0] for k, v in parse_qs(u.query).items()}
-            w, h = int(q.get("w", 1280)), int(q.get("h", 720))
-            if w % 16 or h % 16:
+            query = {key: values[0] for key, values in parse_qs(url.query).items()}
+            width, height = int(query.get("w", WIDTH_PX)), int(query.get("h", HEIGHT_PX))
+            if width % SIZE_MULTIPLE or height % SIZE_MULTIPLE:
                 raise ValueError("w and h must be multiples of 16")
-            has_fixed = q.get("fixed") == "1"
+            has_fixed = query.get("fixed") == "1"
             body = self.rfile.read(int(self.headers["Content-Length"]))
-            need = w * h * 3 + (w * h if has_fixed else 0)
+            rgb_bytes = width * height * CHANNELS
+            need = rgb_bytes + (width * height if has_fixed else 0)
             if len(body) != need:
                 raise ValueError(f"expected {need} bytes, got {len(body)}")
-            rgb = np.frombuffer(body, np.uint8, w * h * 3).reshape(h, w, 3)
-            fixed = (np.frombuffer(body, np.uint8, w * h, w * h * 3).reshape(h, w) if has_fixed
-                     else np.zeros((h, w), np.uint8))
-            t = time.perf_counter()
-            d = self.det(rgb, fixed, float(q.get("thr", infer.THRESHOLD)))
-            self.reply(dict(detections=[[round(float(v), 2) for v in r] for r in d],
-                            ms=round(1000 * (time.perf_counter() - t), 2)))
-        except (ValueError, KeyError, TypeError) as e:
-            self.reply(dict(error=str(e)), 400)
+            rgb = np.frombuffer(body, np.uint8, rgb_bytes).reshape(height, width, CHANNELS)
+            fixed = (np.frombuffer(body, np.uint8, width * height, rgb_bytes).reshape(height, width) if has_fixed
+                     else np.zeros((height, width), np.uint8))
+            started = time.perf_counter()
+            detections = self.detector(rgb, fixed, float(query.get("thr", infer.THRESHOLD)))
+            self.reply(dict(detections=[[round(float(value), 2) for value in box] for box in detections],
+                            ms=round(1000 * (time.perf_counter() - started), 2)))
+        except (ValueError, KeyError, TypeError) as error:
+            self.reply(dict(error=str(error)), 400)
 
 
-def client(port, n):
+def client(port, requests):
     import http.client
     import bench
     rgb, fixed = bench.sample()
     body = rgb.tobytes() + fixed.tobytes()
-    times, server = [], []
-    for _ in range(n):
-        c = http.client.HTTPConnection("127.0.0.1", port)
-        t = time.perf_counter()
-        c.request("POST", "/detect?w=1280&h=720&fixed=1", body, {"Content-Type": "application/octet-stream"})
-        r = json.loads(c.getresponse().read())
-        times.append(time.perf_counter() - t)
-        server.append(r["ms"])
-    print(f"{len(r['detections'])} detections: {r['detections'][:4]}")
-    print(f"round trip median {1000 * np.median(times):.1f} ms (inference {np.median(server):.1f} ms), "
-          f"p90 {1000 * np.percentile(times, 90):.1f} ms over {n} requests")
+    round_trips, inference_ms = [], []
+    for _ in range(requests):
+        connection = http.client.HTTPConnection("127.0.0.1", port)
+        started = time.perf_counter()
+        connection.request("POST", "/detect?w=1280&h=720&fixed=1", body, {"Content-Type": "application/octet-stream"})
+        answer = json.loads(connection.getresponse().read())
+        round_trips.append(time.perf_counter() - started)
+        inference_ms.append(answer["ms"])
+    print(f"{len(answer['detections'])} detections: {answer['detections'][:SHOWN]}")
+    print(f"round trip median {1000 * np.median(round_trips):.1f} ms (inference {np.median(inference_ms):.1f} ms), "
+          f"p90 {1000 * np.percentile(round_trips, 90):.1f} ms over {requests} requests")
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=str(Path(__file__).resolve().parent / "exports" / f"detector_{infer.BEST}_fp32.onnx"))
-    ap.add_argument("--port", type=int, default=8771)
-    ap.add_argument("--threads", type=int, default=4)
-    ap.add_argument("--client", action="store_true")
-    ap.add_argument("--n", type=int, default=100)
-    a = ap.parse_args()
-    if a.client:
-        return client(a.port, a.n)
-    Handler.det = infer.OnnxDetector(a.model, a.threads)
-    Handler.model = Path(a.model).name
-    print(f"detector API on http://127.0.0.1:{a.port}/ ({Handler.model}, {a.threads} threads)", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default=str(Path(__file__).resolve().parent / "exports" /
+                                               f"detector_{infer.BEST}_fp32.onnx"))
+    parser.add_argument("--port", type=int, default=8771)
+    parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--client", action="store_true")
+    parser.add_argument("--n", type=int, default=100)
+    args = parser.parse_args()
+    if args.client:
+        return client(args.port, args.n)
+    Handler.detector = infer.OnnxDetector(args.model, args.threads)
+    Handler.model = Path(args.model).name
+    print(f"detector API on http://127.0.0.1:{args.port}/ ({Handler.model}, {args.threads} threads)", flush=True)
+    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
