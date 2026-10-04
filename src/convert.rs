@@ -101,7 +101,7 @@ impl Filter {
         // the coefficients are shares of one (1 << 14 at most), a few to a sample: 15-bit samples and their sums fit in
         // 32 bits
         assert!(size < 16 && coef.iter().all(|c| c.abs() <= 1 << 14), "a filter too large for 32-bit sums");
-        let mut taps = Vec::new();
+        let mut taps = Vec::with_capacity(coef.len());
         let mut tap_at = Vec::with_capacity(pos.len() + 1);
         tap_at.push(0);
         for (i, &p) in pos.iter().enumerate() {

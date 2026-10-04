@@ -99,7 +99,8 @@ pub struct Appearances {
 
 /// The camera's turn summed from the first frame, by frame.
 fn turned(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
-    let mut cum = vec![(0.0, 0.0)];
+    let mut cum = Vec::with_capacity(frames.len().max(1));
+    cum.push((0.0, 0.0));
     for f in frames.iter().skip(1) {
         let (x, y) = *cum.last().unwrap();
         cum.push((x + f.shift.0, y + f.shift.1));
@@ -356,7 +357,7 @@ impl Kills<'_> {
     fn attach(&self, kt: &[f64], shots: &[i64]) -> Vec<Flick> {
         let (index, fps) = (self.index, self.fps);
         let w = round_frame(self.window * fps).max(1);
-        let mut flicks = Vec::new();
+        let mut flicks = Vec::with_capacity(kt.len().min(shots.len()));
         let mut prev: Option<i64> = None;
         let mut used: HashSet<u32> = HashSet::new();
         // review.py reads `last` after its loop over the tracks: the last track looked at, not the one chosen
@@ -649,7 +650,8 @@ impl Paths {
             step[j] = ((step[j - 1].0 + step[j + 1].0) / 2.0, (step[j - 1].1 + step[j + 1].1) / 2.0);
         }
         let mut sum = step[0];
-        let mut out = vec![sum];
+        let mut out = Vec::with_capacity(n);
+        out.push(sum);
         for v in &step[1..] {
             sum = (sum.0 + v.0, sum.1 + v.1);
             out.push(sum);
@@ -832,7 +834,7 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
         }
         kills.push(c);
     }
-    let mut flicks = Vec::new();
+    let mut flicks = Vec::with_capacity(kills.len());
     let mut prev: Option<i64> = None;
     for (k, (end, _, tid, chain)) in kills.iter().enumerate() {
         let mut p: BTreeMap<i64, (f64, f64)> = BTreeMap::new();

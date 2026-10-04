@@ -69,7 +69,7 @@ impl Detector {
                 }
             }
         };
-        let all: Vec<u8> = (0..batch).flat_map(|_| fixed.iter().copied()).collect();
+        let all = fixed.repeat(batch);
         let fixed = Tensor::from_array(([batch, H, W], all)).map_err(|e| e.to_string())?;
         Ok(Detector { session, fixed, batch, device })
     }

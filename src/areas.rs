@@ -72,7 +72,8 @@ fn fps_frames(times: &[f64], duration: f64, n: usize) -> Vec<usize> {
     // the end of the stream: the last frame's time and its length (the one before it)
     let step = if times.len() > 1 { last - times[times.len() - 2] } else { 0.0 };
     let end = near(last + step);
-    let (mut out, mut i, mut k) = (Vec::new(), 0, near(times[0]));
+    let (mut i, mut k) = (0, near(times[0]));
+    let mut out = Vec::with_capacity((end - k).max(0) as usize);
     while k < end {
         while i + 1 < times.len() && near(times[i + 1]) <= k {
             i += 1;

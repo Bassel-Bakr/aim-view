@@ -62,7 +62,7 @@ pub fn faint_scores(frames: &[TrackFrame], near: f64) -> FaintScores {
             }
         }
     }
-    let mut scores = Vec::new();
+    let mut scores = Vec::with_capacity(order.len());
     for id in order {
         let mut v = seen.remove(&id).unwrap_or_default();
         if v.len() >= 3 {

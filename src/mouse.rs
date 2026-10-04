@@ -282,7 +282,8 @@ struct Motion {
 
 impl Motion {
     fn new(log: &MouseLog, k: f64) -> Motion {
-        let (mut t, mut xs, mut ys) = (Vec::new(), Vec::new(), Vec::new());
+        let n = log.t.len();
+        let (mut t, mut xs, mut ys) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
         let (mut x, mut y) = (0.0f64, 0.0f64);
         for i in 0..log.t.len() {
             if log.flags[i] & MOUSE_MOVE_ABSOLUTE != 0 {
@@ -322,7 +323,8 @@ impl Motion {
     /// Grid times from a to c (ending exactly at c) and the speed in deg/s at each, over [t - w/2, t + w/2] cut at c.
     fn speeds(&self, a: f64, c: f64, w: f64) -> (Vec<f64>, Vec<f64>) {
         let n = ((c - a) / DT) as i64;
-        let (mut ts, mut vs, mut i0, mut i1) = (Vec::new(), Vec::new(), 0, 0);
+        let points = (n + 1).max(0) as usize;
+        let (mut ts, mut vs, mut i0, mut i1) = (Vec::with_capacity(points), Vec::with_capacity(points), 0, 0);
         for g in 0..=n {
             let t = c - (n - g) as f64 * DT;
             let (lo, hi) = (t - w / 2.0, py_min(t + w / 2.0, c));

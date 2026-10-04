@@ -571,7 +571,8 @@ fn value_glyphs(band: &[u8], w: usize, start: Option<usize>) -> Vec<Cut> {
             pieces.push((a, b));
             continue;
         }
-        let mut cuts = vec![a];
+        let mut cuts = Vec::with_capacity(k + 1);
+        cuts.push(a);
         for j in 1..k {
             let c = (b - a) as f64 * j as f64 / k as f64;
             let half = 0.25 * width / k as f64;

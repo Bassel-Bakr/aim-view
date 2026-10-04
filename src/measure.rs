@@ -309,7 +309,7 @@ pub fn flick_profile(ms: &[Measure]) -> Option<FlickProfile> {
 pub fn choices(tracks: &Tracks, flicks: &[Flick]) -> Vec<Choice> {
     let by_frame: std::collections::HashMap<i64, &Vec<crate::track::TrackPoint>> =
         tracks.frames.iter().map(|f| (f.i as i64, &f.t)).collect();
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(flicks.len().saturating_sub(1));
     for w in flicks.windows(2) {
         let (a, b) = (&w[0], &w[1]);
         let kf = a.kill_frame;

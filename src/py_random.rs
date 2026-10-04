@@ -15,8 +15,7 @@ impl PyRandom {
     /// Python's `random.Random(seed)` (version 2): the seed is the integer whose big-endian bytes are the string's
     /// UTF-8 bytes followed by their SHA-512, given to the twister as 32-bit words, least significant first.
     pub fn seeded(seed: &str) -> PyRandom {
-        let mut bytes = seed.as_bytes().to_vec();
-        bytes.extend_from_slice(&sha512(seed.as_bytes()));
+        let bytes = [seed.as_bytes(), &sha512(seed.as_bytes())].concat();
         let start = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len());
         let little: Vec<u8> = bytes[start..].iter().rev().copied().collect();
         let mut key: Vec<u32> = little
@@ -130,7 +129,8 @@ pub fn sha512(data: &[u8]) -> [u8; 64] {
         0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1, 0x510e527fade682d1,
         0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
     ];
-    let mut msg = data.to_vec();
+    let mut msg = Vec::with_capacity((data.len() + 17).div_ceil(128) * 128);
+    msg.extend_from_slice(data);
     msg.push(0x80);
     while msg.len() % 128 != 112 {
         msg.push(0);
@@ -195,7 +195,8 @@ pub fn md5(data: &[u8]) -> [u8; 16] {
         0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
     ];
     let mut h: [u32; 4] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476];
-    let mut msg = data.to_vec();
+    let mut msg = Vec::with_capacity((data.len() + 9).div_ceil(64) * 64);
+    msg.extend_from_slice(data);
     msg.push(0x80);
     while msg.len() % 64 != 56 {
         msg.push(0);

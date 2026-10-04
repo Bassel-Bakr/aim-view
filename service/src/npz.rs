@@ -58,7 +58,8 @@ impl Array {
             header.push(' ');
         }
         header.push('\n');
-        let mut out = b"\x93NUMPY\x01\x00".to_vec();
+        let mut out = Vec::with_capacity(10 + header.len() + self.data.len());
+        out.extend_from_slice(b"\x93NUMPY\x01\x00");
         out.extend_from_slice(&(header.len() as u16).to_le_bytes());
         out.extend_from_slice(header.as_bytes());
         out.extend_from_slice(&self.data);
