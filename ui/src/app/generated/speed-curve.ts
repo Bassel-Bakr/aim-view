@@ -3,9 +3,9 @@
 /**
  * The camera's speed through a main flick, in degrees a second, one value a frame from the flick's start (the moves
  * into the frame before, that frame and the next, averaged), and on past its end for a quarter of its length (at
- * least 2 frames) to show the braking. `flick_end` (`end` in the JSON) is the index of the flick's last frame.
+ * least 2 frames) to show the braking. `flick_end` is the index of the flick's last frame.
  */
 export interface SpeedCurve {
-  v: number[];
-  end: number;
+  speeds: number[];
+  flick_end: number;
 }

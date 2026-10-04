@@ -52,14 +52,12 @@ const NEARER_MARGIN_DEG: f64 = 0.3;
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Measure {
-    #[serde(rename = "n")]
     pub kill_number: usize,
     pub shots: Option<i64>,
     /// The distance to the target when the flick started.
     #[serde(rename = "D0")]
     pub start_distance_deg: f64,
     /// The direction to the target (0 = right, 90 = up).
-    #[serde(rename = "dir")]
     pub direction_deg: f64,
     pub total: f64,
     pub react: Option<f64>,
@@ -74,8 +72,7 @@ pub struct Measure {
     pub arrive: Option<f64>,
     pub dwell: Option<f64>,
     pub past: f64,
-    /// Corrections (`corr` in the JSON): bursts of movement after the main flick.
-    #[serde(rename = "corr")]
+    /// Bursts of movement after the main flick.
     pub corrections: usize,
     pub click_speed: f64,
     pub click_off: f64,
@@ -110,20 +107,17 @@ pub struct Measure {
 
 /// The camera's speed through a main flick, in degrees a second, one value a frame from the flick's start (the moves
 /// into the frame before, that frame and the next, averaged), and on past its end for a quarter of its length (at
-/// least 2 frames) to show the braking. `flick_end` (`end` in the JSON) is the index of the flick's last frame.
+/// least 2 frames) to show the braking. `flick_end` is the index of the flick's last frame.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SpeedCurve {
-    #[serde(rename = "v")]
     pub speeds: Vec<f64>,
-    #[serde(rename = "end")]
     pub flick_end: usize,
 }
 
 /// For a kill after the first: whether the next target was the nearest on screen (rank 0), and how much farther.
 #[derive(Clone, Debug, Serialize)]
 pub struct Choice {
-    #[serde(rename = "n")]
     pub kill_number: usize,
     pub rank: usize,
     pub extra: f64,
@@ -421,13 +415,12 @@ pub const PROFILE_STEP: f64 = 0.05;
 const PROFILE_POINTS: usize = 26;
 
 /// The flick speed profile: each main flick's camera speed, as a share of its own peak, against the time as a share of
-/// the flick (the points are `step` apart from 0), averaged over `flicks` flicks (`n` in the JSON), with the 25th and
-/// 75th percentiles. `peak_at`: when the peak comes, as a share of the flick; `braking`: how much of the flick the
+/// the flick (the points are `step` apart from 0), averaged over `flicks` flicks, with the 25th and 75th
+/// percentiles. `peak_at`: when the peak comes, as a share of the flick; `braking`: how much of the flick the
 /// braking takes, from the last frame at 90% of the peak speed to the first under 15% (medians over the flicks).
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct FlickProfile {
-    #[serde(rename = "n")]
     pub flicks: usize,
     pub step: f64,
     #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]

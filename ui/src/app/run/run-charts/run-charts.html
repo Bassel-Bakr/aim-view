@@ -25,7 +25,7 @@
           {{ t.label }}
         </text>
       }
-      @for (b of kt.bars; track b.flick.n) {
+      @for (b of kt.bars; track b.flick.kill_number) {
         <g
           class="bar"
           [attr.data-selected]="b.flick === focus.selected() ? '' : null"
@@ -99,7 +99,7 @@
           {{ t.label }}
         </text>
       }
-      @for (d of ft.dots; track d.flick.n) {
+      @for (d of ft.dots; track d.flick.kill_number) {
         <circle
           class="dot"
           [attr.data-selected]="d.flick === focus.selected() ? '' : null"
@@ -156,7 +156,7 @@
       <text class="label" text-anchor="start" [attr.x]="cg.box.left" [attr.y]="cg.box.height - 6">
         the flick comes from the left · target edge {{ cg.scale.label }}
       </text>
-      @for (d of cg.dots; track d.flick.n) {
+      @for (d of cg.dots; track d.flick.kill_number) {
         <circle
           class="dot"
           [attr.data-missed]="d.missed ? '' : null"
@@ -224,7 +224,7 @@
         />
       </clipPath>
       <g clip-path="url(#run-speeds-plot)">
-        @for (l of sp.lines; track l.flick.n) {
+        @for (l of sp.lines; track l.flick.kill_number) {
           <path class="flick-line" [attr.d]="l.path" />
         }
         <path class="median-line" [attr.d]="sp.median" />
@@ -265,7 +265,7 @@
           {{ t.label }}
         </text>
       }
-      @for (b of ks.bars; track b.flick.n) {
+      @for (b of ks.bars; track b.flick.kill_number) {
         <g
           class="bar"
           [attr.data-selected]="b.flick === focus.selected() ? '' : null"
@@ -345,7 +345,7 @@
         [attr.y1]="ld.box.top"
         [attr.y2]="ld.box.height - ld.box.bottom"
       />
-      @for (c of ld.cells; track c.flick.n) {
+      @for (c of ld.cells; track c.flick.kill_number) {
         <rect
           class="cell"
           [attr.data-landing]="c.landing"
@@ -421,7 +421,7 @@
           {{ t.label }}
         </text>
       }
-      @for (d of ftm.dots; track d.flick.n) {
+      @for (d of ftm.dots; track d.flick.kill_number) {
         <circle
           class="dot"
           [attr.data-selected]="d.flick === focus.selected() ? '' : null"
@@ -550,7 +550,7 @@
           {{ b.label }}
         </text>
       }
-      @for (k of pc.kills; track k.flick.n) {
+      @for (k of pc.kills; track k.flick.kill_number) {
         <rect
           class="kill-tick"
           [attr.data-selected]="k.flick === focus.selected() ? '' : null"
@@ -560,7 +560,7 @@
           height="8"
           (click)="focus.play(k.flick)"
         >
-          <title>Kill {{ k.flick.n }}</title>
+          <title>Kill {{ k.flick.kill_number }}</title>
         </rect>
       }
     </svg>

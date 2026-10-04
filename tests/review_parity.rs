@@ -12,7 +12,7 @@ use aimview::track::Tracks;
 use serde_json::{json, Value};
 
 mod common;
-use common::{compare, read, Diff};
+use common::{compare, read, rename_key, Diff};
 
 const CASES: [&str; 2] = ["av1", "pokeball134"];
 
@@ -50,6 +50,9 @@ fn without_words(issues: &Value) -> Value {
         .collect()
 }
 
+/// Python's names for the measures' fields that the core names in full (src/measure.rs).
+const MEASURE_RENAMES: [(&str, &str); 3] = [("n", "kill_number"), ("dir", "direction_deg"), ("corr", "corrections")];
+
 #[test]
 fn clicking_review_matches_python() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity");
@@ -69,7 +72,12 @@ fn clicking_review_matches_python() {
         let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, want["video"].as_str().unwrap(), None, None).unwrap();
         let mut diff = Diff::default();
         compare("flicks.json", &serde_json::to_value(&got.flicks).unwrap(), &read(&dir.join("flicks.json")), &mut diff);
-        compare("measures.json", &serde_json::to_value(&got.report.flicks).unwrap(), &read(&dir.join("measures.json")), &mut diff);
+        let mut measures = read(&dir.join("measures.json"));
+        for (python, core) in MEASURE_RENAMES {
+            rename_key(&mut measures, &format!("[].{python}"), core);
+            rename_key(&mut want, &format!("flicks[].{python}"), core);
+        }
+        compare("measures.json", &serde_json::to_value(&got.report.flicks).unwrap(), &measures, &mut diff);
         let mut report = serde_json::to_value(&got.report).unwrap();
         report["issues"] = without_words(&report["issues"]);
         want["issues"] = without_words(&want["issues"]);

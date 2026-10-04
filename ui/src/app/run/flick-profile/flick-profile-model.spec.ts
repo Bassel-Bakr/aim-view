@@ -3,7 +3,7 @@ import { killCurve, PROFILE_BOX, profileChart } from './flick-profile-model';
 
 /** A profile of 0 to 125% in 6 points, 25% apart, rising to its top at 50%. */
 const profile: FlickProfile = {
-  n: 12,
+  flicks: 12,
   step: 0.25,
   mean: [0.4, 0.8, 1, 0.6, 0.1, 0],
   p25: [0.3, 0.7, 0.9, 0.5, 0.05, 0],
@@ -41,7 +41,10 @@ describe('flick profile chart', () => {
 
   it("draws a kill's own curve as shares of its top speed, cut at the plot's edge", () => {
     const c = profileChart(profile)!;
-    const kill = { n: 3, speed: { v: [100, 300, 400, 200, 50, 20, 10], end: 4 } } as Flick;
+    const kill = {
+      kill_number: 3,
+      speed: { speeds: [100, 300, 400, 200, 50, 20, 10], flick_end: 4 },
+    } as Flick;
     const d = killCurve(kill, c)!;
     const points = d
       .slice(1)
@@ -54,6 +57,6 @@ describe('flick profile chart', () => {
     // its top (400 °/s, at 50%) on the 100% line
     expect(points[2][1]).toBeCloseTo(c.yTicks[4].at, 1);
     expect(killCurve(null, c)).toBeNull();
-    expect(killCurve({ n: 4 } as Flick, c)).toBeNull();
+    expect(killCurve({ kill_number: 4 } as Flick, c)).toBeNull();
   });
 });

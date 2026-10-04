@@ -65,7 +65,7 @@ describe('click stats', () => {
   it("shows a kill's numbers with the run's medians under them", () => {
     const m = {
       D0: 12.34,
-      dir: 90,
+      direction_deg: 90,
       total: 0.5,
       react: 0.1,
       flick: 0.2,
@@ -108,7 +108,7 @@ describe('click stats', () => {
     });
     const kill = {
       D0: 5,
-      dir: 0,
+      direction_deg: 0,
       end_left: 0,
       past: 0,
       parts: undefined,

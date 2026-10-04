@@ -70,7 +70,7 @@ export function analysePaths(r: ClickReport, tracks: Tracks): PathAnalysis | nul
   const killOf = new Map<number, Flick>();
   const trackOf = new Map<number, number>();
   for (const m of r.flicks) {
-    const path = r.paths[String(m.n)];
+    const path = r.paths[String(m.kill_number)];
     const p = path?.[path.length - 1];
     const hit =
       p &&
@@ -79,17 +79,17 @@ export function analysePaths(r: ClickReport, tracks: Tracks): PathAnalysis | nul
       );
     if (hit) {
       killOf.set(hit[0], m);
-      trackOf.set(m.n, hit[0]);
+      trackOf.set(m.kill_number, hit[0]);
     }
   }
   const picks = new Map<number, KillPick>();
   for (const m of r.flicks) {
-    const id = trackOf.get(m.n);
+    const id = trackOf.get(m.kill_number);
     if (id == null) continue;
     const cut = newCut(m, r.fps);
     // a target with no known first frame is never taken for a new one, and never offered as a choice
     if ((firstSeen.get(id) ?? -Infinity) > cut) {
-      picks.set(m.n, { cost: 0, best: false, choices: 0, spawned: true });
+      picks.set(m.kill_number, { cost: 0, best: false, choices: 0, spawned: true });
       continue;
     }
     // the target just killed can linger a frame under the crosshair, and new targets were not options
@@ -100,13 +100,13 @@ export function analysePaths(r: ClickReport, tracks: Tracks): PathAnalysis | nul
     );
     if (!ts.some((t) => t[0] === id)) continue;
     if (ts.length === 1) {
-      picks.set(m.n, { cost: 0, best: true, choices: 1, spawned: false });
+      picks.set(m.kill_number, { cost: 0, best: true, choices: 1, spawned: false });
       continue;
     }
     const sol = solver.solve(ts);
     const j = sol ? sol.pts.findIndex((p) => p[0] === id) : -1;
     if (!sol || j < 0) continue;
-    picks.set(m.n, {
+    picks.set(m.kill_number, {
       cost: solver.fitts.b * (sol.from[j] - sol.from[sol.j0]),
       best: j === sol.j0,
       choices: ts.length,
@@ -176,7 +176,7 @@ export function pathing(a: PathAnalysis | null, r: ClickReport): Pathing | null 
   const median = r.summary.median_interval;
   const share = median ? per / median : 0;
   const unit = r.summary.shots == null ? 'kills' : 'shots';
-  const byN = new Map(r.flicks.map((m) => [m.n, m]));
+  const byN = new Map(r.flicks.map((m) => [m.kill_number, m]));
   const costliest = picks
     .filter(([, o]) => !o.best)
     .sort((x, y) => y[1].cost - x[1].cost)

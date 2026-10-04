@@ -148,8 +148,8 @@ const msLabel = (seconds: number) => String(Math.round(1000 * seconds));
 function killTicks(kills: KillMark[]): AxisTick[] {
   const every = kills.length > 60 ? 20 : kills.length > 20 ? 10 : 5;
   return kills
-    .filter((k) => k.flick.n === 1 || k.flick.n % every === 0)
-    .map((k) => ({ at: k.x, label: String(k.flick.n) }));
+    .filter((k) => k.flick.kill_number === 1 || k.flick.kill_number % every === 0)
+    .map((k) => ({ at: k.x, label: String(k.flick.kill_number) }));
 }
 
 /** The kills' times, each as a bar of its five parts (a kill whose parts were not found: one grey bar). */
@@ -181,7 +181,7 @@ export function killTimes(r: ClickReport): KillTimesModel {
       width: Math.max(1, slot * BAR_FILL),
       top: y(m.total),
       segments,
-      title: `Kill ${m.n}: ${formatMs(m.total)}${steps}`,
+      title: `Kill ${m.kill_number}: ${formatMs(m.total)}${steps}`,
     };
   });
   const xTicks = killTicks(bars.map((b) => ({ flick: b.flick, x: b.x + b.width / 2 })));
@@ -218,7 +218,7 @@ export function fittsChart(r: ClickReport): FittsModel {
       flick: m,
       x: x(m.D0),
       y: y(m.total),
-      title: `Kill ${m.n}: ${m.D0.toFixed(1)}°, ${formatMs(m.total)} (the curve: ${formatMs(predicted(m.D0))})`,
+      title: `Kill ${m.kill_number}: ${m.D0.toFixed(1)}°, ${formatMs(m.total)} (the curve: ${formatMs(predicted(m.D0))})`,
     })),
     curve,
     xTicks: ticks(far, x, (deg) => `${Math.round(deg)}°`),
@@ -236,7 +236,7 @@ export function clickGroup(r: ClickReport): ClickGroupModel {
   const placed = r.flicks
     .filter((m) => m.click_off_xy)
     .map((m) => {
-      const a = (m.dir * Math.PI) / 180;
+      const a = (m.direction_deg * Math.PI) / 180;
       const ux = Math.cos(a);
       const uy = Math.sin(a);
       // the crosshair from the target's center is minus the target's place from the crosshair
@@ -263,7 +263,7 @@ export function clickGroup(r: ClickReport): ClickGroupModel {
       x: q.x,
       y: q.y,
       missed: (p.flick.shots ?? 0) > 1,
-      title: `Kill ${p.flick.n}: ${Math.abs(p.along).toFixed(2)}° ${way} the center, ${Math.abs(p.across).toFixed(2)}° to the side`,
+      title: `Kill ${p.flick.kill_number}: ${Math.abs(p.along).toFixed(2)}° ${way} the center, ${Math.abs(p.across).toFixed(2)}° to the side`,
     };
   });
   const n = placed.length;
@@ -286,11 +286,11 @@ export function flickSpeeds(r: ClickReport): SpeedsModel {
   const lined = r.flicks
     .filter(
       (m): m is ReactedFlick =>
-        m.react != null && m.flick != null && !!r.paths[String(m.n)]?.length,
+        m.react != null && m.flick != null && !!r.paths[String(m.kill_number)]?.length,
     )
     .map((m) => {
       const end = m.start_frame / r.fps + m.react + m.flick;
-      const points = speeds(r.paths[String(m.n)], r.fps, true)
+      const points = speeds(r.paths[String(m.kill_number)], r.fps, true)
         .slice(1)
         .map(([f, v]): TimedSpeed => [f / r.fps - end, v])
         .filter(([t]) => t >= -SPEEDS_BEFORE && t <= SPEEDS_AFTER);
@@ -543,7 +543,7 @@ export function killShares(r: ClickReport): KillSharesModel {
       width,
       top: box.top,
       segments,
-      title: `Kill ${m.n}, ${CHART_WORDS.ttk} ${formatMs(m.total)}: ${said.join(', ')}`,
+      title: `Kill ${m.kill_number}, ${CHART_WORDS.ttk} ${formatMs(m.total)}: ${said.join(', ')}`,
     });
   }
   const whole = sums.reduce((a, b) => a + b, 0);
@@ -606,7 +606,7 @@ export function landings(r: ClickReport): LandingModel {
       width: Math.max(1, slot - gap),
       height: Math.max(0.5, tall - gap),
       landing,
-      title: `Kill ${m.n}: ${how}`,
+      title: `Kill ${m.kill_number}: ${how}`,
     };
   });
   const tick = niceStep(2 * edge);
@@ -669,7 +669,7 @@ export function flickTimes(r: ClickReport): FlickTimesModel {
       flick: m,
       x: x(m.D0),
       y: y(m.flick),
-      title: `Kill ${m.n}: ${m.D0.toFixed(1)}°, ${word} ${formatMs(m.flick)}${fit ? ` (the line: ${formatMs(predicted(m.D0))})` : ''}`,
+      title: `Kill ${m.kill_number}: ${m.D0.toFixed(1)}°, ${word} ${formatMs(m.flick)}${fit ? ` (the line: ${formatMs(predicted(m.D0))})` : ''}`,
     })),
     curve,
     fit: fit
@@ -703,7 +703,7 @@ export function directionWheel(r: ClickReport): DirectionWheelModel {
       .map((m) => ({ flick: m, speed: (m.D0 - m.end_left) / m.flick }));
     const mid = fast.length >= 3 ? median(fast.map((p) => p.speed)) : null;
     if (!mid) continue;
-    for (const p of fast) groups[sector(p.flick.dir)].push(p.speed / mid);
+    for (const p of fast) groups[sector(p.flick.direction_deg)].push(p.speed / mid);
   }
   const all = groups.reduce((a, g) => a + g.length, 0);
   const need = Math.max(3, Math.ceil(0.05 * all));

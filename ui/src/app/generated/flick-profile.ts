@@ -2,12 +2,12 @@
 
 /**
  * The flick speed profile: each main flick's camera speed, as a share of its own peak, against the time as a share of
- * the flick (the points are `step` apart from 0), averaged over `flicks` flicks (`n` in the JSON), with the 25th and
- * 75th percentiles. `peak_at`: when the peak comes, as a share of the flick; `braking`: how much of the flick the
+ * the flick (the points are `step` apart from 0), averaged over `flicks` flicks, with the 25th and 75th
+ * percentiles. `peak_at`: when the peak comes, as a share of the flick; `braking`: how much of the flick the
  * braking takes, from the last frame at 90% of the peak speed to the first under 15% (medians over the flicks).
  */
 export interface FlickProfile {
-  n: number;
+  flicks: number;
   step: number;
   mean: number[];
   p25: number[];

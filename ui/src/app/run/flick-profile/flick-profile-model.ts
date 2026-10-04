@@ -98,11 +98,11 @@ export function profileChart(
  */
 export function killCurve(m: Flick | null, chart: ProfileModel): string | null {
   const c = m?.speed;
-  if (!c || c.end < 1 || c.v.length <= c.end) return null;
-  const top = Math.max(...c.v.slice(0, c.end + 1));
+  if (!c || c.flick_end < 1 || c.speeds.length <= c.flick_end) return null;
+  const top = Math.max(...c.speeds.slice(0, c.flick_end + 1));
   if (top <= 0) return null;
-  const points = c.v
-    .map((v, i) => ({ share: i / c.end, v: v / top }))
+  const points = c.speeds
+    .map((v, i) => ({ share: i / c.flick_end, v: v / top }))
     .filter((q) => q.share <= chart.span + 1e-9)
     .map((q) => ({ x: xOf(chart.box, chart.span, q.share), y: yOf(chart.box, q.v) }));
   return line(points);

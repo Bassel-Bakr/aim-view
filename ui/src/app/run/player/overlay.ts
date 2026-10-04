@@ -94,7 +94,7 @@ export function drawClick(
   c.beginPath();
   c.arc(center[0], center[1], CROSSHAIR_RADIUS, 0, 2 * Math.PI);
   c.stroke();
-  const p = r.paths[String(f.n)]?.find((q) => q[0] === frame);
+  const p = r.paths[String(f.kill_number)]?.find((q) => q[0] === frame);
   if (!p) return;
   const target = toPx(g, p[1], p[2], scale);
   const edge = toPx(g, p[1] + r.summary.radius, p[2], scale)[0];

@@ -18,7 +18,7 @@ export class FlickProfileChart {
   readonly report = input.required<ClickReport>();
   private readonly focus = inject(FlickFocus);
   protected readonly chart = computed(() => profileChart(this.report().summary.flick_profile));
-  protected readonly flicks = computed(() => this.report().summary.flick_profile?.n ?? 0);
+  protected readonly flicks = computed(() => this.report().summary.flick_profile?.flicks ?? 0);
   protected readonly picked = computed(() => {
     const c = this.chart();
     return c ? killCurve(this.focus.selected(), c) : null;

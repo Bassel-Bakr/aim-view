@@ -192,7 +192,7 @@ export class KillLanes {
     const near = this.flickNear(e);
     tip.hidden = !near;
     if (!near) return;
-    tip.textContent = `Kill ${near.n} · ${formatMs(near.total)} · ${formatDegrees(near.D0, 1)} · click to play it`;
+    tip.textContent = `Kill ${near.kill_number} · ${formatMs(near.total)} · ${formatDegrees(near.D0, 1)} · click to play it`;
     const r = this.box().nativeElement.getBoundingClientRect();
     tip.style.left = `${Math.min(r.width - tip.offsetWidth, Math.max(0, e.clientX - r.left))}px`;
   }

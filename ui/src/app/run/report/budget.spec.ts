@@ -19,7 +19,7 @@ describe('budget', () => {
   });
 
   it('puts a picked kill over the average on one time scale', () => {
-    const flick = { n: 7, total: 1, parts: [0.2, 0.4, 0.2, 0.1, 0.1] } as Flick;
+    const flick = { kill_number: 7, total: 1, parts: [0.2, 0.4, 0.2, 0.1, 0.1] } as Flick;
     const b = budget(AVERAGE, flick);
     expect(b?.title).toBe("Where kill 7's 1000 ms goes");
     expect(b?.bars.map((x) => x.width)).toEqual([100, 50]);
@@ -29,7 +29,7 @@ describe('budget', () => {
   });
 
   it("says so when a kill's steps could not be split", () => {
-    const b = budget(AVERAGE, { n: 3, total: 0.8, parts: undefined } as Flick);
+    const b = budget(AVERAGE, { kill_number: 3, total: 0.8, parts: undefined } as Flick);
     expect(b?.note).toContain('was not found');
     expect(b?.bars).toHaveLength(1);
   });
@@ -37,7 +37,7 @@ describe('budget', () => {
   it('shows a forced reload as a fifth step, taken from the confirmation and then the micro', () => {
     // a 120 ms reload takes the whole 50 ms confirmation and 70 ms of the 150 ms micro: the TTK stays 500 ms
     const flick = {
-      n: 4,
+      kill_number: 4,
       total: 0.5,
       parts: [0.1, 0.2, 0.1, 0.05, 0.05],
       reloads: 1,
@@ -65,7 +65,13 @@ describe('budget', () => {
   });
 
   it('shows no more of a reload than the confirmation and micro it overlapped', () => {
-    const flick = { n: 5, total: 0.5, parts: AVERAGE, reloads: 1, reload_time: 0.5 } as Flick;
+    const flick = {
+      kill_number: 5,
+      total: 0.5,
+      parts: AVERAGE,
+      reloads: 1,
+      reload_time: 0.5,
+    } as Flick;
     const kill = budget(AVERAGE, flick, 0)?.bars[0].segments ?? [];
     expect(kill.map((s) => Math.round(1000 * s.grow * 0.5))).toEqual([100, 200, 0, 0, 200]);
     expect(kill[4].title).toBe(
@@ -74,7 +80,7 @@ describe('budget', () => {
   });
 
   it("has no reload step when the scenario's magazine never runs out", () => {
-    const flick = { n: 7, total: 0.5, parts: AVERAGE } as Flick;
+    const flick = { kill_number: 7, total: 0.5, parts: AVERAGE } as Flick;
     expect(budget(AVERAGE, flick)?.legend).toHaveLength(4);
     expect(averageReload({} as ClickSummary, [flick])).toBeNull();
     const reloads = { reloads: { count: 1, seconds: 0.5, score_lost: null } } as ClickSummary;

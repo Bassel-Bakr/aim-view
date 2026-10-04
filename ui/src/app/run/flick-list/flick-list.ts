@@ -49,8 +49,8 @@ function whole(value: number | null | undefined, scale = 1): string {
 export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[] {
   return r.flicks.map((m) => ({
     flick: m,
-    n: m.n,
-    distance: `${m.D0.toFixed(1)}° ${arrow(m.dir)}`,
+    n: m.kill_number,
+    distance: `${m.D0.toFixed(1)}° ${arrow(m.direction_deg)}`,
     ttk: whole(m.total, 1000),
     landed: formatEnded(m.end_left, r.summary.radius),
     confirmation: whole(m.still, 1000),
@@ -58,11 +58,11 @@ export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[
     onTheMove: whole(m.click_speed),
     shots: formatCount(m.shots),
     missed: (m.shots ?? 0) > 1,
-    pathing: pickText(paths, m.n),
+    pathing: pickText(paths, m.kill_number),
     steps: [m.react, m.flick, micro(m)].map((s) => whole(s, 1000)).join(' · '),
     microSplit: m.parts ? microSplit(m.parts) : '',
     offCenter: formatDegrees(m.click_off),
-    micros: formatCount(m.corr),
+    micros: formatCount(m.corrections),
     spawn: m.spawned ? 'yes' : 'no',
   }));
 }
@@ -86,7 +86,7 @@ export class FlickList {
   constructor() {
     afterRenderEffect(() => {
       const m = this.focus.selected();
-      if (m) this.keepInView(m.n);
+      if (m) this.keepInView(m.kill_number);
     });
   }
 

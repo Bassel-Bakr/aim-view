@@ -221,7 +221,7 @@ export function budget(
       legend: legend(average, average, true),
     };
   }
-  const title = `Where kill ${flick.n}'s ${formatMs(flick.total)} goes`;
+  const title = `Where kill ${flick.kill_number}'s ${formatMs(flick.total)} goes`;
   if (!flick.parts) {
     return {
       title,

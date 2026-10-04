@@ -8,7 +8,7 @@ import type { TargetOffset } from './target-offset';
  * settle, still and the time parts.
  */
 export interface Measure {
-  n: number;
+  kill_number: number;
   shots: number | null;
   /**
    * The distance to the target when the flick started.
@@ -17,7 +17,7 @@ export interface Measure {
   /**
    * The direction to the target (0 = right, 90 = up).
    */
-  dir: number;
+  direction_deg: number;
   total: number;
   react: number | null;
   flick: number | null;
@@ -36,9 +36,9 @@ export interface Measure {
   dwell: number | null;
   past: number;
   /**
-   * Corrections (`corr` in the JSON): bursts of movement after the main flick.
+   * Bursts of movement after the main flick.
    */
-  corr: number;
+  corrections: number;
   click_speed: number;
   click_off: number;
   click_off_xy: TargetOffset;

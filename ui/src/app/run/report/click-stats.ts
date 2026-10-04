@@ -132,10 +132,10 @@ export function killStats(
   flicks: Flick[] = [],
 ): Stat[] {
   const run = (v: string) => `run ${v}`;
-  const micros = runMedian(flicks, (f) => f.corr);
+  const micros = runMedian(flicks, (f) => f.corrections);
   return [
     { label: 'Distance', value: `${m.D0.toFixed(1)}°`, detail: '' },
-    { label: 'Toward', value: arrow(m.dir), detail: '' },
+    { label: 'Toward', value: arrow(m.direction_deg), detail: '' },
     { label: 'TTK', value: formatMs(m.total), detail: run(formatMs(s.median_interval)) },
     { label: 'Reaction', value: formatMs(m.react), detail: run(formatMs(s.react)) },
     { label: 'Flick', value: formatMs(m.flick), detail: run(formatMs(s.flick)) },
@@ -162,7 +162,7 @@ export function killStats(
     },
     {
       label: 'Micros',
-      value: formatCount(m.corr),
+      value: formatCount(m.corrections),
       detail: micros == null ? '' : run(String(micros)),
     },
     {

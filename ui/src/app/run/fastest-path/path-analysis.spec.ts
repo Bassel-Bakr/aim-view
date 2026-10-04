@@ -5,9 +5,9 @@ import { analysePaths, pathing, pickText } from './path-analysis';
 // near one with nothing else left; the third's target appeared just before the flick, so it was new.
 // (At 100 fps a target counts as new when it appeared under 15 frames before its flick began.)
 const FLICKS = [
-  { n: 1, start_frame: 30, kill_frame: 40, react: 0, D0: 9, total: 0.6 },
-  { n: 2, start_frame: 50, kill_frame: 60, react: 0, D0: 2, total: 0.3 },
-  { n: 3, start_frame: 70, kill_frame: 80, react: 0, D0: 4, total: 0.4 },
+  { kill_number: 1, start_frame: 30, kill_frame: 40, react: 0, D0: 9, total: 0.6 },
+  { kill_number: 2, start_frame: 50, kill_frame: 60, react: 0, D0: 2, total: 0.3 },
+  { kill_number: 3, start_frame: 70, kill_frame: 80, react: 0, D0: 4, total: 0.4 },
 ] as Flick[];
 
 const frames: TrackFrame[] = Array.from({ length: 81 }, (_, i) => ({
@@ -51,7 +51,7 @@ describe('analysePaths', () => {
   it('flags the costly picks in the Pathing check, costliest first', () => {
     const p = pathing(a, REPORT);
     expect(p?.issue.value).toContain('The fastest next target in 0% of 1 picks');
-    expect(p?.costliest.map((c) => c.flick.n)).toEqual([1]);
+    expect(p?.costliest.map((c) => c.flick.kill_number)).toEqual([1]);
   });
 
   it('shows the work is under way until the tracks are in', () => {

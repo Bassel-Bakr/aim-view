@@ -85,9 +85,9 @@
       <p class="check-why">
         @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
           Costliest picks:
-          @for (c of pathing()?.costliest; track c.flick.n; let last = $last) {
+          @for (c of pathing()?.costliest; track c.flick.kill_number; let last = $last) {
             <button class="link" type="button" (click)="focus.play(c.flick)">
-              kill {{ c.flick.n }}
+              kill {{ c.flick.kill_number }}
             </button>
             {{ c.cost }}{{ last ? '.' : ',' }}
           }

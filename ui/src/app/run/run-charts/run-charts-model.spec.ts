@@ -17,9 +17,9 @@ import {
 
 const flick = (n: number, more: Partial<Flick>): Flick =>
   ({
-    n,
+    kill_number: n,
     D0: 10,
-    dir: 0,
+    direction_deg: 0,
     total: 0.5,
     react: 0.1,
     flick: 0.2,
@@ -71,9 +71,9 @@ describe('run charts', () => {
 
   it('turns every click so its flick comes from the left: past the center is to the right', () => {
     // a flick toward +x; the target ends 0.2 degrees to the crosshair's left, so the crosshair is past its center
-    const past = flick(1, { dir: 0, click_off_xy: [-0.2, 0] });
+    const past = flick(1, { direction_deg: 0, click_off_xy: [-0.2, 0] });
     // a flick toward +y, the crosshair 0.2 degrees short of the center
-    const short = flick(2, { dir: 90, click_off_xy: [0, 0.2], shots: 2 });
+    const short = flick(2, { direction_deg: 90, click_off_xy: [0, 0.2], shots: 2 });
     const m = clickGroup(report([past, short]));
     expect(m.dots[0].x).toBeGreaterThan(m.center.x);
     expect(m.dots[0].y).toBeCloseTo(m.center.y, 6);
@@ -100,7 +100,7 @@ describe('run charts', () => {
   it("splits each kill's time into reaction, flick, micro and confirmation shares", () => {
     // parts [0.1, 0.2, 0.1, 0.05, 0.05]: reaction 20%, flick 40%, micro (0.1 + 0.05) 30%, confirmation 10%
     const m = killShares(report([flick(1, {}), flick(2, { parts: undefined }), flick(3, {})]));
-    expect(m.bars.map((b) => b.flick.n)).toEqual([1, 3]);
+    expect(m.bars.map((b) => b.flick.kill_number)).toEqual([1, 3]);
     const plot = BOX.height - BOX.top - BOX.bottom;
     const heights = m.bars[0].segments.map((s) => s.height / plot);
     [0.2, 0.4, 0.3, 0.1].forEach((share, i) => expect(heights[i]).toBeCloseTo(share, 9));
@@ -170,7 +170,9 @@ describe('run charts', () => {
   it('compares each direction against the median speed for the distance, best and weakest marked', () => {
     // 8 degrees each: right at 80 °/s, up at 40, left at 60; the distance group's median is 60
     const toward = (dir: number, time: number, from: number) =>
-      [0, 1, 2].map((i) => flick(from + i, { D0: 8, end_left: 0, dir, flick: time }));
+      [0, 1, 2].map((i) =>
+        flick(from + i, { D0: 8, end_left: 0, direction_deg: dir, flick: time }),
+      );
     const m = directionWheel(
       report([...toward(0, 0.1, 1), ...toward(90, 0.2, 4), ...toward(180, 8 / 60, 7)]),
     );

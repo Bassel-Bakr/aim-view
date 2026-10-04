@@ -47,6 +47,6 @@ export class RunCharts {
   /** The direction of the kill in focus, as the wheel's wedge index. */
   protected readonly selectedSector = computed(() => {
     const f = this.focus.selected();
-    return f ? sector(f.dir) : null;
+    return f ? sector(f.direction_deg) : null;
   });
 }

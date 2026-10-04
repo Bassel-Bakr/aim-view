@@ -44,7 +44,7 @@ export class SpeedChart {
   protected readonly model = computed<SpeedChartModel | null>(() => {
     const m = this.focus.selected();
     const r = this.report();
-    const path = m && r.paths[String(m.n)];
+    const path = m && r.paths[String(m.kill_number)];
     return m && path ? speedChart(m, path, r.fps, this.size(), this.smooth()) : null;
   });
   /** The flick's length, in milliseconds: the slider's range. */
@@ -55,7 +55,7 @@ export class SpeedChart {
   protected readonly title = computed(() => {
     const m = this.focus.selected();
     return m
-      ? `Kill ${m.n}: ${m.D0.toFixed(1)}° ${arrow(m.dir)}, ${Math.round(1000 * m.total)} ms`
+      ? `Kill ${m.kill_number}: ${m.D0.toFixed(1)}° ${arrow(m.direction_deg)}, ${Math.round(1000 * m.total)} ms`
       : '';
   });
 

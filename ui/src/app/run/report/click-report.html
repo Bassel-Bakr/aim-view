@@ -1,7 +1,7 @@
 <section aria-label="The run's numbers">
   <div class="head">
     @if (picked(); as m) {
-      <span class="head-title">Kill {{ m.n }}</span>
+      <span class="head-title">Kill {{ m.kill_number }}</span>
       <span class="head-hint">run median below each value</span>
       <button class="whole-run" type="button" (click)="focus.selected.set(null)">Whole run</button>
     } @else {
