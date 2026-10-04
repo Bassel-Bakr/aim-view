@@ -4,12 +4,16 @@
 //!
 //! The logger registers a message-only window for raw mouse input with RIDEV_INPUTSINK, so it keeps receiving input
 //! while KovaaK's has focus. It never sends input and never moves the cursor. Each WM_INPUT becomes one record in
-//! mouse_log.py's format (src/mouse.rs), so logs from either logger read the same.
+//! mouse_log.py's format (src/mouse.rs writes the records' bytes and reads them back), so logs from either logger read
+//! the same.
 //!
 //! Raw input goes to one window per process, and tao (Tauri's windows) already registers the mouse in the app's
 //! process. So the app runs the logger in a process of its own: its own executable with `--mouse-log <file>`
-//! (`child_main`), which stops cleanly, writing the stop pair, when its standard input closes (the switch is turned off,
-//! or the app ends).
+//! (`child_main`), which stops cleanly, writing the stop pair, when its standard input closes (the switch is turned
+//! off, or the app ends).
+//!
+//! In: Windows' raw mouse input, and the page's /api/mouse/logger requests (protocol.rs). Out: the logs in the app's
+//! data folder's mouse/, and the switch's state as JSON for the page.
 //!
 //! Windows 11 throttles raw input to background programs to about 125 Hz, unless the user turns that off
 //! (HKCU\Control Panel\Mouse, RawMouseThrottleEnabled = 0, then sign out and in): python/README.md, "Raw mouse log".
@@ -29,30 +33,89 @@ use serde_json::{Value, json};
 use aimview_service::mouse::utc_offset_at;
 use aimview_service::{Answer, Failure};
 
+/// Nanoseconds in a second.
+const NANOS_PER_SECOND: f64 = 1e9;
+/// Seconds in a day, an hour and a minute, and minutes in an hour.
+const SECONDS_PER_DAY: i64 = 86_400;
+const SECONDS_PER_HOUR: i64 = 3_600;
+const SECONDS_PER_MINUTE: i64 = 60;
+const MINUTES_PER_HOUR: i64 = 60;
+/// Howard Hinnant's civil calendar: the days from 0000-03-01 to 1970-01-01, and the days and years in an era (the
+/// Gregorian cycle).
+const DAYS_TO_UNIX_EPOCH: i64 = 719_468;
+const DAYS_PER_ERA: i64 = 146_097;
+const YEARS_PER_ERA: i64 = 400;
+/// The busiest rate is counted over this long, seconds.
+const BUSIEST_WINDOW_S: f64 = 0.1;
+/// With this many events or more, a busiest rate at or under THROTTLED_BUSIEST_HZ means Windows throttled the logger
+/// (to about 125 events a second).
+const MIN_EVENTS_FOR_RATE: usize = 200;
+const THROTTLED_BUSIEST_HZ: f64 = 300.0;
+/// The argument that makes the app's executable the logger.
+const CHILD_ARG: &str = "--mouse-log";
+/// The logger process's exit codes: logged, failed, and started without the file to write.
+const EXIT_LOGGED: i32 = 0;
+const EXIT_FAILED: i32 = 1;
+const EXIT_NO_FILE: i32 = 2;
+/// How long a logger asked to stop may take to write its stop pair before it is killed, and how often it is checked.
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const STOP_POLL: Duration = Duration::from_millis(20);
+/// Digits between the commas of a large number.
+const DIGITS_PER_GROUP: usize = 3;
+
 // ---- Windows ----
 
 #[cfg(windows)]
 mod win {
     use std::ffi::c_void;
 
+    /// The raw input message, and PeekMessageW's flag to take a message off the queue.
     pub const WM_INPUT: u32 = 0x00FF;
     pub const PM_REMOVE: u32 = 0x0001;
+    /// GetRawInputData's command: the whole RAWINPUT.
     pub const RID_INPUT: u32 = 0x1000_0003;
+    /// RAWINPUTHEADER's dwType for a mouse.
     pub const RIM_TYPEMOUSE: u32 = 0;
+    /// WM_INPUT's wParam: input while the window is foreground, and while it is not.
     pub const RIM_INPUT: usize = 0;
+    pub const RIM_INPUTSINK: usize = 1;
+    /// RegisterRawInputDevices' flags: stop the device's input, and take it in the background too.
     pub const RIDEV_REMOVE: u32 = 0x0000_0001;
     pub const RIDEV_INPUTSINK: u32 = 0x0000_0100;
+    /// GetRawInputDeviceInfoW's command: the device's name.
     pub const RIDI_DEVICENAME: u32 = 0x2000_0007;
+    /// The HID usage page and usage of a mouse (generic desktop controls, mouse).
+    pub const USAGE_PAGE_GENERIC: u16 = 1;
+    pub const USAGE_MOUSE: u16 = 2;
+    /// The parent of a message-only window.
     pub const HWND_MESSAGE: isize = -3;
+    /// MsgWaitForMultipleObjectsEx's wake mask (any message) and flag (input already in the queue counts).
     pub const QS_ALLINPUT: u32 = 0x04FF;
     pub const MWMO_INPUTAVAILABLE: u32 = 0x0004;
     pub const THREAD_PRIORITY_HIGHEST: i32 = 2;
+    /// What the raw input calls return when they fail: (UINT)-1.
     pub const FAIL: u32 = u32::MAX;
     /// HKEY_CURRENT_USER, sign-extended as the headers define it.
     pub const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
     pub const KEY_READ: u32 = 0x2_0019;
+    /// Registry value types: a string, and a 32-bit number.
     pub const REG_SZ: u32 = 1;
     pub const REG_DWORD: u32 = 4;
+    /// CreateProcess's flag for a console program with no console window.
+    pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    /// RAWINPUTHEADER's size in the 64-bit layout, which GetRawInputData is told.
+    pub const RAW_INPUT_HEADER_BYTES: u32 = 24;
+    /// A mouse's RAWINPUT in the 64-bit layout (RAWINPUTHEADER, then RAWMOUSE): its size in bytes, and where its
+    /// fields start: the header's dwType and hDevice, then RAWMOUSE's usFlags, usButtonFlags, usButtonData, lLastX and
+    /// lLastY.
+    pub const RAW_INPUT_BYTES: usize = 48;
+    pub const TYPE_AT: usize = 0;
+    pub const DEVICE_AT: usize = 8;
+    pub const FLAGS_AT: usize = 24;
+    pub const BUTTON_FLAGS_AT: usize = 28;
+    pub const BUTTON_DATA_AT: usize = 30;
+    pub const X_AT: usize = 36;
+    pub const Y_AT: usize = 40;
 
     #[repr(C)]
     pub struct Msg {
@@ -128,112 +191,183 @@ mod win {
         pub fn RegCloseKey(key: isize) -> i32;
     }
 
-    pub fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(Some(0)).collect()
+    /// A string as Windows takes it: UTF-16, ending in a 0.
+    pub fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(Some(0)).collect()
     }
 }
 
-/// The QueryPerformanceCounter time.
+/// The registry's subkey of HKEY_CURRENT_USER that holds the throttle, and the start of the throttle values' names
+/// (RawMouseThrottleEnabled, RawMouseThrottleForced, RawMouseThrottleDuration, ...).
 #[cfg(windows)]
-pub fn qpc() -> i64 {
-    let mut q = 0i64;
+const THROTTLE_KEY: &str = r"Control Panel\Mouse";
+#[cfg(windows)]
+const THROTTLE_VALUE_PREFIX: &str = "RawMouseThrottl";
+/// The buffers a registry value's name (characters) and data (bytes) are read into.
+#[cfg(windows)]
+const REGISTRY_NAME_CHARS: usize = 256;
+#[cfg(windows)]
+const REGISTRY_DATA_BYTES: usize = 1024;
+
+/// The QueryPerformanceCounter time, in its ticks.
+#[cfg(windows)]
+pub fn qpc_now() -> i64 {
+    let mut ticks = 0i64;
     // SAFETY: the call writes one i64
-    unsafe { win::QueryPerformanceCounter(&mut q) };
-    q
+    unsafe { win::QueryPerformanceCounter(&mut ticks) };
+    ticks
 }
 
 /// Nanoseconds since 1970 (Python's `time.time_ns()`).
 pub fn time_ns() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i64)
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since_epoch| since_epoch.as_nanos() as i64)
 }
 
 /// A moment (seconds since 1970) as a local "2026-10-01_03-17-24", the logs' file names.
-pub fn local_stamp(secs: f64) -> String {
-    let t = secs.floor() as i64 + utc_offset_at(secs);
-    let (days, rem) = (t.div_euclid(86_400), t.rem_euclid(86_400));
-    // the civil date from days since 1970 (Howard Hinnant's algorithm)
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}_{:02}-{:02}-{:02}", rem / 3600, rem / 60 % 60, rem % 60)
+pub fn local_stamp(epoch_s: f64) -> String {
+    let local_s = epoch_s.floor() as i64 + utc_offset_at(epoch_s);
+    let (days, second_of_day) = (local_s.div_euclid(SECONDS_PER_DAY), local_s.rem_euclid(SECONDS_PER_DAY));
+    let (year, month, day) = civil_date(days);
+    let hours = second_of_day / SECONDS_PER_HOUR;
+    let minutes = second_of_day / SECONDS_PER_MINUTE % MINUTES_PER_HOUR;
+    let seconds = second_of_day % SECONDS_PER_MINUTE;
+    format!("{year:04}-{month:02}-{day:02}_{hours:02}-{minutes:02}-{seconds:02}")
+}
+
+/// The civil date (year, month, day) of a day counted from 1970-01-01 (Howard Hinnant's `civil_from_days`, counting
+/// years from March so that a leap day ends the year).
+fn civil_date(days: i64) -> (i64, i64, i64) {
+    let days_since_march_0000 = days + DAYS_TO_UNIX_EPOCH;
+    let era = days_since_march_0000.div_euclid(DAYS_PER_ERA);
+    let day_of_era = days_since_march_0000 - era * DAYS_PER_ERA;
+    // the era's leap days taken out (one every 4 years, but not every 100, but every 400), its 365-day years
+    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    // the months counted from March: their lengths follow (153 * month + 2) / 5
+    let month_from_march = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
+    let month = if month_from_march < 10 { month_from_march + 3 } else { month_from_march - 9 };
+    let year = year_of_era + era * YEARS_PER_ERA + i64::from(month <= 2);
+    (year, month, day)
 }
 
 /// The background raw input throttle values under HKCU\Control Panel\Mouse, read only.
 pub fn throttle_setting() -> String {
-    let mut found: Vec<(String, String)> = Vec::new();
-    #[cfg(windows)]
-    {
-        let mut key = 0isize;
-        let sub = win::wide(r"Control Panel\Mouse");
-        // SAFETY: the key is opened read only, enumerated into buffers of the sizes given, and closed
-        unsafe {
-            if win::RegOpenKeyExW(win::HKEY_CURRENT_USER, sub.as_ptr(), 0, win::KEY_READ, &mut key) == 0 {
-                for i in 0.. {
-                    let (mut name, mut data) = ([0u16; 256], [0u8; 1024]);
-                    let (mut name_len, mut data_len, mut kind) = (name.len() as u32, data.len() as u32, 0u32);
-                    let r = win::RegEnumValueW(
-                        key,
-                        i,
-                        name.as_mut_ptr(),
-                        &mut name_len,
-                        std::ptr::null_mut(),
-                        &mut kind,
-                        data.as_mut_ptr(),
-                        &mut data_len,
-                    );
-                    if r != 0 {
-                        break;
-                    }
-                    let name = String::from_utf16_lossy(&name[..name_len as usize]);
-                    if name.starts_with("RawMouseThrottl") {
-                        let value = match kind {
-                            win::REG_DWORD if data_len >= 4 => u32::from_le_bytes(data[..4].try_into().unwrap()).to_string(),
-                            win::REG_SZ => {
-                                let w: Vec<u16> = data[..data_len as usize].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-                                String::from_utf16_lossy(&w).trim_end_matches('\0').to_string()
-                            }
-                            _ => format!("{:?}", &data[..data_len as usize]),
-                        };
-                        found.push((name, value));
-                    }
-                }
-                win::RegCloseKey(key);
-            }
-        }
-    }
+    let mut found = throttle_values();
     if found.is_empty() {
         return "background throttle not set (Windows 11 default: about 125 Hz while KovaaK's has focus)".into();
     }
     found.sort();
-    let list: Vec<String> = found.iter().map(|(k, v)| format!("{k} = {v}")).collect();
+    let list: Vec<String> = found.iter().map(|(name, value)| format!("{name} = {value}")).collect();
     format!("background throttle: {}", list.join(", "))
+}
+
+/// The throttle's values in the registry, as (name, value as text).
+#[cfg(windows)]
+fn throttle_values() -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut key = 0isize;
+    let subkey = win::wide(THROTTLE_KEY);
+    // SAFETY: the key is opened read only, enumerated into buffers of the sizes given, and closed
+    unsafe {
+        if win::RegOpenKeyExW(win::HKEY_CURRENT_USER, subkey.as_ptr(), 0, win::KEY_READ, &mut key) == 0 {
+            for i in 0.. {
+                let (mut name, mut data) = ([0u16; REGISTRY_NAME_CHARS], [0u8; REGISTRY_DATA_BYTES]);
+                let (mut name_len, mut data_len, mut kind) = (name.len() as u32, data.len() as u32, 0u32);
+                let result = win::RegEnumValueW(
+                    key,
+                    i,
+                    name.as_mut_ptr(),
+                    &mut name_len,
+                    std::ptr::null_mut(),
+                    &mut kind,
+                    data.as_mut_ptr(),
+                    &mut data_len,
+                );
+                if result != 0 {
+                    break;
+                }
+                let name = String::from_utf16_lossy(&name[..name_len as usize]);
+                if name.starts_with(THROTTLE_VALUE_PREFIX) {
+                    found.push((name, registry_value_text(kind, &data[..data_len as usize])));
+                }
+            }
+            win::RegCloseKey(key);
+        }
+    }
+    found
+}
+
+/// Without Windows there is no registry, and no throttle.
+#[cfg(not(windows))]
+fn throttle_values() -> Vec<(String, String)> {
+    Vec::new()
+}
+
+/// A registry value's data as text: a DWORD as its number, a string as itself, anything else as its bytes.
+#[cfg(windows)]
+fn registry_value_text(kind: u32, data: &[u8]) -> String {
+    match kind {
+        win::REG_DWORD if data.len() >= size_of::<u32>() => {
+            u32::from_le_bytes(data[..size_of::<u32>()].try_into().unwrap()).to_string()
+        }
+        win::REG_SZ => {
+            let units: Vec<u16> =
+                data.chunks_exact(size_of::<u16>()).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+            String::from_utf16_lossy(&units).trim_end_matches('\0').to_string()
+        }
+        _ => format!("{data:?}"),
+    }
 }
 
 // ---- the logger ----
 
+/// The (QPC, time_ns) pair is the tightest of this many tries.
+#[cfg(windows)]
+const CLOCK_PAIR_TRIES: usize = 20;
+/// The logger waits at most this long for input before it checks whether to stop, milliseconds.
+#[cfg(windows)]
+const WAIT_MS: u32 = 100;
+/// The records go to the file once this many bytes wait, or this long after the last write, so a killed logger loses
+/// little.
+#[cfg(windows)]
+const FLUSH_BYTES: usize = 1 << 16;
+#[cfg(windows)]
+const FLUSH_INTERVAL: Duration = Duration::from_millis(250);
+/// The bench's rounds of posted messages (the fastest counts), and its RAWINPUT: a move of 3 counts right and 2 up
+/// from a made-up device.
+#[cfg(windows)]
+const BENCH_ROUNDS: usize = 5;
+#[cfg(windows)]
+const BENCH_DEVICE_HANDLE: u64 = 0x1234;
+#[cfg(windows)]
+const BENCH_X_COUNTS: i32 = 3;
+#[cfg(windows)]
+const BENCH_Y_COUNTS: i32 = -2;
+/// Microseconds in a second.
+#[cfg(windows)]
+const MICROS_PER_SECOND: f64 = 1e6;
+
 /// A RAWINPUT's bytes (64-bit layout: the header, then RAWMOUSE).
 #[cfg(windows)]
 #[repr(C, align(8))]
-struct RawBuffer([u8; 48]);
+struct RawBuffer([u8; win::RAW_INPUT_BYTES]);
 
-/// A message-only window that turns WM_INPUT messages into records in `out`.
+/// A message-only window that turns WM_INPUT messages into records in `records`.
 #[cfg(windows)]
 pub struct Logger {
-    hwnd: isize,
-    pub freq: i64,
-    pub out: Vec<u8>,
-    devices: HashMap<u64, u16>,
+    window: isize,
+    /// QueryPerformanceCounter's ticks a second.
+    pub qpc_frequency: i64,
+    /// The records not yet written to the file.
+    pub records: Vec<u8>,
+    /// Each device's index in the log, by its handle.
+    device_indexes: HashMap<u64, u16>,
     /// The devices' names, by index.
-    pub names: Vec<String>,
+    pub device_names: Vec<String>,
     /// WM_INPUT messages that could not be read.
-    pub bad: usize,
-    raw: RawBuffer,
+    pub unread_messages: usize,
+    raw_input: RawBuffer,
 }
 
 #[cfg(windows)]
@@ -241,23 +375,49 @@ impl Logger {
     pub fn new() -> io::Result<Logger> {
         let (class, name) = (win::wide("STATIC"), win::wide("aimview mouse_log"));
         // SAFETY: a message-only window of a system class, with no parameters
-        let hwnd = unsafe {
-            win::CreateWindowExW(0, class.as_ptr(), name.as_ptr(), 0, 0, 0, 0, 0, win::HWND_MESSAGE, 0, 0, std::ptr::null_mut())
+        let window = unsafe {
+            win::CreateWindowExW(
+                0,
+                class.as_ptr(),
+                name.as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                win::HWND_MESSAGE,
+                0,
+                0,
+                std::ptr::null_mut(),
+            )
         };
-        if hwnd == 0 {
+        if window == 0 {
             return Err(io::Error::other(format!("CreateWindowExW failed: {}", io::Error::last_os_error())));
         }
-        let mut freq = 0i64;
+        let mut qpc_frequency = 0i64;
         // SAFETY: the call writes one i64
-        unsafe { win::QueryPerformanceFrequency(&mut freq) };
-        Ok(Logger { hwnd, freq, out: Vec::new(), devices: HashMap::new(), names: Vec::new(), bad: 0, raw: RawBuffer([0; 48]) })
+        unsafe { win::QueryPerformanceFrequency(&mut qpc_frequency) };
+        Ok(Logger {
+            window,
+            qpc_frequency,
+            records: Vec::new(),
+            device_indexes: HashMap::new(),
+            device_names: Vec::new(),
+            unread_messages: 0,
+            raw_input: RawBuffer([0; win::RAW_INPUT_BYTES]),
+        })
     }
 
-    /// Asks for the mouse's raw input (usage page 1, usage 2), in the background too.
+    /// Asks for the mouse's raw input, in the background too.
     pub fn register(&self) -> io::Result<()> {
-        let rid = win::RawInputDevice { usage_page: 1, usage: 2, flags: win::RIDEV_INPUTSINK, target: self.hwnd };
+        let device = win::RawInputDevice {
+            usage_page: win::USAGE_PAGE_GENERIC,
+            usage: win::USAGE_MOUSE,
+            flags: win::RIDEV_INPUTSINK,
+            target: self.window,
+        };
         // SAFETY: one device, of the size given
-        if unsafe { win::RegisterRawInputDevices(&rid, 1, size_of::<win::RawInputDevice>() as u32) } == 0 {
+        if unsafe { win::RegisterRawInputDevices(&device, 1, size_of::<win::RawInputDevice>() as u32) } == 0 {
             return Err(io::Error::other(format!("RegisterRawInputDevices failed: {}", io::Error::last_os_error())));
         }
         Ok(())
@@ -265,99 +425,131 @@ impl Logger {
 
     /// Handles every queued message; WM_INPUT is read here, not in a window procedure.
     pub fn drain(&mut self) {
-        let mut msg = win::Msg { hwnd: 0, message: 0, wparam: 0, lparam: 0, time: 0, pt_x: 0, pt_y: 0, private: 0 };
+        let mut queued = win::Msg { hwnd: 0, message: 0, wparam: 0, lparam: 0, time: 0, pt_x: 0, pt_y: 0, private: 0 };
         // SAFETY: the message and the raw input buffer are the sizes the calls are told
         unsafe {
-            while win::PeekMessageW(&mut msg, 0, 0, 0, win::PM_REMOVE) != 0 {
-                if msg.message == win::WM_INPUT {
-                    let t = qpc();
-                    let mut size = self.raw.0.len() as u32;
-                    if win::GetRawInputData(msg.lparam, win::RID_INPUT, self.raw.0.as_mut_ptr().cast(), &mut size, 24) == win::FAIL {
-                        self.bad += 1;
+            while win::PeekMessageW(&mut queued, 0, 0, 0, win::PM_REMOVE) != 0 {
+                if queued.message == win::WM_INPUT {
+                    let handled_qpc = qpc_now();
+                    let mut size = self.raw_input.0.len() as u32;
+                    let read = win::GetRawInputData(
+                        queued.lparam,
+                        win::RID_INPUT,
+                        self.raw_input.0.as_mut_ptr().cast(),
+                        &mut size,
+                        win::RAW_INPUT_HEADER_BYTES,
+                    );
+                    if read == win::FAIL {
+                        self.unread_messages += 1;
                         continue;
                     }
-                    if msg.wparam == win::RIM_INPUT {
+                    if queued.wparam == win::RIM_INPUT {
                         // input while this window is foreground: let the system clean up
-                        win::DefWindowProcW(msg.hwnd, win::WM_INPUT, msg.wparam, msg.lparam);
+                        win::DefWindowProcW(queued.hwnd, win::WM_INPUT, queued.wparam, queued.lparam);
                     }
-                    self.record(t);
+                    self.record(handled_qpc);
                 } else {
-                    win::TranslateMessage(&msg);
-                    win::DispatchMessageW(&msg);
+                    win::TranslateMessage(&queued);
+                    win::DispatchMessageW(&queued);
                 }
             }
         }
     }
 
-    /// Decodes the RAWINPUT in the buffer and appends one record.
-    fn record(&mut self, t: i64) {
-        let r = &self.raw.0;
-        let le16 = |at: usize| u16::from_le_bytes([r[at], r[at + 1]]);
-        let le32 = |at: usize| i32::from_le_bytes(r[at..at + 4].try_into().unwrap());
-        if le32(0) as u32 != win::RIM_TYPEMOUSE {
+    /// Decodes the RAWINPUT in the buffer and appends one record, timed at `handled_qpc`.
+    fn record(&mut self, handled_qpc: i64) {
+        let raw = &self.raw_input.0;
+        let read_u16 = |at: usize| u16::from_le_bytes([raw[at], raw[at + 1]]);
+        let read_i32 = |at: usize| i32::from_le_bytes(raw[at..at + size_of::<i32>()].try_into().unwrap());
+        if read_i32(win::TYPE_AT) as u32 != win::RIM_TYPEMOUSE {
             return;
         }
-        let h = u64::from_le_bytes(r[8..16].try_into().unwrap());
-        let (flags, buttons, data, x, y) = (le16(24), le16(28), le16(30), le32(36), le32(40));
-        let d = match self.devices.get(&h) {
-            Some(&d) => d,
-            None => self.add_device(h),
+        let handle = u64::from_le_bytes(raw[win::DEVICE_AT..win::DEVICE_AT + size_of::<u64>()].try_into().unwrap());
+        let (flags, button_flags) = (read_u16(win::FLAGS_AT), read_u16(win::BUTTON_FLAGS_AT));
+        let button_data = read_u16(win::BUTTON_DATA_AT);
+        let (x_counts, y_counts) = (read_i32(win::X_AT), read_i32(win::Y_AT));
+        let device = match self.device_indexes.get(&handle) {
+            Some(&device) => device,
+            None => self.add_device(handle),
         };
-        self.out.extend_from_slice(&reader::event(t, x, y, flags, buttons, data, d));
+        let event = reader::event(handled_qpc, x_counts, y_counts, flags, button_flags, button_data, device);
+        self.records.extend_from_slice(&event);
     }
 
-    fn add_device(&mut self, h: u64) -> u16 {
-        let d = self.devices.len() as u16;
-        self.devices.insert(h, d);
-        self.out.extend_from_slice(&reader::device(h, u32::from(d)));
-        let mut name = "(no device handle: injected or synthetic input)".to_string();
-        let mut n = 0u32;
-        // SAFETY: the first call only asks the length (in characters); the second fills a buffer that long
-        unsafe {
-            if h != 0 && win::GetRawInputDeviceInfoW(h as isize, win::RIDI_DEVICENAME, std::ptr::null_mut(), &mut n) == 0 && n > 0 {
-                let mut buf = vec![0u16; n as usize];
-                if win::GetRawInputDeviceInfoW(h as isize, win::RIDI_DEVICENAME, buf.as_mut_ptr().cast(), &mut n) != win::FAIL {
-                    let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-                    name = String::from_utf16_lossy(&buf[..end]);
-                }
-            }
-        }
-        self.names.push(name);
-        d
+    /// Gives a device seen for the first time its index, and writes its record; returns the index.
+    fn add_device(&mut self, handle: u64) -> u16 {
+        let index = self.device_indexes.len() as u16;
+        self.device_indexes.insert(handle, index);
+        self.records.extend_from_slice(&reader::device(handle, u32::from(index)));
+        self.device_names.push(device_name(handle));
+        index
     }
 
-    /// A (QPC, time_ns) pair: the tightest of 20 tries, with time_ns read between two QPC reads.
+    /// A (QPC, time_ns) pair: the tightest of CLOCK_PAIR_TRIES, with time_ns read between two QPC reads.
     pub fn clock_pair(&self) -> (i64, i64) {
-        let mut best = (i64::MAX, 0, 0);
-        for _ in 0..20 {
-            let a = qpc();
-            let ns = time_ns();
-            let b = qpc();
-            if b - a < best.0 {
-                best = (b - a, (a + b).div_euclid(2), ns);
+        let (mut best_spread, mut best_qpc, mut best_ns) = (i64::MAX, 0, 0);
+        for _ in 0..CLOCK_PAIR_TRIES {
+            let before = qpc_now();
+            let wall_ns = time_ns();
+            let after = qpc_now();
+            if after - before < best_spread {
+                (best_spread, best_qpc, best_ns) = (after - before, (before + after).div_euclid(2), wall_ns);
             }
         }
-        (best.1, best.2)
+        (best_qpc, best_ns)
     }
 
-    pub fn wait(&self, ms: u32) {
+    /// Waits up to `timeout_ms` for input.
+    pub fn wait(&self, timeout_ms: u32) {
+        let (mask, flags) = (win::QS_ALLINPUT, win::MWMO_INPUTAVAILABLE);
         // SAFETY: no handles; it only waits for input or the time
-        unsafe { win::MsgWaitForMultipleObjectsEx(0, std::ptr::null(), ms, win::QS_ALLINPUT, win::MWMO_INPUTAVAILABLE) };
+        unsafe { win::MsgWaitForMultipleObjectsEx(0, std::ptr::null(), timeout_ms, mask, flags) };
     }
 
     pub fn close(&mut self) {
-        let rid = win::RawInputDevice { usage_page: 1, usage: 2, flags: win::RIDEV_REMOVE, target: 0 };
+        let device = win::RawInputDevice {
+            usage_page: win::USAGE_PAGE_GENERIC,
+            usage: win::USAGE_MOUSE,
+            flags: win::RIDEV_REMOVE,
+            target: 0,
+        };
         // SAFETY: the registration is removed and the window destroyed, both by this thread, which made them
         unsafe {
-            win::RegisterRawInputDevices(&rid, 1, size_of::<win::RawInputDevice>() as u32);
-            win::DestroyWindow(self.hwnd);
+            win::RegisterRawInputDevices(&device, 1, size_of::<win::RawInputDevice>() as u32);
+            win::DestroyWindow(self.window);
         }
     }
 }
 
+/// A raw input device's name (its path), or what it is when it has no handle.
+#[cfg(windows)]
+fn device_name(handle: u64) -> String {
+    let mut name = "(no device handle: injected or synthetic input)".to_string();
+    let mut name_chars = 0u32;
+    let device = handle as isize;
+    // SAFETY: the first call only asks the length (in characters); the second fills a buffer that long
+    unsafe {
+        if handle != 0
+            && win::GetRawInputDeviceInfoW(device, win::RIDI_DEVICENAME, std::ptr::null_mut(), &mut name_chars) == 0
+            && name_chars > 0
+        {
+            let mut buffer = vec![0u16; name_chars as usize];
+            let read =
+                win::GetRawInputDeviceInfoW(device, win::RIDI_DEVICENAME, buffer.as_mut_ptr().cast(), &mut name_chars);
+            if read != win::FAIL {
+                let end = buffer.iter().position(|&unit| unit == 0).unwrap_or(buffer.len());
+                name = String::from_utf16_lossy(&buffer[..end]);
+            }
+        }
+    }
+    name
+}
+
 /// What a finished log holds, as the logger reports it.
 pub struct Logged {
+    /// The devices' names, by their index in the log.
     pub names: Vec<String>,
+    /// WM_INPUT messages that could not be read.
     pub bad: usize,
 }
 
@@ -365,53 +557,61 @@ pub struct Logged {
 /// that long. `say` gets the line the logger prints at its start.
 #[cfg(windows)]
 pub fn log_to(out: &Path, seconds: Option<f64>, stop: &AtomicBool, say: &dyn Fn(&str)) -> io::Result<Logged> {
-    let mut lg = Logger::new()?;
-    lg.register()?;
+    let mut logger = Logger::new()?;
+    logger.register()?;
     // SAFETY: raises this thread's priority only
     unsafe { win::SetThreadPriority(win::GetCurrentThread(), win::THREAD_PRIORITY_HIGHEST) };
-    let mut f = File::create_new(out)?;
-    let (q0, ns0) = lg.clock_pair();
-    f.write_all(&reader::header(lg.freq, q0, ns0))?;
-    let end = seconds.map(|s| q0 + (s * lg.freq as f64) as i64);
-    let how = seconds.map_or("Ctrl+C stops".to_string(), |s| format!("for {} s", reader::fmt_g(s)));
-    say(&format!("mouse_log: logging to {} ({how}; QPC {} Hz; {})", out.display(), lg.freq, throttle_setting()));
-    let mut last_flush = Instant::now();
-    let mut logging = || -> io::Result<()> {
-        while !stop.load(Ordering::Relaxed) {
-            lg.wait(100);
-            lg.drain();
-            if lg.out.len() >= 1 << 16 || last_flush.elapsed() > Duration::from_millis(250) {
-                // every quarter second, so a killed logger loses little
-                f.write_all(&lg.out)?;
-                lg.out.clear();
-                last_flush = Instant::now();
-            }
-            if end.is_some_and(|e| qpc() >= e) {
-                break;
-            }
-        }
-        Ok(())
-    };
-    let logged = logging();
-    lg.drain();
-    let (q1, ns1) = lg.clock_pair();
-    lg.out.extend_from_slice(&reader::stop(q1, ns1));
-    let wrote = f.write_all(&lg.out).and_then(|_| f.flush());
-    lg.close();
+    let mut file = File::create_new(out)?;
+    let (start_qpc, start_ns) = logger.clock_pair();
+    file.write_all(&reader::header(logger.qpc_frequency, start_qpc, start_ns))?;
+    let end_qpc = seconds.map(|seconds| start_qpc + (seconds * logger.qpc_frequency as f64) as i64);
+    let how = seconds.map_or("Ctrl+C stops".to_string(), |seconds| format!("for {} s", reader::fmt_g(seconds)));
+    say(&format!(
+        "mouse_log: logging to {} ({how}; QPC {} Hz; {})",
+        out.display(),
+        logger.qpc_frequency,
+        throttle_setting()
+    ));
+    let logged = log_until(&mut logger, &mut file, stop, end_qpc);
+    logger.drain();
+    let (stop_qpc, stop_ns) = logger.clock_pair();
+    logger.records.extend_from_slice(&reader::stop(stop_qpc, stop_ns));
+    let wrote = file.write_all(&logger.records).and_then(|()| file.flush());
+    logger.close();
     logged.and(wrote)?;
-    Ok(Logged { names: std::mem::take(&mut lg.names), bad: lg.bad })
+    Ok(Logged { names: std::mem::take(&mut logger.device_names), bad: logger.unread_messages })
 }
 
-/// A number with commas between thousands.
-fn thousands(n: f64) -> String {
-    let s = format!("{:.0}", n);
-    let (sign, digits) = s.strip_prefix('-').map_or(("", s.as_str()), |d| ("-", d));
+/// Takes the mouse's input until `stop` is set or the QPC reaches `end_qpc`, writing the records to `file` as
+/// FLUSH_BYTES and FLUSH_INTERVAL say.
+#[cfg(windows)]
+fn log_until(logger: &mut Logger, file: &mut File, stop: &AtomicBool, end_qpc: Option<i64>) -> io::Result<()> {
+    let mut last_flush = Instant::now();
+    while !stop.load(Ordering::Relaxed) {
+        logger.wait(WAIT_MS);
+        logger.drain();
+        if logger.records.len() >= FLUSH_BYTES || last_flush.elapsed() > FLUSH_INTERVAL {
+            file.write_all(&logger.records)?;
+            logger.records.clear();
+            last_flush = Instant::now();
+        }
+        if end_qpc.is_some_and(|end_qpc| qpc_now() >= end_qpc) {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// A number rounded to a whole, with commas between thousands.
+fn thousands(value: f64) -> String {
+    let rounded = format!("{value:.0}");
+    let (sign, digits) = rounded.strip_prefix('-').map_or(("", rounded.as_str()), |digits| ("-", digits));
     let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % DIGITS_PER_GROUP == 0 {
             out.push(',');
         }
-        out.push(c);
+        out.push(digit);
     }
     format!("{sign}{out}")
 }
@@ -419,23 +619,24 @@ fn thousands(n: f64) -> String {
 /// What mouse_log.py prints when it stops: the events, the duration, the rates and the devices, with a warning when
 /// the log looks throttled.
 pub fn logged_text(log: &MouseLog, path: &Path, names: &[String]) -> String {
-    let (n, dur) = (log.times_s.len(), log.duration);
-    let peak = reader::busiest_rate(&log.times_s, 0.1);
-    let mean = if dur != 0.0 { n as f64 / dur } else { 0.0 };
-    let mut s = format!(
-        "mouse_log: {n} events in {dur:.2} s ({mean:.1} Hz mean, busiest 100 ms {peak:.0} Hz); wrote {}\n",
+    let (events, duration_s) = (log.times_s.len(), log.duration);
+    let busiest_hz = reader::busiest_rate(&log.times_s, BUSIEST_WINDOW_S);
+    let mean_hz = if duration_s != 0.0 { events as f64 / duration_s } else { 0.0 };
+    let mut text = format!(
+        "mouse_log: {events} events in {duration_s:.2} s ({mean_hz:.1} Hz mean, busiest 100 ms {busiest_hz:.0} Hz); \
+         wrote {}\n",
         path.display()
     );
-    for (d, h) in log.devices.iter().enumerate() {
-        let name = names.get(d).map_or(String::new(), |n| format!(" {n}"));
-        let count = log.device_events(d);
-        s += &format!("  device {d}: handle {h:#x}, {count} events{name}\n");
+    for (index, handle) in log.devices.iter().enumerate() {
+        let name = names.get(index).map_or(String::new(), |name| format!(" {name}"));
+        let count = log.device_events(index);
+        text += &format!("  device {index}: handle {handle:#x}, {count} events{name}\n");
     }
-    if n >= 200 && peak <= 300.0 {
-        s += "  warning: events came at most about 125 a second. Windows probably throttled the logger, so the times \
-              are only good to about 8 ms. See python/README.md, \"Raw mouse log\".\n";
+    if events >= MIN_EVENTS_FOR_RATE && busiest_hz <= THROTTLED_BUSIEST_HZ {
+        text += "  warning: events came at most about 125 a second. Windows probably throttled the logger, so the \
+                 times are only good to about 8 ms. See python/README.md, \"Raw mouse log\".\n";
     }
-    s
+    text
 }
 
 /// Times the per-event path without real input (mouse_log.py's --bench): (1) PeekMessage, the QPC read and the
@@ -443,41 +644,47 @@ pub fn logged_text(log: &MouseLog, path: &Path, names: &[String]) -> String {
 /// fails as fast as the system rejects it); (2) decoding a filled RAWINPUT and appending its record. No input is sent
 /// to the system.
 #[cfg(windows)]
-pub fn bench(n_msgs: usize, n_records: usize) -> io::Result<String> {
-    let mut lg = Logger::new()?;
-    lg.raw.0[..4].copy_from_slice(&0u32.to_le_bytes());
-    lg.raw.0[8..16].copy_from_slice(&0x1234u64.to_le_bytes());
-    lg.raw.0[36..40].copy_from_slice(&3i32.to_le_bytes());
-    lg.raw.0[40..44].copy_from_slice(&(-2i32).to_le_bytes());
-    lg.add_device(0x1234);
-    let mut per_msg = f64::INFINITY;
-    for _ in 0..5 {
-        for _ in 0..n_msgs {
+pub fn bench(message_count: usize, record_count: usize) -> io::Result<String> {
+    let mut logger = Logger::new()?;
+    fill_bench_input(&mut logger.raw_input.0);
+    logger.add_device(BENCH_DEVICE_HANDLE);
+    let mut per_message_s = f64::INFINITY;
+    for _ in 0..BENCH_ROUNDS {
+        for _ in 0..message_count {
             // SAFETY: a message to the logger's own window
-            unsafe { win::PostMessageW(lg.hwnd, win::WM_INPUT, 1, 0) };
+            unsafe { win::PostMessageW(logger.window, win::WM_INPUT, win::RIM_INPUTSINK, 0) };
         }
-        let t0 = Instant::now();
-        lg.drain();
-        per_msg = per_msg.min(t0.elapsed().as_secs_f64() / n_msgs as f64);
+        let started = Instant::now();
+        logger.drain();
+        per_message_s = per_message_s.min(started.elapsed().as_secs_f64() / message_count as f64);
     }
-    let bad = lg.bad;
-    lg.out.clear();
-    let t0 = Instant::now();
-    for i in 0..n_records {
-        lg.record(i as i64);
+    let rejected = logger.unread_messages;
+    logger.records.clear();
+    let started = Instant::now();
+    for i in 0..record_count {
+        logger.record(i as i64);
     }
-    let per_rec = t0.elapsed().as_secs_f64() / n_records as f64;
-    std::hint::black_box(&lg.out);
-    lg.close();
-    let total = per_msg + per_rec;
+    let per_record_s = started.elapsed().as_secs_f64() / record_count as f64;
+    std::hint::black_box(&logger.records);
+    logger.close();
+    let total_s = per_message_s + per_record_s;
     Ok(format!(
-        "message + QPC + GetRawInputData: {:.2} us ({bad} posted messages read, all rejected as expected); decode + \
-         record: {:.3} us; total {:.2} us per event, about {} events a second (an 8000 Hz mouse needs 8,000)",
-        per_msg * 1e6,
-        per_rec * 1e6,
-        total * 1e6,
-        thousands(1.0 / total)
+        "message + QPC + GetRawInputData: {:.2} us ({rejected} posted messages read, all rejected as expected); decode \
+         + record: {:.3} us; total {:.2} us per event, about {} events a second (an 8000 Hz mouse needs 8,000)",
+        per_message_s * MICROS_PER_SECOND,
+        per_record_s * MICROS_PER_SECOND,
+        total_s * MICROS_PER_SECOND,
+        thousands(1.0 / total_s)
     ))
+}
+
+/// The bench's RAWINPUT: a mouse's, from BENCH_DEVICE_HANDLE, moved BENCH_X_COUNTS and BENCH_Y_COUNTS.
+#[cfg(windows)]
+fn fill_bench_input(raw: &mut [u8; win::RAW_INPUT_BYTES]) {
+    raw[win::TYPE_AT..win::TYPE_AT + size_of::<u32>()].copy_from_slice(&win::RIM_TYPEMOUSE.to_le_bytes());
+    raw[win::DEVICE_AT..win::DEVICE_AT + size_of::<u64>()].copy_from_slice(&BENCH_DEVICE_HANDLE.to_le_bytes());
+    raw[win::X_AT..win::X_AT + size_of::<i32>()].copy_from_slice(&BENCH_X_COUNTS.to_le_bytes());
+    raw[win::Y_AT..win::Y_AT + size_of::<i32>()].copy_from_slice(&BENCH_Y_COUNTS.to_le_bytes());
 }
 
 // ---- the app's switch ----
@@ -486,14 +693,14 @@ pub fn bench(n_msgs: usize, n_records: usize) -> io::Result<String> {
 struct Running {
     child: Child,
     file: PathBuf,
-    since: f64,
+    started_s: f64,
 }
 
 /// The switch's state: the logger running, the last log it wrote, and why the last start or stop failed.
 #[derive(Default)]
 struct Switch {
     running: Option<Running>,
-    last: Option<Value>,
+    last_log: Option<Value>,
     error: Option<String>,
 }
 
@@ -505,23 +712,20 @@ pub fn set_folder(folder: PathBuf) {
     let _ = FOLDER.set(folder);
 }
 
-fn folder() -> Answer<&'static PathBuf> {
+fn log_folder() -> Answer<&'static PathBuf> {
     FOLDER.get().ok_or_else(|| Failure::from("the mouse log folder is not set".to_string()))
 }
-
-/// The argument that makes the app's executable the logger.
-const CHILD_ARG: &str = "--mouse-log";
 
 /// In the logger's process (the app's executable with `--mouse-log <file>`): logs until standard input closes or
 /// says anything, then exits. None in the app itself.
 pub fn child_main() -> Option<i32> {
-    let a: Vec<String> = std::env::args().collect();
-    if a.get(1).map(String::as_str) != Some(CHILD_ARG) {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) != Some(CHILD_ARG) {
         return None;
     }
-    let Some(out) = a.get(2) else {
+    let Some(out) = args.get(2) else {
         eprintln!("{CHILD_ARG} needs the file to write");
-        return Some(2);
+        return Some(EXIT_NO_FILE);
     };
     static STOP: AtomicBool = AtomicBool::new(false);
     std::thread::spawn(|| {
@@ -529,131 +733,155 @@ pub fn child_main() -> Option<i32> {
         let _ = io::stdin().read(&mut byte);
         STOP.store(true, Ordering::Relaxed);
     });
-    #[cfg(windows)]
-    {
-        match log_to(Path::new(out), None, &STOP, &|_| {}) {
-            Ok(logged) => {
-                if logged.bad > 0 {
-                    eprintln!("{} WM_INPUT messages could not be read", logged.bad);
-                }
-                Some(0)
+    Some(log_in_child(out, &STOP))
+}
+
+/// The logger process's work: logs into `out` until `stop` is set; gives the exit code.
+#[cfg(windows)]
+fn log_in_child(out: &str, stop: &AtomicBool) -> i32 {
+    match log_to(Path::new(out), None, stop, &|_| {}) {
+        Ok(logged) => {
+            if logged.bad > 0 {
+                eprintln!("{} WM_INPUT messages could not be read", logged.bad);
             }
-            Err(e) => {
-                eprintln!("{e}");
-                Some(1)
-            }
+            EXIT_LOGGED
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            EXIT_FAILED
         }
     }
-    #[cfg(not(windows))]
-    {
-        eprintln!("the mouse logger needs Windows ({out})");
-        Some(1)
-    }
+}
+
+#[cfg(not(windows))]
+fn log_in_child(out: &str, _stop: &AtomicBool) -> i32 {
+    eprintln!("the mouse logger needs Windows ({out})");
+    EXIT_FAILED
 }
 
 /// A finished log's facts for the page: its file, events, span and rates.
-fn log_facts(path: &Path) -> Value {
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
-    match std::fs::read(path).map_err(|e| e.to_string()).and_then(|b| reader::read_log(&b)) {
+fn log_facts_json(path: &Path) -> Value {
+    let name = path.file_name().map(|name| name.to_string_lossy().into_owned());
+    match std::fs::read(path).map_err(|error| error.to_string()).and_then(|bytes| reader::read_log(&bytes)) {
         Ok(log) => {
-            let f = reader::log_facts(&log, utc_offset_at(log.wall0));
+            let facts = reader::log_facts(&log, utc_offset_at(log.wall0));
+            let throttled = facts.throttled
+                || (facts.events >= MIN_EVENTS_FOR_RATE && facts.busiest_hz <= THROTTLED_BUSIEST_HZ);
             json!({
-                "file": name, "events": f.events, "duration": f.duration, "busiest_hz": f.busiest_hz,
-                "median_interval": f.median_interval, "throttled": f.throttled || (f.events >= 200 && f.busiest_hz <= 300.0),
+                "file": name, "events": facts.events, "duration": facts.duration, "busiest_hz": facts.busiest_hz,
+                "median_interval": facts.median_interval, "throttled": throttled,
             })
         }
-        Err(e) => json!({ "file": name, "error": e }),
+        Err(error) => json!({ "file": name, "error": error }),
     }
 }
 
-/// Stops the running logger: its standard input closes, it writes the stop pair and exits (killed after 5 s).
-fn stop_running(sw: &mut Switch) {
-    let Some(mut r) = sw.running.take() else { return };
-    drop(r.child.stdin.take());
-    let t0 = Instant::now();
-    while t0.elapsed() < Duration::from_secs(5) {
-        if let Ok(Some(_)) = r.child.try_wait() {
+/// Stops the running logger: its standard input closes, it writes the stop pair and exits (killed after
+/// STOP_TIMEOUT).
+fn stop_running(switch: &mut Switch) {
+    let Some(mut running) = switch.running.take() else { return };
+    drop(running.child.stdin.take());
+    let asked = Instant::now();
+    while asked.elapsed() < STOP_TIMEOUT {
+        if let Ok(Some(_)) = running.child.try_wait() {
             break;
         }
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(STOP_POLL);
     }
-    if !matches!(r.child.try_wait(), Ok(Some(_))) {
-        let _ = r.child.kill();
-        let _ = r.child.wait();
-        sw.error = Some("the logger did not stop in 5 s and was ended; its log holds all but its last quarter second".into());
+    if !matches!(running.child.try_wait(), Ok(Some(_))) {
+        let _ = running.child.kill();
+        let _ = running.child.wait();
+        switch.error =
+            Some("the logger did not stop in 5 s and was ended; its log holds all but its last quarter second".into());
     }
-    sw.last = Some(log_facts(&r.file));
+    switch.last_log = Some(log_facts_json(&running.file));
+}
+
+/// A logger that ended on its own (it failed): the switch turns off, with its message.
+fn note_ended_logger(switch: &mut Switch) {
+    if let Some(running) = switch.running.as_mut()
+        && let Ok(Some(status)) = running.child.try_wait()
+    {
+        let mut why = String::new();
+        if let Some(mut stderr) = running.child.stderr.take() {
+            let _ = stderr.read_to_string(&mut why);
+        }
+        switch.error = Some(format!("the logger stopped ({status}): {}", why.trim()));
+        let file = running.file.clone();
+        switch.running = None;
+        switch.last_log = Some(log_facts_json(&file));
+    }
 }
 
 /// The switch as the page shows it.
-fn state_of(sw: &mut Switch) -> Value {
-    // a logger that ended on its own (it failed): off, with its message
-    if let Some(r) = sw.running.as_mut()
-        && let Ok(Some(status)) = r.child.try_wait()
-    {
-        let mut why = String::new();
-        if let Some(mut e) = r.child.stderr.take() {
-            let _ = e.read_to_string(&mut why);
-        }
-        sw.error = Some(format!("the logger stopped ({status}): {}", why.trim()));
-        let file = r.file.clone();
-        sw.running = None;
-        sw.last = Some(log_facts(&file));
-    }
-    let running = sw.running.as_ref();
+fn switch_state(switch: &mut Switch) -> Value {
+    note_ended_logger(switch);
+    let running = switch.running.as_ref();
     json!({
         "available": cfg!(windows),
         "on": running.is_some(),
-        "file": running.and_then(|r| r.file.file_name()).map(|n| n.to_string_lossy()),
-        "since": running.map(|r| r.since),
+        "file": running.and_then(|running| running.file.file_name()).map(|name| name.to_string_lossy()),
+        "since": running.map(|running| running.started_s),
         "folder": FOLDER.get(),
         "throttle": throttle_setting(),
-        "last": sw.last,
-        "error": sw.error,
+        "last": switch.last_log,
+        "error": switch.error,
     })
 }
 
 /// The logger switch: on or off, its file, the last log and the throttle setting.
 pub fn logger_state() -> Value {
-    let mut guard = SWITCH.lock().unwrap_or_else(|e| e.into_inner());
-    state_of(guard.get_or_insert_with(Switch::default))
+    let mut guard = SWITCH.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    switch_state(guard.get_or_insert_with(Switch::default))
 }
 
 /// Turns the logger on (a new log in the app's mouse folder) or off.
 pub fn set_logger(on: bool) -> Answer<Value> {
-    let mut guard = SWITCH.lock().unwrap_or_else(|e| e.into_inner());
-    let sw = guard.get_or_insert_with(Switch::default);
-    state_of(sw);
+    let mut guard = SWITCH.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let switch = guard.get_or_insert_with(Switch::default);
+    switch_state(switch);
     if !on {
-        stop_running(sw);
-        return Ok(state_of(sw));
+        stop_running(switch);
+        return Ok(switch_state(switch));
     }
-    if sw.running.is_some() {
-        return Ok(state_of(sw));
+    if switch.running.is_some() {
+        return Ok(switch_state(switch));
     }
-    sw.error = None;
-    let dir = folder()?;
-    std::fs::create_dir_all(dir).map_err(|e| Failure::from(format!("{}: {e}", dir.display())))?;
-    let now = time_ns() as f64 / 1e9;
-    let mut file = dir.join(format!("mouse_{}.bin", local_stamp(now)));
-    for n in 2.. {
+    switch.error = None;
+    let folder = log_folder()?;
+    std::fs::create_dir_all(folder).map_err(|error| Failure::from(format!("{}: {error}", folder.display())))?;
+    let now_s = time_ns() as f64 / NANOS_PER_SECOND;
+    let file = new_log_file(folder, now_s);
+    let child = start_logger(&file)?;
+    switch.running = Some(Running { child, file, started_s: now_s });
+    Ok(switch_state(switch))
+}
+
+/// A new log's file in `folder`, named for the time (`now_s`, seconds since 1970): mouse_<stamp>.bin, or
+/// mouse_<stamp>_<number>.bin when that is taken.
+fn new_log_file(folder: &Path, now_s: f64) -> PathBuf {
+    let mut file = folder.join(format!("mouse_{}.bin", local_stamp(now_s)));
+    for number in 2.. {
         if !file.exists() {
             break;
         }
-        file = dir.join(format!("mouse_{}_{n}.bin", local_stamp(now)));
+        file = folder.join(format!("mouse_{}_{number}.bin", local_stamp(now_s)));
     }
-    let exe = std::env::current_exe().map_err(|e| Failure::from(e.to_string()))?;
-    let mut cmd = Command::new(exe);
-    cmd.arg(CHILD_ARG).arg(&file).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
+    file
+}
+
+/// Starts the logger's process (this executable with CHILD_ARG), logging into `file`.
+fn start_logger(file: &Path) -> Answer<Child> {
+    let exe = std::env::current_exe().map_err(|error| Failure::from(error.to_string()))?;
+    let mut command = Command::new(exe);
+    command.arg(CHILD_ARG).arg(file).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW: no console for the logger
-        cmd.creation_flags(0x0800_0000);
+        // no console for the logger
+        command.creation_flags(win::CREATE_NO_WINDOW);
     }
-    let child = cmd.spawn().map_err(|e| Failure::from(format!("the logger could not start: {e}")))?;
-    sw.running = Some(Running { child, file, since: now });
-    Ok(state_of(sw))
+    command.spawn().map_err(|error| Failure::from(format!("the logger could not start: {error}")))
 }
 
 #[cfg(test)]
@@ -662,11 +890,52 @@ mod tests {
 
     #[test]
     fn stamps_and_numbers() {
-        let now = time_ns() as f64 / 1e9;
-        assert_eq!(local_stamp(now).len(), "2026-10-01_03-17-24".len());
-        assert_eq!(utc_offset_at(now) % 900, 0);
+        let now_s = time_ns() as f64 / NANOS_PER_SECOND;
+        assert_eq!(local_stamp(now_s).len(), "2026-10-01_03-17-24".len());
+        assert_eq!(utc_offset_at(now_s) % 900, 0);
         assert_eq!(thousands(330_000.4), "330,000");
         assert_eq!(thousands(8000.0), "8,000");
+    }
+
+    #[test]
+    fn civil_dates() {
+        for (days, date) in [
+            (0, (1970, 1, 1)),
+            (-1, (1969, 12, 31)),
+            (11_016, (2000, 2, 29)),
+            (11_017, (2000, 3, 1)),
+            (20_730, (2026, 10, 4)),
+            (47_540, (2100, 2, 28)),
+            (47_541, (2100, 3, 1)),
+            (-135_081, (1600, 2, 29)),
+        ] {
+            assert_eq!(civil_date(days), date, "{days}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_record_holds_the_raw_inputs_fields() {
+        // a RAWINPUT as Windows lays it out (64-bit): dwType, dwSize, hDevice, wParam, then RAWMOUSE's usFlags, a pad,
+        // usButtonFlags, usButtonData, ulRawButtons, lLastX, lLastY, ulExtraInformation
+        let mut logger = Logger::new().unwrap();
+        let raw = &mut logger.raw_input.0;
+        raw[0..4].copy_from_slice(&0u32.to_le_bytes());
+        raw[8..16].copy_from_slice(&0xABCDu64.to_le_bytes());
+        raw[24..26].copy_from_slice(&0x0001u16.to_le_bytes());
+        raw[28..30].copy_from_slice(&0x0400u16.to_le_bytes());
+        raw[30..32].copy_from_slice(&0xFF88u16.to_le_bytes());
+        raw[36..40].copy_from_slice(&(-7i32).to_le_bytes());
+        raw[40..44].copy_from_slice(&12i32.to_le_bytes());
+        logger.record(42);
+        // a keyboard's input is no record
+        logger.raw_input.0[0..4].copy_from_slice(&1u32.to_le_bytes());
+        logger.record(43);
+        logger.close();
+        let mut expected = reader::device(0xABCD, 0).to_vec();
+        expected.extend_from_slice(&reader::event(42, -7, 12, 0x0001, 0x0400, 0xFF88, 0));
+        assert_eq!(logger.records, expected);
+        assert_eq!(logger.device_names.len(), 1);
     }
 
     #[cfg(windows)]
