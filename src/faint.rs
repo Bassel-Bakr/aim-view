@@ -1,8 +1,12 @@
 //! The faint-target cut-off (python/retired/review.py: `faint_scores`, `without_faint`; python/model/hand_crops.py:
 //! `cutoff_crops`): each track's score, the recording's level, the tracks the user's cut-off leaves out, and the
-//! detector labels a submitted cut-off gives.
+//! detector labels a submitted cut-off gives. The scores come from the tracks (tracks.json: each target's detector
+//! score per frame) and the setting from faint.json. src/review.rs measures a tracking run without the tracks the cut
+//! leaves out; a submitted cut-off's crops go to the service (service/src/faint.rs), or in the browser to the page
+//! (`cutoff_json`), which write the crops and their labels for training the detector.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +17,25 @@ use crate::track::{TrackFrame, TrackPoint};
 
 /// The offset a cut-off takes when none is given (python/server.py: `faint`).
 pub const DEFAULT_OFFSET: f64 = 0.3;
+/// A track needs this many frames with a score away from the crosshair to have a score of its own.
+const MIN_SCORED_FRAMES: usize = 3;
+/// A track's score is the one this share of the way up its sorted scores (the nearest), its 90th percentile.
+const TRACK_PERCENTILE: f64 = 0.9;
+/// The recording's level is the score of the track that brings the frames counted, from the lowest score up, to this
+/// share of all scored frames: the 90th percentile of the scores, weighted by frames.
+const LEVEL_SHARE: f64 = 0.9;
+/// The decimals the cut is rounded to, and a label's boxes.
+const CUT_DECIMALS: usize = 3;
+const BOX_DECIMALS: usize = 2;
+/// A crop's side, in pixels at 1280 x 720.
+pub const CROP: usize = 256;
+/// The most crops round left-out tracks, and round kept ones.
+const CROPS_PER_SIDE: usize = 20;
+/// A crop's corner moves from its target's center by up to this many pixels each way (Python's `randint(-48, 48)`).
+const CROP_JITTER_PX: i64 = 48;
+/// A crop's file name starts with this many characters of the recording's name, and this many hex digits of its MD5.
+const STEM_CHARACTERS: usize = 40;
+const STEM_HASH_DIGITS: usize = 6;
 
 fn default_offset() -> f64 {
     DEFAULT_OFFSET
@@ -44,41 +67,51 @@ pub struct FaintScores {
     pub level: Option<f64>,
 }
 
-/// Each track's score from the frames where it lies `near` degrees or more from the crosshair (a target under the
-/// crosshair scores low), for tracks with 3 or more such frames, and the recording's level.
-pub fn faint_scores(frames: &[TrackFrame], near: f64) -> FaintScores {
-    let mut order: Vec<u32> = Vec::new();
-    let mut seen: HashMap<u32, Vec<f64>> = HashMap::new();
-    for f in frames {
-        let Some(s) = &f.s else { continue };
-        for (&(id, x, y), &v) in f.t.iter().zip(s) {
+/// Each track's detector scores from the frames where it lies `near` degrees or more from the crosshair, the tracks in
+/// the order they first scored.
+fn scores_by_track(frames: &[TrackFrame], near: f64) -> Vec<(u32, Vec<f64>)> {
+    let mut tracks: Vec<(u32, Vec<f64>)> = Vec::new();
+    let mut index_of: HashMap<u32, usize> = HashMap::new();
+    for frame in frames {
+        let Some(frame_scores) = &frame.s else { continue };
+        for (&(id, x, y), &score) in frame.t.iter().zip(frame_scores) {
             if hypot(x, y) >= near {
-                seen.entry(id)
-                    .or_insert_with(|| {
-                        order.push(id);
-                        Vec::new()
-                    })
-                    .push(v);
+                let index = *index_of.entry(id).or_insert_with(|| {
+                    tracks.push((id, Vec::new()));
+                    tracks.len() - 1
+                });
+                tracks[index].1.push(score);
             }
         }
     }
-    let mut scores = Vec::with_capacity(order.len());
-    for id in order {
-        let mut v = seen.remove(&id).unwrap_or_default();
-        if v.len() >= 3 {
-            v.sort_by(f64::total_cmp);
-            let k = ((0.9 * (v.len() - 1) as f64 + 0.5) as usize).min(v.len() - 1);
-            scores.push(TrackScore { id, score: v[k], frames: v.len() });
+    tracks
+}
+
+/// The recording's level (`LEVEL_SHARE`), None without scores.
+fn recording_level(scores: &[TrackScore]) -> Option<f64> {
+    let total = scores.iter().map(|track| track.frames).sum::<usize>() as f64;
+    let mut by_score = scores.to_vec();
+    by_score.sort_by(|a, b| a.score.total_cmp(&b.score));
+    let mut counted = 0;
+    by_score.iter().find_map(|track| {
+        counted += track.frames;
+        (counted as f64 >= LEVEL_SHARE * total).then_some(track.score)
+    })
+}
+
+/// Each track's score from the frames where it lies `near` degrees or more from the crosshair (a target under the
+/// crosshair scores low), for tracks with 3 or more such frames, and the recording's level.
+pub fn faint_scores(frames: &[TrackFrame], near: f64) -> FaintScores {
+    let mut scores = Vec::new();
+    for (id, mut values) in scores_by_track(frames, near) {
+        if values.len() >= MIN_SCORED_FRAMES {
+            values.sort_by(f64::total_cmp);
+            let last = values.len() - 1;
+            let index = ((TRACK_PERCENTILE * last as f64 + 0.5) as usize).min(last);
+            scores.push(TrackScore { id, score: values[index], frames: values.len() });
         }
     }
-    let total = scores.iter().map(|t| t.frames).sum::<usize>() as f64;
-    let mut by_score = scores.clone();
-    by_score.sort_by(|a, b| a.score.total_cmp(&b.score));
-    let mut acc = 0;
-    let level = by_score.iter().find_map(|t| {
-        acc += t.frames;
-        (acc as f64 >= 0.9 * total).then_some(t.score)
-    });
+    let level = recording_level(&scores);
     FaintScores { scores, level }
 }
 
@@ -93,38 +126,33 @@ pub struct FaintCutFrames {
 /// The frames without the tracks scoring under the recording's level less `offset`. A tracking run uses near 0: its
 /// bot is under the crosshair most of the time, so the frames near the crosshair must count.
 pub fn without_faint(frames: &[TrackFrame], offset: f64, near: f64) -> FaintCutFrames {
-    let sc = faint_scores(frames, near);
-    let Some(level) = sc.level else {
+    let scores = faint_scores(frames, near);
+    let Some(level) = scores.level else {
         return FaintCutFrames { frames: frames.to_vec(), cut: None, gone: 0 };
     };
     let cut = level - offset;
-    let gone: HashSet<u32> = sc.scores.iter().filter(|t| t.score < cut).map(|t| t.id).collect();
-    let frames = frames
-        .iter()
-        .map(|f| {
-            let keep: Vec<usize> = (0..f.t.len()).filter(|&k| !gone.contains(&f.t[k].0)).collect();
-            TrackFrame {
-                i: f.i,
-                shift: f.shift,
-                t: picked(&f.t, &keep),
-                a: picked(&f.a, &keep),
-                wh: f.wh.as_ref().map(|v| picked(v, &keep)),
-                s: f.s.as_ref().map(|v| picked(v, &keep)),
-            }
-        })
-        .collect();
-    FaintCutFrames { frames, cut: Some(round(cut, 3)), gone: gone.len() }
+    let gone: HashSet<u32> = scores.scores.iter().filter(|track| track.score < cut).map(|track| track.id).collect();
+    let frames = frames.iter().map(|frame| without_tracks(frame, &gone)).collect();
+    FaintCutFrames { frames, cut: Some(round(cut, CUT_DECIMALS)), gone: gone.len() }
+}
+
+/// A frame without the tracks `gone`.
+fn without_tracks(frame: &TrackFrame, gone: &HashSet<u32>) -> TrackFrame {
+    let keep: Vec<usize> = (0..frame.t.len()).filter(|&index| !gone.contains(&frame.t[index].0)).collect();
+    TrackFrame {
+        i: frame.i,
+        shift: frame.shift,
+        t: picked(&frame.t, &keep),
+        a: picked(&frame.a, &keep),
+        wh: frame.wh.as_ref().map(|sizes| picked(sizes, &keep)),
+        s: frame.s.as_ref().map(|frame_scores| picked(frame_scores, &keep)),
+    }
 }
 
 /// The values at the indexes kept.
-pub(crate) fn picked<T: Copy>(v: &[T], keep: &[usize]) -> Vec<T> {
-    keep.iter().filter_map(|&k| v.get(k).copied()).collect()
+pub(crate) fn picked<Value: Copy>(values: &[Value], keep: &[usize]) -> Vec<Value> {
+    keep.iter().filter_map(|&index| values.get(index).copied()).collect()
 }
-
-/// A crop's side, in pixels at 1280 x 720.
-pub const CROP: usize = 256;
-/// The most crops round left-out tracks, and round kept ones.
-const PER: usize = 20;
 
 /// What the labels of a submitted cut-off are made from: the recording's tracks and name, the run's first and last
 /// frames (a clicking run: its first flick's start and its last kill; a tracking run: the run's own), the excluded
@@ -175,8 +203,147 @@ pub fn crop_stem(video: &str) -> String {
         Some(dot) if dot > 0 => &name[..dot],
         _ => name,
     };
-    let short: String = stem.chars().take(40).collect();
-    format!("{short}_{}", &hex(&md5(name.as_bytes()))[..6]).replace(' ', "_")
+    let short: String = stem.chars().take(STEM_CHARACTERS).collect();
+    format!("{short}_{}", &hex(&md5(name.as_bytes()))[..STEM_HASH_DIGITS]).replace(' ', "_")
+}
+
+/// A target's box in pixels (center x, y, width, height) from its place and size in degrees.
+fn box_px(x: f64, y: f64, width_deg: f64, height_deg: f64) -> [f64; 4] {
+    let (center_x, center_y) = to_px(x, y);
+    let (left, top) = to_px(x - width_deg / 2.0, y + height_deg / 2.0);
+    let (right, bottom) = to_px(x + width_deg / 2.0, y - height_deg / 2.0);
+    [center_x, center_y, (right - left).abs(), (bottom - top).abs()]
+}
+
+/// A crop's corner along one axis (pixels): `center` less half a crop, moved by `jitter`, inside the frame's `size`.
+fn crop_corner(center: f64, size: usize, jitter: i64) -> usize {
+    (center - (CROP / 2) as f64 + jitter as f64).clamp(0.0, (size - CROP) as f64) as usize
+}
+
+/// The boxes rounded as a label keeps them.
+fn rounded_boxes(boxes: &[[f64; 4]]) -> Vec<[f64; 4]> {
+    boxes.iter().map(|target_box| target_box.map(|value| round(value, BOX_DECIMALS))).collect()
+}
+
+/// The excluded areas in pixels (left, top, right, bottom) from their shares of the frame (None: KovOBS's layout).
+fn excluded_areas_px(shares: Option<&[[f64; 4]]>) -> Vec<[f64; 4]> {
+    let (width, height) = (W as f64, H as f64);
+    let overlay = overlay_shares();
+    let shares = shares.unwrap_or(&overlay);
+    shares.iter().map(|area| [area[0] * width, area[1] * height, area[2] * width, area[3] * height]).collect()
+}
+
+/// A crop's square on the frame: its left and top (pixels at 1280 x 720).
+#[derive(Clone, Copy)]
+struct CropSquare {
+    left: f64,
+    top: f64,
+}
+
+impl CropSquare {
+    /// Whether it overlaps an area (pixels: left, top, right, bottom).
+    fn overlaps(self, [left, top, right, bottom]: [f64; 4]) -> bool {
+        let side = CROP as f64;
+        left < self.left + side && self.left < right && top < self.top + side && self.top < bottom
+    }
+
+    /// Whether a box's center (pixels) is inside it.
+    fn holds(self, target_box: &[f64; 4]) -> bool {
+        let side = CROP as f64;
+        self.left <= target_box[0]
+            && target_box[0] < self.left + side
+            && self.top <= target_box[1]
+            && target_box[1] < self.top + side
+    }
+
+    /// A box in the crop's pixels.
+    fn shifted(self, target_box: &[f64; 4]) -> [f64; 4] {
+        [target_box[0] - self.left, target_box[1] - self.top, target_box[2], target_box[3]]
+    }
+}
+
+/// What a submitted cut-off's crops are made with: the request, each scored track's score, the score it cuts at, the
+/// excluded areas (pixels), the file names' stem, and Python's random numbers, seeded with the stem.
+struct CropMaker<'a> {
+    request: &'a CutoffRequest,
+    scores: HashMap<u32, f64>,
+    cut: f64,
+    excluded_px: Vec<[f64; 4]>,
+    stem: String,
+    random: PyRandom,
+}
+
+impl CropMaker<'_> {
+    /// Whether a crop may be taken round a track: scored, on the side of the cut asked for (`left_out` or kept), and
+    /// `near` degrees or more from the crosshair.
+    fn in_focus(&self, left_out: bool, &(id, x, y): &TrackPoint) -> bool {
+        self.scores.get(&id).is_some_and(|&score| (score < self.cut) == left_out) && hypot(x, y) >= self.request.near
+    }
+
+    /// Up to 20 crops round the tracks left out (`left_out`) or kept, from the frames in `frames` with boxes and such
+    /// a track, spread over them.
+    fn add_crops(&mut self, left_out: bool, frames: Range<usize>, out: &mut Vec<CutoffCrop>) {
+        let request = self.request;
+        let candidates: Vec<usize> = frames
+            .filter(|&i| {
+                let frame = &request.frames[i];
+                frame.wh.is_some() && frame.t.iter().any(|point| self.in_focus(left_out, point))
+            })
+            .collect();
+        for step in 0..CROPS_PER_SIDE.min(candidates.len()) {
+            let i = candidates[((step * candidates.len()) as f64 / CROPS_PER_SIDE as f64) as usize];
+            out.extend(self.crop(left_out, i));
+        }
+    }
+
+    /// A crop of frame `i` round one of its tracks in focus, the track and the corner's jitter drawn from Python's
+    /// random numbers; None where it touches an excluded area or holds a track too short to have a score.
+    fn crop(&mut self, left_out: bool, i: usize) -> Option<CutoffCrop> {
+        let request = self.request;
+        let frame = &request.frames[i];
+        let sizes = frame.wh.as_ref()?;
+        let boxes: Vec<[f64; 4]> =
+            frame.t.iter().zip(sizes).map(|(&(_, x, y), &(width, height))| box_px(x, y, width, height)).collect();
+        let focus_boxes: Vec<&[f64; 4]> = boxes
+            .iter()
+            .zip(&frame.t)
+            .filter(|&(_, point)| self.in_focus(left_out, point))
+            .map(|(target_box, _)| target_box)
+            .collect();
+        let target = focus_boxes[self.random.choice(focus_boxes.len())];
+        let left = crop_corner(target[0], W, self.random.randint(-CROP_JITTER_PX, CROP_JITTER_PX));
+        let top = crop_corner(target[1], H, self.random.randint(-CROP_JITTER_PX, CROP_JITTER_PX));
+        let square = CropSquare { left: left as f64, top: top as f64 };
+        if self.excluded_px.iter().any(|&area| square.overlaps(area)) {
+            return None;
+        }
+        let inside: Vec<(&[f64; 4], &TrackPoint)> =
+            boxes.iter().zip(&frame.t).filter(|(target_box, _)| square.holds(target_box)).collect();
+        if inside.iter().any(|&(_, &(id, x, y))| !self.scores.contains_key(&id) && hypot(x, y) >= request.near) {
+            return None;
+        }
+        let kept: Vec<[f64; 4]> = inside
+            .iter()
+            .filter(|&&(_, &(id, _, _))| self.scores.get(&id).is_none_or(|&score| score >= self.cut))
+            .map(|(target_box, _)| square.shifted(target_box))
+            .collect();
+        let every: Vec<[f64; 4]> = inside.iter().map(|(target_box, _)| square.shifted(target_box)).collect();
+        Some(CutoffCrop { frame: i, x0: left, y0: top, row: self.row(i, &kept, &every), boxes: kept })
+    }
+
+    /// The label's row for a crop of frame `i`: the boxes it keeps and every box the model gave there (crop pixels).
+    fn row(&self, i: usize, kept: &[[f64; 4]], every: &[[f64; 4]]) -> CutoffRow {
+        CutoffRow {
+            file: format!("train/{}_{i:06}.npz", self.stem),
+            boxes: rounded_boxes(kept),
+            verdict: "correct",
+            model: rounded_boxes(every),
+            source: "cutoff",
+            video: self.request.video.clone(),
+            offset: self.request.offset,
+            cut: round(self.cut, CUT_DECIMALS),
+        }
+    }
 }
 
 /// The crops a submitted cut-off gives (hand_crops.py: `cutoff_crops`, which also reads each crop's pixels and the
@@ -184,87 +351,25 @@ pub fn crop_stem(video: &str) -> String {
 /// inside the run, crops clear of every excluded area, and none holding a track too short to have a score (away from
 /// the crosshair). Up to 20 crops round a left-out track and 20 round a kept one, from frames spread over the run, at
 /// places Python's random numbers pick (seeded with the file names' stem), so they are the crops Python takes.
-pub fn cutoff_crops(r: &CutoffRequest) -> Vec<CutoffCrop> {
-    let sc = faint_scores(&r.frames, r.near);
-    let (Some(level), Some(start), Some(end)) = (sc.level, r.start, r.end) else {
+pub fn cutoff_crops(request: &CutoffRequest) -> Vec<CutoffCrop> {
+    let scores = faint_scores(&request.frames, request.near);
+    let (Some(level), Some(start), Some(end)) = (scores.level, request.start, request.end) else {
         return Vec::new();
     };
-    let q: HashMap<u32, f64> = sc.scores.iter().map(|t| (t.id, t.score)).collect();
-    let cut = level - r.offset;
-    let (w, h) = (W as f64, H as f64);
-    let ex: Vec<[f64; 4]> = r
-        .exclude
-        .clone()
-        .unwrap_or_else(|| overlay_shares().to_vec())
-        .iter()
-        .map(|b| [b[0] * w, b[1] * h, b[2] * w, b[3] * h])
-        .collect();
-    let stem = crop_stem(&r.video);
-    let mut rnd = PyRandom::seeded(&stem);
-    let box_px = |x: f64, y: f64, bw: f64, bh: f64| {
-        let (cx, cy) = to_px(x, y);
-        let (x0, y0) = to_px(x - bw / 2.0, y + bh / 2.0);
-        let (x1, y1) = to_px(x + bw / 2.0, y - bh / 2.0);
-        [cx, cy, (x1 - x0).abs(), (y1 - y0).abs()]
+    let stem = crop_stem(&request.video);
+    let mut maker = CropMaker {
+        request,
+        scores: scores.scores.iter().map(|track| (track.id, track.score)).collect(),
+        cut: level - request.offset,
+        excluded_px: excluded_areas_px(request.exclude.as_deref()),
+        random: PyRandom::seeded(&stem),
+        stem,
     };
+    let first = start.max(0) as usize;
+    let last = (request.frames.len() as i64).min(end + 1).max(0) as usize;
     let mut out = Vec::new();
     for left_out in [true, false] {
-        let focus = |id: u32, x: f64, y: f64| q.get(&id).is_some_and(|&v| (v < cut) == left_out) && hypot(x, y) >= r.near;
-        let first = start.max(0) as usize;
-        let last = (r.frames.len() as i64).min(end + 1).max(0) as usize;
-        let cand: Vec<usize> = (first..last)
-            .filter(|&i| r.frames[i].wh.is_some() && r.frames[i].t.iter().any(|&(id, x, y)| focus(id, x, y)))
-            .collect();
-        for k in 0..PER.min(cand.len()) {
-            let i = cand[((k * cand.len()) as f64 / PER as f64) as usize];
-            let f = &r.frames[i];
-            let Some(wh) = &f.wh else { continue };
-            let pts: Vec<[f64; 4]> = f.t.iter().zip(wh).map(|(&(_, x, y), &(bw, bh))| box_px(x, y, bw, bh)).collect();
-            let near_ones: Vec<&[f64; 4]> =
-                pts.iter().zip(&f.t).filter(|&(_, &(id, x, y))| focus(id, x, y)).map(|(p, _)| p).collect();
-            let c = near_ones[rnd.choice(near_ones.len())];
-            let corner = |at: f64, size: usize, jitter: i64| {
-                (at - (CROP / 2) as f64 + jitter as f64).clamp(0.0, (size - CROP) as f64) as usize
-            };
-            let x0 = corner(c[0], W, rnd.randint(-48, 48));
-            let y0 = corner(c[1], H, rnd.randint(-48, 48));
-            let (fx0, fy0, side) = (x0 as f64, y0 as f64, CROP as f64);
-            if ex.iter().any(|&[a, c_, b, d]| a < fx0 + side && fx0 < b && c_ < fy0 + side && fy0 < d) {
-                continue; // touches an excluded area
-            }
-            let inside: Vec<(&[f64; 4], &TrackPoint)> = pts
-                .iter()
-                .zip(&f.t)
-                .filter(|(p, _)| fx0 <= p[0] && p[0] < fx0 + side && fy0 <= p[1] && p[1] < fy0 + side)
-                .collect();
-            if inside.iter().any(|&(_, &(id, x, y))| !q.contains_key(&id) && hypot(x, y) >= r.near) {
-                continue; // a track too short to judge
-            }
-            let shifted = |p: &[f64; 4]| [p[0] - fx0, p[1] - fy0, p[2], p[3]];
-            let keep: Vec<[f64; 4]> = inside
-                .iter()
-                .filter(|&&(_, &(id, _, _))| q.get(&id).is_none_or(|&v| v >= cut))
-                .map(|(p, _)| shifted(p))
-                .collect();
-            let every: Vec<[f64; 4]> = inside.iter().map(|(p, _)| shifted(p)).collect();
-            let rounded = |v: &[[f64; 4]]| v.iter().map(|b| b.map(|x| round(x, 2))).collect();
-            out.push(CutoffCrop {
-                frame: i,
-                x0,
-                y0,
-                row: CutoffRow {
-                    file: format!("train/{stem}_{i:06}.npz"),
-                    boxes: rounded(&keep),
-                    verdict: "correct",
-                    model: rounded(&every),
-                    source: "cutoff",
-                    video: r.video.clone(),
-                    offset: r.offset,
-                    cut: round(cut, 3),
-                },
-                boxes: keep,
-            });
-        }
+        maker.add_crops(left_out, first..last, &mut out);
     }
     out
 }
@@ -272,8 +377,11 @@ pub fn cutoff_crops(r: &CutoffRequest) -> Vec<CutoffCrop> {
 /// A cut-off's crops as JSON (an array of `CutoffCrop`), or {"error": ...} for a request that cannot be read.
 pub fn cutoff_json(request: &[u8]) -> Vec<u8> {
     match serde_json::from_slice::<CutoffRequest>(request) {
-        Ok(r) => serde_json::to_vec(&cutoff_crops(&r)),
-        Err(e) => serde_json::to_vec(&serde_json::json!({ "error": format!("The labels' request could not be read: {e}") })),
+        Ok(parsed) => serde_json::to_vec(&cutoff_crops(&parsed)),
+        Err(error) => {
+            let message = format!("The labels' request could not be read: {error}");
+            serde_json::to_vec(&serde_json::json!({ "error": message }))
+        }
     }
     .unwrap_or_default()
 }
@@ -282,9 +390,10 @@ pub fn cutoff_json(request: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    fn frame(i: usize, t: Vec<(u32, f64, f64)>, s: Vec<f64>) -> TrackFrame {
-        let n = t.len();
-        TrackFrame { i, shift: (0.0, 0.0), t, a: vec![10; n], wh: Some(vec![(1.0, 1.0); n]), s: Some(s) }
+    fn frame(i: usize, points: Vec<(u32, f64, f64)>, scores: Vec<f64>) -> TrackFrame {
+        let count = points.len();
+        let sizes = Some(vec![(1.0, 1.0); count]);
+        TrackFrame { i, shift: (0.0, 0.0), t: points, a: vec![10; count], wh: sizes, s: Some(scores) }
     }
 
     /// Two tracks: one scoring 0.9 throughout, one 0.4. The level is the strong one's score; an offset of 0.3 cuts the
@@ -293,29 +402,33 @@ mod tests {
     fn a_weak_track_is_cut() {
         let frames: Vec<TrackFrame> =
             (0..10).map(|i| frame(i, vec![(1, 5.0, 0.0), (2, 3.0, 1.0)], vec![0.9, 0.4])).collect();
-        let sc = faint_scores(&frames, 2.0);
-        assert_eq!(sc.level, Some(0.9));
-        assert_eq!(sc.scores, vec![TrackScore { id: 1, score: 0.9, frames: 10 }, TrackScore { id: 2, score: 0.4, frames: 10 }]);
+        let scores = faint_scores(&frames, 2.0);
+        assert_eq!(scores.level, Some(0.9));
+        let strong = TrackScore { id: 1, score: 0.9, frames: 10 };
+        assert_eq!(scores.scores, vec![strong, TrackScore { id: 2, score: 0.4, frames: 10 }]);
         let cut = without_faint(&frames, 0.3, 2.0);
         assert_eq!((cut.cut, cut.gone), (Some(0.6), 1));
-        assert!(cut.frames.iter().all(|f| f.t.len() == 1 && f.t[0].0 == 1 && f.s.as_ref().unwrap().len() == 1));
+        let only_the_strong =
+            |kept: &TrackFrame| kept.t.len() == 1 && kept.t[0].0 == 1 && kept.s.as_ref().unwrap().len() == 1;
+        assert!(cut.frames.iter().all(only_the_strong));
         let none = without_faint(&frames, 0.6, 2.0);
         assert_eq!((none.cut, none.gone), (Some(0.3), 0));
     }
 
     #[test]
     fn tracks_without_scores_are_not_cut() {
-        let mut f = frame(0, vec![(1, 5.0, 0.0)], vec![0.9]);
-        f.s = None;
-        let cut = without_faint(&[f.clone(), f.clone(), f], 0.3, 0.0);
+        let mut unscored = frame(0, vec![(1, 5.0, 0.0)], vec![0.9]);
+        unscored.s = None;
+        let cut = without_faint(&[unscored.clone(), unscored.clone(), unscored], 0.3, 0.0);
         assert_eq!((cut.cut, cut.gone, cut.frames.len()), (None, 0, 3));
     }
 
     /// Python: `f"{Path(v).stem[:40]}_{hashlib.md5(Path(v).name.encode()).hexdigest()[:6]}".replace(" ", "_")`.
     #[test]
     fn the_stem_is_pythons() {
-        let v = r"E:\OBS\KovOBS\1wall 6targets extra small\1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4";
-        assert_eq!(crop_stem(v), PYTHON_STEM);
+        let video =
+            r"E:\OBS\KovOBS\1wall 6targets extra small\1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4";
+        assert_eq!(crop_stem(video), PYTHON_STEM);
     }
 
     const PYTHON_STEM: &str = "1wall_6targets_extra_small_-_889.26_-_20_6a3425";
