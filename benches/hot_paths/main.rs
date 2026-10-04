@@ -11,15 +11,23 @@ mod inputs;
 mod review;
 mod tracks;
 
+/// The samples a bench takes, unless its group sets fewer.
+const SAMPLES: usize = 50;
+/// The samples of a group where one call is slow.
+pub const FEW_SAMPLES: usize = 20;
+/// The samples of a group where one call takes milliseconds.
+pub const FEWEST_SAMPLES: usize = 10;
+/// Changes smaller than this share are not reported: runs of the same code differ by up to about 10% on this machine.
+const NOISE_SHARE: f64 = 0.05;
+
 /// Short benches, so the whole suite takes about a minute: a group sets fewer samples where one call is slow, and
 /// flat sampling (the same iterations in each sample) where one call takes milliseconds.
 fn config() -> Criterion {
     Criterion::default()
         .warm_up_time(Duration::from_millis(500))
         .measurement_time(Duration::from_secs(2))
-        .sample_size(50)
-        // runs of the same code differ by up to about 10% on this machine: smaller changes are not reported
-        .noise_threshold(0.05)
+        .sample_size(SAMPLES)
+        .noise_threshold(NOISE_SHARE)
 }
 
 criterion_group! {

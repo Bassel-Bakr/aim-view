@@ -16,7 +16,7 @@ pub const NATIVE: &str = "test_out/baselines/4b7ddc4/native";
 pub fn bytes(bench: &str, path: &str) -> Option<Vec<u8>> {
     let full = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path);
     match std::fs::read(&full) {
-        Ok(b) => Some(b),
+        Ok(contents) => Some(contents),
         Err(_) => {
             eprintln!("{bench}: skipped, no {}", full.display());
             None
@@ -26,21 +26,22 @@ pub fn bytes(bench: &str, path: &str) -> Option<Vec<u8>> {
 
 /// A JSON file read as `T`, or None as `bytes` gives it.
 pub fn json<T: DeserializeOwned>(bench: &str, path: &str) -> Option<T> {
-    bytes(bench, path).map(|b| serde_json::from_slice(&b).unwrap_or_else(|e| panic!("{path}: {e}")))
+    let parse = |contents: Vec<u8>| serde_json::from_slice(&contents).unwrap_or_else(|error| panic!("{path}: {error}"));
+    bytes(bench, path).map(parse)
 }
 
 /// A text file, or None as `bytes` gives it.
 pub fn text(bench: &str, path: &str) -> Option<String> {
-    bytes(bench, path).map(|b| String::from_utf8_lossy(&b).into_owned())
+    bytes(bench, path).map(|contents| String::from_utf8_lossy(&contents).into_owned())
 }
 
-/// The last `n` bytes of a NumPy .npy file: its data after the header.
-pub fn npy(bench: &str, path: &str, n: usize) -> Option<Vec<u8>> {
-    bytes(bench, path).map(|b| b[b.len() - n..].to_vec())
+/// The last `count` bytes of a NumPy .npy file: its data after the header.
+pub fn npy(bench: &str, path: &str, count: usize) -> Option<Vec<u8>> {
+    bytes(bench, path).map(|contents| contents[contents.len() - count..].to_vec())
 }
 
 /// The excluded areas of a fixture's meta.json ([x0, y0, x1, y1, kind] as shares of the frame).
 pub fn areas(meta: &serde_json::Value) -> Vec<[f64; 4]> {
     let areas = meta["areas"].as_array().map(Vec::as_slice).unwrap_or_default();
-    areas.iter().map(|a| std::array::from_fn(|k| a[k].as_f64().unwrap())).collect()
+    areas.iter().map(|area| std::array::from_fn(|i| area[i].as_f64().unwrap())).collect()
 }
