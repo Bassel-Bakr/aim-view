@@ -85,6 +85,72 @@ fn lower_extension(path: &Path) -> String {
     path.extension().map(|extension| extension.to_string_lossy().to_lowercase()).unwrap_or_default()
 }
 
+/// Two files are compared this many bytes at a time.
+const COMPARE_CHUNK_BYTES: usize = 1 << 20;
+
+/// An upload's body: its bytes, or the file it was spooled to as it arrived.
+enum Body<'a> {
+    Bytes(&'a [u8]),
+    Spooled(&'a Path),
+}
+
+impl Body<'_> {
+    fn len(&self) -> u64 {
+        match self {
+            Body::Bytes(bytes) => bytes.len() as u64,
+            Body::Spooled(file) => crate::disk::metadata(file).map_or(0, |metadata| metadata.len()),
+        }
+    }
+
+    /// Whether the file at `path` holds the same bytes.
+    fn same_as(&self, path: &Path) -> bool {
+        match self {
+            Body::Bytes(bytes) => crate::disk::read(path).is_ok_and(|kept| kept == *bytes),
+            Body::Spooled(file) => same_bytes(file, path),
+        }
+    }
+
+    /// Writes the body to `destination` (a spooled one is moved there).
+    fn save(&self, destination: &Path) -> std::io::Result<()> {
+        match self {
+            Body::Bytes(bytes) => crate::disk::write(destination, bytes),
+            Body::Spooled(file) => crate::disk::rename(file, destination)
+                .or_else(|_| crate::disk::copy(file, destination).and_then(|_| crate::disk::remove_file(file))),
+        }
+    }
+
+    /// Removes a spooled body that is not kept.
+    fn discard(&self) {
+        if let Body::Spooled(file) = self {
+            let _ = crate::disk::remove_file(file);
+        }
+    }
+}
+
+/// Whether two files hold the same bytes, read a chunk at a time.
+fn same_bytes(a: &Path, b: &Path) -> bool {
+    use std::io::{BufRead, BufReader};
+    let (Ok(a), Ok(b)) = (crate::disk::File::open(a), crate::disk::File::open(b)) else {
+        return false;
+    };
+    let mut a = BufReader::with_capacity(COMPARE_CHUNK_BYTES, a);
+    let mut b = BufReader::with_capacity(COMPARE_CHUNK_BYTES, b);
+    loop {
+        let (Ok(left), Ok(right)) = (a.fill_buf(), b.fill_buf()) else {
+            return false;
+        };
+        let length = left.len().min(right.len());
+        if length == 0 {
+            return left.is_empty() && right.is_empty();
+        }
+        if left[..length] != right[..length] {
+            return false;
+        }
+        a.consume(length);
+        b.consume(length);
+    }
+}
+
 /// A row of the quick list (`Library::recordings`): what the file's name gives; the rest is not looked at yet.
 fn quick_row(id: &str, scenario: &str, score: Option<f64>, stamp: &str, not_aim: bool) -> Value {
     json!({
@@ -270,18 +336,31 @@ impl Library {
     }
 
     /// A video added from this computer (kept in the uploads), or a stats file for a recording (`id`), which it is then
-    /// paired with. Nothing is overwritten.
+    /// paired with. Nothing is overwritten, and a video sent again is the one already kept.
     pub fn upload(&self, name: &str, id: Option<&str>, body: &[u8]) -> Answer<Value> {
-        self.add_upload(name, id, |destination| crate::disk::write(destination, body))
+        self.add_upload(name, id, &Body::Bytes(body))
     }
 
     /// The same for an upload already on disk (`file`, from `spool`, written as it arrived): it is moved into place,
-    /// never read into memory.
+    /// never read into memory (or removed, when the video is kept already).
     pub fn upload_file(&self, name: &str, id: Option<&str>, file: &Path) -> Answer<Value> {
-        self.add_upload(name, id, |destination| {
-            crate::disk::rename(file, destination)
-                .or_else(|_| crate::disk::copy(file, destination).and_then(|_| crate::disk::remove_file(file)))
-        })
+        self.add_upload(name, id, &Body::Spooled(file))
+    }
+
+    /// The video in the uploads with the same bytes as `body`, when there is one (only files of its size are read).
+    fn kept_copy(&self, body: &Body) -> Option<String> {
+        let size = body.len();
+        crate::disk::read_dir(self.uploads())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| VIDEO_TYPES.contains(&lower_extension(path).as_str()))
+            .filter(|path| {
+                crate::disk::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.len() == size)
+            })
+            .find(|path| body.same_as(path))
+            .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
     }
 
     /// A new file in the uploads folder for an upload's body, written as it arrives (the HTTP server does so), which
@@ -293,13 +372,8 @@ impl Library {
         Ok(self.uploads().join(format!("{SPOOL_PREFIX}{}-{number}{SPOOL_SUFFIX}", crate::disk::process_id())))
     }
 
-    /// An upload's checks and its place in the uploads; `save` writes it there.
-    fn add_upload(
-        &self,
-        name: &str,
-        id: Option<&str>,
-        save: impl FnOnce(&Path) -> std::io::Result<()>,
-    ) -> Answer<Value> {
+    /// An upload's checks and its place in the uploads, where `body` is saved.
+    fn add_upload(&self, name: &str, id: Option<&str>, body: &Body) -> Answer<Value> {
         let name = Path::new(name).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
         let extension = lower_extension(Path::new(&name));
         let (destination, id) = if extension == "csv" {
@@ -307,13 +381,17 @@ impl Library {
             self.resolve(id)?;
             (free_name(self.uploads().join(STATS_UPLOADS).join(&name)), Some(id))
         } else if VIDEO_TYPES.contains(&extension.as_str()) {
+            if let Some(kept) = self.kept_copy(body) {
+                body.discard();
+                return Ok(json!({ "id": upload_id(&kept), "saved": kept }));
+            }
             (free_name(self.uploads().join(&name)), None)
         } else {
             return Err(Failure::bad(format!("not a video or a stats .csv: {name}")));
         };
         crate::disk::create_dir_all(destination.parent().unwrap_or(&self.uploads()))
             .map_err(|error| error.to_string())?;
-        save(&destination).map_err(|error| error.to_string())?;
+        body.save(&destination).map_err(|error| error.to_string())?;
         let saved = destination.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
         match id {
             None => Ok(json!({ "id": upload_id(&saved), "saved": saved })),
@@ -359,6 +437,31 @@ mod tests {
         let mut want: Vec<String> = kept.iter().map(|name| name.to_string()).chain([link]).collect();
         want.sort();
         assert_eq!(left, want);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A video sent again is the one already kept (its id and reviews), whatever its name; a different video of the
+    /// same name and size is a new upload. A spooled body that matches is removed.
+    #[test]
+    fn a_video_sent_again_is_the_one_kept() {
+        let dir = std::env::temp_dir().join(format!("aimview-again-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
+        let first = library.upload("run.mp4", None, b"video one").unwrap();
+        assert_eq!(library.upload("run.mp4", None, b"video one").unwrap(), first);
+        assert_eq!(library.upload("renamed.mp4", None, b"video one").unwrap(), first);
+        let other = library.upload("run.mp4", None, b"video two").unwrap();
+        assert_eq!(other["saved"], "run (2).mp4");
+        let spooled = library.spool().unwrap();
+        std::fs::write(&spooled, b"video two").unwrap();
+        assert_eq!(library.upload_file("run.mp4", None, &spooled).unwrap(), other);
+        assert!(!spooled.exists());
+        let mut kept: Vec<String> = std::fs::read_dir(library.uploads())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        kept.sort();
+        assert_eq!(kept, ["run (2).mp4", "run.mp4"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
