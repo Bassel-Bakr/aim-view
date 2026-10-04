@@ -55,6 +55,22 @@ listed in `new_runs.txt`. small_v6 used the same command into `data_kills3`, bef
 python python/model/build_kills.py --out test_out/vod_model/data_kills4 --per-folder 1 --also test_out/vod_model/new_runs.txt
 ```
 
+Moving targets on other themes (2026-10-04; not checked and not trained on yet). Every recording of a dynamic,
+tracking or switching scenario (`--per-folder 0`) that is not dark targets on light walls (`--other-themes`: the ones
+`--dark` leaves out), labelled by full_v3 instead of `dark_labels` (`--model`: its `_u8in` export on the CPU, at the
+threshold in its settings file). Boxes on the HUD or KovOBS's boxes are dropped, and so are boxes more than 2.5 times
+wider than tall (health bars). The steadiness filter and the target-count filter are the same as for `--dark`.
+`--skip-checks` leaves out every recording the stats-file checks use (eval_vods.py, eval_moving.py,
+eval_video_alone.py). About 7 minutes on 14 processes. Then the contact sheet, and 150 crops picked for a check by eye
+(`pick_checks.py`: spread over the recordings and kinds, most of them uncertain ones), and the check itself:
+
+```bash
+python python/model/build_data.py --kinds dynamic,tracking,switching --per-folder 0 --other-themes --model python/model/exports/detector_full_v3_u8in.onnx --skip-checks --out test_out/vod_model/data_moving_themes
+python python/model/validate_data.py --data test_out/vod_model/data_moving_themes --sheet test_out/vod_model/sheet_moving_themes.png
+python python/model/pick_checks.py --data test_out/vod_model/data_moving_themes --out test_out/vod_model/check_moving_themes --n 150
+python python/model/label_check.py --data test_out/vod_model/check_moving_themes --n 150 --port 8774 --out test_out/vod_model/check_moving_themes/checked.jsonl
+```
+
 ## 2. Train
 
 ```bash

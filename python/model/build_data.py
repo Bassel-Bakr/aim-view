@@ -15,6 +15,7 @@ random), saved as compressed .npz:
   fixed  (256, 256)    uint8   1 where the screen stays put (crosshair, HUD): the model's 4th input
   tmask  (256, 256)    uint8   1 on the labelled targets' pixels (for recolouring in training)
   boxes  (n, 4)        float32 cx, cy, w, h in px, for the targets whose centre is in the crop
+  scores (n,)          float32 the model's score of each box (--model only)
 manifest.jsonl lists every VOD with its split, label statistics and whether it was kept.
 Usage: python python/model/build_data.py [--vods E:/OBS/KovOBS] [--out test_out/vod_model/data] [--per-folder 4]
 """
@@ -130,9 +131,48 @@ def dark_labels(rgb, mask, fixed):
     return tmask, boxes
 
 
+_DETECTOR = {}
+
+
+def model_labels(model, rgb, mask, fixed):
+    """A detector model's targets in one frame, at the threshold in the model's settings file: the boxes whose centre is
+    where targets can be (screen_mask: not on the HUD or KovOBS's boxes) and that are no more than 2.5 times wider than
+    tall (a health bar is wider, as in dark_labels), as (cx, cy, w, h, score). The target mask is the ellipse that fills
+    each box. The model runs on the CPU (ONNX Runtime, one thread in each process)."""
+    if model not in _DETECTOR:
+        import contract
+        import infer
+        settings, _ = contract.load_settings(model)
+        if settings.get("score_map"):
+            sys.exit(f"{model}: a model with a score map is not supported here")
+        _DETECTOR[model] = infer.OnnxDetector(contract.calibrate.u8in_of(model), threads=1), float(settings["threshold"])
+    det, thr = _DETECTOR[model]
+    tmask = np.zeros((H, W), np.uint8)
+    boxes = []
+    for cx, cy, w, h, s in det(rgb, fixed, thr):
+        if w > 2.5 * h or not mask[min(H - 1, max(0, int(round(cy)))), min(W - 1, max(0, int(round(cx))))]:
+            continue
+        x0, x1 = max(0, int(cx - w / 2)), min(W, int(cx + w / 2) + 1)
+        y0, y1 = max(0, int(cy - h / 2)), min(H, int(cy + h / 2) + 1)
+        yy, xx = np.ogrid[y0:y1, x0:x1]
+        tmask[y0:y1, x0:x1][((xx - cx) / max(1.0, w / 2)) ** 2 + ((yy - cy) / max(1.0, h / 2)) ** 2 <= 1] = 1
+        boxes.append((float(cx), float(cy), float(w), float(h), float(s)))
+    return tmask, boxes
+
+
+def check_runs():
+    """The recordings the stats-file checks use (eval_vods.py, eval_moving.py and eval_video_alone.py, held-out runs
+    too), as (folder, file): training on them would make the checks less independent."""
+    import eval_moving                                    # it imports this module: loaded here, not at the top
+    runs = list(eval_moving.STATIC) + [v for vs in eval_moving.picks().values() for v, _ in vs]
+    out = {(Path(v).parent.name, Path(v).name) for v in runs}
+    alone = json.loads((Path(__file__).resolve().parent / "video_alone_runs.json").read_text(encoding="utf-8"))
+    return out | {tuple(r["id"].split("/", 1)) for r in alone}
+
+
 def one(job):
     """Label one VOD's key frames and save its crops. Returns its manifest row."""
-    folder, video, split, out, seed, dark, expect = job
+    folder, video, split, out, seed, dark, expect, model, other = job
     row = dict(folder=folder, file=Path(video).name, split=split, kept=False, crops=0)
     rnd = random.Random(seed)
     try:
@@ -145,22 +185,24 @@ def one(job):
         return dict(row, reason="too few key frames")
     fixed = review.fixed_map(yuvs).astype(np.uint8)
     mask, _, cross = review.screen_mask(yuvs)
-    if dark:
-        if not dark_scene(rgbs, mask):
-            return dict(row, reason="not dark targets on light walls")
+    if (dark or other) and dark_scene(rgbs, mask) != dark:
+        return dict(row, reason="not dark targets on light walls" if dark else "dark targets on light walls")
+    if model:
+        labs = [model_labels(model, np.frombuffer(r, np.uint8).reshape(H, W, 3), mask, fixed) for r in rgbs]
+    elif dark:
         labs = [dark_labels(np.frombuffer(r, np.uint8).reshape(H, W, 3), mask, fixed) for r in rgbs]
     else:
         labs = [labels(y, mask, cross) for y in yuvs]
     counts = np.array([len(b) for _, b in labs])
     med = float(np.median(counts))
     steady = float(np.mean(np.abs(counts - med) <= max(1, 0.25 * med)))
-    row.update(median=med, steady=round(steady, 3))
+    stem = hashlib.md5(video.encode()).hexdigest()[:10]
+    row.update(median=med, steady=round(steady, 3), stem=stem, counts=counts.tolist(), targets=expect)
     if med < 1 or med > 15 or steady < 0.7:
         return dict(row, reason="labels not steady")
-    if dark and expect and med > expect + 1:          # a dark grid or dark props, not the targets
+    if (dark or model) and expect and med > expect + 1:   # a dark grid, props or tiles, not the targets
         return dict(row, reason="more labels than targets")
     d = Path(out) / split
-    stem = hashlib.md5(video.encode()).hexdigest()[:10]
     n = 0
     for k, ((tmask, boxes), rgb) in enumerate(zip(labs, rgbs)):
         if abs(len(boxes) - med) > max(1, 0.25 * med):
@@ -175,11 +217,12 @@ def one(job):
         for j, (sx, sy) in enumerate(spots):
             x0 = min(W - CROP, max(0, sx - CROP // 2))
             y0 = min(H - CROP, max(0, sy - CROP // 2))
-            bb = np.array([(x - x0, y - y0, w, h) for x, y, w, h in boxes
-                           if x0 <= x < x0 + CROP and y0 <= y < y0 + CROP], np.float32).reshape(-1, 4)
+            inside = [b for b in boxes if x0 <= b[0] < x0 + CROP and y0 <= b[1] < y0 + CROP]
+            bb = np.array([(x - x0, y - y0, w, h) for x, y, w, h, *_ in inside], np.float32).reshape(-1, 4)
+            scores = dict(scores=np.array([b[4] for b in inside], np.float32)) if model else {}
             np.savez_compressed(d / f"{stem}_{k:03d}_{j}.npz", rgb=img[y0:y0 + CROP, x0:x0 + CROP],
                                 fixed=fixed[y0:y0 + CROP, x0:x0 + CROP], tmask=tmask[y0:y0 + CROP, x0:x0 + CROP],
-                                boxes=bb)
+                                boxes=bb, **scores)
             n += 1
     return dict(row, kept=True, crops=n)
 
@@ -188,11 +231,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--vods", default=r"E:\OBS\KovOBS")
     ap.add_argument("--out", default="test_out/vod_model/data")
-    ap.add_argument("--per-folder", type=int, default=4)
+    ap.add_argument("--per-folder", type=int, default=4, help="the newest recordings of each scenario (0: every one)")
     ap.add_argument("--kinds", default="static", help="scenario kinds, comma separated: static, dynamic, tracking, "
                     "switching (review.scenario_kinds; static alone keeps the MaxSpeed rule the first datasets used)")
-    ap.add_argument("--dark", action="store_true", help="label with dark_labels (recordings of dark targets on light "
-                    "walls only) instead of the hand-written detector")
+    scene = ap.add_mutually_exclusive_group()
+    scene.add_argument("--dark", action="store_true", help="label with dark_labels (recordings of dark targets on light "
+                       "walls only) instead of the hand-written detector")
+    scene.add_argument("--other-themes", action="store_true", help="only recordings that are not dark targets on light "
+                       "walls (the ones --dark leaves out)")
+    ap.add_argument("--model", help="label with this detector model instead (an export in python/model/exports: its "
+                    "_u8in export on the CPU, at the threshold in its settings file)")
+    ap.add_argument("--skip-checks", action="store_true", help="leave out the stats-file checks' recordings")
     a = ap.parse_args()
     for s in ("train", "val", "test"):
         (Path(a.out) / s).mkdir(parents=True, exist_ok=True)
@@ -202,13 +251,17 @@ def main():
     else:
         static = {n for n, k in review.scenario_kinds().items() if k in kinds}
     counts = review.target_counts()
-    jobs = []
+    skip = check_runs() if a.skip_checks else set()
+    jobs, skipped = [], []
     for folder in sorted(p for p in Path(a.vods).iterdir() if p.is_dir()):
         if folder.name.lower() not in static:
             continue
-        vids = sorted(folder.glob("*.mp4"), key=lambda p: -p.stat().st_mtime)[:a.per_folder]
-        jobs += [(folder.name, str(v), split_of(folder.name), a.out, i, a.dark, counts.get(folder.name.lower()))
-                 for i, v in enumerate(vids)]
+        vids = sorted(folder.glob("*.mp4"), key=lambda p: -p.stat().st_mtime)[:a.per_folder or None]
+        skipped += [dict(folder=folder.name, file=v.name, split=split_of(folder.name), kept=False, crops=0,
+                         reason="a stats-file check's run", size=v.stat().st_size)
+                    for v in vids if (folder.name, v.name) in skip]
+        jobs += [(folder.name, str(v), split_of(folder.name), a.out, i, a.dark, counts.get(folder.name.lower()),
+                  a.model, a.other_themes) for i, v in enumerate(vids) if (folder.name, v.name) not in skip]
     # incremental: a VOD already in the manifest (same file, same size) keeps its row and its crops
     man = Path(a.out) / "manifest.jsonl"
     old = {}
@@ -217,7 +270,7 @@ def main():
             if line.strip():
                 r = json.loads(line)
                 old[(r["folder"], r["file"])] = r
-    rows, todo = [], []
+    rows, todo = skipped, []
     for job in jobs:
         r = old.get((job[0], Path(job[1]).name))
         if r and r.get("size") == Path(job[1]).stat().st_size:
@@ -225,7 +278,8 @@ def main():
         else:
             todo.append(job)
     jobs = todo
-    print(f"{len(static)} {a.kinds} scenarios installed; {len(rows)} VODs already labelled, {len(jobs)} to label", flush=True)
+    print(f"{len(static)} {a.kinds} scenarios installed; {len(skipped)} VODs of the checks left out, "
+          f"{len(rows) - len(skipped)} already labelled, {len(jobs)} to label", flush=True)
     with mp.Pool(max(1, mp.cpu_count() - 2)) as pool:
         for k, row in enumerate(pool.imap_unordered(one, jobs)):
             row["size"] = (Path(a.vods) / row["folder"] / row["file"]).stat().st_size
