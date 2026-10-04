@@ -2,7 +2,7 @@
 //! header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`). The desktop app answers its
 //! window with it (over a custom protocol), and the HTTP server answers the browser. Routes that need the desktop (the
 //! folder dialog, /api/folder; the mouse logger's switch, /api/mouse/logger) are answered by the desktop app before it
-//! asks here: here they are not found (404).
+//! asks here: here they are not found (404). Each route asks the library (library/) for its answer.
 //!
 //! The browser build (no `native` feature) answers the same routes, but for these: the page runs the review
 //! (/api/analyse answers what to review; /api/job and /api/reviewed take its progress and its end), the area finder
@@ -22,6 +22,13 @@ use crate::library::{Answer, Failure, Library};
 /// The most of a video one ranged response holds: the player asks again for the rest.
 #[cfg(feature = "native")]
 const VIDEO_CHUNK: u64 = 4 << 20;
+/// The answers' statuses: done, part of a video, and a route the browser build leaves to the page.
+const OK: u16 = 200;
+#[cfg(feature = "native")]
+const PARTIAL_CONTENT: u16 = 206;
+#[cfg(not(feature = "native"))]
+const NOT_IMPLEMENTED: u16 = 501;
+const JSON: &str = "application/json";
 
 /// A request: its method ("GET", "POST"), its path with its query ("/api/report?id=..."), its Range header if any, and
 /// its body (in memory, or for an upload a file).
@@ -48,152 +55,238 @@ impl ApiResponse {
     }
 }
 
+/// A JSON answer: the value, or {error} with the failure's status.
 fn json_response(answer: Answer<Value>) -> ApiResponse {
     match answer {
-        Ok(v) => ApiResponse::new(200, "application/json", serde_json::to_vec(&v).unwrap_or_default()),
-        Err(f) => ApiResponse::new(f.status, "application/json", serde_json::to_vec(&json!({ "error": f.message })).unwrap_or_default()),
+        Ok(value) => ApiResponse::new(OK, JSON, serde_json::to_vec(&value).unwrap_or_default()),
+        Err(failure) => {
+            let body = serde_json::to_vec(&json!({ "error": failure.message })).unwrap_or_default();
+            ApiResponse::new(failure.status, JSON, body)
+        }
+    }
+}
+
+/// A request as the routes read it: whether it is a POST, its path, its query's values and its body.
+struct Route<'a> {
+    request: &'a ApiRequest<'a>,
+    url: Option<url::Url>,
+    path: String,
+    post: bool,
+}
+
+impl<'a> Route<'a> {
+    fn new(request: &'a ApiRequest<'a>) -> Route<'a> {
+        let url = url::Url::parse(&format!("http://api.localhost{}", request.path_and_query)).ok();
+        let path = url.as_ref().map(|url| url.path().to_string()).unwrap_or_default();
+        Route { request, url, path, post: request.method.eq_ignore_ascii_case("POST") }
+    }
+
+    /// A value of the query, by its key.
+    fn query(&self, key: &str) -> Option<String> {
+        let url = self.url.as_ref()?;
+        url.query_pairs().find(|(name, _)| name == key).map(|(_, value)| value.into_owned())
+    }
+
+    /// Whether the query says `key=1`.
+    fn flag(&self, key: &str) -> bool {
+        self.query(key).as_deref() == Some("1")
+    }
+
+    /// The recording the request is about (id=).
+    fn id(&self) -> Answer<String> {
+        self.query("id").ok_or_else(|| Failure::bad("id= is missing"))
+    }
+
+    /// The body as JSON; null when it is not JSON.
+    fn body(&self) -> Value {
+        serde_json::from_slice::<Value>(self.request.body).unwrap_or(Value::Null)
+    }
+
+    /// Whether the area finder may copy areas from a recording of the same layout (copy=, 1 when it is not given).
+    fn copy_areas(&self) -> bool {
+        self.query("copy").as_deref().unwrap_or("1") == "1"
     }
 }
 
 /// Answers one request.
-pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
-    let url = url::Url::parse(&format!("http://api.localhost{}", req.path_and_query)).ok();
-    let path = url.as_ref().map(|u| u.path().to_string()).unwrap_or_default();
-    let query = |key: &str| url.as_ref().and_then(|u| u.query_pairs().find(|(k, _)| k == key).map(|(_, v)| v.into_owned()));
-    let id = || query("id").ok_or_else(|| Failure::bad("id= is missing"));
-    let body = || serde_json::from_slice::<Value>(req.body).unwrap_or(Value::Null);
-    let post = req.method.eq_ignore_ascii_case("POST");
+pub fn handle(library: &Arc<Library>, request: &ApiRequest) -> ApiResponse {
+    let route = Route::new(request);
+    if let Some(response) = special_answer(library, &route) {
+        return response;
+    }
+    let answer = if route.post { post_answer(library, &route) } else { get_answer(library, &route) };
+    json_response(answer)
+}
+
+/// The routes whose answers are not JSON values (a video, the examples' text, the tracks' bytes), or not only that
+/// (the browser build's 409 for the area finder); None for the others.
+fn special_answer(library: &Library, route: &Route) -> Option<ApiResponse> {
     #[cfg(feature = "native")]
-    if path == "/video" {
-        return match id().and_then(|id| lib.resolve(&id)) {
-            Ok(p) => video(&p, req.range),
-            Err(f) => json_response(Err(f)),
-        };
+    if route.path == "/video" {
+        return Some(match route.id().and_then(|id| library.resolve(&id)) {
+            Ok(path) => video(&path, route.request.range),
+            Err(failure) => json_response(Err(failure)),
+        });
     }
-    if !post && path == "/api/area_examples" {
-        return match lib.examples_text() {
-            Ok(text) => ApiResponse::new(200, "text/plain; charset=utf-8", text),
-            Err(f) => json_response(Err(f)),
-        };
+    if !route.post && route.path == "/api/area_examples" {
+        return Some(match library.examples_text() {
+            Ok(text) => ApiResponse::new(OK, "text/plain; charset=utf-8", text),
+            Err(failure) => json_response(Err(failure)),
+        });
     }
-    // the browser build: until the page's area finder sent what it found, it is asked to (409, `need`)
     #[cfg(not(feature = "native"))]
-    if !post && path == "/api/find_areas" {
-        let answer = id().and_then(|id| lib.find_areas(&id, query("copy").as_deref().unwrap_or("1") == "1"));
-        return match answer {
-            Err(f) if f.status == crate::library::FOUND_NEEDED => {
-                let video = id().and_then(|id| lib.resolve(&id)).ok();
-                let body = json!({ "error": f.message, "need": "found", "video": video });
-                ApiResponse::new(f.status, "application/json", serde_json::to_vec(&body).unwrap_or_default())
-            }
-            answer => json_response(answer),
-        };
+    if !route.post && route.path == "/api/find_areas" {
+        return Some(page_find_areas(library, route));
     }
-    if path == "/api/tracks" {
-        return match id().map(|id| lib.tracks(&id)) {
-            Ok(Some(bytes)) => ApiResponse::new(200, "application/json", bytes),
+    if route.path == "/api/tracks" {
+        return Some(match route.id().map(|id| library.tracks(&id)) {
+            Ok(Some(bytes)) => ApiResponse::new(OK, JSON, bytes),
             Ok(None) => json_response(Ok(Value::Null)),
-            Err(f) => json_response(Err(f)),
-        };
+            Err(failure) => json_response(Err(failure)),
+        });
     }
-    json_response(match (post, path.as_str()) {
-        (false, "/api/vods") => lib.recordings(query("quick").as_deref() == Some("1")),
-        (false, "/api/models") => lib.models(),
-        (true, "/api/model") => lib.pick(&query("name").unwrap_or_default()),
-        (true, "/api/device") => lib.use_device(&query("name").unwrap_or_default()),
-        (true, "/api/batch") => lib.use_batch(&query("n").unwrap_or_default()),
-        (false, "/api/job") => id().map(|id| lib.job(&id)),
-        (true, "/api/analyse") => id().and_then(|id| lib.analyse(&id, query("again").as_deref() == Some("1"))),
-        (false, "/api/report") => id().and_then(|id| lib.report(&id)),
-        (false, "/api/run") => id().and_then(|id| lib.marks(&id)),
-        (true, "/api/run") => id().and_then(|id| lib.set_marks(&id, &body())),
-        (false, "/api/stats") => id().and_then(|id| lib.stats_info(&id, query("q").as_deref())),
-        (true, "/api/stats") => id().and_then(|id| lib.set_stats(&id, &body())),
-        (false, "/api/history") => {
-            query("scenario").ok_or_else(|| Failure::bad("scenario= is missing")).and_then(|s| lib.history(&s))
+    None
+}
+
+/// The browser build's /api/find_areas: until the page's area finder sent what it found, it is asked to (409, `need`,
+/// with the video to read).
+#[cfg(not(feature = "native"))]
+fn page_find_areas(library: &Library, route: &Route) -> ApiResponse {
+    match route.id().and_then(|id| library.find_areas(&id, route.copy_areas())) {
+        Err(failure) if failure.status == crate::library::FOUND_NEEDED => {
+            let video = route.id().and_then(|id| library.resolve(&id)).ok();
+            let body = json!({ "error": failure.message, "need": "found", "video": video });
+            ApiResponse::new(failure.status, JSON, serde_json::to_vec(&body).unwrap_or_default())
         }
-        (true, "/api/upload") => {
-            let (name, of) = (query("name").unwrap_or_default(), query("id"));
-            match req.upload {
-                Some(file) => lib.upload_file(&name, of.as_deref(), file),
-                None => lib.upload(&name, of.as_deref(), req.body),
-            }
+        answer => json_response(answer),
+    }
+}
+
+/// The answer to a GET request.
+fn get_answer(library: &Library, route: &Route) -> Answer<Value> {
+    let id = || route.id();
+    match route.path.as_str() {
+        "/api/vods" => library.recordings(route.flag("quick")),
+        "/api/models" => library.models(),
+        "/api/job" => id().map(|id| library.job(&id)),
+        "/api/report" => id().and_then(|id| library.report(&id)),
+        "/api/run" => id().and_then(|id| library.marks(&id)),
+        "/api/stats" => id().and_then(|id| library.stats_info(&id, route.query("q").as_deref())),
+        "/api/history" => {
+            let scenario = route.query("scenario").ok_or_else(|| Failure::bad("scenario= is missing"));
+            scenario.and_then(|scenario| library.history(&scenario))
         }
+        "/api/mouse" => id().and_then(|id| library.mouse_measures(&id)),
+        "/api/info" => Ok(json!({ "detector": library.model(), "device": library.config().device.name() })),
+        "/api/exclude" => {
+            let kovobs = route.query("layout").as_deref() == Some("kovobs");
+            library.exclude_answer(route.query("id").as_deref(), kovobs)
+        }
+        "/api/find_areas" => id().and_then(|id| library.find_areas(&id, route.copy_areas())),
+        "/api/label_queue" => library.label_queue(),
+        "/api/faint" => id().map(|id| library.faint(&id)),
+        "/api/faint_queue" => library.faint_queue(),
+        path => Err(Failure::missing(format!("not found: {path}"))),
+    }
+}
+
+/// The answer to a POST request.
+fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
+    let id = || route.id();
+    let body = route.request.body;
+    match route.path.as_str() {
+        "/api/model" => library.pick(&route.query("name").unwrap_or_default()),
+        "/api/device" => library.use_device(&route.query("name").unwrap_or_default()),
+        "/api/batch" => library.use_batch(&route.query("n").unwrap_or_default()),
+        "/api/analyse" => id().and_then(|id| library.analyse(&id, route.flag("again"))),
+        "/api/run" => id().and_then(|id| library.set_marks(&id, &route.body())),
+        "/api/stats" => id().and_then(|id| library.set_stats(&id, &route.body())),
+        "/api/upload" => upload(library, route),
         #[cfg(feature = "native")]
-        (true, "/api/link/formats") => lib.link_formats(&body()),
+        "/api/link/formats" => library.link_formats(&route.body()),
         #[cfg(feature = "native")]
-        (true, "/api/link") => lib.add_link(&body()),
+        "/api/link" => library.add_link(&route.body()),
         #[cfg(not(feature = "native"))]
-        (true, "/api/link/formats" | "/api/link") => {
-            Err(Failure { status: 501, message: "the page downloads links itself".into() })
+        "/api/link/formats" | "/api/link" => {
+            Err(Failure { status: NOT_IMPLEMENTED, message: "the page downloads links itself".into() })
         }
-        (false, "/api/mouse") => id().and_then(|id| lib.mouse_measures(&id)),
-        (false, "/api/info") => Ok(json!({ "detector": lib.model(), "device": lib.config().device.name() })),
-        (false, "/api/exclude") => lib.exclude_answer(query("id").as_deref(), query("layout").as_deref() == Some("kovobs")),
-        (true, "/api/exclude") => id().and_then(|id| lib.set_exclude(&id, req.body)),
-        (false, "/api/find_areas") => id().and_then(|id| lib.find_areas(&id, query("copy").as_deref().unwrap_or("1") == "1")),
-        (true, "/api/area_kinds") => lib.save_kind(&body()),
-        (false, "/api/label_queue") => lib.label_queue(),
-        (true, "/api/label_skip") => id().and_then(|id| lib.skip_label(&id)),
-        (true, "/api/not_aim") => id().and_then(|id| lib.set_not_aim(&id, query("on").as_deref().unwrap_or("1") == "1")),
-        (false, "/api/faint") => id().map(|id| lib.faint(&id)),
-        (true, "/api/faint") => id().and_then(|id| lib.set_faint(&id, &body(), None)),
-        (false, "/api/faint_queue") => lib.faint_queue(),
-        (true, "/api/faint_skip") => id().and_then(|id| lib.skip_faint(&id)),
-        (true, "/api/faint_submit") => id().and_then(|id| lib.submit_faint(&id, offset(query("offset"))?)),
-        (true, "/api/area_examples") => lib.set_examples(req.body),
+        "/api/exclude" => id().and_then(|id| library.set_exclude(&id, body)),
+        "/api/area_kinds" => library.save_kind(&route.body()),
+        "/api/label_skip" => id().and_then(|id| library.skip_label(&id)),
+        "/api/not_aim" => {
+            let on = route.query("on").as_deref().unwrap_or("1") == "1";
+            id().and_then(|id| library.set_not_aim(&id, on))
+        }
+        "/api/faint" => id().and_then(|id| library.set_faint(&id, &route.body(), None)),
+        "/api/faint_skip" => id().and_then(|id| library.skip_faint(&id)),
+        "/api/faint_submit" => id().and_then(|id| library.submit_faint(&id, offset(route.query("offset"))?)),
+        "/api/area_examples" => library.set_examples(body),
         #[cfg(not(feature = "native"))]
-        (true, "/api/folder") => lib.choose_vods(&query("path").unwrap_or_default()),
+        "/api/folder" => library.choose_vods(&route.query("path").unwrap_or_default()),
         #[cfg(not(feature = "native"))]
-        (true, "/api/job") => id().and_then(|id| lib.page_progress(&id, req.body)),
+        "/api/job" => id().and_then(|id| library.page_progress(&id, body)),
         #[cfg(not(feature = "native"))]
-        (true, "/api/reviewed") => id().and_then(|id| lib.review_done(&id, req.body)),
+        "/api/reviewed" => id().and_then(|id| library.review_done(&id, body)),
         #[cfg(not(feature = "native"))]
-        (true, "/api/found") => id().and_then(|id| lib.keep_found(&id, req.body)),
+        "/api/found" => id().and_then(|id| library.keep_found(&id, body)),
         #[cfg(not(feature = "native"))]
-        (true, "/api/mouse_log") => lib.keep_mouse_log(&query("name").unwrap_or_default(), req.body),
+        "/api/mouse_log" => library.keep_mouse_log(&route.query("name").unwrap_or_default(), body),
         #[cfg(not(feature = "native"))]
-        (true, "/api/kovaak") if query("changed").as_deref() == Some("1") => lib.kovaak_changed(),
-        _ => Err(Failure::missing(format!("not found: {path}"))),
-    })
+        "/api/kovaak" if route.flag("changed") => library.kovaak_changed(),
+        path => Err(Failure::missing(format!("not found: {path}"))),
+    }
+}
+
+/// /api/upload: a file added (name=), for a recording (id=, a stats file) or as a recording of its own.
+fn upload(library: &Library, route: &Route) -> Answer<Value> {
+    let (name, recording) = (route.query("name").unwrap_or_default(), route.query("id"));
+    match route.request.upload {
+        Some(file) => library.upload_file(&name, recording.as_deref(), file),
+        None => library.upload(&name, recording.as_deref(), route.request.body),
+    }
 }
 
 /// A cut-off's offset from the query (python/server.py: `float(q.get("offset", 0.3))`).
-fn offset(q: Option<String>) -> Answer<f64> {
-    q.map_or(Ok(aimview::faint::DEFAULT_OFFSET), |o| {
-        o.trim().parse().map_err(|_| Failure::bad(format!("could not convert string to float: '{o}'")))
+fn offset(text: Option<String>) -> Answer<f64> {
+    text.map_or(Ok(aimview::faint::DEFAULT_OFFSET), |text| {
+        text.trim().parse().map_err(|_| Failure::bad(format!("could not convert string to float: '{text}'")))
     })
+}
+
+/// The bytes a Range header asks for (bytes=from-to, bytes=from- or bytes=-last) of a file of `size` bytes, as
+/// (start, end), both in: all of it without one. An end past the file ends at its last byte.
+#[cfg(feature = "native")]
+fn asked_range(range: Option<&str>, size: u64) -> (u64, u64) {
+    let last = size.saturating_sub(1);
+    let asked = range.and_then(|range| range.strip_prefix("bytes=")).and_then(|range| range.split_once('-'));
+    match asked {
+        Some((from, to)) if !from.is_empty() => (from.parse().unwrap_or(0), to.parse().unwrap_or(last).min(last)),
+        Some((_, to)) if !to.is_empty() => (size.saturating_sub(to.parse().unwrap_or(0)), last),
+        _ => (0, last),
+    }
 }
 
 /// A video, or the part of it a Range header asks for (at most VIDEO_CHUNK bytes), so the player can seek.
 #[cfg(feature = "native")]
-fn video(p: &Path, range: Option<&str>) -> ApiResponse {
-    let Ok(mut f) = std::fs::File::open(p) else {
+fn video(path: &Path, range: Option<&str>) -> ApiResponse {
+    let Ok(mut file) = std::fs::File::open(path) else {
         return json_response(Err(Failure::missing("the video is gone")));
     };
-    let size = f.metadata().map_or(0, |m| m.len());
-    let asked = range.and_then(|r| r.strip_prefix("bytes=")).and_then(|r| r.split_once('-'));
-    let (start, end) = match asked {
-        Some((a, b)) if !a.is_empty() => {
-            let start = a.parse().unwrap_or(0);
-            (start, b.parse().unwrap_or(size.saturating_sub(1)).min(size.saturating_sub(1)))
-        }
-        Some((_, b)) if !b.is_empty() => (size.saturating_sub(b.parse().unwrap_or(0)), size.saturating_sub(1)),
-        _ => (0, size.saturating_sub(1)),
-    };
+    let size = file.metadata().map_or(0, |metadata| metadata.len());
+    let (start, end) = asked_range(range, size);
     let end = end.min(start + VIDEO_CHUNK - 1);
     let mut body = vec![0u8; (end + 1).saturating_sub(start) as usize];
-    if f.seek(SeekFrom::Start(start)).and_then(|_| f.read_exact(&mut body)).is_err() {
+    if file.seek(SeekFrom::Start(start)).and_then(|_| file.read_exact(&mut body)).is_err() {
         return json_response(Err("the video could not be read".to_string().into()));
     }
-    let kind = match p.extension().map(|e| e.to_string_lossy().to_lowercase()).as_deref() {
+    let kind = match path.extension().map(|extension| extension.to_string_lossy().to_lowercase()).as_deref() {
         Some("webm") => "video/webm",
         Some("mkv") => "video/x-matroska",
         Some("mov") => "video/quicktime",
         _ => "video/mp4",
     };
-    let mut r = ApiResponse::new(206, kind, body);
-    r.headers.push(("Accept-Ranges".into(), "bytes".into()));
-    r.headers.push(("Content-Range".into(), format!("bytes {start}-{end}/{size}")));
-    r
+    let mut response = ApiResponse::new(PARTIAL_CONTENT, kind, body);
+    response.headers.push(("Accept-Ranges".into(), "bytes".into()));
+    response.headers.push(("Content-Range".into(), format!("bytes {start}-{end}/{size}")));
+    response
 }
