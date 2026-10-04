@@ -54,14 +54,14 @@ struct Request {
 
 /// A block of the parts one after the other, reserved as `alloc` reserves (8-byte aligned); the page frees it.
 fn block(parts: &[&[u8]]) -> *mut u8 {
-    let len: usize = parts.iter().map(|p| p.len()).sum();
+    let len: usize = parts.iter().map(|part| part.len()).sum();
     // SAFETY: the layout has a size of at least 1; each part is copied into its own range of the block
     unsafe {
         let ptr = alloc(Layout::from_size_align(len.max(1), 8).expect("a block's layout"));
         let mut at = 0;
-        for p in parts {
-            std::ptr::copy_nonoverlapping(p.as_ptr(), ptr.add(at), p.len());
-            at += p.len();
+        for part in parts {
+            std::ptr::copy_nonoverlapping(part.as_ptr(), ptr.add(at), part.len());
+            at += part.len();
         }
         ptr
     }
@@ -75,8 +75,8 @@ unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     if len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(ptr, len) } }
 }
 
-fn u32le(n: usize) -> [u8; 4] {
-    (n as u32).to_le_bytes()
+fn u32le(number: usize) -> [u8; 4] {
+    (number as u32).to_le_bytes()
 }
 
 /// Opens the library (see the module's notes); a library opened before is replaced.
@@ -86,19 +86,19 @@ fn u32le(n: usize) -> [u8; 4] {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn service_open(config_ptr: *const u8, config_len: usize) -> *mut u8 {
     let opened = serde_json::from_slice::<Open>(unsafe { bytes(config_ptr, config_len) })
-        .map_err(|e| format!("the config: {e}"))
-        .and_then(|o| {
-            let mut config = Config::new(o.data, DataLayout::App, o.models);
-            (config.vods, config.stats, config.scenarios) = (o.vods, o.stats, o.scenarios);
+        .map_err(|error| format!("the config: {error}"))
+        .and_then(|open| {
+            let mut config = Config::new(open.data, DataLayout::App, open.models);
+            (config.vods, config.stats, config.scenarios) = (open.vods, open.stats, open.scenarios);
             (config.device, config.ffmpeg) = (Device::Auto, Ffmpeg::Path);
             Library::open(config)
         });
     match opened {
         Ok(lib) => {
-            *LIBRARY.lock().unwrap_or_else(|e| e.into_inner()) = Some(lib);
+            *LIBRARY.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(lib);
             block(&[&u32le(0), &u32le(0)])
         }
-        Err(e) => block(&[&u32le(1), &u32le(e.len()), e.as_bytes()]),
+        Err(error) => block(&[&u32le(1), &u32le(error.len()), error.as_bytes()]),
     }
 }
 
@@ -107,7 +107,12 @@ pub unsafe extern "C" fn service_open(config_ptr: *const u8, config_len: usize) 
 /// # Safety
 /// `req_ptr` must point to `req_len` bytes and `body_ptr` to `body_len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn service_handle(req_ptr: *const u8, req_len: usize, body_ptr: *const u8, body_len: usize) -> *mut u8 {
+pub unsafe extern "C" fn service_handle(
+    req_ptr: *const u8,
+    req_len: usize,
+    body_ptr: *const u8,
+    body_len: usize,
+) -> *mut u8 {
     let answer = |status: usize, kind: &str, body: &[u8]| {
         block(&[&u32le(status), &u32le(kind.len()), kind.as_bytes(), &u32le(body.len()), body])
     };
@@ -116,15 +121,17 @@ pub unsafe extern "C" fn service_handle(req_ptr: *const u8, req_len: usize, body
         answer(status, "application/json", &body)
     };
     let request = match serde_json::from_slice::<Request>(unsafe { bytes(req_ptr, req_len) }) {
-        Ok(r) => r,
-        Err(e) => return failed(400, &format!("the request: {e}")),
+        Ok(request) => request,
+        Err(error) => return failed(400, &format!("the request: {error}")),
     };
-    let Some(lib) = LIBRARY.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+    let Some(lib) = LIBRARY.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone() else {
         return failed(503, "the service is not open");
     };
     let body = unsafe { bytes(body_ptr, body_len) };
-    let req = ApiRequest { method: &request.method, path_and_query: &request.path, range: None, body, upload: request.upload.as_deref() };
-    let r = aimview_service::handle(&lib, &req);
-    let kind = r.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("Content-Type")).map_or("application/json", |(_, v)| v.as_str());
-    answer(r.status.into(), kind, &r.body)
+    let upload = request.upload.as_deref();
+    let api_request = ApiRequest { method: &request.method, path_and_query: &request.path, range: None, body, upload };
+    let response = aimview_service::handle(&lib, &api_request);
+    let content_type = |&(name, _): &&(String, String)| name.eq_ignore_ascii_case("Content-Type");
+    let kind = response.headers.iter().find(content_type).map_or("application/json", |(_, value)| value.as_str());
+    answer(response.status.into(), kind, &response.body)
 }

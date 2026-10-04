@@ -55,14 +55,14 @@ pub extern "C" fn tracker_new_kovobs(cap: usize) -> *mut Tracker {
 /// `tracker` from `tracker_new`; `text` must hold `len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_set_model(tracker: *mut Tracker, text: *const u8, len: usize) -> *mut u8 {
-    let t = unsafe { &mut *tracker };
+    let tracker = unsafe { &mut *tracker };
     let text = String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(text, len) });
     match crate::model::ModelSettings::from_json(&text) {
         Ok(model) => {
-            t.set_model(model);
+            tracker.set_model(model);
             bytes_out(Vec::new())
         }
-        Err(e) => bytes_out(e.into_bytes()),
+        Err(error) => bytes_out(error.into_bytes()),
     }
 }
 
@@ -72,8 +72,8 @@ pub unsafe extern "C" fn tracker_set_model(tracker: *mut Tracker, text: *const u
 /// `tracker` from `tracker_new`; `rgb` must hold 1280 * 720 * 3 bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_watch(tracker: *mut Tracker, rgb: *const u8) {
-    let t = unsafe { &mut *tracker };
-    t.watch(unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
+    let tracker = unsafe { &mut *tracker };
+    tracker.watch(unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
 }
 
 /// One frame's detector output: the score map (gh x gw) and reg maps (4 x gh x gw), f32. Returns the boxes kept.
@@ -88,25 +88,26 @@ pub unsafe extern "C" fn tracker_push_maps(
     gw: usize,
     gh: usize,
 ) -> usize {
-    let t = unsafe { &mut *tracker };
+    let tracker = unsafe { &mut *tracker };
     let score = unsafe { std::slice::from_raw_parts(score, gw * gh) };
     let reg = unsafe { std::slice::from_raw_parts(reg, 4 * gw * gh) };
-    t.push_maps(score, reg, gw, gh)
+    tracker.push_maps(score, reg, gw, gh)
 }
 
-/// One frame's boxes, already decoded: `n` boxes of [cx, cy, w, h, score] (f32, frame pixels). Returns the boxes kept.
+/// One frame's boxes, already decoded: `count` boxes of [cx, cy, w, h, score] (f32, frame pixels). Returns the boxes
+/// kept.
 ///
 /// # Safety
-/// `tracker` from `tracker_new`; `boxes` must hold `5 * n` f32s.
+/// `tracker` from `tracker_new`; `boxes` must hold `5 * count` f32s.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tracker_push_boxes(tracker: *mut Tracker, boxes: *const f32, n: usize) -> usize {
-    let t = unsafe { &mut *tracker };
-    let flat = unsafe { std::slice::from_raw_parts(boxes, 5 * n) };
+pub unsafe extern "C" fn tracker_push_boxes(tracker: *mut Tracker, boxes: *const f32, count: usize) -> usize {
+    let tracker = unsafe { &mut *tracker };
+    let flat = unsafe { std::slice::from_raw_parts(boxes, 5 * count) };
     let raw: Vec<RawBox> = flat
         .chunks_exact(5)
         .map(|b| RawBox { cx: b[0], cy: b[1], w: b[2], h: b[3], score: b[4] })
         .collect();
-    t.push_boxes(&raw)
+    tracker.push_boxes(&raw)
 }
 
 /// The tracker's run starts at frame `first` of the recording: call before its first frame.
@@ -125,8 +126,8 @@ pub unsafe extern "C" fn tracker_start_at(tracker: *mut Tracker, first: usize) {
 /// `tracker` from `tracker_new`, not used again.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_part(tracker: *mut Tracker) -> *mut u8 {
-    let t = unsafe { Box::from_raw(tracker) };
-    bytes_out(serde_json::to_vec(&t.part()).unwrap_or_default())
+    let tracker = unsafe { Box::from_raw(tracker) };
+    bytes_out(serde_json::to_vec(&tracker.part()).unwrap_or_default())
 }
 
 /// The next run's part (`tracker_part`'s JSON), after the frames the tracker has (`Tracker::add_part`). Returns the
@@ -136,9 +137,9 @@ pub unsafe extern "C" fn tracker_part(tracker: *mut Tracker) -> *mut u8 {
 /// `tracker` from `tracker_new`; `part` must hold `len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_add_part(tracker: *mut Tracker, part: *const u8, len: usize) -> usize {
-    let t = unsafe { &mut *tracker };
+    let tracker = unsafe { &mut *tracker };
     match serde_json::from_slice::<TrackPart>(unsafe { std::slice::from_raw_parts(part, len) }) {
-        Ok(part) => t.add_part(part),
+        Ok(part) => tracker.add_part(part),
         Err(_) => 0,
     }
 }
@@ -150,8 +151,8 @@ pub unsafe extern "C" fn tracker_add_part(tracker: *mut Tracker, part: *const u8
 /// `tracker` from `tracker_new`, not used again.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracker_finish(tracker: *mut Tracker) -> *mut u8 {
-    let t = unsafe { Box::from_raw(tracker) };
-    bytes_out(serde_json::to_vec(&t.finish()).unwrap_or_default())
+    let tracker = unsafe { Box::from_raw(tracker) };
+    bytes_out(serde_json::to_vec(&tracker.finish()).unwrap_or_default())
 }
 
 /// A byte buffer handed to the page: its length (u32), then the bytes.
@@ -164,21 +165,21 @@ fn bytes_out(data: Vec<u8>) -> *mut u8 {
     ptr
 }
 
-/// A converter for a recording's frames (w x h, YUV 4:2:0). matrix: 0 BT.709, 1 BT.601 (also unspecified),
+/// A converter for a recording's frames (width x height, YUV 4:2:0). matrix: 0 BT.709, 1 BT.601 (also unspecified),
 /// 2 FCC, 3 SMPTE 240M, 4 BT.2020; full: 1 for full ("pc") range.
 #[unsafe(no_mangle)]
-pub extern "C" fn converter_new(w: usize, h: usize, matrix: u32, full: u32) -> *mut Converter {
-    Box::into_raw(Box::new(Converter::new(w, h, Matrix::from_code(matrix), full == 1)))
+pub extern "C" fn converter_new(width: usize, height: usize, matrix: u32, full: u32) -> *mut Converter {
+    Box::into_raw(Box::new(Converter::new(width, height, Matrix::from_code(matrix), full == 1)))
 }
 
 /// One frame (YUV 4:2:0 at the converter's size) as RGB24 at 1280 x 720, into `out` (1280 * 720 * 3 bytes).
 ///
 /// # Safety
-/// `c` from `converter_new`; `yuv` must hold the frame, `out` 1280 * 720 * 3 bytes.
+/// `converter` from `converter_new`; `yuv` must hold the frame, `out` 1280 * 720 * 3 bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn converter_rgb24(c: *mut Converter, yuv: *const u8, yuv_len: usize, out: *mut u8) {
-    let (c, yuv) = unsafe { (&mut *c, std::slice::from_raw_parts(yuv, yuv_len)) };
-    c.rgb24(yuv, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H * 3) });
+pub unsafe extern "C" fn converter_rgb24(converter: *mut Converter, yuv: *const u8, yuv_len: usize, out: *mut u8) {
+    let (converter, yuv) = unsafe { (&mut *converter, std::slice::from_raw_parts(yuv, yuv_len)) };
+    converter.rgb24(yuv, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H * 3) });
 }
 
 /// One frame as YUV 4:2:0 at 1280 x 720, into `out` (1280 * 720 * 3 / 2 bytes).
@@ -186,20 +187,20 @@ pub unsafe extern "C" fn converter_rgb24(c: *mut Converter, yuv: *const u8, yuv_
 /// # Safety
 /// As `converter_rgb24`, with `out` 1280 * 720 * 3 / 2 bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn converter_yuv420p(c: *mut Converter, yuv: *const u8, yuv_len: usize, out: *mut u8) {
-    let (c, yuv) = unsafe { (&mut *c, std::slice::from_raw_parts(yuv, yuv_len)) };
-    c.yuv420p(yuv, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H * 3 / 2) });
+pub unsafe extern "C" fn converter_yuv420p(converter: *mut Converter, yuv: *const u8, yuv_len: usize, out: *mut u8) {
+    let (converter, yuv) = unsafe { (&mut *converter, std::slice::from_raw_parts(yuv, yuv_len)) };
+    converter.yuv420p(yuv, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H * 3 / 2) });
 }
 
 /// The frame's luma at 1280 x 720 from its Y plane alone (`y`: the source's w x h bytes), into `out` (1280 x 720
 /// bytes): the bytes `converter_yuv420p` gives for Y.
 ///
 /// # Safety
-/// `c` from `converter_new`; `y` must hold `y_len` bytes, `out` 1280 x 720.
+/// `converter` from `converter_new`; `y` must hold `y_len` bytes, `out` 1280 x 720.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn converter_luma(c: *mut Converter, y: *const u8, y_len: usize, out: *mut u8) {
-    let (c, y) = unsafe { (&mut *c, std::slice::from_raw_parts(y, y_len)) };
-    c.luma(y, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) });
+pub unsafe extern "C" fn converter_luma(converter: *mut Converter, y: *const u8, y_len: usize, out: *mut u8) {
+    let (converter, y) = unsafe { (&mut *converter, std::slice::from_raw_parts(y, y_len)) };
+    converter.luma(y, unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) });
 }
 
 /// The review's version (src/track.rs: `REVIEW_VERSION`), which the page keeps with a review's tracks.
@@ -216,10 +217,10 @@ pub extern "C" fn camera_rgb_rows() -> u32 {
 }
 
 /// # Safety
-/// `c` from `converter_new`, not used again.
+/// `converter` from `converter_new`, not used again.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn converter_free(c: *mut Converter) {
-    drop(unsafe { Box::from_raw(c) });
+pub unsafe extern "C" fn converter_free(converter: *mut Converter) {
+    drop(unsafe { Box::from_raw(converter) });
 }
 
 /// A fixed map, built from a recording's key frames.
@@ -231,21 +232,21 @@ pub extern "C" fn fixed_new() -> *mut FixedMap {
 /// One key frame, YUV 4:2:0 at 1280 x 720.
 ///
 /// # Safety
-/// `f` from `fixed_new`; `yuv` must hold 1280 * 720 * 3 / 2 bytes.
+/// `fixed` from `fixed_new`; `yuv` must hold 1280 * 720 * 3 / 2 bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn fixed_add(f: *mut FixedMap, yuv: *const u8) {
-    let f = unsafe { &mut *f };
-    f.add(unsafe { std::slice::from_raw_parts(yuv, DST_W * DST_H * 3 / 2) });
+pub unsafe extern "C" fn fixed_add(fixed: *mut FixedMap, yuv: *const u8) {
+    let fixed = unsafe { &mut *fixed };
+    fixed.add(unsafe { std::slice::from_raw_parts(yuv, DST_W * DST_H * 3 / 2) });
 }
 
 /// The map (1 fixed, 0 not), into `out` (1280 * 720 bytes), and frees the builder.
 ///
 /// # Safety
-/// `f` from `fixed_new`, not used again; `out` must hold 1280 * 720 bytes.
+/// `fixed` from `fixed_new`, not used again; `out` must hold 1280 * 720 bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn fixed_finish(f: *mut FixedMap, out: *mut u8) {
-    let f = unsafe { Box::from_raw(f) };
-    unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) }.copy_from_slice(&f.map());
+pub unsafe extern "C" fn fixed_finish(fixed: *mut FixedMap, out: *mut u8) {
+    let fixed = unsafe { Box::from_raw(fixed) };
+    unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) }.copy_from_slice(&fixed.map());
 }
 
 /// A scenario file's facts (its bytes, UTF-8 or UTF-16 with its mark, at least up to "[Map Data]"), as JSON: {kind,
@@ -284,67 +285,75 @@ pub unsafe extern "C" fn camera_new(fixed: *const u8) -> *mut crate::camera::Cam
 /// One frame: its YUV 4:2:0 at 1280 x 720 (the luma is read) and its RGB24 at 1280 x 720 (the countdown bar).
 ///
 /// # Safety
-/// `c` from `camera_new`; `yuv` and `rgb` must hold one frame each.
+/// `camera` from `camera_new`; `yuv` and `rgb` must hold one frame each.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn camera_add(c: *mut crate::camera::CameraWatch, yuv: *const u8, rgb: *const u8) {
-    let c = unsafe { &mut *c };
+pub unsafe extern "C" fn camera_add(camera: *mut crate::camera::CameraWatch, yuv: *const u8, rgb: *const u8) {
+    let camera = unsafe { &mut *camera };
     let gray = unsafe { std::slice::from_raw_parts(yuv, DST_W * DST_H) };
-    c.add(gray, unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
+    camera.add(gray, unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
 }
 
 /// Frames not reviewed before the first (a review from part way in): `CameraWatch::skip`.
 ///
 /// # Safety
-/// `c` from `camera_new`.
+/// `camera` from `camera_new`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn camera_skip(c: *mut crate::camera::CameraWatch, frames: usize) {
-    unsafe { &mut *c }.skip(frames);
+pub unsafe extern "C" fn camera_skip(camera: *mut crate::camera::CameraWatch, frames: usize) {
+    unsafe { &mut *camera }.skip(frames);
 }
 
 /// The run's part of the watch as JSON (src/camera.rs: `CameraPart`), and frees the watch. Free the result as
 /// `tracker_finish`'s.
 ///
 /// # Safety
-/// `c` from `camera_new`, not used again.
+/// `camera` from `camera_new`, not used again.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn camera_part(c: *mut crate::camera::CameraWatch) -> *mut u8 {
-    let c = unsafe { Box::from_raw(c) };
-    bytes_out(serde_json::to_vec(&c.part()).unwrap_or_default())
+pub unsafe extern "C" fn camera_part(camera: *mut crate::camera::CameraWatch) -> *mut u8 {
+    let camera = unsafe { Box::from_raw(camera) };
+    bytes_out(serde_json::to_vec(&camera.part()).unwrap_or_default())
 }
 
 /// The next run's part (`camera_part`'s JSON), after the frames the watch has (`CameraWatch::join`). Returns the
 /// watch's frames after it; none when the part cannot be read.
 ///
 /// # Safety
-/// `c` from `camera_new`; `part` must hold `len` bytes.
+/// `camera` from `camera_new`; `part` must hold `len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn camera_add_part(c: *mut crate::camera::CameraWatch, part: *const u8, len: usize) -> usize {
-    let c = unsafe { &mut *c };
+pub unsafe extern "C" fn camera_add_part(
+    camera: *mut crate::camera::CameraWatch,
+    part: *const u8,
+    len: usize,
+) -> usize {
+    let camera = unsafe { &mut *camera };
     let slice = unsafe { std::slice::from_raw_parts(part, len) };
     let Ok(part) = serde_json::from_slice::<crate::camera::CameraPart>(slice) else {
         return 0;
     };
-    c.join(part);
-    c.countdown.len()
+    camera.join(part);
+    camera.countdown.len()
 }
 
-/// The readings, the tracks known (`frames`: the JSON `tracker_finish` gave), as JSON {camera, countdown}, and frees the
-/// watch. Free the result as `tracker_finish`'s.
+/// The readings, the tracks known (`frames`: the JSON `tracker_finish` gave), as JSON {camera, countdown}, and frees
+/// the watch. Free the result as `tracker_finish`'s.
 ///
 /// # Safety
-/// `c` from `camera_new`, not used again; `frames` must hold `len` bytes.
+/// `camera` from `camera_new`, not used again; `frames` must hold `len` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn camera_finish(c: *mut crate::camera::CameraWatch, frames: *const u8, len: usize) -> *mut u8 {
-    let c = unsafe { Box::from_raw(c) };
+pub unsafe extern "C" fn camera_finish(
+    camera: *mut crate::camera::CameraWatch,
+    frames: *const u8,
+    len: usize,
+) -> *mut u8 {
+    let camera = unsafe { Box::from_raw(camera) };
     let frames: Vec<TrackFrame> =
         serde_json::from_slice(unsafe { std::slice::from_raw_parts(frames, len) }).unwrap_or_default();
-    bytes_out(serde_json::to_vec(&c.finish(&frames)).unwrap_or_default())
+    bytes_out(serde_json::to_vec(&camera.finish(&frames)).unwrap_or_default())
 }
 
-/// A HUD watch (src/hud.rs) for a recording of `w` x `h` pixels; `full`: its Y spans 0..255.
+/// A HUD watch (src/hud.rs) for a recording of `width` x `height` pixels; `full`: its Y spans 0..255.
 #[unsafe(no_mangle)]
-pub extern "C" fn hud_new(w: usize, h: usize, full: u32) -> *mut crate::hud::HudWatch {
-    Box::into_raw(Box::new(crate::hud::HudWatch::new(w, h, full != 0)))
+pub extern "C" fn hud_new(width: usize, height: usize, full: u32) -> *mut crate::hud::HudWatch {
+    Box::into_raw(Box::new(crate::hud::HudWatch::new(width, height, full != 0)))
 }
 
 /// One key frame's Y plane (`w` x `h` bytes), before any frame.
@@ -392,7 +401,8 @@ pub unsafe extern "C" fn hud_part(hud: *mut crate::hud::HudWatch) -> *mut u8 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hud_add_part(hud: *mut crate::hud::HudWatch, part: *const u8, len: usize) -> usize {
     let hud = unsafe { &mut *hud };
-    let Ok(part) = serde_json::from_slice::<crate::hud::HudPart>(unsafe { std::slice::from_raw_parts(part, len) }) else {
+    let bytes = unsafe { std::slice::from_raw_parts(part, len) };
+    let Ok(part) = serde_json::from_slice::<crate::hud::HudPart>(bytes) else {
         return 0;
     };
     hud.join(part);
@@ -525,9 +535,10 @@ pub unsafe extern "C" fn hud_session_box(hud: *mut crate::hud::HudWatch) -> *mut
 ///
 /// # Safety
 /// `input` must hold `len` bytes.
-unsafe fn areas_call(input: *const u8, len: usize, f: fn(&str) -> Result<String, String>) -> *mut u8 {
-    let text = std::str::from_utf8(unsafe { std::slice::from_raw_parts(input, len) }).map_err(|e| e.to_string());
-    let out = text.and_then(f).unwrap_or_else(|e| serde_json::json!({ "error": e }).to_string());
+unsafe fn areas_call(input: *const u8, len: usize, answer: fn(&str) -> Result<String, String>) -> *mut u8 {
+    let bytes = unsafe { std::slice::from_raw_parts(input, len) };
+    let text = std::str::from_utf8(bytes).map_err(|error| error.to_string());
+    let out = text.and_then(answer).unwrap_or_else(|error| serde_json::json!({ "error": error }).to_string());
     bytes_out(out.into_bytes())
 }
 
@@ -599,7 +610,7 @@ pub unsafe extern "C" fn areas_check(input: *const u8, len: usize) -> *mut u8 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn areas_maps(maps: *const u8, len: usize) -> *mut u8 {
     let maps = serde_json::from_slice::<crate::areas::Maps>(unsafe { std::slice::from_raw_parts(maps, len) });
-    bytes_out(maps.map(|m| [m.stand(), m.change()].concat()).unwrap_or_default())
+    bytes_out(maps.map(|maps| [maps.stand(), maps.change()].concat()).unwrap_or_default())
 }
 
 /// A tracker for a recording, as `tracker_new` makes it, that also knows which excluded areas are the challenge's end
@@ -617,7 +628,7 @@ pub unsafe extern "C" fn tracker_new_ends(
 ) -> *mut Tracker {
     let flat = unsafe { std::slice::from_raw_parts(areas, 4 * areas_len) };
     let boxes: Vec<[f64; 4]> = flat.chunks_exact(4).map(|b| [b[0], b[1], b[2], b[3]]).collect();
-    let which: Vec<bool> = unsafe { std::slice::from_raw_parts(ends, areas_len) }.iter().map(|&e| e != 0).collect();
+    let which: Vec<bool> = unsafe { std::slice::from_raw_parts(ends, areas_len) }.iter().map(|&end| end != 0).collect();
     Box::into_raw(Box::new(Tracker::new(boxes, cap).end_screens(&which)))
 }
 
@@ -625,8 +636,8 @@ pub unsafe extern "C" fn tracker_new_ends(
 
 /// A part's or a review's JSON, or {"error": ...}, handed to the page.
 fn outcome_out<T: serde::Serialize>(outcome: Result<T, String>) -> *mut u8 {
-    let json = outcome.and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
-    bytes_out(json.unwrap_or_else(|e| serde_json::json!({ "error": e }).to_string().into_bytes()))
+    let json = outcome.and_then(|value| serde_json::to_vec(&value).map_err(|error| error.to_string()));
+    bytes_out(json.unwrap_or_else(|error| serde_json::json!({ "error": error }).to_string().into_bytes()))
 }
 
 /// A review from its setup (`session::Setup` as JSON); null when the setup cannot be read or the video has no frames.
@@ -636,7 +647,7 @@ fn outcome_out<T: serde::Serialize>(outcome: Result<T, String>) -> *mut u8 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn review_new(setup: *const u8, len: usize) -> *mut Review {
     let setup = serde_json::from_slice::<Setup>(unsafe { std::slice::from_raw_parts(setup, len) });
-    match setup.map_err(|e| e.to_string()).and_then(Review::new) {
+    match setup.map_err(|error| error.to_string()).and_then(Review::new) {
         Ok(review) => Box::into_raw(Box::new(review)),
         Err(_) => std::ptr::null_mut(),
     }
@@ -655,7 +666,7 @@ pub unsafe extern "C" fn review_set_model(review: *mut Review, text: *const u8, 
             unsafe { &mut *review }.set_model(model);
             bytes_out(Vec::new())
         }
-        Err(e) => bytes_out(e.into_bytes()),
+        Err(error) => bytes_out(error.into_bytes()),
     }
 }
 
@@ -715,8 +726,8 @@ pub unsafe extern "C" fn review_tracking(review: *const Review, run: usize) -> *
     Box::into_raw(Box::new(unsafe { &*review }.tracking(run)))
 }
 
-/// What the next decoded frame is for (`RunTracking::next_frame`): 2 the run's (track it), 1 the next run's first (only the
-/// watches read it), 0 past the run (stop decoding).
+/// What the next decoded frame is for (`RunTracking::next_frame`): 2 the run's (track it), 1 the next run's first (only
+/// the watches read it), 0 past the run (stop decoding).
 ///
 /// # Safety
 /// `tracking` from `review_tracking`.
@@ -791,9 +802,9 @@ pub unsafe extern "C" fn review_watching(
 /// `watching` from `review_watching`; `frame` must hold `len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn watching_frame(watching: *mut RunWatching, frame: *const u8, len: usize) {
-    let w = unsafe { &mut *watching };
-    let (y, rows) = unsafe { std::slice::from_raw_parts(frame, len) }.split_at(w.y_bytes());
-    w.frame(y, rows);
+    let watching = unsafe { &mut *watching };
+    let (y, rows) = unsafe { std::slice::from_raw_parts(frame, len) }.split_at(watching.y_bytes());
+    watching.frame(y, rows);
 }
 
 /// The run's part of the watches as JSON (`WatchPart`), or {error}; frees the watches. Free the result as

@@ -24,7 +24,6 @@ const DETECTOR_KEY: &[u8] = b"\"detector\"";
 /// The threads a computer needs for a review in two runs at once (each run decodes on its own).
 const TWO_RUNS_THREADS: usize = 8;
 /// A job's and the log's times are rounded to a tenth of a second.
-#[cfg(feature = "native")]
 const TENTHS_PER_SECOND: f64 = 10.0;
 
 /// A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded ("DirectML",
@@ -74,15 +73,20 @@ impl Job {
     }
 
     /// Whether the job is still at work (not done, and not failed).
-    fn running(&self) -> bool {
+    pub(super) fn running(&self) -> bool {
         self.stage != "done" && self.stage != "error"
     }
+}
+
+/// Seconds rounded to a tenth, for a job's time and the log.
+pub(super) fn to_tenths(seconds: f64) -> f64 {
+    (seconds * TENTHS_PER_SECOND).round() / TENTHS_PER_SECOND
 }
 
 /// The seconds since `started`, rounded to a tenth, for a job's time and the log.
 #[cfg(feature = "native")]
 pub(super) fn seconds_since(started: std::time::Instant) -> f64 {
-    (started.elapsed().as_secs_f64() * TENTHS_PER_SECOND).round() / TENTHS_PER_SECOND
+    to_tenths(started.elapsed().as_secs_f64())
 }
 
 /// Writes a review's files in its folder `out` (models/<model> in the recording's): its tracks, the video's readings

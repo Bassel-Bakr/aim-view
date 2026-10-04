@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::names::free_name;
-use super::reviews::{Job, keep_review};
+use super::reviews::{Job, keep_review, to_tenths};
 use super::{Answer, Failure, Library};
 use crate::review::Request;
 
@@ -47,16 +47,11 @@ struct PageProgress {
 /// What the page is to review, kept in its job (`Job::review`) until it reports progress: `review::Request`, the video
 /// as its mounted path, the model by name, the device by its name ("webgpu" or "wasm"); not the runs (the page splits
 /// the recording itself).
-pub(super) fn review_json(req: &Request, model: &str) -> Value {
+pub(super) fn review_json(request: &Request, model: &str) -> Value {
     json!({
-        "video": req.video, "model": model, "device": req.device.name(), "batch": req.batch, "cap": req.cap,
-        "window": req.window, "areas": req.areas,
+        "video": request.video, "model": model, "device": request.device.name(), "batch": request.batch,
+        "cap": request.cap, "window": request.window, "areas": request.areas,
     })
-}
-
-/// Whether a job has not ended.
-fn running(j: &Job) -> bool {
-    j.stage != "done" && j.stage != "error"
 }
 
 impl Library {
@@ -71,59 +66,61 @@ impl Library {
     /// POST /api/job: the progress of the review the page runs, so /api/job answers it as natively; an error ends it.
     /// A job that ended is left as it is.
     pub fn page_progress(&self, id: &str, body: &[u8]) -> Answer<Value> {
-        let p: PageProgress = serde_json::from_slice(body).map_err(|e| Failure::bad(format!("the progress: {e}")))?;
+        let progress: PageProgress =
+            serde_json::from_slice(body).map_err(|error| Failure::bad(format!("the progress: {error}")))?;
         let job = self.jobs.lock().map_err(|_| "the jobs are broken".to_string())?.get(id).cloned();
         let job = job.ok_or_else(|| Failure::missing(format!("no review of {id} is running")))?;
-        let mut j = job.lock().map_err(|_| "the job is broken".to_string())?;
-        if running(&j) {
-            j.review = None;
-            match (p.error, p.stage) {
-                (Some(e), _) => (j.stage, j.error) = ("error".into(), Some(e)),
+        let mut state = job.lock().map_err(|_| "the job is broken".to_string())?;
+        if state.running() {
+            state.review = None;
+            match (progress.error, progress.stage) {
+                (Some(error), _) => (state.stage, state.error) = ("error".into(), Some(error)),
                 (None, Some(stage)) if stage == "done" || stage == "error" => {
                     return Err(Failure::bad("a review ends with /api/reviewed, or an error"));
                 }
-                (None, Some(stage)) => (j.stage, j.done, j.total) = (stage, p.done, p.total),
+                (None, Some(stage)) => (state.stage, state.done, state.total) = (stage, progress.done, progress.total),
                 (None, None) => return Err(Failure::bad("the progress needs a stage or an error")),
             }
         }
-        Ok(json!(*j))
+        Ok(json!(*state))
     }
 
     /// POST /api/reviewed: the review the page ran, its files written as the native review's end writes them (in
     /// models/<model>/ of the recording's folder) and its job done. With no job running (the data move) it only
     /// writes the files.
     pub fn review_done(&self, id: &str, body: &[u8]) -> Answer<Value> {
-        let r: PageReview = serde_json::from_slice(body).map_err(|e| Failure::bad(format!("the review: {e}")))?;
-        if !r.tracks["frames"].is_array() {
+        let review: PageReview =
+            serde_json::from_slice(body).map_err(|error| Failure::bad(format!("the review: {error}")))?;
+        if !review.tracks["frames"].is_array() {
             return Err(Failure::bad("the review: its tracks have no frames"));
         }
         let job = self.jobs.lock().map_err(|_| "the jobs are broken".to_string())?.get(id).cloned();
-        let job = job.filter(|j| j.lock().is_ok_and(|j| running(&j)));
-        let job_model = job.as_ref().and_then(|j| j.lock().ok().map(|j| j.model.clone()));
-        let model = r.model.or(job_model).unwrap_or_else(|| self.model());
-        if model.is_empty() || Path::new(&model).file_name().is_none_or(|f| f != model.as_str()) {
+        let job = job.filter(|job| job.lock().is_ok_and(|state| state.running()));
+        let job_model = job.as_ref().and_then(|job| job.lock().ok().map(|state| state.model.clone()));
+        let model = review.model.or(job_model).unwrap_or_else(|| self.model());
+        if model.is_empty() || Path::new(&model).file_name().is_none_or(|file| file != model.as_str()) {
             return Err(Failure::bad(format!("not a model's name: {model}")));
         }
         let out = self.review_dir(id).join("models").join(&model);
-        let outcome = keep_review(&out, &r.tracks, &r.readings, &r.hud, r.found.as_ref());
+        let outcome = keep_review(&out, &review.tracks, &review.readings, &review.hud, review.found.as_ref());
         let Some(job) = job else {
             outcome?;
             return Ok(json!(Job::new("done", &model)));
         };
-        let mut j = job.lock().map_err(|_| "the job is broken".to_string())?;
-        j.review = None;
+        let mut state = job.lock().map_err(|_| "the job is broken".to_string())?;
+        state.review = None;
         match outcome {
             Ok(()) => {
-                (j.stage, j.done, j.total) = ("done".into(), 1, 1);
-                j.seconds = r.seconds.map(|s| (s * 10.0).round() / 10.0);
-                if r.device.is_some() {
-                    j.device = r.device;
+                (state.stage, state.done, state.total) = ("done".into(), 1, 1);
+                state.seconds = review.seconds.map(to_tenths);
+                if review.device.is_some() {
+                    state.device = review.device;
                 }
-                Ok(json!(*j))
+                Ok(json!(*state))
             }
-            Err(e) => {
-                (j.stage, j.error) = ("error".into(), Some(e.clone()));
-                Err(e.into())
+            Err(error) => {
+                (state.stage, state.error) = ("error".into(), Some(error.clone()));
+                Err(error.into())
             }
         }
     }
@@ -131,7 +128,8 @@ impl Library {
     /// POST /api/found: what the page's area finder found in the recording (the core's `Found`), kept as the native
     /// finder keeps it (finder.rs: `keep`); /api/find_areas then proposes from it.
     pub fn keep_found(&self, id: &str, body: &[u8]) -> Answer<Value> {
-        let found: Found = serde_json::from_slice(body).map_err(|e| Failure::bad(format!("the found areas: {e}")))?;
+        let found: Found =
+            serde_json::from_slice(body).map_err(|error| Failure::bad(format!("the found areas: {error}")))?;
         crate::finder::keep(&self.review_dir(id), &found)?;
         Ok(json!({ "id": id, "kept": true }))
     }
@@ -139,26 +137,26 @@ impl Library {
     /// POST /api/mouse_log: a raw mouse log the user added (its bytes), kept in the mouse folder as the desktop's
     /// logger leaves them. The same log again is kept once; another of the same name gets a free name.
     pub fn keep_mouse_log(&self, name: &str, body: &[u8]) -> Answer<Value> {
-        let plain = Path::new(name).file_name().is_some_and(|f| f == name) && name.ends_with(".bin");
+        let plain = Path::new(name).file_name().is_some_and(|file| file == name) && name.ends_with(".bin");
         if !plain {
             return Err(Failure::bad(format!("not a mouse log (.bin): {name}")));
         }
         let dir = &self.folders.mouse;
-        crate::disk::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let mut p = dir.join(name);
-        if crate::disk::read(&p).is_ok_and(|old| old == body) {
+        crate::disk::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+        let mut path = dir.join(name);
+        if crate::disk::read(&path).is_ok_and(|old| old == body) {
             return Ok(json!({ "saved": name }));
         }
-        p = free_name(p);
-        crate::disk::write(&p, body).map_err(|e| format!("{}: {e}", p.display()))?;
-        Ok(json!({ "saved": p.file_name().map(|n| n.to_string_lossy().into_owned()) }))
+        path = free_name(path);
+        crate::disk::write(&path, body).map_err(|error| format!("{}: {error}", path.display()))?;
+        Ok(json!({ "saved": path.file_name().map(|file| file.to_string_lossy().into_owned()) }))
     }
 
-    /// POST /api/kovaak?changed=1: the page copied new KovaaK files, so the stats files and the scenarios are read again
-    /// when next needed.
+    /// POST /api/kovaak?changed=1: the page copied new KovaaK files, so the stats files and the scenarios are read
+    /// again when next needed.
     pub fn kovaak_changed(&self) -> Answer<Value> {
         self.forget_stats();
-        *self.facts.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.facts.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         Ok(json!({ "changed": true }))
     }
 }
