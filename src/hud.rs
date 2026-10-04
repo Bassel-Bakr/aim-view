@@ -3,57 +3,190 @@
 //! boxes. It gives the kill frames, the shots and hits, and the run's totals. The digits are learned from the recording
 //! itself (no font): KovaaK's Kill Count counts up one kill at a time, Aim Lab's timer down one second at a time.
 //!
+//! In: every key frame's Y plane, then every frame's, from the review (src/session.rs: `Keys` reads the key frames,
+//! each run part's `RunWatching` its frames, beside the camera watch). Out: each run part's `HudPart`, joined into one
+//! watch (`Joining`), whose `HudReading` gives src/review.rs the kill times of a run without a stats file; and
+//! KovaaK's box (`SessionRows`) for the area finder (src/areas.rs).
+//!
 //! It reads each frame's Y plane (brightness) as the decoder gives it, at the recording's size, never ffmpeg's grey
 //! conversion: only the digits read must agree, not the pixels. A limited-range ("tv") recording's Y is stretched to
-//! 0..255 first, as ffmpeg's grey conversion does. Each frame keeps only its value rows' glyphs (GW x GH grey images),
-//! and a row's glyphs are kept once while they stay the same from frame to frame, so a long recording stays small.
+//! 0..255 first, as ffmpeg's grey conversion does. Each frame keeps only its value rows' glyphs (grey images of
+//! GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX), and a row's glyphs are kept once while they stay the same from frame to frame,
+//! so a long recording stays small.
 //!
 //! KovaaK's stats files are the reference, not python/hud.py: where it misreads and the stats files show it, the
 //! reading here departs from it, and each place says so.
 
 use std::collections::HashMap;
+use std::iter::repeat_n;
 use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
 use crate::capped::Capped;
+use crate::statistics::median;
 
 /// Where KovaaK's box can be, as shares of the frame (x0, y0, x1, y1): it grows to fit its widest number. The region
-/// is scaled to BW x BH (a 2560 x 1440 frame's pixels).
+/// is scaled to BW x BH pixels (a 2560 x 1440 frame's).
 pub(crate) const BOX: [f64; 4] = [0.0, 0.0, 900.0 / 2560.0, 330.0 / 1440.0];
 pub(crate) const BW: usize = 900;
 pub(crate) const BH: usize = 330;
-/// A patch inside the box's left edge, between the header and Kill Count (x, y).
-const SEED: (usize, usize) = (49, 100);
-/// Glyphs are compared at GW x GH.
-const GW: usize = 16;
-const GH: usize = 24;
-const GLYPH: usize = GW * GH;
-/// Glyphs this alike (cosine of their grey images) are the same shape.
-const SAME: f64 = 0.97;
+/// The most key frames kept for the box's layout: past it every other one is dropped (a median needs no more). The
+/// layout needs at least MIN_KEY_FRAMES (python/hud.py's layout).
+const MAX_KEY_FRAMES: usize = 64;
+const MIN_KEY_FRAMES: usize = 3;
+/// The first patch tried for the box's level, its top left corner (x, y) in the region: inside the box's left edge,
+/// between the header and Kill Count.
+const FIRST_PATCH: (usize, usize) = (49, 100);
+/// Other players' boxes are smaller or placed elsewhere: then the patches on a grid are tried, their corners
+/// PATCH_STEP_PX apart over these columns and rows of the region.
+const PATCH_COLUMNS: Range<usize> = 20..320;
+const PATCH_ROWS: Range<usize> = 40..240;
+const PATCH_STEP_PX: usize = 12;
+/// A patch is PATCH_SIDE_PX pixels square.
+const PATCH_SIDE_PX: usize = 8;
+const PATCH_PIXELS: usize = PATCH_SIDE_PX * PATCH_SIDE_PX;
+/// A pixel is at a patch's level when it is less than SAME_LEVEL grey levels from it; a patch has a level when at least
+/// MIN_PATCH_SHARE of its pixels are at it.
+const SAME_LEVEL: f64 = 15.0;
+const MIN_PATCH_SHARE: f64 = 0.9;
+/// The box is at least these shares of the region high and wide, ends more than REGION_MARGIN_PX before the region's
+/// bottom and right edges (else it is the open scene running off the region), and fills at least MIN_BOX_FILL of its
+/// bounds (a filled rectangle with text holes).
+const MIN_BOX_HEIGHT_SHARE: f64 = 0.3;
+const MIN_BOX_WIDTH_SHARE: f64 = 0.2;
+const REGION_MARGIN_PX: usize = 2;
+const MIN_BOX_FILL: f64 = 0.6;
+/// The box's text is read this far inside its edges, off its rounded corners.
+const BOX_INSET_PX: usize = 4;
+/// A text row is at least MIN_TEXT_ROW_PX rows of pixels, each with more than TEXT_ROW_INK_PX ink pixels.
+const MIN_TEXT_ROW_PX: usize = 6;
+const TEXT_ROW_INK_PX: usize = 2;
+/// The box has a header and at least three rows under it; the compact HUD has a header and four.
+const MIN_TEXT_ROWS: usize = 4;
+const COMPACT_TEXT_ROWS: usize = 5;
 /// The box's rows read above and below each value row.
-const PAD: usize = 3;
-/// Aim Lab's POINTS and TIME value line, as shares of a 16:9 frame, scaled to AW x AH (twice 720p), and the two
+const ROW_PAD_PX: usize = 3;
+/// The colon after a label is at most COLON_MAX_WIDTH_PX wide, or COLON_MAX_WIDTH_SHARE of the row's height when that
+/// is more, and each of its dots is at most DOT_MAX_HEIGHT_SHARE of the row's height.
+const COLON_MAX_WIDTH_PX: f64 = 3.0;
+const COLON_MAX_WIDTH_SHARE: f64 = 0.3;
+const DOT_MAX_HEIGHT_SHARE: f64 = 0.35;
+
+/// Ink (text) is farther from the background (its median level) than MIN_INK_LEVELS grey levels, or than
+/// INK_SHARE_OF_TOP of the TOP_PERCENTILE-th percentile distance when that is more.
+const MIN_INK_LEVELS: f64 = 25.0;
+const INK_SHARE_OF_TOP: f64 = 0.5;
+const TOP_PERCENTILE: f64 = 99.5;
+/// Distances between grey levels are counted doubled, so the median of an even count stays a whole number; this is the
+/// largest.
+const MAX_TWICE_DISTANCE: usize = 2 * 255;
+/// The scene past the box's right edge starts past this share of the band (the value is right of its label).
+const MIN_EDGE_SHARE: f64 = 0.2;
+/// A column that is ink on more than this share of its rows is the scene, not text.
+const SCENE_COLUMN_INK_SHARE: f64 = 0.85;
+/// The scene seen past the box's edge is at least MIN_SCENE_COLUMNS wide, and text keeps more than
+/// TEXT_MARGIN_COLUMNS inside the edge: ink closer to it is the edge's blended border.
+const MIN_SCENE_COLUMNS: usize = 2;
+const TEXT_MARGIN_COLUMNS: usize = 2;
+/// A gap wider than this share of the band parts the value from its label (or from the next label).
+const LABEL_GAP_SHARE: f64 = 0.07;
+/// Small, blurred text joins neighboring digits. A digit is at most 0.9 times as wide as it is tall, so a glyph at
+/// least SPLIT_MIN_ASPECT times as wide as it is tall is split, one piece per DIGIT_ASPECT of its height, each cut at
+/// the thinnest column within CUT_SEARCH_SHARE of a piece of the even cut.
+const SPLIT_MIN_ASPECT: f64 = 1.0;
+const DIGIT_ASPECT: f64 = 0.6;
+const CUT_SEARCH_SHARE: f64 = 0.25;
+/// Glyphs are compared at GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX.
+const GLYPH_WIDTH_PX: usize = 16;
+const GLYPH_HEIGHT_PX: usize = 24;
+const GLYPH_PIXELS: usize = GLYPH_WIDTH_PX * GLYPH_HEIGHT_PX;
+/// Pillow's bilinear and bicubic filters reach this many source pixels either side.
+const BILINEAR_SUPPORT: f64 = 1.0;
+const BICUBIC_SUPPORT: f64 = 2.0;
+/// Pillow's bicubic filter's `a`.
+const BICUBIC_A: f64 = -0.5;
+/// A limited-range recording's Y levels: black at LIMITED_BLACK, white LIMITED_SPAN above it.
+const LIMITED_BLACK: f64 = 16.0;
+const LIMITED_SPAN: f64 = 219.0;
+
+/// Aim Lab's POINTS and TIME value line, as shares of a 16:9 frame, scaled to AW x AH pixels (twice 720p), and the two
 /// values' columns in it.
 pub(crate) const AIM_BAND: [f64; 4] = [0.30, 40.0 / 720.0, 0.565, 63.0 / 720.0];
 pub(crate) const AW: usize = 678;
 const AH: usize = 46;
 pub(crate) const AIM_POINTS: (usize, usize) = (26, 356);
 pub(crate) const AIM_TIME: (usize, usize) = (368, 656);
-/// The most key frames kept for the box's layout: past it every other one is dropped (a median needs no more).
-const KEYS: usize = 64;
+/// A box shows a value when its TOP_PERCENTILE-th percentile level is at least this many grey levels above its
+/// background (the value is white).
+const AIM_MIN_TOP_LEVELS: f64 = 40.0;
+/// A glyph of two dots or more, at most this many times as wide as it is tall, is the colon.
+const COLON_MAX_ASPECT: f64 = 0.5;
+
 /// A row's glyphs are the ones before while every glyph has the same ink size and differs from the kept image by at
 /// most NEAR_MAX at any pixel and NEAR_SUM in all (the box is see-through: the scene behind it moves the grey levels).
 const NEAR_MAX: u8 = 24;
-const NEAR_SUM: u32 = 3 * GLYPH as u32;
+const NEAR_SUM: u32 = 3 * GLYPH_PIXELS as u32;
 /// The glyphs a row keeps for new lines to reuse.
-const RECENT: usize = 32;
+const RECENT_GLYPHS: usize = 32;
 /// The rows each frame keeps: KovaaK's Kill Count and Accuracy, Aim Lab's POINTS and TIME.
-const KILLS: usize = 0;
-const ACCURACY: usize = 1;
-const POINTS: usize = 2;
-const TIME: usize = 3;
+const KILL_COUNT_ROW: usize = 0;
+const ACCURACY_ROW: usize = 1;
+const POINTS_ROW: usize = 2;
+const TIME_ROW: usize = 3;
 const ROWS: usize = 4;
+
+/// Glyphs this alike (cosine of their grey images) are the same shape.
+const SAME_SHAPE: f64 = 0.97;
+/// A shape is the mean of its first SHAPE_MEAN_GLYPHS glyphs.
+const SHAPE_MEAN_GLYPHS: u32 = 50;
+/// The least length an image is divided by (an empty image's is 0).
+const MIN_NORM: f64 = 1e-6;
+/// A glyph's shape when it is like none and new shapes are not learned.
+const NO_SHAPE: i32 = -1;
+/// A glyph at least this share of its band high is tall: a digit, or the Accuracy line's "/" and "(".
+const TALL_SHARE: f64 = 0.5;
+/// A reading is stable when it stays the same for at least this many frames.
+const STABLE_FRAMES: usize = 3;
+/// A shape left over when the digits are learned is the digit it is at least this alike to (cosine), and a POINTS
+/// glyph less alike than this to every digit spoils its number.
+const DIGIT_LIKENESS: f64 = 0.9;
+/// The Kill Count's likenesses tried, each with the share of its steps that must be +1. A very blurred upload can split
+/// one digit into two shapes at the usual likeness, and the digits are not learned; then looser likenesses are tried,
+/// trusting only a Kill Count that counts up by one at almost every step.
+const KILL_COUNT_TRIES: [(f64, f64); 5] = [(SAME_SHAPE, 0.8), (0.96, 0.95), (0.95, 0.95), (0.94, 0.95), (0.93, 0.95)];
+/// A Kill Count is read from at least this many steps.
+const MIN_KILL_COUNT_STEPS: usize = 3;
+/// A step of more kills than this is a misread.
+const MAX_KILL_STEP: i64 = 3;
+/// A lone misread lasts at most this many frames: a real restart's 0 stays up for a second or more.
+const MAX_MISREAD_FRAMES: usize = 10;
+/// A step of more hits or shots than this is a misread.
+const MAX_SHOT_STEP: i64 = 50;
+/// The Accuracy line's marks ("/" and "(") are the mean of their first MARK_MEAN_LINES lines that read as digits, and
+/// need MIN_MARK_LINES of them.
+const MARK_MEAN_LINES: u32 = 50;
+const MIN_MARK_LINES: u32 = 3;
+/// "--/-- ( %)" (no shot yet) has at most this many tall glyphs.
+const NO_SHOT_TALL_GLYPHS: usize = 4;
+/// Aim Lab's TIME likenesses tried.
+const TIME_TRIES: [f64; 3] = [SAME_SHAPE, 0.96, 0.95];
+/// Aim Lab's TIME line has this many glyphs, the colon left out.
+const TIME_GLYPHS: usize = 4;
+/// The TIME box counts down one second at a time on at least TIME_STEP_SHARE of at least MIN_TIME_STEPS steps.
+const MIN_TIME_STEPS: usize = 10;
+const TIME_STEP_SHARE: f64 = 0.95;
+/// A POINTS glyph more than this many times as wide as it is tall, before any digit, is a minus sign.
+const MINUS_MIN_ASPECT: f64 = 1.2;
+/// One POINTS step is up to this many hits and as many misses (two hits, or a hit and a miss, in one step).
+const MAX_STEP_EVENTS: i64 = 3;
+/// A POINTS step is its hits and misses when it is within STEP_TOLERANCE_POINTS of them, or STEP_TOLERANCE_SHARE of a
+/// hit's points when that is more.
+const STEP_TOLERANCE_POINTS: f64 = 1.0;
+const STEP_TOLERANCE_SHARE: f64 = 0.15;
+/// Aim Lab's HUD is read when it gives at least MIN_AIM_HITS hits and explains at least MIN_AIM_CHECKED of the steps.
+const MIN_AIM_HITS: usize = 10;
+const MIN_AIM_CHECKED: f64 = 0.85;
 
 /// Which game's HUD was read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,11 +242,11 @@ pub(crate) fn bilinear(x: f64) -> f64 {
 }
 
 fn bicubic(x: f64) -> f64 {
-    let (x, a) = (x.abs(), -0.5);
+    let x = x.abs();
     if x < 1.0 {
-        ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0
+        ((BICUBIC_A + 2.0) * x - (BICUBIC_A + 3.0)) * x * x + 1.0
     } else if x < 2.0 {
-        (((x - 5.0) * x + 8.0) * x - 4.0) * a
+        (((x - 5.0) * x + 8.0) * x - 4.0) * BICUBIC_A
     } else {
         0.0
     }
@@ -123,19 +256,20 @@ fn bicubic(x: f64) -> f64 {
 /// pixel and weights.
 pub(crate) fn taps(len: usize, out: usize, support: f64, filter: fn(f64) -> f64) -> Vec<(usize, Vec<f64>)> {
     let scale = len as f64 / out as f64;
-    let fs = scale.max(1.0);
-    let (support, ss) = (support * fs, 1.0 / fs);
+    let filter_scale = scale.max(1.0);
+    let (support, inverse_scale) = (support * filter_scale, 1.0 / filter_scale);
     (0..out)
         .map(|i| {
             let center = (i as f64 + 0.5) * scale;
-            let lo = ((center - support + 0.5) as i64).max(0) as usize;
-            let hi = ((center + support + 0.5) as i64).min(len as i64).max(lo as i64) as usize;
-            let mut w: Vec<f64> = (lo..hi).map(|x| filter((x as f64 - center + 0.5) * ss)).collect();
-            let sum: f64 = w.iter().sum();
+            let first = ((center - support + 0.5) as i64).max(0) as usize;
+            let end = ((center + support + 0.5) as i64).min(len as i64).max(first as i64) as usize;
+            let mut weights: Vec<f64> =
+                (first..end).map(|x| filter((x as f64 - center + 0.5) * inverse_scale)).collect();
+            let sum: f64 = weights.iter().sum();
             if sum != 0.0 {
-                w.iter_mut().for_each(|v| *v /= sum);
+                weights.iter_mut().for_each(|weight| *weight /= sum);
             }
-            (lo, w)
+            (first, weights)
         })
         .collect()
 }
@@ -152,33 +286,41 @@ impl Axis {
     fn new(size: usize, from: f64, to: f64, out: usize, filter: Filter) -> Axis {
         let start = (((size as f64 * from) as usize) & !1).min(size.saturating_sub(1));
         let len = (((size as f64 * (to - from)).round_ties_even() as usize) & !1).clamp(1, (size - start).max(1));
-        let s = len as f64 / out as f64;
+        let step = len as f64 / out as f64;
         let mut cubic = match filter {
-            Filter::Cubic if len != out => taps(len, out, 2.0, bicubic),
+            Filter::Cubic if len != out => taps(len, out, BICUBIC_SUPPORT, bicubic),
             _ => Vec::new(),
         };
         let taps = (0..out)
             .map(|i| {
-                let (first, w): (usize, Vec<f64>) = match filter {
+                let (first, weights): (usize, Vec<f64>) = match filter {
                     _ if len == out => (i, vec![1.0]),
-                    Filter::Area if len > out => {
-                        let (a, b) = (i as f64 * s, (i + 1) as f64 * s);
-                        let first = a.floor() as usize;
-                        let last = (b.ceil() as usize).min(len);
-                        (first, (first..last).map(|p| (b.min(p as f64 + 1.0) - a.max(p as f64)) / s).collect())
-                    }
-                    Filter::Area if len == 1 => (0, vec![1.0]),
-                    Filter::Area => {
-                        let c = ((i as f64 + 0.5) * s - 0.5).clamp(0.0, (len - 1) as f64);
-                        let p = (c.floor() as usize).min(len - 2);
-                        (p, vec![1.0 - (c - p as f64), c - p as f64])
-                    }
+                    Filter::Area => area_tap(i, len, out, step),
                     Filter::Cubic => std::mem::take(&mut cubic[i]),
                 };
-                (start + first, w.into_iter().map(|v| v as f32).collect())
+                (start + first, weights.into_iter().map(|weight| weight as f32).collect())
             })
             .collect();
         Axis { taps, identity: len == out }
+    }
+}
+
+/// ffmpeg's `area` weights of output pixel `i` when `len` source pixels are scaled to `out`, `step` source pixels
+/// each: its first source pixel and weights.
+fn area_tap(i: usize, len: usize, out: usize, step: f64) -> (usize, Vec<f64>) {
+    if len > out {
+        // scaling down: the share of each source pixel the output pixel covers
+        let (left, right) = (i as f64 * step, (i + 1) as f64 * step);
+        let first = left.floor() as usize;
+        let last = (right.ceil() as usize).min(len);
+        (first, (first..last).map(|pixel| (right.min(pixel as f64 + 1.0) - left.max(pixel as f64)) / step).collect())
+    } else if len == 1 {
+        (0, vec![1.0])
+    } else {
+        // scaling up: bilinear between the two nearest source pixels
+        let center = ((i as f64 + 0.5) * step - 0.5).clamp(0.0, (len - 1) as f64);
+        let pixel = (center.floor() as usize).min(len - 2);
+        (pixel, vec![1.0 - (center - pixel as f64), center - pixel as f64])
     }
 }
 
@@ -190,147 +332,203 @@ struct Scale {
 }
 
 impl Scale {
-    fn new(width: usize, height: usize, share: [f64; 4], (w, h): (usize, usize), filter: Filter) -> Scale {
+    fn new(width: usize, height: usize, share: [f64; 4], out: (usize, usize), filter: Filter) -> Scale {
         Scale {
-            x: Axis::new(width, share[0], share[2], w, filter),
-            y: Axis::new(height, share[1], share[3], h, filter),
+            x: Axis::new(width, share[0], share[2], out.0, filter),
+            y: Axis::new(height, share[1], share[3], out.1, filter),
             stride: width,
         }
     }
 
-    /// The scaled crop's pixels in `rows` x `cols` (row by row), each source byte through `lut`.
-    fn rect(&self, plane: &[u8], lut: &[u8; 256], rows: Range<usize>, cols: Range<usize>) -> Box<[u8]> {
-        let mut out = Vec::with_capacity(rows.len() * cols.len());
+    /// The scaled crop's pixels in `rows` x `columns` (row by row), each source byte through `levels`.
+    fn rect(&self, plane: &[u8], levels: &[u8; 256], rows: Range<usize>, columns: Range<usize>) -> Box<[u8]> {
+        let mut out = Vec::with_capacity(rows.len() * columns.len());
         if self.x.identity && self.y.identity {
-            let x0 = self.x.taps[cols.start].0;
-            for oy in rows {
-                let at = self.y.taps[oy].0 * self.stride + x0;
-                out.extend(plane[at..at + cols.len()].iter().map(|&v| lut[v as usize]));
+            let first_x = self.x.taps[columns.start].0;
+            for out_y in rows {
+                let at = self.y.taps[out_y].0 * self.stride + first_x;
+                out.extend(plane[at..at + columns.len()].iter().map(|&level| levels[level as usize]));
             }
             return out.into_boxed_slice();
         }
-        let c0 = cols.clone().map(|x| self.x.taps[x].0).min().unwrap_or(0);
-        let c1 = cols.clone().map(|x| self.x.taps[x].0 + self.x.taps[x].1.len()).max().unwrap_or(c0);
-        let mut tmp = vec![0f32; c1 - c0];
-        for oy in rows {
-            tmp.fill(0.0);
-            let (first, w) = &self.y.taps[oy];
-            for (k, &wk) in w.iter().enumerate() {
-                let at = (first + k) * self.stride;
-                for (t, &v) in tmp.iter_mut().zip(&plane[at + c0..at + c1]) {
-                    *t += wk * lut[v as usize] as f32;
+        let first_x = columns.clone().map(|x| self.x.taps[x].0).min().unwrap_or(0);
+        let end_x = columns.clone().map(|x| self.x.taps[x].0 + self.x.taps[x].1.len()).max().unwrap_or(first_x);
+        let mut row_sums = vec![0f32; end_x - first_x];
+        for out_y in rows {
+            row_sums.fill(0.0);
+            let (first_y, weights) = &self.y.taps[out_y];
+            for (tap, &weight) in weights.iter().enumerate() {
+                let at = (first_y + tap) * self.stride;
+                for (sum, &level) in row_sums.iter_mut().zip(&plane[at + first_x..at + end_x]) {
+                    *sum += weight * levels[level as usize] as f32;
                 }
             }
-            for ox in cols.clone() {
-                let (first, w) = &self.x.taps[ox];
-                let v: f32 = w.iter().zip(&tmp[first - c0..]).map(|(&a, &b)| a * b).sum();
-                out.push(v.round().clamp(0.0, 255.0) as u8);
+            for out_x in columns.clone() {
+                let (first, weights) = &self.x.taps[out_x];
+                let value: f32 = weights.iter().zip(&row_sums[first - first_x..]).map(|(&a, &b)| a * b).sum();
+                out.push(value.round().clamp(0.0, 255.0) as u8);
             }
         }
         out.into_boxed_slice()
     }
 }
 
-/// A glyph's strength image (`w` x `h`) scaled to GW x GH as Pillow's bilinear resize does, as bytes (0 to 255).
-fn glyph_image(src: &[f32], w: usize, h: usize) -> [u8; GLYPH] {
-    let (tx, ty) = (taps(w, GW, 1.0, bilinear), taps(h, GH, 1.0, bilinear));
-    let mut tmp = vec![0f32; h * GW];
-    for y in 0..h {
-        for (x, (first, wt)) in tx.iter().enumerate() {
-            let row = &src[y * w + first..];
-            tmp[y * GW + x] = wt.iter().zip(row).map(|(&a, &b)| a * b as f64).sum::<f64>() as f32;
+/// A glyph's strength image (`width` x `height`) scaled to GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX as Pillow's bilinear
+/// resize does, as bytes (0 to 255).
+fn glyph_image(strength: &[f32], width: usize, height: usize) -> [u8; GLYPH_PIXELS] {
+    let x_taps = taps(width, GLYPH_WIDTH_PX, BILINEAR_SUPPORT, bilinear);
+    let y_taps = taps(height, GLYPH_HEIGHT_PX, BILINEAR_SUPPORT, bilinear);
+    let mut columns_scaled = vec![0f32; height * GLYPH_WIDTH_PX];
+    for y in 0..height {
+        for (x, (first, weights)) in x_taps.iter().enumerate() {
+            let row = &strength[y * width + first..];
+            columns_scaled[y * GLYPH_WIDTH_PX + x] =
+                weights.iter().zip(row).map(|(&a, &b)| a * b as f64).sum::<f64>() as f32;
         }
     }
-    let mut out = [0u8; GLYPH];
-    for (y, (first, wt)) in ty.iter().enumerate() {
-        for x in 0..GW {
-            let v: f64 = wt.iter().enumerate().map(|(k, &a)| a * tmp[(first + k) * GW + x] as f64).sum();
-            out[y * GW + x] = (v as f32 * 255.0).round().clamp(0.0, 255.0) as u8;
+    let mut out = [0u8; GLYPH_PIXELS];
+    for (y, (first, weights)) in y_taps.iter().enumerate() {
+        for x in 0..GLYPH_WIDTH_PX {
+            let source = |tap: usize| columns_scaled[(first + tap) * GLYPH_WIDTH_PX + x] as f64;
+            let value: f64 = weights.iter().enumerate().map(|(tap, &weight)| weight * source(tap)).sum();
+            out[y * GLYPH_WIDTH_PX + x] = (value as f32 * 255.0).round().clamp(0.0, 255.0) as u8;
         }
     }
     out
+}
+
+/// The Y levels as read: a limited-range recording's stretched to 0..255, as ffmpeg's grey conversion does.
+fn read_levels(full_range: bool) -> [u8; 256] {
+    std::array::from_fn(|level| {
+        if full_range {
+            level as u8
+        } else {
+            ((level as f64 - LIMITED_BLACK) * 255.0 / LIMITED_SPAN).round().clamp(0.0, 255.0) as u8
+        }
+    })
 }
 
 // ---- levels and spans -----------------------------------------------------------------------------------------------
 
-/// The k-th smallest value of a histogram's values (the bin's index).
-fn nth(hist: &[u32], k: usize) -> usize {
+/// How many there are of each byte value.
+fn histogram<'a>(levels: impl IntoIterator<Item = &'a u8>) -> [u32; 256] {
+    let mut counts = [0u32; 256];
+    levels.into_iter().for_each(|&level| counts[level as usize] += 1);
+    counts
+}
+
+/// The `rank`-th smallest (from 0) of a histogram's values (the bin's index).
+fn nth_smallest(histogram: &[u32], rank: usize) -> usize {
     let mut seen = 0;
-    for (v, &c) in hist.iter().enumerate() {
-        seen += c as usize;
-        if seen > k {
-            return v;
+    for (value, &count) in histogram.iter().enumerate() {
+        seen += count as usize;
+        if seen > rank {
+            return value;
         }
     }
-    hist.len() - 1
+    histogram.len() - 1
 }
 
-/// numpy's percentile (linear) of a histogram's `n` values, as a bin index.
-fn percentile(hist: &[u32], n: usize, q: f64) -> f64 {
-    let at = q / 100.0 * (n - 1) as f64;
-    let lo = at.floor() as usize;
-    let (a, b) = (nth(hist, lo) as f64, nth(hist, (lo + 1).min(n - 1)) as f64);
-    a + (at - lo as f64) * (b - a)
+/// numpy's percentile (linear) of a histogram's `count` values, as a bin index.
+fn percentile(histogram: &[u32], count: usize, percent: f64) -> f64 {
+    let at = percent / 100.0 * (count - 1) as f64;
+    let below = at.floor() as usize;
+    let a = nth_smallest(histogram, below) as f64;
+    let b = nth_smallest(histogram, (below + 1).min(count - 1)) as f64;
+    a + (at - below as f64) * (b - a)
 }
 
-/// Twice the median of bytes from their histogram (an even count's median can fall between two values).
-fn median2(hist: &[u32; 256], n: usize) -> i32 {
-    if n % 2 == 1 { 2 * nth(hist, n / 2) as i32 } else { (nth(hist, n / 2 - 1) + nth(hist, n / 2)) as i32 }
-}
-
-fn median(v: &mut [f64]) -> f64 {
-    v.sort_by(f64::total_cmp);
-    let n = v.len();
-    if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 }
+/// Twice the median of `count` bytes from their histogram (an even count's median can fall between two values).
+fn twice_median(histogram: &[u32; 256], count: usize) -> i32 {
+    if count % 2 == 1 {
+        2 * nth_smallest(histogram, count / 2) as i32
+    } else {
+        (nth_smallest(histogram, count / 2 - 1) + nth_smallest(histogram, count / 2)) as i32
+    }
 }
 
 /// numpy's percentile (linear) of sorted values.
-fn percentile_sorted(v: &[f64], q: f64) -> f64 {
-    let at = q / 100.0 * (v.len() - 1) as f64;
-    let lo = at.floor() as usize;
-    let (a, b) = (v[lo], v[(lo + 1).min(v.len() - 1)]);
-    a + (at - lo as f64) * (b - a)
+fn percentile_sorted(sorted: &[f64], percent: f64) -> f64 {
+    let at = percent / 100.0 * (sorted.len() - 1) as f64;
+    let below = at.floor() as usize;
+    let (a, b) = (sorted[below], sorted[(below + 1).min(sorted.len() - 1)]);
+    a + (at - below as f64) * (b - a)
 }
 
 /// Text pixels of an image (python/hud.py: _ink, which reads the levels as whole numbers): far from its most common
 /// level (the box), in either direction.
-fn ink(img: &[f64]) -> Vec<bool> {
-    let img: Vec<f64> = img.iter().map(|v| v.trunc()).collect();
-    let bg = median(&mut img.clone());
-    let mut d: Vec<f64> = img.iter().map(|v| (v - bg).abs()).collect();
-    d.sort_by(f64::total_cmp);
-    let thr = 25f64.max(0.5 * percentile_sorted(&d, 99.5));
-    img.iter().map(|v| (v - bg).abs() > thr).collect()
+fn ink(image: &[f64]) -> Vec<bool> {
+    let image: Vec<f64> = image.iter().map(|level| level.trunc()).collect();
+    let background = median(&image);
+    let mut distances: Vec<f64> = image.iter().map(|level| (level - background).abs()).collect();
+    distances.sort_by(f64::total_cmp);
+    let threshold = MIN_INK_LEVELS.max(INK_SHARE_OF_TOP * percentile_sorted(&distances, TOP_PERCENTILE));
+    image.iter().map(|level| (level - background).abs() > threshold).collect()
 }
 
 /// Runs of true, as (start, end), at least `min_len` long.
 fn spans(mask: impl IntoIterator<Item = bool>, min_len: usize) -> Vec<(usize, usize)> {
-    let (mut out, mut cur, mut n) = (Vec::new(), None, 0);
-    for (i, v) in mask.into_iter().enumerate() {
-        match (v, cur) {
-            (true, None) => cur = Some(i),
-            (false, Some(c)) => {
-                if i - c >= min_len {
-                    out.push((c, i));
+    let (mut found, mut start, mut len) = (Vec::new(), None, 0);
+    for (i, on) in mask.into_iter().enumerate() {
+        match (on, start) {
+            (true, None) => start = Some(i),
+            (false, Some(first)) => {
+                if i - first >= min_len {
+                    found.push((first, i));
                 }
-                cur = None;
+                start = None;
             }
             _ => {}
         }
-        n = i + 1;
+        len = i + 1;
     }
-    if let Some(c) = cur
-        && n - c >= min_len
+    if let Some(first) = start
+        && len - first >= min_len
     {
-        out.push((c, n));
+        found.push((first, len));
     }
-    out
+    found
+}
+
+/// A band's ink pixels, row by row.
+#[derive(Clone, Copy)]
+struct Ink<'a> {
+    pixels: &'a [bool],
+    width: usize,
+}
+
+impl<'a> Ink<'a> {
+    fn height(self) -> usize {
+        self.pixels.len() / self.width
+    }
+
+    /// Whether row `y` has ink in columns a..b.
+    fn row_has_ink(self, y: usize, (a, b): (usize, usize)) -> bool {
+        self.pixels[y * self.width + a..y * self.width + b].iter().any(|&on| on)
+    }
+
+    /// Whether each column has ink.
+    fn columns(self) -> impl Iterator<Item = bool> + 'a {
+        let height = self.height();
+        (0..self.width).map(move |x| (0..height).any(|y| self.pixels[y * self.width + x]))
+    }
+
+    /// Whether each row has ink in columns a..b.
+    fn rows(self, columns: (usize, usize)) -> impl Iterator<Item = bool> + 'a {
+        (0..self.height()).map(move |y| self.row_has_ink(y, columns))
+    }
+
+    /// The rows with ink in columns a..b.
+    fn inked_rows(self, columns: (usize, usize)) -> Vec<usize> {
+        (0..self.height()).filter(|&y| self.row_has_ink(y, columns)).collect()
+    }
 }
 
 // ---- KovaaK's box ---------------------------------------------------------------------------------------------------
 
-/// A value row of KovaaK's box: the band read (rows y0..y1 of the scaled region: the row and PAD around it), and where
-/// its value can start, from the box's x0 (the compact HUD: just past its label's colon; None: the rightmost group).
+/// A value row of KovaaK's box: the band read (rows y0..y1 of the scaled region: the row and ROW_PAD_PX around it), and
+/// where its value can start, from the box's x0 (the compact HUD: just past its label's colon; None: the rightmost
+/// group).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 struct Row {
     y0: usize,
@@ -358,232 +556,369 @@ pub struct SessionRows {
     pub y1: usize,
 }
 
-/// The column just past the first colon in a row of text (`w` wide): a narrow glyph made of dots only (an i has a
-/// stem; the colon's upper dot can fade in a blurred recording).
-fn label_end(ink: &[bool], w: usize) -> Option<usize> {
-    let h = ink.len() / w;
-    let hf = h as f64;
-    spans((0..w).map(|x| (0..h).any(|y| ink[y * w + x])), 1).into_iter().find_map(|(a, b)| {
-        let runs = spans((0..h).map(|y| ink[y * w + a..y * w + b].iter().any(|&v| v)), 1);
-        let narrow = (b - a) as f64 <= 3f64.max(0.3 * hf);
-        (narrow && !runs.is_empty() && runs.iter().all(|&(r0, r1)| (r1 - r0) as f64 <= 0.35 * hf)).then_some(b)
+/// The column just past the first colon in a row of text: a narrow glyph made of dots only (an i has a stem; the
+/// colon's upper dot can fade in a blurred recording).
+fn label_end(ink: Ink) -> Option<usize> {
+    let height = ink.height() as f64;
+    spans(ink.columns(), 1).into_iter().find_map(|(a, b)| {
+        let dots = spans(ink.rows((a, b)), 1);
+        let narrow = (b - a) as f64 <= COLON_MAX_WIDTH_PX.max(COLON_MAX_WIDTH_SHARE * height);
+        let all_dots = dots.iter().all(|&(top, bottom)| (bottom - top) as f64 <= DOT_MAX_HEIGHT_SHARE * height);
+        (narrow && !dots.is_empty() && all_dots).then_some(b)
     })
 }
 
-/// The box's value rows from the key frames' median (BW x BH), or None without a box (python/hud.py: layout, and
-/// read's choice of rows), and the box's text rows (None without a box). The median keeps the box and its labels and
-/// washes out the moving scene and the changing numbers. The box is the area at the level of a patch inside its left
-/// edge; other players' HUDs are smaller or placed elsewhere, so other patches are tried until one gives a box. A
-/// compact box whose labels' colons are not found has text rows but no value rows (python/hud.py's layout gives its
-/// rows; its read then reads the rightmost glyphs, which this reading does not).
-fn layout(med: &[f64]) -> (Option<Layout>, Option<SessionRows>) {
-    let seeds =
-        std::iter::once(SEED).chain((40..240).step_by(12).flat_map(|y| (20..320).step_by(12).map(move |x| (x, y))));
+/// The pixels a flood fill reached at one level (4-connected, as ndimage.label): the first in raster order, how many,
+/// their bounds in the region (rows top..bottom, columns left..right) and how many of the patch's pixels are among
+/// them.
+#[derive(Clone, Copy)]
+struct Component {
+    first_pixel: usize,
+    pixels: usize,
+    top: usize,
+    bottom: usize,
+    left: usize,
+    right: usize,
+    in_patch: usize,
+}
+
+impl Component {
+    fn height(&self) -> usize {
+        self.bottom - self.top
+    }
+
+    fn width(&self) -> usize {
+        self.right - self.left
+    }
+
+    /// Too small for the box, or the open scene running off the region.
+    fn too_small_or_open(&self) -> bool {
+        (self.height() as f64) < MIN_BOX_HEIGHT_SHARE * BH as f64
+            || (self.width() as f64) < MIN_BOX_WIDTH_SHARE * BW as f64
+            || self.bottom >= BH - REGION_MARGIN_PX
+            || self.right >= BW - REGION_MARGIN_PX
+    }
+
+    /// Not the filled rectangle (with text holes) a box is.
+    fn is_hollow(&self) -> bool {
+        (self.pixels as f64) < MIN_BOX_FILL * (self.height() * self.width()) as f64
+    }
+}
+
+/// Labels the region's pixels by component; its buffers are kept from patch to patch.
+struct FloodFill {
+    labels: Vec<u32>,
+    stack: Vec<usize>,
+}
+
+impl FloodFill {
+    /// The components of the pixels at a level (`near`) that the patch is in, and of them the one with the most of the
+    /// patch (ties: the first in raster order, as ndimage numbers them).
+    fn biggest_in_patch(&mut self, patch: &[usize], near: impl Fn(usize) -> bool) -> Option<Component> {
+        self.labels.fill(0);
+        let mut components: Vec<Component> = Vec::new();
+        for &pixel in patch {
+            if near(pixel) && self.labels[pixel] == 0 {
+                let id = components.len() as u32 + 1;
+                components.push(self.fill(pixel, id, &near));
+            }
+        }
+        for &pixel in patch {
+            if self.labels[pixel] != 0 {
+                components[self.labels[pixel] as usize - 1].in_patch += 1;
+            }
+        }
+        components.into_iter().max_by(|a, b| a.in_patch.cmp(&b.in_patch).then(b.first_pixel.cmp(&a.first_pixel)))
+    }
+
+    /// The component of pixel `seed`, labelled `id`.
+    fn fill(&mut self, seed: usize, id: u32, near: impl Fn(usize) -> bool) -> Component {
+        let (y, x) = (seed / BW, seed % BW);
+        let mut component =
+            Component { first_pixel: seed, pixels: 0, top: y, bottom: y + 1, left: x, right: x + 1, in_patch: 0 };
+        self.labels[seed] = id;
+        self.stack.push(seed);
+        while let Some(pixel) = self.stack.pop() {
+            let (y, x) = (pixel / BW, pixel % BW);
+            component.first_pixel = component.first_pixel.min(pixel);
+            component.pixels += 1;
+            component.top = component.top.min(y);
+            component.bottom = component.bottom.max(y + 1);
+            component.left = component.left.min(x);
+            component.right = component.right.max(x + 1);
+            let neighbors = [
+                (y > 0).then(|| pixel - BW),
+                (y + 1 < BH).then(|| pixel + BW),
+                (x > 0).then(|| pixel - 1),
+                (x + 1 < BW).then(|| pixel + 1),
+            ];
+            for neighbor in neighbors.into_iter().flatten() {
+                if self.labels[neighbor] == 0 && near(neighbor) {
+                    self.labels[neighbor] = id;
+                    self.stack.push(neighbor);
+                }
+            }
+        }
+        component
+    }
+}
+
+/// The patches tried for the box's level, their top left corners (x, y).
+fn patch_corners() -> impl Iterator<Item = (usize, usize)> {
+    let grid =
+        PATCH_ROWS.step_by(PATCH_STEP_PX).flat_map(|y| PATCH_COLUMNS.step_by(PATCH_STEP_PX).map(move |x| (x, y)));
+    std::iter::once(FIRST_PATCH).chain(grid)
+}
+
+/// Each pixel's median over the key frames' regions.
+fn median_of_keys(keys: &[Box<[u8]>]) -> Vec<f64> {
+    let mut levels = vec![0u8; keys.len()];
+    (0..BW * BH)
+        .map(|i| {
+            levels.iter_mut().zip(keys).for_each(|(level, key)| *level = key[i]);
+            levels.sort_unstable();
+            let count = levels.len();
+            if count % 2 == 1 {
+                levels[count / 2] as f64
+            } else {
+                (levels[count / 2 - 1] as f64 + levels[count / 2] as f64) / 2.0
+            }
+        })
+        .collect()
+}
+
+/// KovaaK's box from the key frames' median (BW x BH): its value rows and its text rows, neither without a box
+/// (python/hud.py: layout, and read's choice of rows). The median keeps the box and its labels and washes out the
+/// moving scene and the changing numbers. The box is the area at the level of a patch inside its left edge; other
+/// players' HUDs are smaller or placed elsewhere, so other patches are tried until one gives a box.
+fn find_box(key_median: &[f64]) -> HudKeys {
+    let mut flood = FloodFill { labels: vec![0u32; BW * BH], stack: Vec::new() };
     let mut tried = Vec::new();
-    let mut lab = vec![0u32; BW * BH];
-    let mut stack = Vec::new();
-    for (sx, sy) in seeds {
-        let patch: [usize; 64] = std::array::from_fn(|k| (sy + k / 8) * BW + sx + k % 8);
-        let level = median(&mut patch.map(|i| med[i]));
-        let near = |i: usize| (med[i] - level).abs() < 15.0;
-        if (patch.iter().filter(|&&i| near(i)).count() as f64) < 0.9 * 64.0 {
+    for (corner_x, corner_y) in patch_corners() {
+        let patch: [usize; PATCH_PIXELS] =
+            std::array::from_fn(|i| (corner_y + i / PATCH_SIDE_PX) * BW + corner_x + i % PATCH_SIDE_PX);
+        let level = median(&patch.map(|pixel| key_median[pixel]));
+        let near = |pixel: usize| (key_median[pixel] - level).abs() < SAME_LEVEL;
+        if (patch.iter().filter(|&&pixel| near(pixel)).count() as f64) < MIN_PATCH_SHARE * PATCH_PIXELS as f64 {
             continue;
         }
-        // the components of the level's area that the patch is in (4-connected, as ndimage.label); the box is the one
-        // with the most of the patch (ties: the first in raster order, as ndimage numbers them)
-        lab.fill(0);
-        let mut comps: Vec<(usize, usize, [usize; 4], usize)> = Vec::new(); // (first pixel, pixels, box, in patch)
-        for &p in &patch {
-            if !near(p) || lab[p] != 0 {
-                continue;
-            }
-            let id = comps.len() as u32 + 1;
-            let (mut first, mut pixels, mut bb) = (p, 0, [p / BW, p / BW + 1, p % BW, p % BW + 1]);
-            lab[p] = id;
-            stack.push(p);
-            while let Some(q) = stack.pop() {
-                let (y, x) = (q / BW, q % BW);
-                first = first.min(q);
-                pixels += 1;
-                bb = [bb[0].min(y), bb[1].max(y + 1), bb[2].min(x), bb[3].max(x + 1)];
-                let mut visit = |r: usize| {
-                    if lab[r] == 0 && near(r) {
-                        lab[r] = id;
-                        stack.push(r);
-                    }
-                };
-                if y > 0 {
-                    visit(q - BW);
-                }
-                if y + 1 < BH {
-                    visit(q + BW);
-                }
-                if x > 0 {
-                    visit(q - 1);
-                }
-                if x + 1 < BW {
-                    visit(q + 1);
-                }
-            }
-            comps.push((first, pixels, bb, 0));
-        }
-        for &p in &patch {
-            if lab[p] != 0 {
-                comps[lab[p] as usize - 1].3 += 1;
-            }
-        }
-        let Some(&(_, pixels, [by0, by1, bx0, bx1], _)) = comps.iter().max_by(|a, b| a.3.cmp(&b.3).then(b.0.cmp(&a.0)))
-        else {
+        let Some(found) = flood.biggest_in_patch(&patch, near) else {
             continue;
         };
-        if tried.contains(&(by0, bx0))
-            || ((by1 - by0) as f64) < 0.3 * BH as f64
-            || ((bx1 - bx0) as f64) < 0.2 * BW as f64
-            || by1 >= BH - 2
-            || bx1 >= BW - 2
-        {
-            continue; // too small, or the open scene running off the region
+        if tried.contains(&(found.top, found.left)) || found.too_small_or_open() {
+            continue;
         }
-        tried.push((by0, bx0));
-        if (pixels as f64) < 0.6 * ((by1 - by0) * (bx1 - bx0)) as f64 {
-            continue; // a box is a filled rectangle (with text holes)
+        tried.push((found.top, found.left));
+        if found.is_hollow() {
+            continue;
         }
-        let m = 4; // keep off the box's rounded edge
-        let (x0, x1) = (bx0 + m, bx1 - m);
-        let sub = |r0: usize, r1: usize| -> Vec<f64> {
-            (r0..r1).flat_map(|y| med[y * BW + x0..y * BW + x1].iter().copied()).collect()
-        };
-        let w = x1 - x0;
-        let box_ink = ink(&sub(by0 + m, by1 - m));
-        let rows: Vec<(usize, usize)> = spans(box_ink.chunks(w).map(|r| r.iter().filter(|&&v| v).count() > 2), 6)
-            .into_iter()
-            .map(|(a, b)| (a + by0 + m, b + by0 + m))
-            .collect();
-        // a header (SESSION and the clock) and six rows under it: Kill Count is the first of them, Accuracy the third.
-        // The compact HUD has four rows in two columns (Kill Count and SPM, Accuracy, Damage, Avg TTK and KPS), each
-        // value just after its label's colon
-        if rows.len() >= 4 {
-            let session = Some(SessionRows { x0, y0: rows[0].0, x1, y1: rows[rows.len() - 1].1 });
-            let compact = rows.len() == 5;
-            let (k, a) = if compact { (rows[1], rows[2]) } else { (rows[1], rows[3]) };
-            let start = |(r0, r1): (usize, usize)| {
-                if compact { label_end(&ink(&sub(r0.saturating_sub(3), (r1 + 3).min(BH))), w) } else { None }
-            };
-            let (ks, accs) = (start(k), start(a));
-            if compact && (ks.is_none() || accs.is_none()) {
-                return (None, session);
-            }
-            let row =
-                |(r0, r1): (usize, usize), start| Row { y0: r0.saturating_sub(PAD), y1: (r1 + PAD).min(BH), start };
-            return (Some(Layout { x0, x1, kills: row(k, ks), accuracy: row(a, accs) }), session);
+        if let Some(keys) = box_rows(key_median, &found) {
+            return keys;
         }
     }
-    (None, None)
+    HudKeys::default()
+}
+
+/// A box's text rows and value rows, or None when it has too few text rows. A compact box whose labels' colons are not
+/// found has text rows but no value rows (python/hud.py's layout gives its rows; its read then reads the rightmost
+/// glyphs, which this reading does not).
+fn box_rows(key_median: &[f64], found: &Component) -> Option<HudKeys> {
+    let (x0, x1) = (found.left + BOX_INSET_PX, found.right - BOX_INSET_PX);
+    let width = x1 - x0;
+    let rows_between = |top: usize, bottom: usize| -> Vec<f64> {
+        (top..bottom).flat_map(|y| key_median[y * BW + x0..y * BW + x1].iter().copied()).collect()
+    };
+    let text_top = found.top + BOX_INSET_PX;
+    let box_ink = ink(&rows_between(text_top, found.bottom - BOX_INSET_PX));
+    let inked = box_ink.chunks(width).map(|row| row.iter().filter(|&&on| on).count() > TEXT_ROW_INK_PX);
+    let rows: Vec<(usize, usize)> =
+        spans(inked, MIN_TEXT_ROW_PX).into_iter().map(|(a, b)| (a + text_top, b + text_top)).collect();
+    if rows.len() < MIN_TEXT_ROWS {
+        return None;
+    }
+    let session = Some(SessionRows { x0, y0: rows[0].0, x1, y1: rows[rows.len() - 1].1 });
+    // a header (SESSION and the clock) and six rows under it: Kill Count is the first of them, Accuracy the third. The
+    // compact HUD has four rows in two columns (Kill Count and SPM, Accuracy, Damage, Avg TTK and KPS), each value just
+    // after its label's colon
+    let compact = rows.len() == COMPACT_TEXT_ROWS;
+    let (kills, accuracy) = if compact { (rows[1], rows[2]) } else { (rows[1], rows[3]) };
+    let value_start = |row: (usize, usize)| {
+        if !compact {
+            return None;
+        }
+        let (top, bottom) = padded(row);
+        label_end(Ink { pixels: &ink(&rows_between(top, bottom)), width })
+    };
+    let (kills_start, accuracy_start) = (value_start(kills), value_start(accuracy));
+    if compact && (kills_start.is_none() || accuracy_start.is_none()) {
+        return Some(HudKeys { layout: None, session });
+    }
+    let value_row = |row: (usize, usize), start| {
+        let (y0, y1) = padded(row);
+        Row { y0, y1, start }
+    };
+    let layout = Layout { x0, x1, kills: value_row(kills, kills_start), accuracy: value_row(accuracy, accuracy_start) };
+    Some(HudKeys { layout: Some(layout), session })
+}
+
+/// A row with ROW_PAD_PX rows above and below it, inside the region.
+fn padded((top, bottom): (usize, usize)) -> (usize, usize) {
+    (top.saturating_sub(ROW_PAD_PX), (bottom + ROW_PAD_PX).min(BH))
 }
 
 /// A glyph cut from a frame: its strength image, and its ink's height and width in pixels.
 #[derive(Clone, Debug, PartialEq)]
 struct Cut {
-    image: [u8; GLYPH],
-    h: u16,
-    w: u16,
+    image: [u8; GLYPH_PIXELS],
+    height: u16,
+    width: u16,
 }
 
-/// The glyph at columns a..b of a band (`w` wide), cropped to its ink rows, or None when it has no ink.
-fn cut(strength: &[f32], ink: &[bool], w: usize, (a, b): (usize, usize)) -> Option<Cut> {
-    let h = ink.len() / w;
-    let rows: Vec<usize> = (0..h).filter(|&y| ink[y * w + a..y * w + b].iter().any(|&v| v)).collect();
-    let (y0, y1) = (*rows.first()?, *rows.last()? + 1);
-    let src: Vec<f32> = (y0..y1).flat_map(|y| strength[y * w + a..y * w + b].iter().copied()).collect();
-    Some(Cut { image: glyph_image(&src, b - a, y1 - y0), h: (y1 - y0) as u16, w: (b - a) as u16 })
+/// The glyph at columns a..b of a band, cropped to its ink rows, or None when it has no ink.
+fn cut(strength: &[f32], ink: Ink, (a, b): (usize, usize)) -> Option<Cut> {
+    let rows = ink.inked_rows((a, b));
+    let (top, bottom) = (*rows.first()?, *rows.last()? + 1);
+    let width = ink.width;
+    let glyph: Vec<f32> = (top..bottom).flat_map(|y| strength[y * width + a..y * width + b].iter().copied()).collect();
+    let image = glyph_image(&glyph, b - a, bottom - top);
+    Some(Cut { image, height: (bottom - top) as u16, width: (b - a) as u16 })
 }
 
-/// The value's glyphs in one row of KovaaK's box (a band `w` wide, python/hud.py: _value_glyphs): the rightmost group
-/// of ink columns, cut from the label by a wide gap (or, given start, the first group from there on).
-fn value_glyphs(band: &[u8], w: usize, start: Option<usize>) -> Vec<Cut> {
-    let n = band.len();
-    if n == 0 || w == 0 {
+/// A band's grey levels against its background (its median): the ink threshold and the distance of full strength. The
+/// background is kept doubled, so an even count's median stays a whole number.
+struct BoxLevels {
+    twice_background: i32,
+    threshold: f64,
+    full_strength: f64,
+}
+
+impl BoxLevels {
+    fn of(band: &[u8]) -> BoxLevels {
+        let counts = histogram(band);
+        let twice_background = twice_median(&counts, band.len());
+        let mut twice_distances = [0u32; MAX_TWICE_DISTANCE + 1];
+        for (level, &count) in counts.iter().enumerate() {
+            twice_distances[(2 * level as i32 - twice_background).unsigned_abs() as usize] += count;
+        }
+        let top_distance = percentile(&twice_distances, band.len(), TOP_PERCENTILE) / 2.0;
+        BoxLevels {
+            twice_background,
+            threshold: MIN_INK_LEVELS.max(INK_SHARE_OF_TOP * top_distance),
+            full_strength: MIN_INK_LEVELS.max(top_distance),
+        }
+    }
+
+    /// A grey level's distance from the background.
+    fn distance(&self, level: u8) -> f64 {
+        (2 * level as i32 - self.twice_background).unsigned_abs() as f64 / 2.0
+    }
+}
+
+/// The value's glyphs in one row of KovaaK's box (a band `width` wide, python/hud.py: _value_glyphs): the rightmost
+/// group of ink columns, cut from the label by a wide gap (or, given start, the first group from there on).
+fn value_glyphs(band: &[u8], width: usize, start: Option<usize>) -> Vec<Cut> {
+    if band.is_empty() || width == 0 {
         return Vec::new();
     }
-    let h = n / w;
-    let mut hist = [0u32; 256];
-    band.iter().for_each(|&v| hist[v as usize] += 1);
-    let bg2 = median2(&hist, n);
-    let mut dist = [0u32; 511];
-    hist.iter().enumerate().for_each(|(v, &c)| dist[(2 * v as i32 - bg2).unsigned_abs() as usize] += c);
-    let p = percentile(&dist, n, 99.5) / 2.0;
-    let (thr, top) = (25f64.max(0.5 * p), 25f64.max(p));
-    let d = |v: u8| (2 * v as i32 - bg2).unsigned_abs() as f64 / 2.0;
-    let is_ink: [bool; 256] = std::array::from_fn(|v| d(v as u8) > thr);
-    let level: [f32; 256] = std::array::from_fn(|v| (d(v as u8) / top).clamp(0.0, 1.0) as f32);
-    let ink: Vec<bool> = band.iter().map(|&v| is_ink[v as usize]).collect();
-    let strength: Vec<f32> = band.iter().map(|&v| level[v as usize]).collect();
-    let mut col = vec![0usize; w];
-    ink.chunks(w).for_each(|r| r.iter().zip(&mut col).for_each(|(&v, c)| *c += v as usize));
-    // the box widens as its numbers grow: past its right edge the scene fills whole columns with ink, which text never
-    // does, or at least leaves no pixel of its columns at the box's level up to the band's end (text leaves the rows
-    // above and below it, and a scene line seen through the box is a few columns wide). python/hud.py tested only the
-    // first, and read a scene of middle levels past a box narrower than at most key frames as glyphs
-    let past = |x: usize| x as f64 > 0.2 * w as f64;
-    let solid = (0..w).find(|&x| past(x) && col[x] as f64 / h as f64 > 0.85).unwrap_or(w);
-    let far = |x: &usize| (0..h).all(|y| d(band[y * w + x]) > thr / 2.0);
-    let scene = (0..w).rev().take_while(far).last().filter(|&x| past(x) && x + 2 <= w).unwrap_or(w);
-    let end = solid.min(scene);
-    let mut cols = spans(col[..end].iter().map(|&c| c > 0), 1);
+    let levels = BoxLevels::of(band);
+    let is_ink: [bool; 256] = std::array::from_fn(|level| levels.distance(level as u8) > levels.threshold);
+    let strength_of: [f32; 256] =
+        std::array::from_fn(|level| (levels.distance(level as u8) / levels.full_strength).clamp(0.0, 1.0) as f32);
+    let ink_pixels: Vec<bool> = band.iter().map(|&level| is_ink[level as usize]).collect();
+    let strength: Vec<f32> = band.iter().map(|&level| strength_of[level as usize]).collect();
+    let ink = Ink { pixels: &ink_pixels, width };
+    let mut column_ink = vec![0usize; width];
+    for row in ink_pixels.chunks(width) {
+        row.iter().zip(&mut column_ink).for_each(|(&on, count)| *count += usize::from(on));
+    }
+    let edge = box_edge(band, &levels, ink, &column_ink);
+    let mut columns = spans(column_ink[..edge].iter().map(|&count| count > 0), 1);
     // ink that runs into the scene past the box's edge is the edge's blended border, not text, which keeps a margin
     // inside the box (python/hud.py read it as a glyph: a box narrower than at most key frames, at a run's start)
-    if end < w && cols.last().is_some_and(|c| c.1 + 2 >= end) {
-        cols.pop();
+    if edge < width && columns.last().is_some_and(|last| last.1 + TEXT_MARGIN_COLUMNS >= edge) {
+        columns.pop();
     }
-    let gap = 0.07 * w as f64;
-    let group: Vec<(usize, usize)> = match start {
-        Some(s) => {
-            let mut g: Vec<(usize, usize)> = Vec::new();
-            for c in cols.into_iter().filter(|c| c.0 >= s) {
-                if g.last().is_some_and(|l| (c.0 - l.1) as f64 > gap) {
-                    break; // the gap before the next label
-                }
-                g.push(c);
+    let group = value_columns(columns, start, LABEL_GAP_SHARE * width as f64);
+    split_joined(group, ink, &column_ink).into_iter().filter_map(|piece| cut(&strength, ink, piece)).collect()
+}
+
+/// Where the box ends in a band; the band's width when the box fills it. The box widens as its numbers grow: past its
+/// right edge the scene fills whole columns with ink, which text never does, or at least leaves no pixel of its columns
+/// at the box's level up to the band's end (text leaves the rows above and below it, and a scene line seen through the
+/// box is a few columns wide). python/hud.py tested only the first, and read a scene of middle levels past a box
+/// narrower than at most key frames as glyphs.
+fn box_edge(band: &[u8], levels: &BoxLevels, ink: Ink, column_ink: &[usize]) -> usize {
+    let (width, height) = (ink.width, ink.height());
+    let past_label = |x: usize| x as f64 > MIN_EDGE_SHARE * width as f64;
+    let solid = (0..width)
+        .find(|&x| past_label(x) && column_ink[x] as f64 / height as f64 > SCENE_COLUMN_INK_SHARE)
+        .unwrap_or(width);
+    let off_box_level = |x: &usize| (0..height).all(|y| levels.distance(band[y * width + x]) > levels.threshold / 2.0);
+    let scene = (0..width)
+        .rev()
+        .take_while(off_box_level)
+        .last()
+        .filter(|&x| past_label(x) && x + MIN_SCENE_COLUMNS <= width)
+        .unwrap_or(width);
+    solid.min(scene)
+}
+
+/// The value's group of ink columns: given `start`, the first columns from there up to a gap wider than `gap` (the
+/// next label); else the rightmost columns back to such a gap (the label).
+fn value_columns(columns: Vec<(usize, usize)>, start: Option<usize>, gap: f64) -> Vec<(usize, usize)> {
+    let mut group: Vec<(usize, usize)> = Vec::new();
+    if let Some(start) = start {
+        for column in columns.into_iter().filter(|column| column.0 >= start) {
+            if group.last().is_some_and(|last| (column.0 - last.1) as f64 > gap) {
+                break;
             }
-            g
+            group.push(column);
         }
-        None => {
-            let mut g: Vec<(usize, usize)> = Vec::new();
-            for c in cols.into_iter().rev() {
-                if g.last().is_some_and(|f| (f.0 - c.1) as f64 > gap) {
-                    break; // the gap between the label and the value
-                }
-                g.push(c);
+    } else {
+        for column in columns.into_iter().rev() {
+            if group.last().is_some_and(|first| (first.0 - column.1) as f64 > gap) {
+                break;
             }
-            g.reverse();
-            g
+            group.push(column);
         }
-    };
-    // small, blurred text joins neighboring digits. A digit is at most 0.9 times as wide as it is tall, so a wider
-    // glyph is split at its thinnest columns, one piece per 0.6 of its height
+        group.reverse();
+    }
+    group
+}
+
+/// The group's glyphs, each glyph of digits run together split into one piece per digit.
+fn split_joined(group: Vec<(usize, usize)>, ink: Ink, column_ink: &[usize]) -> Vec<(usize, usize)> {
     let mut pieces = Vec::new();
     for (a, b) in group {
-        let rows: Vec<usize> = (0..h).filter(|&y| ink[y * w + a..y * w + b].iter().any(|&v| v)).collect();
-        let gh = (rows[rows.len() - 1] - rows[0] + 1) as f64;
-        let width = (b - a) as f64;
-        let k = (width / gh / 0.6).round_ties_even() as usize;
-        if width / gh < 1.0 || k < 2 {
+        let rows = ink.inked_rows((a, b));
+        let glyph_height = (rows[rows.len() - 1] - rows[0] + 1) as f64;
+        let glyph_width = (b - a) as f64;
+        let digit_count = (glyph_width / glyph_height / DIGIT_ASPECT).round_ties_even() as usize;
+        if glyph_width / glyph_height < SPLIT_MIN_ASPECT || digit_count < 2 {
             pieces.push((a, b));
             continue;
         }
-        let mut cuts = Vec::with_capacity(k + 1);
-        cuts.push(a);
-        for j in 1..k {
-            let c = (b - a) as f64 * j as f64 / k as f64;
-            let half = 0.25 * width / k as f64;
-            let (lo, hi) = ((c - half) as usize, ((c + half) as usize + 1).min(b - a));
-            let at = (lo..hi).fold(lo, |m, i| if col[a + i] < col[a + m] { i } else { m });
-            cuts.push(a + at);
-        }
-        cuts.push(b);
-        pieces.extend(cuts.windows(2).filter(|p| p[1] > p[0]).map(|p| (p[0], p[1])));
+        let cuts = split_columns((a, b), digit_count, column_ink);
+        pieces.extend(cuts.windows(2).filter(|pair| pair[1] > pair[0]).map(|pair| (pair[0], pair[1])));
     }
-    pieces.into_iter().filter_map(|p| cut(&strength, &ink, w, p)).collect()
+    pieces
+}
+
+/// Where a glyph at columns a..b, `digit_count` digits wide, is cut: at its thinnest column (the least ink) near each
+/// even cut, with a and b at the ends.
+fn split_columns((a, b): (usize, usize), digit_count: usize, column_ink: &[usize]) -> Vec<usize> {
+    let glyph_width = (b - a) as f64;
+    let mut cuts = Vec::with_capacity(digit_count + 1);
+    cuts.push(a);
+    for j in 1..digit_count {
+        let even = glyph_width * j as f64 / digit_count as f64;
+        let reach = CUT_SEARCH_SHARE * glyph_width / digit_count as f64;
+        let (from, to) = ((even - reach) as usize, ((even + reach) as usize + 1).min(b - a));
+        let thinnest = (from..to).fold(from, |best, i| if column_ink[a + i] < column_ink[a + best] { i } else { best });
+        cuts.push(a + thinnest);
+    }
+    cuts.push(b);
+    cuts
 }
 
 // ---- Aim Lab's boxes ------------------------------------------------------------------------------------------------
@@ -591,31 +926,37 @@ fn value_glyphs(band: &[u8], w: usize, start: Option<usize>) -> Vec<Cut> {
 /// The white value's glyphs in one of Aim Lab's boxes (columns c0..c1 of the band, python/hud.py: _aim_glyphs), the
 /// colon left out.
 fn aim_glyphs(band: &[u8], (c0, c1): (usize, usize)) -> Vec<Cut> {
-    let w = c1 - c0;
-    let mut hist = [0u32; 256];
-    band.chunks(AW).for_each(|r| r[c0..c1].iter().for_each(|&v| hist[v as usize] += 1));
-    let n = w * AH;
-    let bg2 = median2(&hist, n);
-    // the distance from the median, doubled and signed (white text is above it), offset by 510
-    let mut dist = [0u32; 1021];
-    hist.iter().enumerate().for_each(|(v, &c)| dist[(2 * v as i32 - bg2 + 510) as usize] += c);
-    let top = (percentile(&dist, n, 99.5) - 510.0) / 2.0;
-    if top < 40.0 {
+    let width = c1 - c0;
+    let levels: Vec<u8> = band.chunks(AW).flat_map(|row| row[c0..c1].iter().copied()).collect();
+    let counts = histogram(&levels);
+    let count = width * AH;
+    let twice_background = twice_median(&counts, count);
+    // twice the distance from the background, signed (white text is above it), offset to index from 0
+    let offset = MAX_TWICE_DISTANCE as i32;
+    let mut twice_distances = [0u32; 2 * MAX_TWICE_DISTANCE + 1];
+    for (level, &level_count) in counts.iter().enumerate() {
+        twice_distances[(2 * level as i32 - twice_background + offset) as usize] += level_count;
+    }
+    let top = (percentile(&twice_distances, count, TOP_PERCENTILE) - f64::from(offset)) / 2.0;
+    if top < AIM_MIN_TOP_LEVELS {
         return Vec::new();
     }
-    let d = |v: u8| (2 * v as i32 - bg2) as f64 / 2.0;
-    let sub: Vec<u8> = band.chunks(AW).flat_map(|r| r[c0..c1].iter().copied()).collect();
-    let ink: Vec<bool> = sub.iter().map(|&v| d(v) > 0.5 * top).collect();
-    let strength: Vec<f32> = sub.iter().map(|&v| (d(v) / top).clamp(0.0, 1.0) as f32).collect();
-    spans((0..w).map(|x| (0..AH).any(|y| ink[y * w + x])), 1)
+    let distance = |level: u8| (2 * level as i32 - twice_background) as f64 / 2.0;
+    let ink_pixels: Vec<bool> = levels.iter().map(|&level| distance(level) > INK_SHARE_OF_TOP * top).collect();
+    let strength: Vec<f32> = levels.iter().map(|&level| (distance(level) / top).clamp(0.0, 1.0) as f32).collect();
+    let ink = Ink { pixels: &ink_pixels, width };
+    spans(ink.columns(), 1)
         .into_iter()
-        .filter(|&(a, c)| {
-            let runs = spans((0..AH).map(|y| ink[y * w + a..y * w + c].iter().any(|&v| v)), 1);
-            let gh = runs.last().map_or(0, |r| r.1) - runs.first().map_or(0, |r| r.0);
-            !(runs.len() >= 2 && (c - a) as f64 <= 0.5 * gh as f64) // the colon: two dots
-        })
-        .filter_map(|p| cut(&strength, &ink, w, p))
+        .filter(|&columns| !is_colon(ink, columns))
+        .filter_map(|columns| cut(&strength, ink, columns))
         .collect()
+}
+
+/// Whether the glyph at columns a..b is the colon: two dots or more, narrow for their height.
+fn is_colon(ink: Ink, (a, b): (usize, usize)) -> bool {
+    let dots = spans(ink.rows((a, b)), 1);
+    let height = dots.last().map_or(0, |dot| dot.1) - dots.first().map_or(0, |dot| dot.0);
+    dots.len() >= 2 && (b - a) as f64 <= COLON_MAX_ASPECT * height as f64
 }
 
 // ---- what each frame keeps ------------------------------------------------------------------------------------------
@@ -624,14 +965,14 @@ fn aim_glyphs(band: &[u8], (c0, c1): (usize, usize)) -> Vec<Cut> {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Glyph {
     image: u32,
-    h: u16,
-    w: u16,
+    height: u16,
+    width: u16,
 }
 
 /// The glyphs each frame read in each row: the distinct lines of glyphs, and each row's line frame by frame.
 #[derive(Clone, Debug, PartialEq)]
 struct Store {
-    /// The glyph images, GLYPH bytes each (the ink's strength, 0 to 255).
+    /// The glyph images, GLYPH_PIXELS bytes each (the ink's strength, 0 to 255).
     images: Vec<u8>,
     /// The distinct lines of glyphs; line 0 is the empty one.
     lines: Vec<Box<[Glyph]>>,
@@ -645,26 +986,37 @@ impl Default for Store {
     }
 }
 
+/// Whether two glyph images are near enough to be the same glyph (NEAR_MAX, NEAR_SUM).
 fn near(a: &[u8], b: &[u8]) -> bool {
     let mut sum = 0;
-    for (&x, &y) in a.iter().zip(b) {
-        let d = x.abs_diff(y);
-        if d > NEAR_MAX {
+    for (&level_a, &level_b) in a.iter().zip(b) {
+        let difference = level_a.abs_diff(level_b);
+        if difference > NEAR_MAX {
             return false;
         }
-        sum += d as u32;
+        sum += difference as u32;
     }
     sum <= NEAR_SUM
 }
 
 impl Store {
-    fn image(&self, i: u32) -> &[u8] {
-        &self.images[i as usize * GLYPH..(i as usize + 1) * GLYPH]
+    fn image(&self, index: u32) -> &[u8] {
+        &self.images[index as usize * GLYPH_PIXELS..(index as usize + 1) * GLYPH_PIXELS]
+    }
+
+    /// Whether a stored glyph and a cut are the same glyph: the same ink size and a near image.
+    fn same_glyph(&self, glyph: &Glyph, cut: &Cut) -> bool {
+        glyph.height == cut.height && glyph.width == cut.width && near(self.image(glyph.image), &cut.image)
+    }
+
+    /// A line's tall glyphs, in a band `band` rows high.
+    fn tall_glyphs(&self, line: u32, band: usize) -> impl Iterator<Item = &Glyph> {
+        self.lines[line as usize].iter().filter(move |glyph| tall(glyph, band))
     }
 
     fn add_run(&mut self, row: usize, line: u32, frames: u32) {
         match self.rows[row].last_mut() {
-            Some(r) if r.0 == line => r.1 += frames,
+            Some(last) if last.0 == line => last.1 += frames,
             _ if frames > 0 => self.rows[row].push((line, frames)),
             _ => {}
         }
@@ -672,62 +1024,60 @@ impl Store {
 
     /// One frame's glyphs in a row: the row's line before when they are the same glyphs, else a new line, whose
     /// glyphs reuse the images of the row's `recent` glyphs they are the same as (a number changes a digit at a time).
-    fn push(&mut self, row: usize, cuts: Vec<Cut>, recent: &mut Capped<Glyph, RECENT>) {
-        let last = self.rows[row].last().map_or(0, |r| r.0);
-        let same = |s: &Store| {
-            let l = &s.lines[last as usize];
-            l.len() == cuts.len()
-                && l.iter().zip(&cuts).all(|(g, c)| g.h == c.h && g.w == c.w && near(s.image(g.image), &c.image))
-        };
+    fn push(&mut self, row: usize, cuts: Vec<Cut>, recent: &mut Capped<Glyph, RECENT_GLYPHS>) {
+        let last = self.rows[row].last().map_or(0, |run| run.0);
         let line = if cuts.is_empty() {
             0
-        } else if same(self) {
+        } else if self.is_line(last, &cuts) {
             last
         } else {
-            let line = cuts
-                .iter()
-                .map(|c| {
-                    let same = |g: &&Glyph| g.h == c.h && g.w == c.w && near(self.image(g.image), &c.image);
-                    if let Some(&g) = recent.iter().rev().find(same) {
-                        return g;
-                    }
-                    self.images.extend_from_slice(&c.image);
-                    let g = Glyph { image: (self.images.len() / GLYPH - 1) as u32, h: c.h, w: c.w };
-                    if recent.len() == RECENT {
-                        recent.remove(0);
-                    }
-                    recent.push(g);
-                    g
-                })
-                .collect();
-            self.lines.push(line);
+            let glyphs = cuts.iter().map(|cut| self.stored_glyph(cut, recent)).collect();
+            self.lines.push(glyphs);
             (self.lines.len() - 1) as u32
         };
         self.add_run(row, line, 1);
     }
 
-    /// A row's line in each frame.
-    fn per_frame(&self, row: usize) -> Vec<u32> {
-        self.rows[row].iter().flat_map(|&(l, n)| std::iter::repeat_n(l, n as usize)).collect()
+    /// Whether `line` has the same glyphs as `cuts`.
+    fn is_line(&self, line: u32, cuts: &[Cut]) -> bool {
+        let glyphs = &self.lines[line as usize];
+        glyphs.len() == cuts.len() && glyphs.iter().zip(cuts).all(|(glyph, cut)| self.same_glyph(glyph, cut))
     }
 
-    /// The next run's store after this one's, its first `drop` frames left out.
-    fn append(&mut self, next: Store, drop: usize) {
-        let images = (self.images.len() / GLYPH) as u32;
-        let lines = self.lines.len() as u32 - 1;
+    /// A cut's glyph: a recent glyph that is the same, else a new image, which becomes a recent glyph.
+    fn stored_glyph(&mut self, cut: &Cut, recent: &mut Capped<Glyph, RECENT_GLYPHS>) -> Glyph {
+        if let Some(&glyph) = recent.iter().rev().find(|glyph| self.same_glyph(glyph, cut)) {
+            return glyph;
+        }
+        self.images.extend_from_slice(&cut.image);
+        let image = (self.images.len() / GLYPH_PIXELS - 1) as u32;
+        let glyph = Glyph { image, height: cut.height, width: cut.width };
+        if recent.len() == RECENT_GLYPHS {
+            recent.remove(0);
+        }
+        recent.push(glyph);
+        glyph
+    }
+
+    /// A row's line in each frame.
+    fn per_frame(&self, row: usize) -> Vec<u32> {
+        self.rows[row].iter().flat_map(|&(line, frames)| repeat_n(line, frames as usize)).collect()
+    }
+
+    /// The next run part's store after this one's, its first `left_out` frames left out.
+    fn append(&mut self, next: Store, left_out: usize) {
+        let image_offset = (self.images.len() / GLYPH_PIXELS) as u32;
+        let line_offset = self.lines.len() as u32 - 1;
         self.images.extend(next.images);
-        self.lines.extend(
-            next.lines
-                .into_iter()
-                .skip(1)
-                .map(|l| l.into_iter().map(|g| Glyph { image: g.image + images, ..g }).collect()),
-        );
+        self.lines.extend(next.lines.into_iter().skip(1).map(|line| {
+            line.into_iter().map(|glyph| Glyph { image: glyph.image + image_offset, ..glyph }).collect()
+        }));
         for (row, runs) in next.rows.into_iter().enumerate() {
-            let mut drop = drop as u32;
-            for (l, n) in runs {
-                let left = n - drop.min(n);
-                drop -= n - left;
-                self.add_run(row, if l == 0 { 0 } else { l + lines }, left);
+            let mut to_drop = left_out as u32;
+            for (line, frames) in runs {
+                let kept = frames - to_drop.min(frames);
+                to_drop -= frames - kept;
+                self.add_run(row, if line == 0 { 0 } else { line + line_offset }, kept);
             }
         }
     }
@@ -735,12 +1085,13 @@ impl Store {
 
 // ---- the watch ------------------------------------------------------------------------------------------------------
 
-/// A run's part of the watch (a review split into runs: each run's watch reads its own frames, the page joins them).
+/// A run part's share of the watch (a review split into run parts: each part's watch reads its own frames, the page
+/// joins them).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "PartText", into = "PartText")]
 pub struct HudPart {
     frames: usize,
-    /// KovaaK's box, None without one (each run's watch works it out from the same key frames).
+    /// KovaaK's box, None without one (each run part's watch works it out from the same key frames).
     layout: Option<Layout>,
     /// The box's text rows, None without a box.
     session: Option<SessionRows>,
@@ -769,7 +1120,7 @@ struct PartText {
     layout: Option<Layout>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     session: Option<SessionRows>,
-    /// The glyph images, GLYPH bytes each, as hex.
+    /// The glyph images, GLYPH_PIXELS bytes each, as hex.
     images: String,
     /// Each line's glyphs after the empty line 0: [image, ink height, ink width].
     lines: Vec<Vec<[u32; 3]>>,
@@ -778,17 +1129,17 @@ struct PartText {
 }
 
 impl From<HudPart> for PartText {
-    fn from(p: HudPart) -> PartText {
+    fn from(part: HudPart) -> PartText {
         PartText {
-            frames: p.frames,
-            layout: p.layout,
-            session: p.session,
-            images: p.store.images.iter().map(|b| format!("{b:02x}")).collect(),
-            lines: p.store.lines[1..]
+            frames: part.frames,
+            layout: part.layout,
+            session: part.session,
+            images: part.store.images.iter().map(|byte| format!("{byte:02x}")).collect(),
+            lines: part.store.lines[1..]
                 .iter()
-                .map(|l| l.iter().map(|g| [g.image, g.h as u32, g.w as u32]).collect())
+                .map(|line| line.iter().map(|glyph| [glyph.image, glyph.height as u32, glyph.width as u32]).collect())
                 .collect(),
-            rows: p.store.rows.map(|r| r.into_iter().map(|(l, n)| [l, n]).collect()),
+            rows: part.store.rows.map(|runs| runs.into_iter().map(|(line, frames)| [line, frames]).collect()),
         }
     }
 }
@@ -796,55 +1147,58 @@ impl From<HudPart> for PartText {
 impl TryFrom<PartText> for HudPart {
     type Error = String;
 
-    fn try_from(t: PartText) -> Result<HudPart, String> {
-        let images = (0..t.images.len())
-            .step_by(2)
-            .map(|i| t.images.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok()))
-            .collect::<Option<Vec<u8>>>()
-            .filter(|b| b.len() % GLYPH == 0)
+    fn try_from(text: PartText) -> Result<HudPart, String> {
+        let images = from_hex(&text.images)
+            .filter(|bytes| bytes.len() % GLYPH_PIXELS == 0)
             .ok_or("a HUD part's images are not hex glyphs")?;
-        let count = (images.len() / GLYPH) as u32;
+        let count = (images.len() / GLYPH_PIXELS) as u32;
         let mut lines = vec![Box::default()];
-        for l in t.lines {
-            let line = l
+        for line in text.lines {
+            let glyphs = line
                 .into_iter()
-                .map(|[image, h, w]| {
-                    (image < count && h <= u16::MAX as u32 && w <= u16::MAX as u32).then_some(Glyph {
+                .map(|[image, height, width]| {
+                    (image < count && height <= u16::MAX as u32 && width <= u16::MAX as u32).then_some(Glyph {
                         image,
-                        h: h as u16,
-                        w: w as u16,
+                        height: height as u16,
+                        width: width as u16,
                     })
                 })
                 .collect::<Option<Box<[Glyph]>>>()
                 .ok_or("a HUD part's line has a glyph it does not have")?;
-            lines.push(line);
+            lines.push(glyphs);
         }
         let mut rows: [Vec<(u32, u32)>; ROWS] = Default::default();
-        for (row, runs) in rows.iter_mut().zip(t.rows) {
-            if runs.iter().any(|&[l, _]| l as usize >= lines.len())
-                || runs.iter().map(|&[_, n]| n as usize).sum::<usize>() != t.frames
+        for (row, runs) in rows.iter_mut().zip(text.rows) {
+            if runs.iter().any(|&[line, _]| line as usize >= lines.len())
+                || runs.iter().map(|&[_, frames]| frames as usize).sum::<usize>() != text.frames
             {
                 return Err("a HUD part's rows do not match its lines or frames".into());
             }
-            *row = runs.into_iter().map(|[l, n]| (l, n)).collect();
+            *row = runs.into_iter().map(|[line, frames]| (line, frames)).collect();
         }
-        Ok(HudPart { frames: t.frames, layout: t.layout, session: t.session, store: Store { images, lines, rows } })
+        let store = Store { images, lines, rows };
+        Ok(HudPart { frames: text.frames, layout: text.layout, session: text.session, store })
     }
 }
 
+/// Bytes from hex, two digits each; None when it is not hex.
+fn from_hex(text: &str) -> Option<Vec<u8>> {
+    (0..text.len()).step_by(2).map(|i| text.get(i..i + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok())).collect()
+}
+
 /// Reads a recording's HUD: first every key frame (`add_key`, for where KovaaK's box and its rows are), then every
-/// frame in order (`add`), then `finish`. A review split into runs gives each run a watch that reads every key frame
-/// and then only its run's frames (and the next run's first, as the camera watch does); `part` and `join` put them
-/// together.
+/// frame in order (`add`), then `finish`. A review split into run parts gives each part a watch that reads every key
+/// frame and then only its part's frames (and the next part's first, as the camera watch does); `part` and `join` put
+/// them together.
 pub struct HudWatch {
     width: usize,
     height: usize,
     /// The Y levels as read: a limited-range recording's stretched to 0..255.
-    lut: [u8; 256],
+    levels: [u8; 256],
     region: Scale,
     aim: Scale,
     /// The key frames' box regions (BW x BH), every `key_step`-th of the `keys_seen`.
-    keys: Capped<Box<[u8]>, { KEYS + 1 }>,
+    keys: Capped<Box<[u8]>, { MAX_KEY_FRAMES + 1 }>,
     keys_seen: usize,
     key_step: usize,
     /// KovaaK's box: None until worked out (at the first frame), then Some(None) when there is none.
@@ -854,20 +1208,16 @@ pub struct HudWatch {
     frames: usize,
     store: Store,
     /// Each row's latest new glyphs, whose images a new line can reuse.
-    recent: [Capped<Glyph, RECENT>; ROWS],
+    recent: [Capped<Glyph, RECENT_GLYPHS>; ROWS],
 }
 
 impl HudWatch {
     /// For a recording whose frames are `width` x `height`; `full_range`: its Y spans 0..255 (else 16..235).
     pub fn new(width: usize, height: usize, full_range: bool) -> HudWatch {
-        let mut lut = [0u8; 256];
-        for (v, l) in lut.iter_mut().enumerate() {
-            *l = if full_range { v as u8 } else { ((v as f64 - 16.0) * 255.0 / 219.0).round().clamp(0.0, 255.0) as u8 };
-        }
         HudWatch {
             width,
             height,
-            lut,
+            levels: read_levels(full_range),
             region: Scale::new(width, height, BOX, (BW, BH), Filter::Area),
             aim: Scale::new(width, height, AIM_BAND, (AW, AH), Filter::Cubic),
             keys: Capped::new(),
@@ -881,18 +1231,18 @@ impl HudWatch {
         }
     }
 
-    fn readable(&self, y: &[u8]) -> bool {
-        self.width > 0 && self.height > 0 && y.len() >= self.width * self.height
+    fn readable(&self, luma: &[u8]) -> bool {
+        self.width > 0 && self.height > 0 && luma.len() >= self.width * self.height
     }
 
     /// One key frame's Y plane (`width` x `height` bytes), in order, before any frame is added.
-    pub fn add_key(&mut self, y: &[u8]) {
-        if self.layout.is_some() || !self.readable(y) {
+    pub fn add_key(&mut self, luma: &[u8]) {
+        if self.layout.is_some() || !self.readable(luma) {
             return;
         }
         if self.keys_seen.is_multiple_of(self.key_step) {
-            self.keys.push(self.region.rect(y, &self.lut, 0..BH, 0..BW));
-            if self.keys.len() > KEYS {
+            self.keys.push(self.region.rect(luma, &self.levels, 0..BH, 0..BW));
+            if self.keys.len() > MAX_KEY_FRAMES {
                 let kept = std::mem::take(&mut self.keys).into_iter().step_by(2).collect();
                 self.keys = kept;
                 self.key_step *= 2;
@@ -907,22 +1257,9 @@ impl HudWatch {
             return;
         }
         let keys = std::mem::take(&mut self.keys);
-        let (layout, session) = if keys.len() < 3 {
-            (None, None)
-        } else {
-            let mut px = vec![0u8; keys.len()];
-            let med: Vec<f64> = (0..BW * BH)
-                .map(|i| {
-                    px.iter_mut().zip(&keys).for_each(|(p, k)| *p = k[i]);
-                    px.sort_unstable();
-                    let n = px.len();
-                    if n % 2 == 1 { px[n / 2] as f64 } else { (px[n / 2 - 1] as f64 + px[n / 2] as f64) / 2.0 }
-                })
-                .collect();
-            layout(&med)
-        };
-        self.layout = Some(layout);
-        self.session = session;
+        let found = if keys.len() < MIN_KEY_FRAMES { HudKeys::default() } else { find_box(&median_of_keys(&keys)) };
+        self.layout = Some(found.layout);
+        self.session = found.session;
     }
 
     /// KovaaK's session box's text rows from the key frames (python/hud.py's layout, as src/areas.rs needs it), or None
@@ -955,22 +1292,22 @@ impl HudWatch {
     }
 
     /// One frame's Y plane (`width` x `height` bytes), in order.
-    pub fn add(&mut self, y: &[u8]) {
+    pub fn add(&mut self, luma: &[u8]) {
         self.work_out_layout();
         let mut cuts: [Vec<Cut>; ROWS] = Default::default();
-        if self.readable(y) {
-            if let Some(Some(l)) = self.layout {
-                for (row, r) in [(KILLS, l.kills), (ACCURACY, l.accuracy)] {
-                    let band = self.region.rect(y, &self.lut, r.y0..r.y1, l.x0..l.x1);
-                    cuts[row] = value_glyphs(&band, l.x1 - l.x0, r.start);
+        if self.readable(luma) {
+            if let Some(Some(layout)) = self.layout {
+                for (row, value_row) in [(KILL_COUNT_ROW, layout.kills), (ACCURACY_ROW, layout.accuracy)] {
+                    let band = self.region.rect(luma, &self.levels, value_row.y0..value_row.y1, layout.x0..layout.x1);
+                    cuts[row] = value_glyphs(&band, layout.x1 - layout.x0, value_row.start);
                 }
             }
-            let band = self.aim.rect(y, &self.lut, 0..AH, 0..AW);
-            cuts[POINTS] = aim_glyphs(&band, AIM_POINTS);
-            cuts[TIME] = aim_glyphs(&band, AIM_TIME);
+            let band = self.aim.rect(luma, &self.levels, 0..AH, 0..AW);
+            cuts[POINTS_ROW] = aim_glyphs(&band, AIM_POINTS);
+            cuts[TIME_ROW] = aim_glyphs(&band, AIM_TIME);
         }
-        for ((row, c), recent) in cuts.into_iter().enumerate().zip(&mut self.recent) {
-            self.store.push(row, c, recent);
+        for ((row, row_cuts), recent) in cuts.into_iter().enumerate().zip(&mut self.recent) {
+            self.store.push(row, row_cuts, recent);
         }
         self.frames += 1;
     }
@@ -980,28 +1317,29 @@ impl HudWatch {
         self.frames
     }
 
-    /// The run's part of the watch.
+    /// The run part's share of the watch.
     pub fn part(mut self) -> HudPart {
         self.work_out_layout();
         HudPart { frames: self.frames, layout: self.layout.flatten(), session: self.session, store: self.store }
     }
 
-    /// The next run's part. Each run but the last also reads the next run's first frame, so when the watch already has
-    /// frames the next part's first frame is left out. A watch that read no key frames takes the parts' box.
+    /// The next run part's share. Each part but the last also reads the next part's first frame, so when the watch
+    /// already has frames the next part's first frame is left out. A watch that read no key frames takes the parts'
+    /// box.
     pub fn join(&mut self, next: HudPart) {
         if self.layout.is_none() {
             self.layout = Some(next.layout);
             self.session = next.session;
         }
-        let drop = usize::from(self.frames > 0);
-        self.store.append(next.store, drop);
-        self.frames += next.frames.saturating_sub(drop);
+        let left_out = usize::from(self.frames > 0);
+        self.store.append(next.store, left_out);
+        self.frames += next.frames.saturating_sub(left_out);
     }
 
     /// What the HUD read; None when there is no readable HUD (the review then finds the kills in the video alone).
     pub fn finish(mut self) -> Option<HudReading> {
         self.work_out_layout();
-        self.layout.flatten().and_then(|l| kovaak(&self.store, &l)).or_else(|| aimlab(&self.store))
+        self.layout.flatten().and_then(|layout| kovaak(&self.store, &layout)).or_else(|| aimlab(&self.store))
     }
 }
 
@@ -1012,16 +1350,27 @@ impl HudWatch {
 struct Shapes<'a> {
     store: &'a Store,
     same: f64,
-    shapes: Vec<[f32; GLYPH]>,
+    shapes: Vec<[f32; GLYPH_PIXELS]>,
     norms: Vec<f64>,
-    count: Vec<u32>,
+    /// How many glyphs each shape has taken.
+    glyph_counts: Vec<u32>,
     /// Bumped whenever a shape changes; each image's most alike shape is kept with the version it was found at.
     version: u32,
-    memo: Vec<Option<(u32, Option<usize>)>>,
+    alike_cache: Vec<Option<(u32, Option<usize>)>>,
 }
 
-fn norm(v: impl Iterator<Item = f32>) -> f64 {
-    (v.map(|x| x * x).sum::<f32>() as f64).sqrt()
+fn norm(values: impl Iterator<Item = f32>) -> f64 {
+    (values.map(|x| x * x).sum::<f32>() as f64).sqrt()
+}
+
+/// An image divided by its length (MIN_NORM at least), so its length is 1.
+fn to_unit(image: [f32; GLYPH_PIXELS]) -> [f32; GLYPH_PIXELS] {
+    let length = norm(image.iter().copied()).max(MIN_NORM) as f32;
+    image.map(|x| x / length)
+}
+
+fn dot(a: &[f32], b: &[f32]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>() as f64
 }
 
 impl<'a> Shapes<'a> {
@@ -1031,156 +1380,192 @@ impl<'a> Shapes<'a> {
             same,
             shapes: Vec::new(),
             norms: Vec::new(),
-            count: Vec::new(),
+            glyph_counts: Vec::new(),
             version: 0,
-            memo: vec![None; store.images.len() / GLYPH],
+            alike_cache: vec![None; store.images.len() / GLYPH_PIXELS],
         }
     }
 
-    fn glyph(&self, image: u32) -> [f32; GLYPH] {
+    fn glyph(&self, image: u32) -> [f32; GLYPH_PIXELS] {
         let image = self.store.image(image);
-        std::array::from_fn(|k| image[k] as f32 / 255.0)
+        std::array::from_fn(|i| image[i] as f32 / 255.0)
     }
 
-    fn best(&self, image: u32) -> Option<usize> {
-        let g = self.glyph(image);
-        let gn = norm(g.iter().copied()).max(1e-6);
+    fn unit_glyph(&self, image: u32) -> [f32; GLYPH_PIXELS] {
+        to_unit(self.glyph(image))
+    }
+
+    /// The shape most alike to an image, when one is at least `same` alike.
+    fn most_alike(&self, image: u32) -> Option<usize> {
+        let glyph = self.glyph(image);
+        let glyph_norm = norm(glyph.iter().copied()).max(MIN_NORM);
         let mut best: Option<(f64, usize)> = None;
-        for (k, (s, &sn)) in self.shapes.iter().zip(&self.norms).enumerate() {
-            let sim = g.iter().zip(s).map(|(a, b)| a * b).sum::<f32>() as f64 / gn / sn.max(1e-6);
-            if sim >= self.same && best.is_none_or(|(b, _)| sim > b) {
-                best = Some((sim, k));
+        for (shape, (pixels, &shape_norm)) in self.shapes.iter().zip(&self.norms).enumerate() {
+            let likeness = dot(&glyph, pixels) / glyph_norm / shape_norm.max(MIN_NORM);
+            if likeness >= self.same && best.is_none_or(|(best_likeness, _)| likeness > best_likeness) {
+                best = Some((likeness, shape));
             }
         }
-        best.map(|b| b.1)
+        best.map(|(_, shape)| shape)
     }
 
-    /// The glyph's shape; -1 when it is like none and `learn` is off.
+    /// The glyph's shape; NO_SHAPE when it is like none and `learn` is off.
     fn id(&mut self, image: u32, learn: bool) -> i32 {
-        let best = match self.memo[image as usize] {
-            Some((v, b)) if v == self.version => b,
+        let best = match self.alike_cache[image as usize] {
+            Some((version, best)) if version == self.version => best,
             _ => {
-                let b = self.best(image);
-                self.memo[image as usize] = Some((self.version, b));
-                b
+                let best = self.most_alike(image);
+                self.alike_cache[image as usize] = Some((self.version, best));
+                best
             }
         };
-        let k = match best {
-            Some(k) => k,
-            None if !learn => return -1,
-            None => {
-                let g = self.glyph(image);
-                self.norms.push(norm(g.iter().copied()));
-                self.shapes.push(g);
-                self.count.push(0);
-                self.version += 1;
-                self.shapes.len() - 1
-            }
+        let shape = match best {
+            Some(shape) => shape,
+            None if !learn => return NO_SHAPE,
+            None => self.add_shape(image),
         };
-        self.count[k] += 1;
+        self.glyph_counts[shape] += 1;
         // the shape is the mean of its first Kill Count glyphs (the Accuracy row's slashes and brackets, cut into
         // pieces, would blur it)
-        if learn && self.count[k] <= 50 && self.count[k] > 1 {
-            let (g, n) = (self.glyph(image), self.count[k] as f32);
-            self.shapes[k].iter_mut().zip(&g).for_each(|(s, &v)| *s += (v - *s) / n);
-            self.norms[k] = norm(self.shapes[k].iter().copied());
+        let glyph_count = self.glyph_counts[shape];
+        if learn && glyph_count <= SHAPE_MEAN_GLYPHS && glyph_count > 1 {
+            let (glyph, count) = (self.glyph(image), glyph_count as f32);
+            self.shapes[shape].iter_mut().zip(&glyph).for_each(|(mean, &level)| *mean += (level - *mean) / count);
+            self.norms[shape] = norm(self.shapes[shape].iter().copied());
             self.version += 1;
         }
-        k as i32
+        shape as i32
     }
 
-    fn unit(&self, k: usize) -> [f32; GLYPH] {
-        let n = self.norms[k].max(1e-6) as f32;
-        self.shapes[k].map(|v| v / n)
+    /// A new shape: the image's glyph.
+    fn add_shape(&mut self, image: u32) -> usize {
+        let glyph = self.glyph(image);
+        self.norms.push(norm(glyph.iter().copied()));
+        self.shapes.push(glyph);
+        self.glyph_counts.push(0);
+        self.version += 1;
+        self.shapes.len() - 1
+    }
+
+    /// A line's tall glyphs (in a band `band` rows high) as shapes, learning new ones; None without any.
+    fn learn_line(&mut self, line: u32, band: usize) -> Option<Vec<i32>> {
+        let store = self.store;
+        let ids: Vec<i32> = store.tall_glyphs(line, band).map(|glyph| self.id(glyph.image, true)).collect();
+        (!ids.is_empty()).then_some(ids)
+    }
+
+    fn unit(&self, shape: usize) -> [f32; GLYPH_PIXELS] {
+        let length = self.norms[shape].max(MIN_NORM) as f32;
+        self.shapes[shape].map(|x| x / length)
     }
 }
 
-fn dot(a: &[f32], b: &[f32]) -> f64 {
-    a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>() as f64
+/// A reading that stays the same over the frames first..=last.
+struct Stretch<T> {
+    reading: T,
+    first: usize,
+    last: usize,
 }
 
-/// Stable readings: (reading, first frame, last frame) for each stretch of 3 frames or more (python/hud.py: _runs).
-fn runs<T: Clone + PartialEq>(readings: &[Option<T>]) -> Vec<(T, usize, usize)> {
-    let mut out: Vec<(Option<T>, usize, usize)> = Vec::new();
-    for (i, r) in readings.iter().enumerate() {
-        match out.last_mut() {
-            Some(last) if last.0 == *r => last.2 = i,
-            _ => out.push((r.clone(), i, i)),
+/// The stable readings: each stretch of STABLE_FRAMES frames or more with the same reading (python/hud.py: _runs).
+fn stable_stretches<T: Clone + PartialEq>(readings: &[Option<T>]) -> Vec<Stretch<T>> {
+    let mut stretches: Vec<Stretch<Option<T>>> = Vec::new();
+    for (frame, reading) in readings.iter().enumerate() {
+        match stretches.last_mut() {
+            Some(last) if last.reading == *reading => last.last = frame,
+            _ => stretches.push(Stretch { reading: reading.clone(), first: frame, last: frame }),
         }
     }
-    out.into_iter().filter(|r| r.2 - r.1 + 1 >= 3).filter_map(|(r, a, b)| r.map(|r| (r, a, b))).collect()
+    stretches
+        .into_iter()
+        .filter(|stretch| stretch.last - stretch.first + 1 >= STABLE_FRAMES)
+        .filter_map(|stretch| Some(Stretch { reading: stretch.reading?, first: stretch.first, last: stretch.last }))
+        .collect()
 }
 
 /// Counts in the order first seen (Python's Counter: most_common keeps that order among equal counts).
 struct Counter<K>(Vec<(K, usize)>);
 
 impl<K: PartialEq + Copy> Counter<K> {
-    fn add(&mut self, k: K) {
-        match self.0.iter_mut().find(|e| e.0 == k) {
-            Some(e) => e.1 += 1,
-            None => self.0.push((k, 1)),
+    fn new() -> Counter<K> {
+        Counter(Vec::new())
+    }
+
+    fn add(&mut self, key: K) {
+        match self.0.iter_mut().find(|entry| entry.0 == key) {
+            Some(entry) => entry.1 += 1,
+            None => self.0.push((key, 1)),
         }
     }
 
     fn most_common(&self) -> Vec<(K, usize)> {
-        let mut v = self.0.clone();
-        v.sort_by_key(|e| std::cmp::Reverse(e.1));
-        v
+        let mut sorted = self.0.clone();
+        sorted.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+        sorted
     }
 
     fn top(&self) -> Option<K> {
         self.0
             .iter()
-            .fold(None, |best: Option<(K, usize)>, &e| if best.is_none_or(|b| e.1 > b.1) { Some(e) } else { best })
-            .map(|e| e.0)
+            .fold(None, |best: Option<(K, usize)>, &entry| {
+                if best.is_none_or(|best| entry.1 > best.1) { Some(entry) } else { best }
+            })
+            .map(|entry| entry.0)
     }
 }
 
 /// Which shape is which digit, from stable readings counting up (python/hud.py: _learn_digits): by shape, its digit.
-fn learn_digits(runs: &[&[i32]], shapes: usize) -> Option<Vec<Option<u8>>> {
-    let (mut zero, mut succ) = (Counter(Vec::new()), Counter(Vec::new()));
-    for w in runs.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let (al, bl) = (a[a.len() - 1], b[b.len() - 1]);
+fn learn_digits(readings: &[&[i32]], shape_count: usize) -> Option<Vec<Option<u8>>> {
+    let (ends_in_zero, next_shape) = step_votes(readings);
+    let zero = ends_in_zero.top()?;
+    let mut next: Vec<(i32, i32)> = Vec::new();
+    for ((shape, after), _) in next_shape.most_common() {
+        if shape != after && !next.iter().any(|pair| pair.0 == shape) && !next.iter().any(|pair| pair.1 == after) {
+            next.push((shape, after));
+        }
+    }
+    let after = |shape: i32| next.iter().find(|pair| pair.0 == shape).map(|pair| pair.1);
+    let mut digits = vec![None; shape_count];
+    let (mut shape, mut seen) = (zero, Capped::<i32, 10>::from_iter([zero]));
+    digits[zero as usize] = Some(0);
+    for digit in 1..10 {
+        shape = after(shape)?;
+        if seen.contains(&shape) {
+            return None;
+        }
+        seen.push(shape);
+        digits[shape as usize] = Some(digit);
+    }
+    (after(shape) == Some(zero)).then_some(digits)
+}
+
+/// What each step between stable readings says: the last shape of a number that ends in 0 (the tens place changed, or
+/// a digit was added), and the last digit's next shape (usually one more kill).
+fn step_votes(readings: &[&[i32]]) -> (Counter<i32>, Counter<(i32, i32)>) {
+    let (mut ends_in_zero, mut next_shape) = (Counter::new(), Counter::new());
+    for pair in readings.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let (a_last, b_last) = (a[a.len() - 1], b[b.len() - 1]);
         // a digit added after the same digits is no count's step (python/hud.py took it as one): it is a glyph that
         // is not part of the number, such as the edge of KovaaK's results panel fading out at the start of a run
         let grew = b.len() == a.len() + 1 && b[..a.len()] != *a;
-        if b.len() == a.len() && a[..a.len() - 1] != b[..b.len() - 1] || grew {
-            zero.add(bl); // the tens place changed (or a digit was added): b ends in 0
+        if (b.len() == a.len() && a[..a.len() - 1] != b[..b.len() - 1]) || grew {
+            ends_in_zero.add(b_last);
         }
         if b.len() == a.len() || grew {
-            succ.add((al, bl)); // usually one more kill: the last digit's next shape
+            next_shape.add((a_last, b_last));
         }
     }
-    let z = zero.top()?;
-    let mut next: Vec<(i32, i32)> = Vec::new();
-    for ((x, y), _) in succ.most_common() {
-        if x != y && !next.iter().any(|e| e.0 == x) && !next.iter().any(|e| e.1 == y) {
-            next.push((x, y));
-        }
-    }
-    let after = |s: i32| next.iter().find(|e| e.0 == s).map(|e| e.1);
-    let mut digits = vec![None; shapes];
-    let (mut s, mut seen) = (z, Capped::<i32, 10>::from_iter([z]));
-    digits[z as usize] = Some(0);
-    for d in 1..10 {
-        s = after(s)?;
-        if seen.contains(&s) {
-            return None;
-        }
-        seen.push(s);
-        digits[s as usize] = Some(d);
-    }
-    (after(s) == Some(z)).then_some(digits)
+    (ends_in_zero, next_shape)
 }
 
 /// The number a reading's shapes spell, if every one is a digit.
 fn number(reading: &[i32], digits: &[Option<u8>]) -> Option<i64> {
-    let ds = reading
+    let reading_digits = reading
         .iter()
-        .map(|&k| digits.get(usize::try_from(k).ok()?).copied().flatten())
+        .map(|&shape| digits.get(usize::try_from(shape).ok()?).copied().flatten())
         .collect::<Option<Vec<u8>>>()?;
-    value(&ds)
+    value(&reading_digits)
 }
 
 /// The number digits spell (None without any).
@@ -1188,370 +1573,346 @@ fn value(digits: &[u8]) -> Option<i64> {
     if digits.is_empty() {
         return None;
     }
-    digits.iter().try_fold(0i64, |v, &d| v.checked_mul(10)?.checked_add(d as i64))
+    digits.iter().try_fold(0i64, |total, &digit| total.checked_mul(10)?.checked_add(digit as i64))
 }
 
-fn tall(g: &Glyph, band: usize) -> bool {
-    g.h as f64 / band as f64 >= 0.5
+/// Whether a glyph is tall in a band `band` rows high.
+fn tall(glyph: &Glyph, band: usize) -> bool {
+    glyph.height as f64 / band as f64 >= TALL_SHARE
 }
 
-fn round3(x: f64) -> f64 {
-    (x * 1000.0).round() / 1000.0
+fn round_to_thousandths(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
 }
 
-/// The Kill Count read: the shapes, the digits, the stable values (value, first frame, last frame) and the share of
-/// steps that were +1.
-type Count<'a> = (Shapes<'a>, Vec<Option<u8>>, Vec<(i64, usize, usize)>, f64);
+/// The Kill Count read: the shapes, the digits, the stable values and the share of steps that were +1.
+struct KillCount<'a> {
+    shapes: Shapes<'a>,
+    digits: Vec<Option<u8>>,
+    values: Vec<Stretch<i64>>,
+    checked: f64,
+}
 
 /// The Kill Count read at one likeness (python/hud.py: _count), or None when the digits are not learned or fewer than
 /// `need` of the steps are +1. The shapes are learned from the Kill Count alone.
-fn count<'a>(store: &'a Store, kill_lines: &[u32], band: usize, same: f64, need: f64) -> Option<Count<'a>> {
+fn count<'a>(store: &'a Store, kill_lines: &[u32], band: usize, same: f64, need: f64) -> Option<KillCount<'a>> {
     let mut shapes = Shapes::new(store, same);
-    let readings: Vec<Option<Vec<i32>>> = kill_lines
-        .iter()
-        .map(|&l| {
-            let ids: Vec<i32> =
-                store.lines[l as usize].iter().filter(|g| tall(g, band)).map(|g| shapes.id(g.image, true)).collect();
-            (!ids.is_empty()).then_some(ids)
-        })
-        .collect();
-    let stable = runs(&readings);
-    let mut digits = learn_digits(&stable.iter().map(|r| r.0.as_slice()).collect::<Vec<_>>(), shapes.shapes.len())?;
-    // in a blurred recording one digit can leave more than one shape: the others join the most alike digit
-    for k in 0..shapes.shapes.len() {
-        if digits[k].is_none() {
-            let u = shapes.unit(k);
-            let best = (0..digits.len())
-                .filter(|&d| digits[d].is_some())
-                .map(|d| (dot(&u, &shapes.unit(d)), d))
-                .fold(None, |b: Option<(f64, usize)>, e| if b.is_none_or(|b| e >= b) { Some(e) } else { b });
-            if let Some((sim, d)) = best
-                && sim >= 0.9
-            {
-                digits[k] = digits[d];
-            }
-        }
-    }
+    let readings: Vec<Option<Vec<i32>>> = kill_lines.iter().map(|&line| shapes.learn_line(line, band)).collect();
+    let stable = stable_stretches(&readings);
+    let stable_readings: Vec<&[i32]> = stable.iter().map(|stretch| stretch.reading.as_slice()).collect();
+    let mut digits = learn_digits(&stable_readings, shapes.shapes.len())?;
+    join_leftover_shapes(&shapes, &mut digits);
     // the stable values, from each frame's number: a digit caught mid-change can leave a shape of its own for a frame
     // or two, which joined its digit above, so the new value is read from its first frame (python/hud.py reads stable
     // shapes, and starts the value up to two frames late)
-    let numbers: Vec<Option<i64>> = readings.iter().map(|r| r.as_ref().and_then(|r| number(r, &digits))).collect();
-    let values = runs(&numbers);
-    let steps: Vec<i64> = values.windows(2).map(|w| w[1].0 - w[0].0).collect();
-    if steps.len() < 3 {
+    let numbers: Vec<Option<i64>> =
+        readings.iter().map(|reading| reading.as_ref().and_then(|reading| number(reading, &digits))).collect();
+    let values = stable_stretches(&numbers);
+    let steps: Vec<i64> = values.windows(2).map(|pair| pair[1].reading - pair[0].reading).collect();
+    if steps.len() < MIN_KILL_COUNT_STEPS {
         return None;
     }
-    let checked = steps.iter().filter(|&&s| s == 1).count() as f64 / steps.len() as f64;
-    (checked >= need).then_some((shapes, digits, values, checked))
+    let checked = steps.iter().filter(|&&step| step == 1).count() as f64 / steps.len() as f64;
+    (checked >= need).then_some(KillCount { shapes, digits, values, checked })
+}
+
+/// In a blurred recording one digit can leave more than one shape: the others join the most alike digit's shape, when
+/// they are DIGIT_LIKENESS alike.
+fn join_leftover_shapes(shapes: &Shapes, digits: &mut [Option<u8>]) {
+    for shape in 0..shapes.shapes.len() {
+        if digits[shape].is_none() {
+            let unit = shapes.unit(shape);
+            let best = (0..digits.len())
+                .filter(|&digit_shape| digits[digit_shape].is_some())
+                .map(|digit_shape| (dot(&unit, &shapes.unit(digit_shape)), digit_shape))
+                .fold(None, |best: Option<(f64, usize)>, entry| {
+                    if best.is_none_or(|best| entry >= best) { Some(entry) } else { best }
+                });
+            if let Some((likeness, digit_shape)) = best
+                && likeness >= DIGIT_LIKENESS
+            {
+                digits[shape] = digits[digit_shape];
+            }
+        }
+    }
 }
 
 /// KovaaK's session box over the recording (python/hud.py: read).
 fn kovaak(store: &Store, layout: &Layout) -> Option<HudReading> {
-    let kill_lines = store.per_frame(KILLS);
+    let kill_lines = store.per_frame(KILL_COUNT_ROW);
     let band = layout.kills.y1 - layout.kills.y0;
-    // a very blurred upload can split one digit into two shapes at the usual likeness, and the digits are not learned;
-    // then looser likenesses are tried, trusting only a Kill Count that counts up by one at almost every step (95%)
-    let (mut shapes, digits, values, checked) = [(SAME, 0.8), (0.96, 0.95), (0.95, 0.95), (0.94, 0.95), (0.93, 0.95)]
-        .into_iter()
-        .find_map(|(same, need)| count(store, &kill_lines, band, same, need))?;
-    // a lone misread between two readings that follow on (0, 9, 1: a 1 caught mid-change) is dropped; it looked like a
-    // restart, which split the run and lost the kills before it. Only a short one: a real restart's 0 between two 1s
-    // stays up for a second or more
-    let n = values.len();
-    let keep: Vec<bool> = (0..n)
-        .map(|i| {
-            i == 0 || i == n - 1 || values[i].2 - values[i].1 > 10 || {
-                let follows = |d: i64| (0..=3).contains(&d);
-                follows(values[i].0 - values[i - 1].0) || !follows(values[i + 1].0 - values[i - 1].0)
-            }
-        })
-        .collect();
-    let values: Vec<(i64, usize, usize)> = values.into_iter().zip(keep).filter(|e| e.1).map(|e| e.0).collect();
-    // a drop is a restart (or the end screen): the run that counts is the stretch between drops with the most kills
-    let mut cuts = vec![0];
-    cuts.extend((1..values.len()).filter(|&i| values[i].0 < values[i - 1].0));
-    cuts.push(values.len());
-    let (a0, a1) =
-        cuts.windows(2).map(|c| (c[0], c[1])).max_by_key(|&(c0, c1)| (values[c1 - 1].0 - values[c0].0, c0))?;
-    let values = &values[a0..a1];
-    let (since, until) = (values[0].1, values[values.len() - 1].2);
-    let mut kills = Vec::new();
-    for w in values.windows(2) {
-        let d = w[1].0 - w[0].0;
-        if 0 < d && d <= 3 {
-            kills.extend(std::iter::repeat_n(w[1].1 as i64, d as usize)); // a bigger jump is a misread
-        }
-    }
-    // Accuracy: hits / shots (percent)
-    let acc_band = layout.accuracy.y1 - layout.accuracy.y0;
-    let acc_lines = store.per_frame(ACCURACY);
-    let mut window: Vec<u32> = acc_lines[since..=until.min(acc_lines.len() - 1)].to_vec();
-    window.sort_unstable();
-    window.dedup();
-    let marks = marks(store, &window, acc_band, &mut shapes, &digits);
-    let mut read: HashMap<u32, Option<(i64, i64)>> = HashMap::new();
-    let acc: Vec<Option<(i64, i64)>> = acc_lines
-        .into_iter()
-        .enumerate()
-        .map(|(i, l)| {
-            if i < since || i > until {
-                return None;
-            }
-            *read.entry(l).or_insert_with(|| accuracy(store, l, acc_band, &mut shapes, &digits, marks.as_ref()))
-        })
-        .collect();
-    let mut acc_runs = runs(&acc);
-    // the Accuracy line is redrawn three times a second, so a run started again first shows the run before's reading
-    // for a moment: a first reading that drops right after is that one. When the Kill Count starts at 0, the counts
-    // of the first reading are the run's first shots and hits (python/hud.py counts only the steps after it)
-    while acc_runs.len() >= 2 && acc_runs[1].0.1 < acc_runs[0].0.1 {
-        acc_runs.remove(0);
-    }
-    let (mut shots, mut hits) = (Vec::new(), Vec::new());
-    if let Some(&((h, s), a, _)) = acc_runs.first()
-        && values[0].0 == 0
-        && s <= 50
-    {
-        shots.extend(std::iter::repeat_n(a as i64, s as usize));
-        hits.extend(std::iter::repeat_n(a as i64, h as usize));
-    }
-    for w in acc_runs.windows(2) {
-        let ((p0, _, _), (p1, a, _)) = (&w[0], &w[1]);
-        let (dh, ds) = (p1.0 - p0.0, p1.1 - p0.1);
-        if (0..=50).contains(&dh) && 0 < ds && ds <= 50 {
-            shots.extend(std::iter::repeat_n(*a as i64, ds as usize));
-            hits.extend(std::iter::repeat_n(*a as i64, dh as usize));
-        }
-    }
+    let KillCount { shapes, digits, values, checked } =
+        KILL_COUNT_TRIES.into_iter().find_map(|(same, need)| count(store, &kill_lines, band, same, need))?;
+    let values = without_lone_misreads(values);
+    let values = counted_values(&values)?;
+    let kills = kill_frames(values);
+    let (since, until) = (values[0].first, values[values.len() - 1].last);
+    let reader = AccuracyReader { shapes, digits, band: layout.accuracy.y1 - layout.accuracy.y0, marks: None };
+    let accuracy = accuracy_stretches(reader, since, until);
+    let mut frames = shot_and_hit_frames(&accuracy, values[0].reading == 0);
     // the totals: the kills counted, and the fullest Accuracy reading (the HUD resets to 0 when the run ends)
-    let mut top = acc_runs
-        .iter()
-        .map(|r| r.0)
-        .fold(None, |b: Option<(i64, i64)>, r| if b.is_none_or(|b| r.1 > b.1) { Some(r) } else { b });
-    // each kill takes a hit. The Accuracy line is redrawn three times a second, and a run can end before it shows its
-    // last kills: those kills' hits (each a shot) are added at their kill frames (python/hud.py gives the last reading)
-    if let Some((h, s)) = top
-        && h < kills.len() as i64
-    {
-        let late = &kills[kills.len() - (kills.len() as i64 - h) as usize..];
-        hits.extend(late);
-        shots.extend(late);
-        hits.sort_unstable();
-        shots.sort_unstable();
-        top = Some((h + late.len() as i64, s + late.len() as i64));
-    }
+    let fullest = accuracy.iter().map(|stretch| stretch.reading).fold(None, |best: Option<(i64, i64)>, reading| {
+        if best.is_none_or(|best| reading.1 > best.1) { Some(reading) } else { best }
+    });
+    let totals = add_late_kills(&mut frames, fullest, &kills);
     Some(HudReading {
         game: HudGame::Kovaak,
-        totals: HudFinal { kills: kills.len() as i64, hits: top.map(|t| t.0), shots: top.map(|t| t.1) },
+        totals: HudFinal {
+            kills: kills.len() as i64,
+            hits: totals.map(|(hits, _)| hits),
+            shots: totals.map(|(_, shots)| shots),
+        },
         kills,
-        shots,
-        hits,
-        checked: round3(checked),
+        shots: frames.shots,
+        hits: frames.hits,
+        checked: round_to_thousandths(checked),
         points: None,
     })
 }
 
-/// The Accuracy line's tall glyphs by the rule of python/hud.py: a digit when it is like a digit shape at the
-/// likeness the Kill Count was read at (Some), else a mark (None).
-fn by_likeness(store: &Store, l: u32, band: usize, shapes: &mut Shapes, digits: &[Option<u8>]) -> Vec<Option<u8>> {
-    store.lines[l as usize]
-        .iter()
-        .filter(|g| tall(g, band))
-        .map(|g| usize::try_from(shapes.id(g.image, false)).ok().and_then(|k| digits[k]))
-        .collect()
+/// The stable values without a lone misread between two values that follow on (0, 9, 1: a 1 caught mid-change): it
+/// looked like a restart, which split the run and lost the kills before it. Only a short one: a real restart's 0
+/// between two 1s stays up for a second or more.
+fn without_lone_misreads(values: Vec<Stretch<i64>>) -> Vec<Stretch<i64>> {
+    let follows = |step: i64| (0..=MAX_KILL_STEP).contains(&step);
+    let keep: Vec<bool> = (0..values.len())
+        .map(|i| {
+            i == 0
+                || i == values.len() - 1
+                || values[i].last - values[i].first > MAX_MISREAD_FRAMES
+                || follows(values[i].reading - values[i - 1].reading)
+                || !follows(values[i + 1].reading - values[i - 1].reading)
+        })
+        .collect();
+    values.into_iter().zip(keep).filter_map(|(value, kept)| kept.then_some(value)).collect()
 }
 
-/// The Accuracy line's "/" and "(" (unit images): the mean of each in the lines that read as digits, the "/", digits
-/// and the "(". None when too few lines did.
-fn marks(
-    store: &Store,
-    lines: &[u32],
-    band: usize,
-    shapes: &mut Shapes,
-    digits: &[Option<u8>],
-) -> Option<[[f32; GLYPH]; 2]> {
-    let mut sums = [[0f32; GLYPH]; 2];
-    let mut counts = [0; 2];
-    for &l in lines {
-        let read = by_likeness(store, l, band, shapes, digits);
-        let mut at = read.iter().enumerate().filter(|e| e.1.is_none()).map(|e| e.0);
-        let (Some(slash), Some(paren)) = (at.next(), at.next()) else {
-            continue;
-        };
-        if slash == 0 || paren == slash + 1 {
-            continue;
+/// The values of the run that counts: a drop is a restart (or the end screen), and the run is the stretch between
+/// drops with the most kills.
+fn counted_values(values: &[Stretch<i64>]) -> Option<&[Stretch<i64>]> {
+    let mut drops = vec![0];
+    drops.extend((1..values.len()).filter(|&i| values[i].reading < values[i - 1].reading));
+    drops.push(values.len());
+    let (start, end) = drops
+        .windows(2)
+        .map(|pair| (pair[0], pair[1]))
+        .max_by_key(|&(start, end)| (values[end - 1].reading - values[start].reading, start))?;
+    Some(&values[start..end])
+}
+
+/// Each kill's frame: every step of up to MAX_KILL_STEP kills counts its kills at the frame its value shows (a bigger
+/// jump is a misread).
+fn kill_frames(values: &[Stretch<i64>]) -> Vec<i64> {
+    let mut kills = Vec::new();
+    for pair in values.windows(2) {
+        let step = pair[1].reading - pair[0].reading;
+        if 0 < step && step <= MAX_KILL_STEP {
+            kills.extend(repeat_n(pair[1].first as i64, step as usize));
         }
-        let glyphs: Vec<&Glyph> = store.lines[l as usize].iter().filter(|g| tall(g, band)).collect();
-        for (k, at) in [slash, paren].into_iter().enumerate() {
-            if counts[k] < 50 {
-                let g = shapes.glyph(glyphs[at].image);
-                let n = norm(g.iter().copied()).max(1e-6) as f32;
-                sums[k].iter_mut().zip(&g).for_each(|(s, v)| *s += v / n);
-                counts[k] += 1;
+    }
+    kills
+}
+
+/// Reads the Accuracy line, hits/shots (percent), with the Kill Count's shapes and digits (`band`: the line's height).
+struct AccuracyReader<'a> {
+    shapes: Shapes<'a>,
+    digits: Vec<Option<u8>>,
+    band: usize,
+    /// The "/" and the "(" as unit images, once they are learned.
+    marks: Option<[[f32; GLYPH_PIXELS]; 2]>,
+}
+
+impl AccuracyReader<'_> {
+    /// A line's tall glyphs by the rule of python/hud.py: a digit when it is like a digit shape at the likeness the
+    /// Kill Count was read at (Some), else a mark (None).
+    fn by_likeness(&mut self, line: u32) -> Vec<Option<u8>> {
+        let store = self.shapes.store;
+        store
+            .tall_glyphs(line, self.band)
+            .map(|glyph| usize::try_from(self.shapes.id(glyph.image, false)).ok().and_then(|shape| self.digits[shape]))
+            .collect()
+    }
+
+    /// The "/" and the "(" (unit images): the mean of each in the `lines` that read as digits, the "/", digits and the
+    /// "(". None when too few lines did.
+    fn find_marks(&mut self, lines: &[u32]) -> Option<[[f32; GLYPH_PIXELS]; 2]> {
+        let mut sums = [[0f32; GLYPH_PIXELS]; 2];
+        let mut counts = [0; 2];
+        let store = self.shapes.store;
+        for &line in lines {
+            let read = self.by_likeness(line);
+            let mut marks_at = read.iter().enumerate().filter(|(_, digit)| digit.is_none()).map(|(at, _)| at);
+            let (Some(slash), Some(paren)) = (marks_at.next(), marks_at.next()) else {
+                continue;
+            };
+            if slash == 0 || paren == slash + 1 {
+                continue;
+            }
+            let glyphs: Vec<&Glyph> = store.tall_glyphs(line, self.band).collect();
+            for (mark, at) in [slash, paren].into_iter().enumerate() {
+                if counts[mark] < MARK_MEAN_LINES {
+                    let unit = self.shapes.unit_glyph(glyphs[at].image);
+                    sums[mark].iter_mut().zip(&unit).for_each(|(sum, level)| *sum += level);
+                    counts[mark] += 1;
+                }
             }
         }
+        if counts.iter().any(|&count| count < MIN_MARK_LINES) {
+            return None;
+        }
+        Some(sums.map(to_unit))
     }
-    if counts.iter().any(|&c| c < 3) {
-        return None;
+
+    /// One Accuracy line's hits and shots. The "/" and the "(" are the tall glyphs that are not digits: hits before the
+    /// first, shots between them. Small or limited-range text can leave a digit just under the Kill Count's likeness
+    /// (python/hud.py then reads it as a mark, and the line as nothing or as no shot yet), so with the marks known each
+    /// glyph is the most alike of the digits, the "/" and the "(" instead.
+    fn read(&mut self, line: u32) -> Option<(i64, i64)> {
+        let read = match self.marks {
+            None => self.by_likeness(line),
+            Some(marks) => self.by_marks(line, &marks),
+        };
+        hits_and_shots(&read)
     }
-    Some(sums.map(|s| {
-        let n = norm(s.iter().copied()).max(1e-6) as f32;
-        s.map(|v| v / n)
-    }))
+
+    /// A line's tall glyphs as the most alike of the digits (Some) and the marks (None).
+    fn by_marks(&self, line: u32, marks: &[[f32; GLYPH_PIXELS]; 2]) -> Vec<Option<u8>> {
+        let prototypes: Vec<([f32; GLYPH_PIXELS], Option<u8>)> = (0..self.digits.len())
+            .filter_map(|shape| self.digits[shape].map(|digit| (self.shapes.unit(shape), Some(digit))))
+            .chain(marks.iter().map(|&mark| (mark, None)))
+            .collect();
+        self.shapes
+            .store
+            .tall_glyphs(line, self.band)
+            .map(|glyph| {
+                let unit = self.shapes.unit_glyph(glyph.image);
+                prototypes
+                    .iter()
+                    .map(|(prototype, digit)| (dot(&unit, prototype), *digit))
+                    .fold((f64::MIN, None), |best, entry| if entry.0 > best.0 { entry } else { best })
+                    .1
+            })
+            .collect()
+    }
 }
 
-/// One Accuracy line's hits and shots. The "/" and the "(" are the tall glyphs that are not digits: hits before the
-/// first, shots between them. Small or limited-range text can leave a digit just under the Kill Count's likeness
-/// (python/hud.py then reads it as a mark, and the line as nothing or as no shot yet), so with the marks known each
-/// glyph is the most alike of the digits, the "/" and the "(" instead.
-fn accuracy(
-    store: &Store,
-    l: u32,
-    band: usize,
-    shapes: &mut Shapes,
-    digits: &[Option<u8>],
-    marks: Option<&[[f32; GLYPH]; 2]>,
-) -> Option<(i64, i64)> {
-    let read = match marks {
-        None => by_likeness(store, l, band, shapes, digits),
-        Some(marks) => {
-            let protos: Vec<([f32; GLYPH], Option<u8>)> = (0..digits.len())
-                .filter_map(|k| digits[k].map(|d| (shapes.unit(k), Some(d))))
-                .chain(marks.iter().map(|&m| (m, None)))
-                .collect();
-            store.lines[l as usize]
-                .iter()
-                .filter(|g| tall(g, band))
-                .map(|g| {
-                    let img = shapes.glyph(g.image);
-                    let n = norm(img.iter().copied()).max(1e-6) as f32;
-                    let u = img.map(|x| x / n);
-                    protos
-                        .iter()
-                        .map(|(p, d)| (dot(&u, p), *d))
-                        .fold((f64::MIN, None), |b, e| if e.0 > b.0 { e } else { b })
-                        .1
-                })
-                .collect()
-        }
-    };
-    let (mut parts, mut cur) = (Vec::new(), Vec::new());
-    for d in &read {
-        match d {
-            Some(d) => cur.push(*d),
-            None => parts.push(std::mem::take(&mut cur)),
+/// The hits and shots an Accuracy line's tall glyphs spell (None: a mark): hits before the first mark, shots before the
+/// second.
+fn hits_and_shots(read: &[Option<u8>]) -> Option<(i64, i64)> {
+    let (mut parts, mut current) = (Vec::new(), Vec::new());
+    for glyph in read {
+        match glyph {
+            Some(digit) => current.push(*digit),
+            None => parts.push(std::mem::take(&mut current)),
         }
     }
     if parts.len() < 2 {
         None
     } else if parts[0].is_empty() && parts[1].is_empty() {
         // "--/-- ( %)": no shot yet (its tall glyphs are the marks and "%)"; a line of unread digits has more)
-        (read.len() <= 4).then_some((0, 0))
+        (read.len() <= NO_SHOT_TALL_GLYPHS).then_some((0, 0))
     } else {
         match (value(&parts[0]), value(&parts[1])) {
-            (Some(h), Some(s)) if h <= s => Some((h, s)),
+            (Some(hits), Some(shots)) if hits <= shots => Some((hits, shots)),
             _ => None,
         }
     }
+}
+
+/// The Accuracy line's stable (hits, shots) over the frames since..=until.
+fn accuracy_stretches(mut reader: AccuracyReader, since: usize, until: usize) -> Vec<Stretch<(i64, i64)>> {
+    let lines = reader.shapes.store.per_frame(ACCURACY_ROW);
+    let mut window: Vec<u32> = lines[since..=until.min(lines.len() - 1)].to_vec();
+    window.sort_unstable();
+    window.dedup();
+    reader.marks = reader.find_marks(&window);
+    let mut read: HashMap<u32, Option<(i64, i64)>> = HashMap::new();
+    let readings: Vec<Option<(i64, i64)>> = lines
+        .into_iter()
+        .enumerate()
+        .map(|(frame, line)| {
+            if frame < since || frame > until {
+                return None;
+            }
+            *read.entry(line).or_insert_with(|| reader.read(line))
+        })
+        .collect();
+    let mut stretches = stable_stretches(&readings);
+    // the Accuracy line is redrawn three times a second, so a run started again first shows the run before's reading
+    // for a moment: a first reading that drops right after is that one
+    while stretches.len() >= 2 && stretches[1].reading.1 < stretches[0].reading.1 {
+        stretches.remove(0);
+    }
+    stretches
+}
+
+/// Each shot's and each hit's frame.
+struct ShotFrames {
+    shots: Vec<i64>,
+    hits: Vec<i64>,
+}
+
+/// Each shot and hit at the frame its Accuracy reading shows it (a step of more than MAX_SHOT_STEP is a misread). When
+/// the Kill Count starts at 0 (`from_zero`), the counts of the first reading are the run's first shots and hits
+/// (python/hud.py counts only the steps after it).
+fn shot_and_hit_frames(accuracy: &[Stretch<(i64, i64)>], from_zero: bool) -> ShotFrames {
+    let mut frames = ShotFrames { shots: Vec::new(), hits: Vec::new() };
+    if let Some(first) = accuracy.first()
+        && from_zero
+        && first.reading.1 <= MAX_SHOT_STEP
+    {
+        let (hits, shots) = first.reading;
+        frames.shots.extend(repeat_n(first.first as i64, shots as usize));
+        frames.hits.extend(repeat_n(first.first as i64, hits as usize));
+    }
+    for pair in accuracy.windows(2) {
+        let (before, after) = (&pair[0], &pair[1]);
+        let (new_hits, new_shots) = (after.reading.0 - before.reading.0, after.reading.1 - before.reading.1);
+        if (0..=MAX_SHOT_STEP).contains(&new_hits) && 0 < new_shots && new_shots <= MAX_SHOT_STEP {
+            frames.shots.extend(repeat_n(after.first as i64, new_shots as usize));
+            frames.hits.extend(repeat_n(after.first as i64, new_hits as usize));
+        }
+    }
+    frames
+}
+
+/// The totals (hits, shots) with the late kills. Each kill takes a hit. The Accuracy line is redrawn three times a
+/// second, and a run can end before it shows its last kills: those kills' hits (each a shot) are added at their kill
+/// frames (python/hud.py gives the last reading).
+fn add_late_kills(frames: &mut ShotFrames, totals: Option<(i64, i64)>, kills: &[i64]) -> Option<(i64, i64)> {
+    if let Some((hits, shots)) = totals
+        && hits < kills.len() as i64
+    {
+        let late = &kills[kills.len() - (kills.len() as i64 - hits) as usize..];
+        frames.hits.extend(late);
+        frames.shots.extend(late);
+        frames.hits.sort_unstable();
+        frames.shots.sort_unstable();
+        return Some((hits + late.len() as i64, shots + late.len() as i64));
+    }
+    totals
 }
 
 /// Aim Lab's HUD (python/hud.py: read_aimlab): every hit counted as a kill (one-hit targets). A hit adds points and a
 /// miss takes some off, so the POINTS number gives every hit and miss. The digits are learned from the TIME box,
 /// which counts down one second at a time (read backwards it counts up, as the Kill Count does).
 fn aimlab(store: &Store) -> Option<HudReading> {
-    let time_lines = store.per_frame(TIME);
-    let mut found = None;
-    for same in [SAME, 0.96, 0.95] {
-        let mut shapes = Shapes::new(store, same);
-        let readings: Vec<Option<Vec<i32>>> = time_lines
-            .iter()
-            .map(|&l| {
-                let line = &store.lines[l as usize];
-                if line.len() != 4 {
-                    return None;
-                }
-                let ids: Vec<i32> = line.iter().filter(|g| tall(g, AH)).map(|g| shapes.id(g.image, true)).collect();
-                (!ids.is_empty()).then_some(ids)
-            })
-            .collect();
-        let runs = runs(&readings);
-        let back: Vec<&[i32]> = runs.iter().rev().map(|r| r.0.as_slice()).collect();
-        let Some(digits) = learn_digits(&back, shapes.shapes.len()) else {
-            continue;
-        };
-        let secs: Vec<i64> =
-            runs.iter().filter_map(|r| number(&r.0, &digits)).map(|v| 60 * (v / 100) + v % 100).collect();
-        let steps: Vec<i64> = secs.windows(2).map(|w| w[0] - w[1]).collect();
-        if steps.len() >= 10 && steps.iter().filter(|&&x| x == 1).count() as f64 >= 0.95 * steps.len() as f64 {
-            found = Some((shapes, digits));
-            break;
+    let time_lines = store.per_frame(TIME_ROW);
+    let (shapes, digits) = TIME_TRIES.into_iter().find_map(|same| time_digits(store, &time_lines, same))?;
+    let points = points_stretches(store, &shapes, &digits);
+    let changes: Vec<(i64, usize)> =
+        points.windows(2).map(|pair| (pair[1].reading - pair[0].reading, pair[1].first)).collect();
+    let (hit, miss) = step_points(&changes)?;
+    let (mut hits, mut misses, mut explained) = (Vec::new(), Vec::new(), 0);
+    for &(change, frame) in &changes {
+        if let Some((step_hits, step_misses)) = step_events(change, hit, miss) {
+            hits.extend(repeat_n(frame as i64, step_hits as usize));
+            misses.extend(repeat_n(frame as i64, step_misses as usize));
+            explained += 1;
         }
     }
-    let (shapes, digits) = found?;
-    // POINTS: each glyph is the most alike digit shape (a minus sign is short and wide)
-    let protos: Vec<([f32; GLYPH], u8)> =
-        digits.iter().enumerate().filter_map(|(k, d)| d.map(|d| (shapes.unit(k), d))).collect();
-    let mut read: HashMap<u32, Option<i64>> = HashMap::new();
-    let vals: Vec<Option<i64>> = store
-        .per_frame(POINTS)
-        .into_iter()
-        .map(|l| {
-            *read.entry(l).or_insert_with(|| {
-                let (mut v, mut sign) = (Vec::new(), 1);
-                for g in &store.lines[l as usize] {
-                    if !tall(g, AH) {
-                        if v.is_empty() && g.w as f64 / g.h as f64 > 1.2 {
-                            sign = -1;
-                        }
-                        continue;
-                    }
-                    let img = shapes.glyph(g.image);
-                    let n = norm(img.iter().copied()).max(1e-6) as f32;
-                    let u = img.map(|x| x / n);
-                    let (sim, d) = protos
-                        .iter()
-                        .map(|(p, d)| (dot(&u, p), *d))
-                        .fold((f64::MIN, 0), |b, e| if e >= b { e } else { b });
-                    if sim < 0.9 {
-                        v.clear();
-                        break;
-                    }
-                    v.push(d);
-                }
-                value(&v).map(|n| sign * n)
-            })
-        })
-        .collect();
-    let runs = runs(&vals);
-    let changes: Vec<(i64, usize)> = runs.windows(2).map(|w| (w[1].0 - w[0].0, w[1].1)).collect();
-    let (mut ups, mut downs) = (Counter(Vec::new()), Counter(Vec::new()));
-    for &(d, _) in &changes {
-        if d > 0 {
-            ups.add(d);
-        } else if d < 0 {
-            downs.add(d);
-        }
-    }
-    let hit = ups.top()?;
-    let miss = downs.top();
-    let (mut hits, mut misses, mut ok) = (Vec::new(), Vec::new(), 0);
-    for &(d, f) in &changes {
-        // a jump of two hits, or a hit and a miss, in one step
-        let best = (0..4i64)
-            .flat_map(|a| (0..if miss.is_some() { 4i64 } else { 1 }).map(move |b| (a, b)))
-            .filter(|&(a, b)| a + b > 0)
-            .map(|(a, b)| ((d - a * hit - b * miss.unwrap_or(0)).abs(), a, b))
-            .min();
-        if let Some((err, a, b)) = best
-            && err as f64 <= 1f64.max(0.15 * hit as f64)
-        {
-            hits.extend(std::iter::repeat_n(f as i64, a as usize));
-            misses.extend(std::iter::repeat_n(f as i64, b as usize));
-            ok += 1;
-        }
-    }
-    let checked = ok as f64 / changes.len().max(1) as f64;
-    if hits.len() < 10 || checked < 0.85 {
+    let checked = explained as f64 / changes.len().max(1) as f64;
+    if hits.len() < MIN_AIM_HITS || checked < MIN_AIM_CHECKED {
         return None;
     }
     let mut shots: Vec<i64> = hits.iter().chain(&misses).copied().collect();
@@ -1566,69 +1927,169 @@ fn aimlab(store: &Store) -> Option<HudReading> {
         kills: hits.clone(),
         shots,
         hits,
-        checked: round3(checked),
-        points: runs.last().map(|r| r.0 as f64),
+        checked: round_to_thousandths(checked),
+        points: points.last().map(|stretch| stretch.reading as f64),
     })
+}
+
+/// The shapes and digits learned from Aim Lab's TIME box at one likeness, when it then counts down one second at a
+/// time.
+fn time_digits<'a>(store: &'a Store, time_lines: &[u32], same: f64) -> Option<(Shapes<'a>, Vec<Option<u8>>)> {
+    let mut shapes = Shapes::new(store, same);
+    let readings: Vec<Option<Vec<i32>>> = time_lines
+        .iter()
+        .map(|&line| {
+            if store.lines[line as usize].len() != TIME_GLYPHS {
+                return None;
+            }
+            shapes.learn_line(line, AH)
+        })
+        .collect();
+    let stable = stable_stretches(&readings);
+    let backwards: Vec<&[i32]> = stable.iter().rev().map(|stretch| stretch.reading.as_slice()).collect();
+    let digits = learn_digits(&backwards, shapes.shapes.len())?;
+    let seconds: Vec<i64> =
+        stable.iter().filter_map(|stretch| number(&stretch.reading, &digits)).map(clock_seconds).collect();
+    let steps: Vec<i64> = seconds.windows(2).map(|pair| pair[0] - pair[1]).collect();
+    let counts_down = steps.len() >= MIN_TIME_STEPS
+        && steps.iter().filter(|&&step| step == 1).count() as f64 >= TIME_STEP_SHARE * steps.len() as f64;
+    counts_down.then_some((shapes, digits))
+}
+
+/// A clock's m:ss, read as the number mss, in seconds.
+fn clock_seconds(clock: i64) -> i64 {
+    60 * (clock / 100) + clock % 100
+}
+
+/// The POINTS number's stable values. Each glyph is the most alike digit shape (a minus sign is short and wide).
+fn points_stretches(store: &Store, shapes: &Shapes, digits: &[Option<u8>]) -> Vec<Stretch<i64>> {
+    let prototypes: Vec<([f32; GLYPH_PIXELS], u8)> = digits
+        .iter()
+        .enumerate()
+        .filter_map(|(shape, digit)| digit.map(|digit| (shapes.unit(shape), digit)))
+        .collect();
+    let mut read: HashMap<u32, Option<i64>> = HashMap::new();
+    let values: Vec<Option<i64>> = store
+        .per_frame(POINTS_ROW)
+        .into_iter()
+        .map(|line| *read.entry(line).or_insert_with(|| points(&store.lines[line as usize], shapes, &prototypes)))
+        .collect();
+    stable_stretches(&values)
+}
+
+/// A POINTS line's number; None when a digit is less than DIGIT_LIKENESS alike to every digit shape.
+fn points(glyphs: &[Glyph], shapes: &Shapes, prototypes: &[([f32; GLYPH_PIXELS], u8)]) -> Option<i64> {
+    let (mut number_digits, mut sign) = (Vec::new(), 1);
+    for glyph in glyphs {
+        if !tall(glyph, AH) {
+            if number_digits.is_empty() && glyph.width as f64 / glyph.height as f64 > MINUS_MIN_ASPECT {
+                sign = -1;
+            }
+            continue;
+        }
+        let unit = shapes.unit_glyph(glyph.image);
+        let (likeness, digit) = prototypes
+            .iter()
+            .map(|(prototype, digit)| (dot(&unit, prototype), *digit))
+            .fold((f64::MIN, 0), |best, entry| if entry >= best { entry } else { best });
+        if likeness < DIGIT_LIKENESS {
+            number_digits.clear();
+            break;
+        }
+        number_digits.push(digit);
+    }
+    value(&number_digits).map(|number| sign * number)
+}
+
+/// A hit's points and a miss's (None when no step went down): the most common step up and down.
+fn step_points(changes: &[(i64, usize)]) -> Option<(i64, Option<i64>)> {
+    let (mut ups, mut downs) = (Counter::new(), Counter::new());
+    for &(change, _) in changes {
+        if change > 0 {
+            ups.add(change);
+        } else if change < 0 {
+            downs.add(change);
+        }
+    }
+    Some((ups.top()?, downs.top()))
+}
+
+/// The hits and misses one POINTS change is (two hits, or a hit and a miss, can come in one step), when it is within
+/// the tolerance of them.
+fn step_events(change: i64, hit: i64, miss: Option<i64>) -> Option<(i64, i64)> {
+    let most_misses = if miss.is_some() { MAX_STEP_EVENTS } else { 0 };
+    let (error, hits, misses) = (0..=MAX_STEP_EVENTS)
+        .flat_map(|hits| (0..=most_misses).map(move |misses| (hits, misses)))
+        .filter(|&(hits, misses)| hits + misses > 0)
+        .map(|(hits, misses)| ((change - hits * hit - misses * miss.unwrap_or(0)).abs(), hits, misses))
+        .min()?;
+    (error as f64 <= STEP_TOLERANCE_POINTS.max(STEP_TOLERANCE_SHARE * hit as f64)).then_some((hits, misses))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A glyph for pattern `p` (0 to 11): two rows of its own lit, so no two patterns are alike.
-    fn glyph(p: usize, h: u16) -> Cut {
-        let mut image = [0u8; GLYPH];
-        image[2 * p * GW..(2 * p + 2) * GW].fill(255);
-        Cut { image, h, w: 10 }
+    /// A glyph for `pattern` (0 to 11): two rows of its own lit, so no two patterns are alike.
+    fn glyph(pattern: usize, height: u16) -> Cut {
+        let mut image = [0u8; GLYPH_PIXELS];
+        image[2 * pattern * GLYPH_WIDTH_PX..(2 * pattern + 2) * GLYPH_WIDTH_PX].fill(255);
+        Cut { image, height, width: 10 }
     }
 
-    fn line(value: i64, h: u16) -> Vec<Cut> {
-        value.to_string().bytes().map(|b| glyph((b - b'0') as usize, h)).collect()
+    fn line(value: i64, height: u16) -> Vec<Cut> {
+        value.to_string().bytes().map(|b| glyph((b - b'0') as usize, height)).collect()
     }
 
     #[test]
     fn a_wide_glyph_is_split_and_the_label_left_out() {
-        let (w, h) = (200, 30);
-        let mut band = vec![60u8; w * h];
+        let (width, height) = (200, 30);
+        let mut band = vec![60u8; width * height];
         let mut fill = |x0: usize, x1: usize, y0: usize, y1: usize| {
             for y in y0..y1 {
-                band[y * w + x0..y * w + x1].fill(230);
+                band[y * width + x0..y * width + x1].fill(230);
             }
         };
         fill(10, 40, 8, 22); // the label
         fill(150, 162, 5, 25); // two digits run together by a one-pixel bridge
         fill(164, 176, 5, 25);
         fill(162, 164, 15, 16);
-        let glyphs = value_glyphs(&band, w, None);
-        assert_eq!(glyphs.iter().map(|g| (g.w, g.h)).collect::<Vec<_>>(), vec![(12, 20), (14, 20)]);
-        assert!(glyphs[0].image.iter().all(|&v| v == 255));
+        let glyphs = value_glyphs(&band, width, None);
+        let sizes: Vec<(u16, u16)> = glyphs.iter().map(|glyph| (glyph.width, glyph.height)).collect();
+        assert_eq!(sizes, vec![(12, 20), (14, 20)]);
+        assert!(glyphs[0].image.iter().all(|&level| level == 255));
+    }
+
+    /// Shape ids for the digits 0 to 9, in an order of their own.
+    const SHAPE_OF_DIGIT: [i32; 10] = [7, 3, 9, 0, 5, 1, 8, 2, 6, 4];
+
+    fn shapes_of(value: u32) -> Vec<i32> {
+        value.to_string().bytes().map(|b| SHAPE_OF_DIGIT[(b - b'0') as usize]).collect()
     }
 
     #[test]
     fn digits_are_learned_from_a_count() {
-        // shape ids for the digits 0 to 9, in an order of their own
-        let shape = [7, 3, 9, 0, 5, 1, 8, 2, 6, 4];
-        let readings: Vec<Vec<i32>> =
-            (0..=25).map(|v: u32| v.to_string().bytes().map(|b| shape[(b - b'0') as usize]).collect()).collect();
-        let runs: Vec<&[i32]> = readings.iter().map(|r| r.as_slice()).collect();
-        let digits = learn_digits(&runs, 10).unwrap();
-        for (d, &s) in shape.iter().enumerate() {
-            assert_eq!(digits[s as usize], Some(d as u8));
+        let readings: Vec<Vec<i32>> = (0..=25).map(shapes_of).collect();
+        let stable: Vec<&[i32]> = readings.iter().map(|reading| reading.as_slice()).collect();
+        let digits = learn_digits(&stable, 10).unwrap();
+        for (digit, &shape) in SHAPE_OF_DIGIT.iter().enumerate() {
+            assert_eq!(digits[shape as usize], Some(digit as u8));
         }
-        assert_eq!(learn_digits(&runs[..8], 10), None); // no tens place changed: no 0
+        assert_eq!(learn_digits(&stable[..8], 10), None); // no tens place changed: no 0
     }
 
     /// A synthetic HUD (`hud`) with a miss before every fifth kill.
     fn counting(frames: Range<usize>) -> (Store, Layout) {
-        hud(frames, |f, kills| {
-            let misses = (1..=kills).filter(|k| k % 5 == 0).count() as i64 + i64::from(kills % 5 == 4 && f % 10 >= 5);
+        hud(frames, |frame, kills| {
+            let fifth_kills = (1..=kills).filter(|kill| kill % 5 == 0).count() as i64;
+            let misses = fifth_kills + i64::from(kills % 5 == 4 && frame % 10 >= 5);
             (kills, kills + misses)
         })
     }
 
     /// A store fed with a synthetic HUD: the Kill Count counting to 40, ten frames a value, and Accuracy as
-    /// `acc(frame, kills)`, hits/shots (percent).
-    fn hud(frames: Range<usize>, acc: impl Fn(usize, i64) -> (i64, i64)) -> (Store, Layout) {
+    /// `accuracy(frame, kills)`, hits/shots (percent).
+    fn hud(frames: Range<usize>, accuracy: impl Fn(usize, i64) -> (i64, i64)) -> (Store, Layout) {
         let layout = Layout {
             x0: 0,
             x1: 100,
@@ -1636,16 +2097,22 @@ mod tests {
             accuracy: Row { y0: 30, y1: 50, start: None },
         };
         let mut store = Store::default();
-        let mut recent: [Capped<Glyph, RECENT>; ROWS] = Default::default();
-        for f in frames {
-            let kills = (f / 10).min(40) as i64;
-            let (hits, shots) = acc(f, kills);
-            let mut acc = line(hits, 18);
-            acc.push(glyph(10, 18)); // "/"
-            acc.extend(line(shots, 18));
-            acc.push(glyph(11, 18)); // "("
-            acc.extend(line(90, 18));
-            for (row, cuts) in [(KILLS, line(kills, 18)), (ACCURACY, acc), (POINTS, Vec::new()), (TIME, Vec::new())] {
+        let mut recent: [Capped<Glyph, RECENT_GLYPHS>; ROWS] = Default::default();
+        for frame in frames {
+            let kills = (frame / 10).min(40) as i64;
+            let (hits, shots) = accuracy(frame, kills);
+            let mut accuracy_line = line(hits, 18);
+            accuracy_line.push(glyph(10, 18)); // "/"
+            accuracy_line.extend(line(shots, 18));
+            accuracy_line.push(glyph(11, 18)); // "("
+            accuracy_line.extend(line(90, 18));
+            let rows = [
+                (KILL_COUNT_ROW, line(kills, 18)),
+                (ACCURACY_ROW, accuracy_line),
+                (POINTS_ROW, Vec::new()),
+                (TIME_ROW, Vec::new()),
+            ];
+            for (row, cuts) in rows {
                 store.push(row, cuts, &mut recent[row]);
             }
         }
@@ -1655,12 +2122,12 @@ mod tests {
     #[test]
     fn a_counting_hud_reads_its_kills_and_shots() {
         let (store, layout) = counting(0..430);
-        let r = kovaak(&store, &layout).unwrap();
-        assert_eq!(r.kills, (1..=40).map(|k| 10 * k).collect::<Vec<i64>>());
-        assert_eq!(r.totals, HudFinal { kills: 40, hits: Some(40), shots: Some(48) });
-        assert_eq!(r.hits.len(), 40);
-        assert_eq!(r.shots.iter().filter(|&&f| f % 10 == 5).count(), 8); // the misses, half way between kills
-        assert_eq!(r.checked, 1.0);
+        let reading = kovaak(&store, &layout).unwrap();
+        assert_eq!(reading.kills, (1..=40).map(|kill| 10 * kill).collect::<Vec<i64>>());
+        assert_eq!(reading.totals, HudFinal { kills: 40, hits: Some(40), shots: Some(48) });
+        assert_eq!(reading.hits.len(), 40);
+        assert_eq!(reading.shots.iter().filter(|&&frame| frame % 10 == 5).count(), 8); // the misses, between kills
+        assert_eq!(reading.checked, 1.0);
         assert!(aimlab(&store).is_none());
     }
 
@@ -1668,34 +2135,33 @@ mod tests {
     fn a_restart_and_an_early_end_still_count_every_hit() {
         // the Accuracy line is redrawn every 7 frames: first it shows the run before's 8/9, and the run ends before it
         // shows the last kill
-        let (store, layout) = hud(0..430, |f, _| {
-            let tick = (f / 7 * 7).min(399);
-            let k = (tick / 10) as i64;
-            if f < 15 { (8, 9) } else { (k, k) }
+        let (store, layout) = hud(0..430, |frame, _| {
+            let redrawn = (frame / 7 * 7).min(399);
+            let kills = (redrawn / 10) as i64;
+            if frame < 15 { (8, 9) } else { (kills, kills) }
         });
-        let r = kovaak(&store, &layout).unwrap();
-        assert_eq!(r.totals, HudFinal { kills: 40, hits: Some(40), shots: Some(40) });
-        assert_eq!((r.hits.len(), r.shots.len()), (40, 40));
-        assert_eq!((r.hits[0], r.hits[39]), (15, 400)); // the run's first reading, and the last kill
+        let reading = kovaak(&store, &layout).unwrap();
+        assert_eq!(reading.totals, HudFinal { kills: 40, hits: Some(40), shots: Some(40) });
+        assert_eq!((reading.hits.len(), reading.shots.len()), (40, 40));
+        assert_eq!((reading.hits[0], reading.hits[39]), (15, 400)); // the run's first reading, and the last kill
     }
 
     #[test]
     fn a_glyph_after_the_number_teaches_no_digit() {
-        let shape = [7, 3, 9, 0, 5, 1, 8, 2, 6, 4];
         let mut readings: Vec<Vec<i32>> = Vec::new();
-        for v in 0..=25u32 {
-            readings.push(v.to_string().bytes().map(|b| shape[(b - b'0') as usize]).collect());
-            if v % 4 == 1 {
+        for value in 0..=25u32 {
+            readings.push(shapes_of(value));
+            if value % 4 == 1 {
                 let mut junk = readings[readings.len() - 1].clone();
                 junk.push(10); // an edge or a panel beside the number, for a moment
                 readings.push(junk);
                 readings.push(readings[readings.len() - 2].clone());
             }
         }
-        let runs: Vec<&[i32]> = readings.iter().map(|r| r.as_slice()).collect();
-        let digits = learn_digits(&runs, 11).unwrap();
+        let stable: Vec<&[i32]> = readings.iter().map(|reading| reading.as_slice()).collect();
+        let digits = learn_digits(&stable, 11).unwrap();
         assert_eq!(digits[10], None);
-        assert!(shape.iter().enumerate().all(|(d, &s)| digits[s as usize] == Some(d as u8)));
+        assert!(SHAPE_OF_DIGIT.iter().enumerate().all(|(digit, &shape)| digits[shape as usize] == Some(digit as u8)));
     }
 
     #[test]
@@ -1707,20 +2173,21 @@ mod tests {
             session: None,
             store: counting(frames).0,
         };
-        // each run but the last also reads the next run's first frame
+        // each run part but the last also reads the next part's first frame
         let parts = [part(0..201), part(200..301), part(300..430)];
         let mut watch = HudWatch::new(0, 0, true);
-        for p in parts {
-            let text = serde_json::to_string(&p).unwrap();
+        for part in parts {
+            let text = serde_json::to_string(&part).unwrap();
             let back: HudPart = serde_json::from_str(&text).unwrap();
-            assert_eq!(back, p);
+            assert_eq!(back, part);
             watch.join(back);
         }
         assert_eq!(watch.frames(), 430);
-        let glyphs = |s: &Store, row: usize| -> Vec<Vec<Vec<u8>>> {
-            s.per_frame(row)
+        let glyphs = |store: &Store, row: usize| -> Vec<Vec<Vec<u8>>> {
+            store
+                .per_frame(row)
                 .into_iter()
-                .map(|l| s.lines[l as usize].iter().map(|g| s.image(g.image).to_vec()).collect())
+                .map(|line| store.lines[line as usize].iter().map(|glyph| store.image(glyph.image).to_vec()).collect())
                 .collect()
         };
         for row in 0..ROWS {
@@ -1744,7 +2211,7 @@ mod tests {
         watch.skip(5);
         watch.add(&[0u8; 64 * 36]);
         assert_eq!(watch.frames(), 6);
-        assert_eq!(watch.store.per_frame(KILLS), vec![0; 6]);
+        assert_eq!(watch.store.per_frame(KILL_COUNT_ROW), vec![0; 6]);
         assert_eq!(watch.finish(), None);
     }
 }

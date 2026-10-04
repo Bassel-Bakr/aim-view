@@ -12,111 +12,167 @@ use std::time::Instant;
 use aimview::hud::{HudPart, HudReading, HudWatch};
 use serde_json::json;
 
-/// The video's width, height, whether its Y spans 0..255, and its packet count (about its frame count).
-fn probe(video: &str) -> (usize, usize, bool, usize) {
-    let out = Command::new("ffprobe")
-        .args(["-v", "error", "-select_streams", "v:0", "-count_packets"])
-        .args(["-show_entries", "stream=width,height,color_range,nb_read_packets", "-of", "csv=p=0", video])
-        .output()
-        .expect("ffprobe runs");
-    let text = String::from_utf8_lossy(&out.stdout);
-    let f: Vec<&str> = text.trim().split(',').collect();
-    (f[0].parse().unwrap(), f[1].parse().unwrap(), f[2] == "pc", f[3].parse().unwrap_or(0))
+/// The bytes of one glyph image in a part's JSON: 16 x 24 pixels, two hex digits each.
+const GLYPH_HEX_DIGITS: usize = 2 * 16 * 24;
+/// The rows a part keeps: KovaaK's Kill Count and Accuracy, Aim Lab's POINTS and TIME.
+const HUD_ROWS: usize = 4;
+
+/// A recording's size and range, as ffprobe gives them.
+#[derive(Clone, Copy)]
+struct Video {
+    width: usize,
+    height: usize,
+    /// Whether its Y spans 0..255.
+    full_range: bool,
+    /// Its packet count (about its frame count).
+    packets: usize,
+}
+
+impl Video {
+    fn probe(path: &str) -> Video {
+        let out = Command::new("ffprobe")
+            .args(["-v", "error", "-select_streams", "v:0", "-count_packets"])
+            .args(["-show_entries", "stream=width,height,color_range,nb_read_packets", "-of", "csv=p=0", path])
+            .output()
+            .expect("ffprobe runs");
+        let text = String::from_utf8_lossy(&out.stdout);
+        let fields: Vec<&str> = text.trim().split(',').collect();
+        Video {
+            width: fields[0].parse().unwrap(),
+            height: fields[1].parse().unwrap(),
+            full_range: fields[2] == "pc",
+            packets: fields[3].parse().unwrap_or(0),
+        }
+    }
+
+    fn watch(self) -> HudWatch {
+        HudWatch::new(self.width, self.height, self.full_range)
+    }
 }
 
 fn decode(video: &str, keys: bool) -> Child {
-    let mut c = Command::new("ffmpeg");
-    c.args(["-v", "error", "-i", video]);
+    let mut command = Command::new("ffmpeg");
+    command.args(["-v", "error", "-i", video]);
     if keys {
-        c.args(["-vf", "select=key", "-fps_mode", "passthrough"]);
+        command.args(["-vf", "select=key", "-fps_mode", "passthrough"]);
     }
-    c.args(["-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]).stdout(Stdio::piped()).spawn().expect("ffmpeg runs")
+    command.args(["-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]).stdout(Stdio::piped()).spawn().expect("ffmpeg runs")
 }
 
 /// Each frame's Y plane from a decoder, in order.
-fn each_frame(child: &mut Child, w: usize, h: usize, mut f: impl FnMut(&[u8])) {
-    let mut r = BufReader::with_capacity(1 << 22, child.stdout.take().unwrap());
-    let mut buf = vec![0u8; w * h * 3 / 2];
-    while r.read_exact(&mut buf).is_ok() {
-        f(&buf[..w * h]);
+fn each_frame(child: &mut Child, video: Video, mut each: impl FnMut(&[u8])) {
+    let luma_bytes = video.width * video.height;
+    let mut reader = BufReader::with_capacity(1 << 22, child.stdout.take().unwrap());
+    let mut frame = vec![0u8; luma_bytes * 3 / 2];
+    while reader.read_exact(&mut frame).is_ok() {
+        each(&frame[..luma_bytes]);
     }
     child.wait().unwrap();
 }
 
-fn joined(parts: Vec<HudPart>, w: usize, h: usize, full: bool) -> (usize, Option<HudReading>) {
-    let mut watch = HudWatch::new(w, h, full);
-    for p in parts {
-        let text = serde_json::to_string(&p).unwrap();
+fn joined(parts: Vec<HudPart>, video: Video) -> (usize, Option<HudReading>) {
+    let mut watch = video.watch();
+    for part in parts {
+        let text = serde_json::to_string(&part).unwrap();
         watch.join(serde_json::from_str(&text).unwrap());
     }
     (watch.frames(), watch.finish())
 }
 
+/// The watches a recording is read with: `one` whole, `whole` again for its part, and its two halves, each half with
+/// the frame where they meet.
+struct Watches {
+    one: HudWatch,
+    whole: HudWatch,
+    first: HudWatch,
+    second: HudWatch,
+}
+
+/// How a recording's frames were read: their count, and the time the box's layout took (the first frame's add, from
+/// the key frames) and every other frame's add took (seconds).
+struct FramesRead {
+    frames: usize,
+    layout_s: f64,
+    adds_s: f64,
+}
+
+/// Every frame into the watches, the halves split at frame `middle`.
+fn read_frames(path: &str, video: Video, watches: &mut Watches, middle: usize) -> FramesRead {
+    let mut all = decode(path, false);
+    let mut read = FramesRead { frames: 0, layout_s: 0.0, adds_s: 0.0 };
+    each_frame(&mut all, video, |luma| {
+        let added = Instant::now();
+        watches.one.add(luma);
+        if read.frames == 0 {
+            read.layout_s = added.elapsed().as_secs_f64();
+        } else {
+            read.adds_s += added.elapsed().as_secs_f64();
+        }
+        watches.whole.add(luma);
+        if read.frames <= middle {
+            watches.first.add(luma);
+        }
+        if read.frames >= middle {
+            watches.second.add(luma);
+        }
+        read.frames += 1;
+    });
+    read
+}
+
+/// Each row's runs, distinct lines and their glyphs in a part's JSON (line 0, the empty one, is not in its lines).
+fn row_sizes(shape: &serde_json::Value) -> Vec<[usize; 3]> {
+    (0..HUD_ROWS)
+        .map(|row| {
+            let runs = shape["rows"][row].as_array().unwrap();
+            let mut used: Vec<u64> = runs.iter().map(|run| run[0].as_u64().unwrap()).filter(|&line| line > 0).collect();
+            used.sort_unstable();
+            used.dedup();
+            let glyphs = used.iter().map(|&line| shape["lines"][line as usize - 1].as_array().unwrap().len()).sum();
+            [runs.len(), used.len(), glyphs]
+        })
+        .collect()
+}
+
+/// A recording read three ways, as one line of JSON.
+fn read_three_ways(path: &str) -> serde_json::Value {
+    let video = Video::probe(path);
+    let mut keys = decode(path, true);
+    let mut watches = Watches { one: video.watch(), whole: video.watch(), first: video.watch(), second: video.watch() };
+    let mut key_count = 0;
+    let started = Instant::now();
+    each_frame(&mut keys, video, |luma| {
+        key_count += 1;
+        for watch in [&mut watches.one, &mut watches.whole, &mut watches.first, &mut watches.second] {
+            watch.add_key(luma);
+        }
+    });
+    let read = read_frames(path, video, &mut watches, video.packets / 2);
+    let Watches { one, whole, first, second } = watches;
+    let finishing = Instant::now();
+    let reading = one.finish();
+    let finish_s = finishing.elapsed().as_secs_f64();
+    let part = whole.part();
+    let text = serde_json::to_string(&part).unwrap();
+    let shape: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let images = shape["images"].as_str().map_or(0, |hex| hex.len() / GLYPH_HEX_DIGITS);
+    let lines = shape["lines"].as_array().map_or(0, Vec::len);
+    let (frames_joined, rejoined) = joined(vec![part], video);
+    let (frames_split, split) = joined(vec![first.part(), second.part()], video);
+    let frames = read.frames;
+    json!({
+        "video": path, "width": video.width, "height": video.height, "full": video.full_range, "frames": frames,
+        "keys": key_count, "ms_add": 1000.0 * read.adds_s / frames.max(2).saturating_sub(1) as f64,
+        "layout_s": read.layout_s, "finish_s": finish_s, "seconds": started.elapsed().as_secs_f64(),
+        "part_bytes": text.len(), "images": images, "lines": lines, "rows": row_sizes(&shape),
+        "joined_same": rejoined == reading && frames_joined == frames,
+        "split_same": split == reading && frames_split == frames,
+        "reading": reading,
+    })
+}
+
 fn main() {
-    for video in std::env::args().skip(1) {
-        let (w, h, full, packets) = probe(&video);
-        let mid = packets / 2;
-        let mut keys = decode(&video, true);
-        let mut all = decode(&video, false);
-        let new = || HudWatch::new(w, h, full);
-        let (mut one, mut whole, mut first, mut second) = (new(), new(), new(), new());
-        let mut key_count = 0;
-        let started = Instant::now();
-        each_frame(&mut keys, w, h, |y| {
-            key_count += 1;
-            for watch in [&mut one, &mut whole, &mut first, &mut second] {
-                watch.add_key(y);
-            }
-        });
-        // the first frame's time is the box's layout (from the key frames); the others', the reading
-        let (mut n, mut spent, mut layout_s) = (0, 0.0, 0.0);
-        each_frame(&mut all, w, h, |y| {
-            let t = Instant::now();
-            one.add(y);
-            if n == 0 {
-                layout_s = t.elapsed().as_secs_f64();
-            } else {
-                spent += t.elapsed().as_secs_f64();
-            }
-            whole.add(y);
-            if n <= mid {
-                first.add(y);
-            }
-            if n >= mid {
-                second.add(y);
-            }
-            n += 1;
-        });
-        let t = Instant::now();
-        let reading = one.finish();
-        let finish_s = t.elapsed().as_secs_f64();
-        let part = whole.part();
-        let text = serde_json::to_string(&part).unwrap();
-        let shape: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let images = shape["images"].as_str().map_or(0, |s| s.len() / 2 / 384);
-        let lines = shape["lines"].as_array().map_or(0, |l| l.len());
-        // each row's runs, distinct lines and their glyphs (line 0, the empty one, is not in the part's lines)
-        let rows: Vec<[usize; 3]> = (0..4)
-            .map(|r| {
-                let runs = shape["rows"][r].as_array().unwrap();
-                let mut used: Vec<u64> = runs.iter().map(|x| x[0].as_u64().unwrap()).filter(|&l| l > 0).collect();
-                used.sort_unstable();
-                used.dedup();
-                let glyphs = used.iter().map(|&l| shape["lines"][l as usize - 1].as_array().unwrap().len()).sum();
-                [runs.len(), used.len(), glyphs]
-            })
-            .collect();
-        let (frames_joined, rejoined) = joined(vec![part], w, h, full);
-        let (frames_split, split) = joined(vec![first.part(), second.part()], w, h, full);
-        let out = json!({
-            "video": video, "width": w, "height": h, "full": full, "frames": n, "keys": key_count,
-            "ms_add": 1000.0 * spent / n.max(2).saturating_sub(1) as f64, "layout_s": layout_s,
-            "finish_s": finish_s, "seconds": started.elapsed().as_secs_f64(),
-            "part_bytes": text.len(), "images": images, "lines": lines, "rows": rows,
-            "joined_same": rejoined == reading && frames_joined == n,
-            "split_same": split == reading && frames_split == n,
-            "reading": reading,
-        });
-        println!("{out}");
+    for path in std::env::args().skip(1) {
+        println!("{}", read_three_ways(&path));
     }
 }
