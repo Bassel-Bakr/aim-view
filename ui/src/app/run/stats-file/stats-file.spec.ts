@@ -47,7 +47,7 @@ describe('StatsFile', () => {
     });
     expect(el.textContent).toContain('No stats file · none found by its name and time');
     const rows = [...el.querySelectorAll('li')].map((li) =>
-      [...li.children].map((c) => c.textContent?.trim()).join(' | '),
+      [...li.children].map((cell) => cell.textContent?.trim()).join(' | '),
     );
     expect(rows).toEqual(['Oct 1, 16:23 | 1 s after | Use', 'Oct 1, 16:21 | 1 min before | Use']);
   });

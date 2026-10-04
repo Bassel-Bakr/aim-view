@@ -74,29 +74,29 @@ export class Run {
   /** The tracks the page shows: without those the faint-target cut-off leaves out. */
   protected readonly tracks = this.faint.tracks;
   protected readonly trackReport = computed(() => {
-    const r = this.report();
-    return r?.mode === 'track' ? r : null;
+    const report = this.report();
+    return report?.mode === 'track' ? report : null;
   });
   protected readonly clickReport = computed(() => {
-    const r = this.report();
-    return isClickReport(r) ? r : null;
+    const report = this.report();
+    return isClickReport(report) ? report : null;
   });
   /** The run in a few numbers, above the video: a tracking run's are its first cards (track-report shows the rest). */
   protected readonly headline = computed<HeadlineTile[] | null>(() => {
-    const c = this.clickReport();
-    const t = this.trackReport();
-    const tiles = c
-      ? runHeadline(c.summary, c.issues, c.flicks, c.fps)
-      : t
-        ? trackStats(t.summary)
+    const clicking = this.clickReport();
+    const tracking = this.trackReport();
+    const tiles = clicking
+      ? runHeadline(clicking.summary, clicking.issues, clicking.flicks, clicking.fps)
+      : tracking
+        ? trackStats(tracking.summary)
             .slice(0, HEADLINE_TILES)
-            .map((s) => ({
-              label: s.label,
-              value: s.value,
-              note: s.detail,
+            .map((stat) => ({
+              label: stat.label,
+              value: stat.value,
+              note: stat.detail,
               attention: false,
               good: false,
-              why: s.why,
+              why: stat.why,
             }))
         : null;
     // the score's line: against the same scenario's run before, where there is one
@@ -109,21 +109,21 @@ export class Run {
   protected readonly windowOpen = signal(false);
   /** The run window's button: the marked times, or what it does when none are. */
   protected readonly windowLabel = computed(() => {
-    const m = this.review.marks.hasValue() ? this.review.marks.value() : null;
-    if (!m || (m.start == null && m.end == null)) return 'Run window';
-    const at = (s: number | null) => (s == null ? '…' : formatClock(s));
-    return `Run ${at(m.start)}–${at(m.end)}`;
+    const marks = this.review.marks.hasValue() ? this.review.marks.value() : null;
+    if (!marks || (marks.start == null && marks.end == null)) return 'Run window';
+    const at = (seconds: number | null) => (seconds == null ? '…' : formatClock(seconds));
+    return `Run ${at(marks.start)}–${at(marks.end)}`;
   });
   /** The recording's video, which may still be being remuxed into MP4. */
   protected readonly video = computed(() => this.library.source.video(this.recording().id));
   /** Where the player reads the video; null while it is being remuxed or downloaded. */
   protected readonly videoUrl = computed<string | null>(() => {
-    const v = this.video();
-    return v?.state === 'ready' || v?.state === 'failed' ? v.url : null;
+    const video = this.video();
+    return video?.state === 'ready' || video?.state === 'failed' ? video.url : null;
   });
   protected readonly remuxShare = computed(() => {
-    const v = this.video();
-    return v?.state === 'remuxing' ? formatPercent(v.progress) : '';
+    const video = this.video();
+    return video?.state === 'remuxing' ? formatPercent(video.progress) : '';
   });
   /** A video from a link that is not here yet (downloading, or the download failed): nothing to review. */
   protected readonly notHere = computed(() => {
@@ -140,9 +140,9 @@ export class Run {
 
   /** Which model made the review on screen, and whether it is the one new reviews use. */
   protected readonly reviewedBy = computed<string | null>(() => {
-    const r = this.report();
-    if (!r) return null;
-    const by = r.review_model;
+    const report = this.report();
+    if (!report) return null;
+    const by = report.review_model;
     if (by === null)
       return 'The model behind this review was not recorded (it is from before reviews kept it)';
     const chosen = this.models.chosen();

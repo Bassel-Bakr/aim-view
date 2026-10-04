@@ -45,7 +45,8 @@ describe('ClickSide', () => {
     await answer({ '/api/vods': [] });
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
-    const titles = () => [...el.querySelectorAll('h3')].map((h) => h.textContent?.trim());
+    const titles = () =>
+      [...el.querySelectorAll('h3')].map((titleElement) => titleElement.textContent?.trim());
     expect(titles()).toContain('Checks');
     expect(el.textContent).toContain('1 to work on · 1 fine');
     expect(el.textContent?.indexOf('Stopped short')).toBeLessThan(

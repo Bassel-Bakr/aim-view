@@ -91,7 +91,9 @@ describe('click stats', () => {
     });
     expect(stats).toHaveLength(16);
   });
+});
 
+describe('click stats', () => {
   it('adds the forced reloads to the run and to each kill in a scenario whose magazine runs out', () => {
     const reloads = {
       ...SUMMARY,

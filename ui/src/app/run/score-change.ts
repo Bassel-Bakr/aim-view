@@ -14,9 +14,10 @@ export interface ScoreChange {
 export function scoreChange(run: Recording, all: readonly Recording[]): ScoreChange | null {
   if (run.score === null) return null;
   let before: Recording | null = null;
-  for (const r of all) {
-    if (r.scenario !== run.scenario || r.score === null || r.stamp >= run.stamp) continue;
-    if (!before || r.stamp > before.stamp) before = r;
+  for (const other of all) {
+    if (other.scenario !== run.scenario || other.score === null || other.stamp >= run.stamp)
+      continue;
+    if (!before || other.stamp > before.stamp) before = other;
   }
   if (before?.score == null) return null;
   const change = run.score - before.score;

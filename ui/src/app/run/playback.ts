@@ -55,11 +55,11 @@ export class Playback {
   }
 
   toggle(): void {
-    const v = this.video;
-    if (!v) return;
+    const video = this.video;
+    if (!video) return;
     this.stopAt = null;
-    if (v.paused) v.play().catch(() => undefined);
-    else v.pause();
+    if (video.paused) video.play().catch(() => undefined);
+    else video.pause();
   }
 
   pause(): void {
@@ -68,19 +68,19 @@ export class Playback {
   }
 
   seek(seconds: number): void {
-    const v = this.video;
-    if (!v) return;
+    const video = this.video;
+    if (!video) return;
     this.stopAt = null;
-    v.currentTime = Math.max(0, Math.min(v.duration || 0, seconds));
+    video.currentTime = Math.max(0, Math.min(video.duration || 0, seconds));
   }
 
   /** Plays from one time until another, then pauses: one flick, replayed. */
   playRange(from: number, to: number): void {
-    const v = this.video;
-    if (!v) return;
+    const video = this.video;
+    if (!video) return;
     this.seek(from);
     this.stopAt = to;
-    v.play().catch(() => undefined);
+    video.play().catch(() => undefined);
   }
 
   /** Frames on (or back with a negative count), paused. */

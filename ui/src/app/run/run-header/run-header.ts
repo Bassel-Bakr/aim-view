@@ -34,13 +34,13 @@ export class RunHeader {
 
   /** Where the review's kills came from, once there is a review; before that, whether a stats file was found. */
   protected readonly source = computed(() => {
-    const s = this.report()?.summary.info.source;
-    if (s) return SOURCES[s];
+    const source = this.report()?.summary.info.source;
+    if (source) return SOURCES[source];
     return this.recording().stats ? 'Stats file' : 'No stats file';
   });
   protected readonly sourceDetail = computed(() => {
-    const s = this.report()?.summary.info.source;
-    return s ? SOURCE_DETAILS[s] : null;
+    const source = this.report()?.summary.info.source;
+    return source ? SOURCE_DETAILS[source] : null;
   });
   /** Good when the kills are the stats file's, as exact as the review gets. */
   protected readonly sourceTone = computed<BadgeTone>(() =>

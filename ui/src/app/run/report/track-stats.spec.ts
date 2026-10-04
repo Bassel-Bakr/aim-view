@@ -85,6 +85,33 @@ describe('track stats', () => {
   });
 });
 
+/** A followed bot, every measure of it found. */
+const MOTION = {
+  camera: 0.93,
+  seconds: 41.3,
+  lag: -0.12,
+  lag_ms: -35.4,
+  off_behind: 0.4,
+  off_ahead: 0.35,
+  off_side: 0.25,
+  overshoots: 0.7,
+  overshoot_dist: 0.3,
+  overcorrect: 0.2,
+  corrections: 40,
+  swing_count: 8,
+  reaction: 183.2,
+  reversals: 12,
+  reversal_overshoot: 0.33,
+  reversal_overshoot_dist: 0.25,
+  error_h: 0.3,
+  error_v: 0.1,
+  target_speed: 35.5,
+  by_direction: [
+    { name: 'right', share: 0.5, on: 0.7, distance: 0.3, lag: -0.1 },
+    { name: 'left', share: 0.5, on: 0.6, distance: 0.4, lag: 0.2 },
+  ],
+} as unknown as Motion;
+
 describe('track stats', () => {
   it('keeps every card, row and note (a digest of them)', () => {
     const withBots = {
@@ -103,31 +130,6 @@ describe('track stats', () => {
       lost: null,
       fps_avg: null,
     } as unknown as TrackSummary;
-    const motion = {
-      camera: 0.93,
-      seconds: 41.3,
-      lag: -0.12,
-      lag_ms: -35.4,
-      off_behind: 0.4,
-      off_ahead: 0.35,
-      off_side: 0.25,
-      overshoots: 0.7,
-      overshoot_dist: 0.3,
-      overcorrect: 0.2,
-      corrections: 40,
-      swing_count: 8,
-      reaction: 183.2,
-      reversals: 12,
-      reversal_overshoot: 0.33,
-      reversal_overshoot_dist: 0.25,
-      error_h: 0.3,
-      error_v: 0.1,
-      target_speed: 35.5,
-      by_direction: [
-        { name: 'right', share: 0.5, on: 0.7, distance: 0.3, lag: -0.1 },
-        { name: 'left', share: 0.5, on: 0.6, distance: 0.4, lag: 0.2 },
-      ],
-    } as unknown as Motion;
     const outputs = [
       [trackStats(SUMMARY), trackStats(withBots), trackStats(plain)],
       [
@@ -135,7 +137,7 @@ describe('track stats', () => {
         trackNote(withBots),
         trackNote({ ...SUMMARY, faint: { cut: null, tracks: 0 } } as TrackSummary),
       ],
-      [motionView(motion), motionView({ camera: 0.5 } as Motion), motionView(null)],
+      [motionView(MOTION), motionView({ camera: 0.5 } as Motion), motionView(null)],
       whatIfTable([{ what: 'Stay on longer', gain: 0.031, how: 'by tracking' }] as WhatIf[]),
     ];
     expect(outputs.map((output) => fingerprint(JSON.stringify(output)))).toEqual([

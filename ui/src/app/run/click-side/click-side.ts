@@ -30,8 +30,8 @@ export class ClickSide {
   protected readonly distance = computed(() => distanceBars(this.report().summary.by_distance));
   protected readonly pathing = computed(() => pathing(this.paths.analysis(), this.report()));
   protected readonly issues = computed(() => {
-    const p = this.pathing();
-    return sortedIssues(p ? [...this.report().issues, p.issue] : this.report().issues);
+    const check = this.pathing();
+    return sortedIssues(check ? [...this.report().issues, check.issue] : this.report().issues);
   });
   protected readonly toWorkOn = computed(
     () => this.issues().filter((i) => i.flag === 'attention').length,

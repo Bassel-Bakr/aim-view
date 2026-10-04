@@ -22,8 +22,8 @@ export class FlickFocus {
   readonly follow = signal(localStorage.getItem(FOLLOW_KEY) !== '0');
 
   private readonly report = computed<ClickReport | null>(() => {
-    const r = this.review.report.hasValue() ? this.review.report.value() : null;
-    return isClickReport(r) ? r : null;
+    const report = this.review.report.hasValue() ? this.review.report.value() : null;
+    return isClickReport(report) ? report : null;
   });
 
   constructor() {
@@ -32,27 +32,30 @@ export class FlickFocus {
       library.selectedId();
       untracked(() => this.selected.set(null));
     });
-    this.playback.onFrame((t) => this.followVideo(t));
+    this.playback.onFrame((seconds) => this.followVideo(seconds));
   }
 
   /** Picks a flick and plays it, from just before it starts until just after its kill. */
   play(flick: Flick): void {
-    const r = this.report();
-    if (!r) return;
+    const report = this.report();
+    if (!report) return;
     this.selected.set(flick);
     this.playback.playRange(
-      Math.max(0, flick.start_frame / r.fps - BEFORE_FLICK),
-      flick.kill_frame / r.fps + AFTER_KILL,
+      Math.max(0, flick.start_frame / report.fps - BEFORE_FLICK),
+      flick.kill_frame / report.fps + AFTER_KILL,
     );
   }
 
   /** The previous or next flick from the one in focus (or on screen), played. */
   step(forward: boolean): void {
-    const r = this.report();
-    if (!r?.flicks.length) return;
-    const at = this.selected() ?? flickAt(r.flicks, Math.round(this.playback.time * r.fps));
-    const i = at ? r.flicks.indexOf(at) : -1;
-    this.play(r.flicks[Math.max(0, Math.min(r.flicks.length - 1, forward ? i + 1 : i - 1))]);
+    const report = this.report();
+    if (!report?.flicks.length) return;
+    const at =
+      this.selected() ?? flickAt(report.flicks, Math.round(this.playback.time * report.fps));
+    const i = at ? report.flicks.indexOf(at) : -1;
+    this.play(
+      report.flicks[Math.max(0, Math.min(report.flicks.length - 1, forward ? i + 1 : i - 1))],
+    );
   }
 
   setFollow(on: boolean): void {
@@ -61,10 +64,10 @@ export class FlickFocus {
     if (on) this.followVideo(this.playback.time);
   }
 
-  private followVideo(t: number): void {
-    const r = this.report();
-    if (!r || !this.follow() || this.playback.replaying) return;
-    const at = flickAt(r.flicks, Math.round(t * r.fps));
+  private followVideo(seconds: number): void {
+    const report = this.report();
+    if (!report || !this.follow() || this.playback.replaying) return;
+    const at = flickAt(report.flicks, Math.round(seconds * report.fps));
     if (at && at !== this.selected()) this.selected.set(at);
   }
 }

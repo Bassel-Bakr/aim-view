@@ -6,9 +6,9 @@ import { Playback } from '../playback';
 
 /** A time typed as m:ss.s (or seconds); null for an empty field, NaN for one that is not a time. */
 export function parseClock(text: string): number | null {
-  const t = text.trim();
-  if (!t) return null;
-  const parts = t.split(':').map(Number);
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(':').map(Number);
   const seconds =
     parts.length === 2 ? 60 * parts[0] + parts[1] : parts.length === 1 ? parts[0] : NaN;
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : NaN;
@@ -17,9 +17,9 @@ export function parseClock(text: string): number | null {
 /** Seconds as m:ss.s. */
 export function formatClock(seconds: number): string {
   const tenths = Math.round(seconds * 10);
-  const m = Math.floor(tenths / 600);
-  const s = (tenths % 600) / 10;
-  return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+  const minutes = Math.floor(tenths / 600);
+  const secondsInMinute = (tenths % 600) / 10;
+  return `${minutes}:${secondsInMinute < 10 ? '0' : ''}${secondsInMinute.toFixed(1)}`;
 }
 
 /**

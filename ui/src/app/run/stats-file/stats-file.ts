@@ -88,34 +88,37 @@ export class StatsFile {
       now.pairing ?? (previous?.source.id === now.id ? previous.value : null),
   });
   protected readonly how = computed(() => {
-    const p = this.shown();
-    return p ? HOW[p.how] : '';
+    const pairing = this.shown();
+    return pairing ? HOW[pairing.how] : '';
   });
   /** The user chose something, so finding it by name and time again changes something. */
   protected readonly chosen = computed(() =>
     ['picked', 'upload', 'none', 'gone'].includes(this.shown()?.how ?? ''),
   );
   protected readonly rows = computed<CandidateRow[]>(() => {
-    const p = this.shown();
-    if (!p) return [];
-    return p.candidates.map((c) => ({
-      name: c.name,
-      when: formatStamp(c.stamp),
-      off: formatOffset(c.off),
-      scenario: c.scenario.toLowerCase() === p.scenario.toLowerCase() ? null : c.scenario,
-      inUse: c.name === p.file,
+    const pairing = this.shown();
+    if (!pairing) return [];
+    return pairing.candidates.map((candidate) => ({
+      name: candidate.name,
+      when: formatStamp(candidate.stamp),
+      off: formatOffset(candidate.off),
+      scenario:
+        candidate.scenario.toLowerCase() === pairing.scenario.toLowerCase()
+          ? null
+          : candidate.scenario,
+      inUse: candidate.name === pairing.file,
     }));
   });
   /** What the stats file says, when it was read where the page runs. */
   protected readonly facts = computed<StatsFact[] | null>(() => {
-    const s = this.shown()?.facts;
-    if (!s) return null;
+    const facts = this.shown()?.facts;
+    if (!facts) return null;
     return [
-      { label: 'Scenario', value: s.scenario ?? '–' },
-      { label: 'Score', value: s.score === null ? '–' : formatNumber(s.score) },
-      { label: 'Kills', value: formatCount(s.kills) },
-      { label: 'Accuracy', value: formatPercent(s.accuracy) },
-      { label: 'Ended', value: s.stamp ? formatStamp(s.stamp) : '–' },
+      { label: 'Scenario', value: facts.scenario ?? '–' },
+      { label: 'Score', value: facts.score === null ? '–' : formatNumber(facts.score) },
+      { label: 'Kills', value: formatCount(facts.kills) },
+      { label: 'Accuracy', value: formatPercent(facts.accuracy) },
+      { label: 'Ended', value: facts.stamp ? formatStamp(facts.stamp) : '–' },
     ];
   });
   protected readonly saving = signal(false);
@@ -143,8 +146,8 @@ export class StatsFile {
       await step();
       this.pairing.reload();
       this.message.set({ text: done, failed: false });
-    } catch (e) {
-      this.message.set({ text: errorMessage(e), failed: true });
+    } catch (error) {
+      this.message.set({ text: errorMessage(error), failed: true });
     } finally {
       this.saving.set(false);
     }
@@ -175,8 +178,8 @@ export class StatsFile {
       this.pairing.reload();
       const measuring = made.job.stage === 'none' ? '' : '; the review is measured again';
       this.message.set({ text: `${done}${measuring}`, failed: false });
-    } catch (e) {
-      this.message.set({ text: `Could not save: ${errorMessage(e)}`, failed: true });
+    } catch (error) {
+      this.message.set({ text: `Could not save: ${errorMessage(error)}`, failed: true });
     } finally {
       this.saving.set(false);
     }
