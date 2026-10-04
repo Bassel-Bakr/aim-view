@@ -55,11 +55,11 @@ listed in `new_runs.txt`. small_v6 used the same command into `data_kills3`, bef
 python python/model/build_kills.py --out test_out/vod_model/data_kills4 --per-folder 1 --also test_out/vod_model/new_runs.txt
 ```
 
-Moving targets on other themes (2026-10-04; not checked and not trained on yet). Every recording of a dynamic,
-tracking or switching scenario (`--per-folder 0`) that is not dark targets on light walls (`--other-themes`: the ones
-`--dark` leaves out), labelled by full_v3 instead of `dark_labels` (`--model`: its `_u8in` export on the CPU, at the
-threshold in its settings file). Boxes on the HUD or KovOBS's boxes are dropped, and so are boxes more than 2.5 times
-wider than tall (health bars). The steadiness filter and the target-count filter are the same as for `--dark`.
+Moving targets on other themes (2026-10-04; checked by eye and trained on in full_v4: below). Every recording of a
+dynamic, tracking or switching scenario (`--per-folder 0`) that is not dark targets on light walls (`--other-themes`:
+the ones `--dark` leaves out), labelled by full_v3 instead of `dark_labels` (`--model`: its `_u8in` export on the CPU,
+at the threshold in its settings file). Boxes on the HUD or KovOBS's boxes are dropped, and so are boxes more than 2.5
+times wider than tall (health bars). The steadiness filter and the target-count filter are the same as for `--dark`.
 `--skip-checks` leaves out every recording the stats-file checks use (eval_vods.py, eval_moving.py,
 eval_video_alone.py). About 7 minutes on 14 processes. Then the contact sheet, and 150 crops picked for a check by eye
 (`pick_checks.py`: spread over the recordings and kinds, most of them uncertain ones), and the check itself:
@@ -71,16 +71,16 @@ python python/model/pick_checks.py --data test_out/vod_model/data_moving_themes 
 python python/model/label_check.py --data test_out/vod_model/check_moving_themes --n 150 --port 8774 --out test_out/vod_model/check_moving_themes/checked.jsonl
 ```
 
-Crops mined from full_v3's own mistakes (2026-10-04; not checked and not trained on yet). `build_mined.py` reviews
-recordings that have a stats file as the app does (full_v3's `_u8in` export on DirectML; each review kept in
-`data_mined/reviews/`, so a rerun skips it): the newest recording of each scenario folder, dynamic and switching
-first, then tracking, then static, the checks' runs left out, until `--budget` seconds of reviewing. Four rules, each
-strict (the script's docstring has them in full): `kill` places the killed target where the model lost it in the
-third of a second before a kill of a dynamic or switching run; `gap` fills a steadily tracked target that the model
-misses for 1 or 2 frames; `false_static` takes out a box that stays put on screen while the view turns; `false_lone`
-takes out a box seen in one frame with nothing near it or like it. The 2026-10-04 build stopped after 215 reviews
-(3,106 s); `--reviewed-only` mines only the recordings reviewed before. Then the contact sheet, 100 crops picked for
-a check by eye (spread over the rules and the recordings), and the check itself:
+Crops mined from full_v3's own mistakes (2026-10-04; checked by eye and trained on in full_v4: below). `build_mined.py`
+reviews recordings that have a stats file as the app does (full_v3's `_u8in` export on DirectML; each review kept in
+`data_mined/reviews/`, so a rerun skips it): the newest recording of each scenario folder, dynamic and switching first,
+then tracking, then static, the checks' runs left out, until `--budget` seconds of reviewing. Four rules, each strict
+(the script's docstring has them in full): `kill` places the killed target where the model lost it in the third of a
+second before a kill of a dynamic or switching run; `gap` fills a steadily tracked target that the model misses for 1 or
+2 frames; `false_static` takes out a box that stays put on screen while the view turns; `false_lone` takes out a box
+seen in one frame with nothing near it or like it. The 2026-10-04 build stopped after 215 reviews (3,106 s);
+`--reviewed-only` mines only the recordings reviewed before. Then the contact sheet, 100 crops picked for a check by eye
+(spread over the rules and the recordings), and the check itself:
 
 ```bash
 python python/model/build_mined.py --out test_out/vod_model/data_mined --budget 3600
@@ -88,6 +88,21 @@ python python/model/build_mined.py --out test_out/vod_model/data_mined --reviewe
 python python/model/validate_data.py --data test_out/vod_model/data_mined --sheet test_out/vod_model/sheet_mined.png
 python python/model/build_mined.py --out test_out/vod_model/data_mined --pick 100 --check test_out/vod_model/check_mined
 python python/model/label_check.py --data test_out/vod_model/check_mined --n 100 --port 8775 --out test_out/vod_model/check_mined/checked.jsonl
+```
+
+Both sets checked by eye, as training sets (2026-10-04, full_v4's data). The user checked every crop of both on the
+phone page (`checked_phone.jsonl` in each set, label_check's format). `checked_data.py` copies each crop with its boxes
+replaced by the checked ones ("skip": no target, no boxes) and its target mask made again from them (the ellipse that
+fills each box), in the same split. Each name gets a 10-character tag in front (`chk_theme_`, `chk_mined_`), so
+`train.py --repeat` can weight these crops alone: their recordings' hashes also start 2,428 training crops of the
+same recordings in `data_v3`, `data_kills4` and `data_moving_dark`. One mined crop is left out: its checked box is
+51.4 x 2.8 px on a target about 50 x 34 px (a slip on the phone page). Then the contact sheets:
+
+```bash
+python python/model/checked_data.py --labels test_out/vod_model/data_moving_themes/checked_phone.jsonl --out test_out/vod_model/data_themes_checked --tag chk_theme_
+python python/model/checked_data.py --labels test_out/vod_model/data_mined/checked_phone.jsonl --out test_out/vod_model/data_mined_checked --tag chk_mined_ --leave-out train/5428426d1d_00863_g00.npz
+python python/model/validate_data.py --data test_out/vod_model/data_themes_checked --sheet test_out/vod_model/sheet_themes_checked.png
+python python/model/validate_data.py --data test_out/vod_model/data_mined_checked --sheet test_out/vod_model/sheet_mined_checked.png
 ```
 
 ## 2. Train
@@ -159,6 +174,21 @@ Then the check on whole recordings of every kind against the stats files, and th
 python python/model/eval_moving.py small_v11=python/model/exports/detector_small_v11.pt small_mv1=$D/runs/small_mv1/best.pt   small_v13=$D/runs/small_v13/best.pt full_v3=$D/runs/full_v3/best.pt
 cp $D/runs/full_v3/best.pt python/model/exports/detector_full_v3.pt && python python/model/export.py $D/runs/full_v3/best.pt
 cp $D/runs/small_v13/best.pt python/model/exports/detector_small_v13.pt && python python/model/export.py $D/runs/small_v13/best.pt
+```
+
+full_v4 (2026-10-04): full_v3 fine-tuned for 4 epochs at a third of its learning rate (`full_v4.json`: 0.0005), on
+full_v3's data plus the two checked sets (step 1), their crops counted 3 times (`repeat_full_v4.txt`: `repeat_v9.txt`
+plus the lines `chk_theme_ 3` and `chk_mined_ 3`). About 7 minutes on the RTX 5070 Ti (`best.pt` is epoch 3). Then the
+export and the gate, without `--list` (MODEL_STATUS.md, "full_v4"):
+
+```bash
+D=test_out/vod_model
+(cat $D/repeat_v9.txt; printf 'chk_theme_ 3\nchk_mined_ 3\n') > $D/repeat_full_v4.txt
+python python/model/train.py python/model/configs/full_v4.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked --extra $D/data_mined_checked \
+  --repeat $D/repeat_full_v4.txt --times 3 --init $D/runs/full_v3/best.pt
+python python/model/export.py $D/runs/full_v4/best.pt
+python python/model/accept.py full_v4
 ```
 
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,

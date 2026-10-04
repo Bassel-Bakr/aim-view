@@ -438,6 +438,52 @@ python python/model/eval_moving.py full_v3=python/model/exports/detector_full_v3
 with small_v13 over the 32 recordings, on a GPU shared with other work (not a benchmark). The uploads and Aim Lab row
 of the section above (kills from the HUD) was not measured again.
 
+## full_v4: the checked crops (2026-10-04)
+
+full_v3 fine-tuned on the crops the user checked by eye. It fails the gate; full_v3 stays the best model.
+
+**Data** (REPRODUCE.md step 1, `checked_data.py`). The two sets with the user's boxes (Known limitations below):
+`data_themes_checked`, 405 crops of moving targets on other themes (train 189, val 143, test 73; 353 boxes, 89 crops
+without a target), and `data_mined_checked`, 109 of the 110 mined crops (train 99, val 5, test 5; 156 boxes, 3
+without a target; one left out for a slip on the phone page, a 51.4 x 2.8 px box). Splits as before; the target masks
+made again from the checked boxes. The crops are counted 3 times, through tags in their names (a recording's hash
+would also weight 2,428 other training crops of 27 of the same recordings).
+
+**Training** (REPRODUCE.md step 2, `full_v4.json`). From full_v3's best.pt, its model and augmentation, 4 epochs at
+lr 0.0005 (full_v3's 0.0015 / 3), on 71,881 training crops (full_v3: 71,017) and 8,707 val crops (8,559 + the new
+148). About 100 s an epoch (the first 126 s), 7 minutes in all.
+
+| Epoch | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- |
+| Val F1 | 0.9427 | 0.9428 | **0.9444** (best.pt) | 0.9429 |
+
+On the same crops, full_v3 and full_v4 score alike: val F1 0.9443 and 0.9444 (full_v3's own val sets: 0.9445 both).
+On the checked themes crops full_v4 gains a little (val 0.932 to 0.946, 21 to 15 false finds; test 0.959 both), and
+its boxes sit closer (median center error 0.89 to 0.78 px on val, 1.00 to 0.89 on test). The mined val and test hold
+only 14 boxes (F1 0.786 to 0.769).
+
+**The gate** (`accept.py full_v4`, the app's native review; raw outputs in `test_out/baselines/full_v4/`):
+
+| Check | full_v4 | full_v3 | Allowed | Result |
+| --- | --- | --- | --- | --- |
+| Contract | crosshair fails | | every check | FAIL |
+| Static kills, flicks (854) | 854, 850 | 854, 847 | no drop, -5.5 | pass |
+| Dynamic kills, flicks (707) | 704, 701 | 704, 695 | no drop, -7.2 | pass |
+| Switching kills, flicks (405) | 400, 384 | 403, 392 | no drop, -7.4 | FAIL |
+| Tracking gap: mean size, mean | 0.0857, -0.0222 | 0.0875, -0.0325 | +0.031, +0.055 | pass |
+| Report (4 static runs) kills, flicks (496) | 496, 494 | 496, 493 | no drop, -3.6 | pass |
+| Video alone, all: recall, precision | 0.928, 0.934 | 0.945, 0.957 | -0.007, -0.006 | FAIL |
+| static | 0.900, 0.907 | 0.926, 0.948 | -0.010, -0.009 | FAIL |
+| dynamic | 0.972, 0.980 | 0.980, 0.988 | -0.007, -0.005 | FAIL |
+| switching | 0.911, 0.904 | 0.913, 0.903 | -0.024, -0.025 | pass |
+
+The losses sit in a few runs. The contract's crosshair check: full_v4 boxes the user's crosshair in 5.9% of the turning
+pairs of 1wall 6targets extra small 849.91 (full_v3 0.9%; 1.26% more over all, 0.5% allowed). Switching: all on
+Smoothbot Switch Robots (54 to 51 kills, 43 to 35 flicks; the training's only robot labels are the mined set's 3
+Switching Humanoid crops, boxed as whole robots). Video alone: VT ww5t Advanced S5 1520 (151 to 100 kills found) and
+1wall 2targets xsmall valorant 558.46 (40 to 4 found, 88 video kills against 69). The gains are small: 3 more static
+flicks, 6 more dynamic ones, and tracking a little closer to the stats files.
+
 ## Current best model
 
 **full_v3**, threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX, 169.6 KB as fp16. Static, dynamic, switching
@@ -582,27 +628,27 @@ crosshair that the automatic labels miss, which those crops count as false.
   checked.
 - **Moving targets: dark ones on light walls only.** The moving data comes from recordings with dark targets on light
   walls (`dark_labels`); other themes' moving targets come only through the recolouring augmentation. A set for the
-  other themes is checked by eye but not yet trained on: `data_moving_themes` (2026-10-04; REPRODUCE.md
-  step 1), labelled by full_v3. Few such recordings exist: of 1,087 moving recordings, 986 are dark targets on light
-  walls and 49 are the checks' runs. Of the other 52, 29 have too few key frames (5-second runs) and 16 have labels
-  that are not steady or more labels than targets (among them a black game screen and another game). 7 are
-  kept: 405 crops (train 189 from 4 recordings, val 143 from 2, test 73 from 1). Two of the 7 have wrong labels:
+  other themes is checked by eye and trained on in full_v4 (failed the gate: section above): `data_moving_themes`
+  (2026-10-04; REPRODUCE.md step 1), labelled by full_v3. Few such recordings exist: of 1,087 moving recordings, 986 are
+  dark targets on light walls and 49 are the checks' runs. Of the other 52, 29 have too few key frames (5-second runs)
+  and 16 have labels that are not steady or more labels than targets (among them a black game screen and another game).
+  7 are kept: 405 crops (train 189 from 4 recordings, val 143 from 2, test 73 from 1). Two of the 7 have wrong labels:
   773TS 90 (the model misses the big capsule and marks the marker above it) and voxTS-Huge Jumbo static 5s (its key
   frames are mostly the results screen; the boxes are on the score chart). The user checked 150 of the crops by eye
   (2026-10-04, on a phone page; `check_moving_themes/checked.jsonl` in label_check's format, the raw answers in
-  `phone_answers/`): 103 right and 47 wrong, every wrong one fixed. Of the 117 boxes judged, 47 were wrong (40%), and
-  19 targets had no box (18 boxed by hand, 1 marked by a tap and sized from the recording's other boxes). The picks
-  lean toward uncertain crops, so the whole set's error rate is lower, but full_v3's labels on other themes cannot be
-  trained on unchecked. Worst: 773TS 90 (17 of 25 wrong) and VT Controlsphere Intermediate S5 (10 of 20); best: VT
-  Frogtagon Advanced S5 (2 of 25). Then the user checked the other 255 the same day, with zoom and an outline guide, and tightened
+  `phone_answers/`): 103 right and 47 wrong, every wrong one fixed. Of the 117 boxes judged, 47 were wrong (40%), and 19
+  targets had no box (18 boxed by hand, 1 marked by a tap and sized from the recording's other boxes). The picks lean
+  toward uncertain crops, so the whole set's error rate is lower, but full_v3's labels on other themes cannot be trained
+  on unchecked. Worst: 773TS 90 (17 of 25 wrong) and VT Controlsphere Intermediate S5 (10 of 20); best: VT Frogtagon
+  Advanced S5 (2 of 25). Then the user checked the other 255 the same day, with zoom and an outline guide, and tightened
   the first 150's boxes they had kept: every one of the 405 crops is checked (`data_moving_themes/checked_phone.jsonl`,
-  316 with targets, 89 without; the raw answers in `check_moving_themes/phone_answers_405/`). With zoom, the user
-  shrank 241 of the 252 model boxes they kept in the 255: on these moving spheres full_v3's boxes are too big (about
-  10% on Controlsphere Advanced, 5% on Controlsphere Intermediate and Frogtagon) and sit about 0.7 px up and left,
-  in every recording (from the boxes fixed by hand only). The user's earlier desktop hand labels of small static
-  targets show no such offset (154 pairs: median 0.05 px, size ratio 0.99).
-- **Crops mined from full_v3's own mistakes** (`data_mined`, 2026-10-04; `build_mined.py`, REPRODUCE.md step 1). Not
-  trained on yet. 215 recordings with a stats file were reviewed natively (3,106 s: 131
+  316 with targets, 89 without; the raw answers in `check_moving_themes/phone_answers_405/`). With zoom, the user shrank
+  241 of the 252 model boxes they kept in the 255: on these moving spheres full_v3's boxes are too big (about 10% on
+  Controlsphere Advanced, 5% on Controlsphere Intermediate and Frogtagon) and sit about 0.7 px up and left, in every
+  recording (from the boxes fixed by hand only). The user's earlier desktop hand labels of small static targets show no
+  such offset (154 pairs: median 0.05 px, size ratio 0.99).
+- **Crops mined from full_v3's own mistakes** (`data_mined`, 2026-10-04; `build_mined.py`, REPRODUCE.md step 1). Trained
+  on in full_v4 (failed the gate: section above). 215 recordings with a stats file were reviewed natively (3,106 s: 131
   dynamic, 57 switching, 27 tracking; the checks' runs left out; static not reached), and strict rules mined 110
   crops from 45 of them: `kill` 23 (the killed target placed where the model lost it before a kill, from 4
   recordings), `gap` 76 (a steadily tracked target missed for 1 or 2 frames), `false_static` 7 (the crosshair's dot
@@ -635,7 +681,8 @@ crosshair that the automatic labels miss, which those crops count as false.
 3. **Check the review's numbers.** Take the target radius from the scenario's `.sce` (size and distance) as a second
    check, and find out why Pokeball 5's median kill interval differs between the detectors.
 4. **Tracking scenarios.** Done (full_v3, small_v13). Next: moving targets on other themes (labelled with full_v3
-   in `data_moving_themes`; all 405 crops checked by eye: `checked_phone.jsonl`), thin capsules, and more
+   in `data_moving_themes`; all 405 crops checked by eye: `checked_phone.jsonl`; full_v4 trained on them and failed
+   the gate), thin capsules, and more
    tracking runs in the check.
 5. **WebGPU.** The embed file already reads back only 100 boxes; the rest of the 12 ms floor is per-layer dispatch.
    A hand-written WebGPU shader for this small network, or fused layers, could cut it. Until then, WASM is the
