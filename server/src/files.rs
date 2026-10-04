@@ -1,5 +1,8 @@
 //! The UI's files (its server-mode build). A path that is not a file there is one of the single-page app's own
 //! pages: it gets index.html, and the app shows that page.
+//!
+//! In: a request's URL path and the build's folder (http.rs). Out: the file to send and its content type, or that the
+//! path is the API's.
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +26,7 @@ pub fn find(root: &Path, path: &str) -> Found {
     let decoded = percent_encoding::percent_decode_str(path).decode_utf8_lossy();
     let mut file = root.to_path_buf();
     let mut parts = 0;
-    for part in decoded.split('/').filter(|p| !p.is_empty()) {
+    for part in decoded.split('/').filter(|part| !part.is_empty()) {
         if part == "." || part == ".." || part.contains(['\\', ':', '\0']) {
             return Found::Index;
         }
@@ -35,8 +38,8 @@ pub fn find(root: &Path, path: &str) -> Found {
 
 /// A file's content type, by its extension.
 pub fn content_type(file: &Path) -> &'static str {
-    let ext = file.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    match ext.as_str() {
+    let extension = file.extension().map(|extension| extension.to_string_lossy().to_ascii_lowercase());
+    match extension.unwrap_or_default().as_str() {
         "html" | "htm" => "text/html; charset=utf-8",
         "js" | "mjs" => "text/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
@@ -76,11 +79,11 @@ mod tests {
 
     #[test]
     fn the_api_and_the_videos_are_not_the_uis() {
-        for p in ["/api", "/api/vods", "/api/job", "/video"] {
-            assert!(is_api(p), "{p}");
+        for path in ["/api", "/api/vods", "/api/job", "/video"] {
+            assert!(is_api(path), "{path}");
         }
-        for p in ["/", "/apiary", "/videos", "/video/1", "/run/api", "/index.html"] {
-            assert!(!is_api(p), "{p}");
+        for path in ["/", "/apiary", "/videos", "/video/1", "/run/api", "/index.html"] {
+            assert!(!is_api(path), "{path}");
         }
     }
 
@@ -88,15 +91,16 @@ mod tests {
     fn files_of_the_build_and_the_single_page_fallback() {
         let root = build();
         assert_eq!(find(&root, "/main-ABC.js"), Found::File(root.join("main-ABC.js")));
-        assert_eq!(find(&root, "/models/detector%20small.onnx"), Found::File(root.join("models").join("detector small.onnx")));
+        let model = root.join("models").join("detector small.onnx");
+        assert_eq!(find(&root, "/models/detector%20small.onnx"), Found::File(model));
         assert_eq!(find(&root, "/index.html"), Found::File(root.join("index.html")));
         // the app's own pages, and files it does not have
-        for p in ["/", "", "/run/Gridshot - 99 - 2026.10.02-12.00.00.mp4", "/recordings", "/models", "/missing.js"] {
-            assert_eq!(find(&root, p), Found::Index, "{p}");
+        for path in ["/", "", "/run/Gridshot - 99 - 2026.10.02-12.00.00.mp4", "/recordings", "/models", "/missing.js"] {
+            assert_eq!(find(&root, path), Found::Index, "{path}");
         }
         // never a file outside the build
-        for p in ["/../Cargo.toml", "/models/../../x", "/%2e%2e/x", "/..%5Cx", "/C:/Windows/win.ini", "/models/.."] {
-            assert_eq!(find(&root, p), Found::Index, "{p}");
+        for path in ["/../Cargo.toml", "/models/../../x", "/%2e%2e/x", "/..%5Cx", "/C:/Windows/win.ini", "/models/.."] {
+            assert_eq!(find(&root, path), Found::Index, "{path}");
         }
     }
 

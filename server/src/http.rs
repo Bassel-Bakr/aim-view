@@ -1,5 +1,9 @@
-//! The HTTP side: each request is checked (access.rs), then goes to the review API or to the UI's files. The API answers on a blocking thread of its own: a listing or a report reads files, and a review's start
-//! can take a while (the review itself runs in the background, polled with /api/job).
+//! The HTTP side: each request is checked (access.rs), then goes to the review API or to the UI's files. The API
+//! answers on a blocking thread of its own: a listing or a report reads files, and a review's start can take a while
+//! (the review itself runs in the background, polled with /api/job).
+//!
+//! In: the requests axum hands over. Out: the API's replies (glue.rs gives the API), the UI build's files
+//! (files.rs finds them), and a line in the log for each request that is not routine.
 
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -10,9 +14,11 @@ use axum::Router;
 use axum::body::{Body, Bytes, HttpBody};
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::header::{
-    ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS,
-    ACCESS_CONTROL_MAX_AGE, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE, SET_COOKIE, VARY,
+    ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
+    ACCESS_CONTROL_EXPOSE_HEADERS, ACCESS_CONTROL_MAX_AGE, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE,
+    SET_COOKIE, VARY,
 };
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -20,6 +26,13 @@ use tokio_util::io::ReaderStream;
 
 use crate::access::{Access, Verdict, loopback_caller};
 use crate::files::{self, Found};
+
+/// The path an upload's body is posted to: the one body written to a file as it arrives.
+const UPLOAD_PATH: &str = "/api/upload";
+/// How long a page may keep a preflight's answer, seconds (Access-Control-Max-Age).
+const PREFLIGHT_MAX_AGE_S: &str = "600";
+/// The buffer an upload is written through, bytes.
+const UPLOAD_BUFFER_BYTES: usize = 1 << 20;
 
 /// One request to the review API.
 pub struct Call {
@@ -30,6 +43,14 @@ pub struct Call {
     /// An upload's body, written to this file as it arrived (`body` is then empty). The API moves it into place; what
     /// it leaves is removed after it answers.
     pub upload: Option<PathBuf>,
+}
+
+impl Call {
+    /// A GET with no range and no body, as the server asks the API itself.
+    pub fn get(path_and_query: &str) -> Call {
+        let (method, path_and_query) = ("GET".into(), path_and_query.into());
+        Call { method, path_and_query, range: None, body: Bytes::new(), upload: None }
+    }
 }
 
 /// The review API's answer. `headers` hold its Content-Type.
@@ -90,21 +111,13 @@ async fn route(app: &App, req: Request) -> Response {
         // a page on this machine other than the server's (the UI in browser mode) may read the answers
         let caller = loopback_caller(req.headers());
         if req.method() == Method::OPTIONS {
-            let mut r = StatusCode::NO_CONTENT.into_response();
-            if let Some(origin) = caller {
-                let h = r.headers_mut();
-                h.insert(ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, POST"));
-                h.insert(ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("content-type, range"));
-                h.insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
-                allow(h, origin);
-            }
-            return r;
+            return preflight(caller);
         }
-        let mut r = call_api(app, req).await;
+        let mut response = call_api(app, req).await;
         if let Some(origin) = caller {
-            allow(r.headers_mut(), origin);
+            allow(response.headers_mut(), origin);
         }
-        return r;
+        return response;
     }
     if !matches!(*req.method(), Method::GET | Method::HEAD) {
         return text(StatusCode::METHOD_NOT_ALLOWED, "the UI's files are read with GET\n");
@@ -112,30 +125,31 @@ async fn route(app: &App, req: Request) -> Response {
     ui_file(app, req.uri().path()).await
 }
 
+/// The answer to a preflight (OPTIONS) for the API: what a page on this machine (`caller`) may send; nothing for
+/// any other page.
+fn preflight(caller: Option<HeaderValue>) -> Response {
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    if let Some(origin) = caller {
+        let headers = response.headers_mut();
+        headers.insert(ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, POST"));
+        headers.insert(ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("content-type, range"));
+        headers.insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static(PREFLIGHT_MAX_AGE_S));
+        allow(headers, origin);
+    }
+    response
+}
+
 async fn call_api(app: &App, req: Request) -> Response {
     let (parts, body) = req.into_parts();
-    // an upload (a whole video, gigabytes) is written to a file as it arrives; the other bodies are small
-    let (body, upload) = if parts.method == Method::POST && parts.uri.path() == "/api/upload" {
-        let file = match app.api.spool() {
-            Ok(f) => f,
-            Err(e) => return text(StatusCode::INTERNAL_SERVER_ERROR, format!("the upload has nowhere to go: {e}\n")),
-        };
-        if let Err(failed) = spool(body, &file).await {
-            let _ = tokio::fs::remove_file(&file).await;
-            return failed;
-        }
-        (Bytes::new(), Some(file))
-    } else {
-        match axum::body::to_bytes(body, usize::MAX).await {
-            Ok(b) => (b, None),
-            Err(_) => return text(StatusCode::BAD_REQUEST, "the request's body could not be read\n"),
-        }
+    let (body, upload) = match read_body(app, &parts, body).await {
+        Ok(read) => read,
+        Err(failed) => return failed,
     };
     let call = Call {
         // HEAD is GET without the body, which the HTTP library leaves out
         method: if parts.method == Method::HEAD { "GET".into() } else { parts.method.as_str().into() },
-        path_and_query: parts.uri.path_and_query().map_or("/", |p| p.as_str()).into(),
-        range: parts.headers.get(RANGE).and_then(|r| r.to_str().ok()).map(String::from),
+        path_and_query: parts.uri.path_and_query().map_or("/", |path_and_query| path_and_query.as_str()).into(),
+        range: parts.headers.get(RANGE).and_then(|range| range.to_str().ok()).map(String::from),
         body,
         upload: upload.clone(),
     };
@@ -148,12 +162,38 @@ async fn call_api(app: &App, req: Request) -> Response {
     let Ok(reply) = answered else {
         return text(StatusCode::INTERNAL_SERVER_ERROR, "the review service failed on this request\n");
     };
+    reply_response(reply)
+}
+
+/// A request's body, and the file an upload's was written to. An upload (a whole video, gigabytes) is written to a
+/// file as it arrives; the other bodies are small, and read into memory. On failure, the answer to give.
+async fn read_body(app: &App, parts: &Parts, body: Body) -> Result<(Bytes, Option<PathBuf>), Response> {
+    if parts.method == Method::POST && parts.uri.path() == UPLOAD_PATH {
+        let file = app.api.spool().map_err(|error| {
+            text(StatusCode::INTERNAL_SERVER_ERROR, format!("the upload has nowhere to go: {error}\n"))
+        })?;
+        if let Err(failed) = spool(body, &file).await {
+            let _ = tokio::fs::remove_file(&file).await;
+            return Err(failed);
+        }
+        return Ok((Bytes::new(), Some(file)));
+    }
+    match axum::body::to_bytes(body, usize::MAX).await {
+        Ok(bytes) => Ok((bytes, None)),
+        Err(_) => Err(text(StatusCode::BAD_REQUEST, "the request's body could not be read\n")),
+    }
+}
+
+/// The API's reply as the response, without the headers that would let another site's page read it: the UI is on
+/// the server's own origin.
+fn reply_response(reply: Reply) -> Response {
     let mut response = Response::new(Body::from(reply.body));
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let headers = response.headers_mut();
     for (name, value) in reply.headers {
-        // the UI is on the server's own origin: no other site's page may read the answers
-        if name.to_ascii_lowercase().starts_with("access-control-") || name.eq_ignore_ascii_case("cross-origin-resource-policy") {
+        if name.to_ascii_lowercase().starts_with("access-control-")
+            || name.eq_ignore_ascii_case("cross-origin-resource-policy")
+        {
             continue;
         }
         if let (Ok(name), Ok(value)) = (HeaderName::try_from(name), HeaderValue::try_from(value)) {
@@ -173,10 +213,13 @@ fn allow(headers: &mut HeaderMap, origin: HeaderValue) {
 /// Writes a request's body to `file` as it arrives, so an upload of any size takes little memory; on failure, the
 /// answer to give (the body broke off, or the file could not be written).
 async fn spool(mut body: Body, file: &Path) -> Result<(), Response> {
-    let unwritten = |e: std::io::Error| text(StatusCode::INTERNAL_SERVER_ERROR, format!("the upload could not be written: {e}\n"));
-    let mut out = BufWriter::with_capacity(1 << 20, tokio::fs::File::create(file).await.map_err(unwritten)?);
+    let unwritten = |error: std::io::Error| {
+        text(StatusCode::INTERNAL_SERVER_ERROR, format!("the upload could not be written: {error}\n"))
+    };
+    let created = tokio::fs::File::create(file).await.map_err(unwritten)?;
+    let mut out = BufWriter::with_capacity(UPLOAD_BUFFER_BYTES, created);
     while let Some(frame) = std::future::poll_fn(|cx| Pin::new(&mut body).poll_frame(cx)).await {
-        let frame = frame.map_err(|e| text(StatusCode::BAD_REQUEST, format!("the upload broke off: {e}\n")))?;
+        let frame = frame.map_err(|error| text(StatusCode::BAD_REQUEST, format!("the upload broke off: {error}\n")))?;
         if let Ok(data) = frame.into_data() {
             out.write_all(&data).await.map_err(unwritten)?;
         }
@@ -188,13 +231,13 @@ async fn spool(mut body: Body, file: &Path) -> Result<(), Response> {
 
 /// A file, streamed, with its type and length; None when it cannot be opened.
 async fn file_response(file: &Path) -> Option<Response> {
-    let f = tokio::fs::File::open(file).await.ok()?;
-    let length = f.metadata().await.map(|m| m.len()).ok();
-    let mut response = Response::new(Body::from_stream(ReaderStream::new(f)));
+    let opened = tokio::fs::File::open(file).await.ok()?;
+    let length = opened.metadata().await.map(|metadata| metadata.len()).ok();
+    let mut response = Response::new(Body::from_stream(ReaderStream::new(opened)));
     let headers = response.headers_mut();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static(files::content_type(file)));
-    if let Some(n) = length {
-        headers.insert(CONTENT_LENGTH, n.into());
+    if let Some(length) = length {
+        headers.insert(CONTENT_LENGTH, length.into());
     }
     headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     Some(response)
@@ -204,7 +247,7 @@ async fn file_response(file: &Path) -> Option<Response> {
 /// server gives (ui/angular.json).
 async fn ui_file(app: &App, path: &str) -> Response {
     let (file, page) = match files::find(&app.ui, path) {
-        Found::File(f) => (f, false),
+        Found::File(file) => (file, false),
         Found::Index => (app.ui.join("index.html"), true),
     };
     let Some(mut response) = file_response(&file).await else {
@@ -242,8 +285,9 @@ mod tests {
     impl Api for Echo {
         fn handle(&self, call: &Call) -> Reply {
             // an upload's body is read back from its file
-            let body = call.upload.as_ref().map_or_else(|| call.body.to_vec(), |f| std::fs::read(f).unwrap());
-            self.calls.lock().unwrap().push((call.method.clone(), call.path_and_query.clone(), call.range.clone(), body));
+            let body = call.upload.as_ref().map_or_else(|| call.body.to_vec(), |file| std::fs::read(file).unwrap());
+            let seen = (call.method.clone(), call.path_and_query.clone(), call.range.clone(), body);
+            self.calls.lock().unwrap().push(seen);
             Reply {
                 status: if call.path_and_query.starts_with("/video") { 206 } else { 200 },
                 headers: vec![
@@ -276,29 +320,30 @@ mod tests {
     }
 
     async fn send(router: &Router, req: axum::http::request::Builder, body: &'static [u8]) -> (StatusCode, Response) {
-        let response = router.clone().oneshot(req.header(HOST, "127.0.0.1:8770").body(Body::from(body)).unwrap()).await.unwrap();
+        let req = req.header(HOST, "127.0.0.1:8770").body(Body::from(body)).unwrap();
+        let response = router.clone().oneshot(req).await.unwrap();
         (response.status(), response)
     }
 
-    async fn body(r: Response) -> String {
-        String::from_utf8(axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap()
+    async fn body(response: Response) -> String {
+        String::from_utf8(axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap()
     }
 
     #[tokio::test]
     async fn the_apps_pages_get_index_html() {
         let (echo, router) = app(None);
         for path in ["/", "/run/Gridshot%20-%2099%20-%202026.10.02-12.00.00.mp4", "/models", "/no-such.js"] {
-            let (status, r) = send(&router, Request::get(path), b"").await;
+            let (status, response) = send(&router, Request::get(path), b"").await;
             assert_eq!(status, StatusCode::OK, "{path}");
-            assert_eq!(r.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
-            assert_eq!(r.headers()[CACHE_CONTROL], "no-cache");
-            assert_eq!(r.headers()["cross-origin-embedder-policy"], "require-corp");
-            assert!(body(r).await.contains("<title>Aim View</title>"));
+            assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
+            assert_eq!(response.headers()[CACHE_CONTROL], "no-cache");
+            assert_eq!(response.headers()["cross-origin-embedder-policy"], "require-corp");
+            assert!(body(response).await.contains("<title>Aim View</title>"));
         }
-        let (status, r) = send(&router, Request::get("/main.js"), b"").await;
+        let (status, response) = send(&router, Request::get("/main.js"), b"").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(r.headers()[CONTENT_TYPE], "text/javascript; charset=utf-8");
-        assert_eq!(body(r).await, "console.log(1)");
+        assert_eq!(response.headers()[CONTENT_TYPE], "text/javascript; charset=utf-8");
+        assert_eq!(body(response).await, "console.log(1)");
         assert!(echo.calls.lock().unwrap().is_empty(), "no page went to the API");
         let (status, _) = send(&router, Request::post("/"), b"").await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
@@ -307,27 +352,31 @@ mod tests {
     #[tokio::test]
     async fn the_api_gets_the_method_query_range_and_body() {
         let (echo, router) = app(None);
-        let (status, r) = send(&router, Request::post("/api/run?id=a%20b").header(RANGE, "bytes=5-"), b"{\"start\":1}").await;
+        let run = Request::post("/api/run?id=a%20b").header(RANGE, "bytes=5-");
+        let (status, response) = send(&router, run, b"{\"start\":1}").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(r.headers()[CONTENT_TYPE], "application/json");
-        assert!(r.headers().get("access-control-allow-origin").is_none(), "no other site reads the answers");
-        let (status, r) = send(&router, Request::get("/video?id=x").header(RANGE, "bytes=0-1"), b"").await;
+        assert_eq!(response.headers()[CONTENT_TYPE], "application/json");
+        assert!(response.headers().get("access-control-allow-origin").is_none(), "no other site reads the answers");
+        let (status, response) = send(&router, Request::get("/video?id=x").header(RANGE, "bytes=0-1"), b"").await;
         assert_eq!(status, StatusCode::PARTIAL_CONTENT);
-        assert_eq!(r.headers()["content-range"], "bytes 0-1/10");
+        assert_eq!(response.headers()["content-range"], "bytes 0-1/10");
         let (status, _) = send(&router, Request::get("/api/nothing"), b"").await;
         assert_eq!(status, StatusCode::OK, "the API answers its own unknown paths");
         // the UI in browser mode, on another port of this machine, reads the answers and the video's ranges
-        let page = |r: axum::http::request::Builder| r.header("origin", "http://localhost:4200").header("sec-fetch-site", "cross-site");
-        let (status, r) = send(&router, page(Request::options("/api/link")), b"").await;
+        let page = |req: axum::http::request::Builder| {
+            req.header("origin", "http://localhost:4200").header("sec-fetch-site", "cross-site")
+        };
+        let (status, response) = send(&router, page(Request::options("/api/link")), b"").await;
         assert_eq!(status, StatusCode::NO_CONTENT);
-        assert_eq!(r.headers()["access-control-allow-origin"], "http://localhost:4200");
-        assert_eq!(r.headers()["access-control-allow-headers"], "content-type, range");
-        let (status, r) = send(&router, page(Request::get("/video?id=x").header(RANGE, "bytes=0-1")), b"").await;
+        assert_eq!(response.headers()["access-control-allow-origin"], "http://localhost:4200");
+        assert_eq!(response.headers()["access-control-allow-headers"], "content-type, range");
+        let (status, response) = send(&router, page(Request::get("/video?id=x").header(RANGE, "bytes=0-1")), b"").await;
         assert_eq!(status, StatusCode::PARTIAL_CONTENT);
-        assert_eq!(r.headers()["access-control-allow-origin"], "http://localhost:4200");
-        assert_eq!(r.headers()["access-control-expose-headers"], "content-range");
+        assert_eq!(response.headers()["access-control-allow-origin"], "http://localhost:4200");
+        assert_eq!(response.headers()["access-control-expose-headers"], "content-range");
         let calls = echo.calls.lock().unwrap();
-        assert_eq!(calls[0], ("POST".into(), "/api/run?id=a%20b".into(), Some("bytes=5-".into()), b"{\"start\":1}".to_vec()));
+        let run = ("POST".into(), "/api/run?id=a%20b".into(), Some("bytes=5-".into()), b"{\"start\":1}".to_vec());
+        assert_eq!(calls[0], run);
         assert_eq!(calls[1].1, "/video?id=x");
         assert_eq!(calls[2].1, "/api/nothing");
         assert_eq!(calls.len(), 4, "a preflight never reaches the API");
@@ -337,7 +386,8 @@ mod tests {
     async fn an_upload_reaches_the_api_as_a_file() {
         let (echo, router) = app(None);
         let video: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
-        let req = Request::post("/api/upload?name=a.mp4").header(HOST, "127.0.0.1:8770").body(Body::from(video.clone())).unwrap();
+        let req = Request::post("/api/upload?name=a.mp4").header(HOST, "127.0.0.1:8770");
+        let req = req.body(Body::from(video.clone())).unwrap();
         let response = router.clone().oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let calls = echo.calls.lock().unwrap();
@@ -354,10 +404,10 @@ mod tests {
         let (status, _) = send(&router, Request::get("/"), b"").await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert!(echo.calls.lock().unwrap().is_empty());
-        let (status, r) = send(&router, Request::get("/?token=tok"), b"").await;
+        let (status, response) = send(&router, Request::get("/?token=tok"), b"").await;
         assert_eq!(status, StatusCode::SEE_OTHER);
-        assert_eq!(r.headers()[LOCATION], "/");
-        let cookie = r.headers()[SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_string();
+        assert_eq!(response.headers()[LOCATION], "/");
+        let cookie = response.headers()[SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_string();
         let (status, _) = send(&router, Request::get("/").header("cookie", cookie), b"").await;
         assert_eq!(status, StatusCode::OK);
         let (status, _) = send(&router, Request::get("/api/vods").header("authorization", "Bearer tok"), b"").await;

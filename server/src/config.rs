@@ -1,6 +1,9 @@
 //! The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults run on the
 //! machine Aim View is made on with no flags at all: the repo's test_out/ as the data folder (python/server.py's
 //! layout), KovOBS's recordings, KovaaK's folders and the models in python/model/.
+//!
+//! In: the flags (clap) and the settings file's text. Out: the `Settings` main.rs runs with, which glue.rs turns into
+//! the review service's `Config`.
 
 use std::path::{Path, PathBuf};
 
@@ -9,6 +12,20 @@ use serde::Deserialize;
 
 /// The settings file read when --config is not given: this name in the current folder, when it is there.
 pub const DEFAULT_FILE: &str = "aimview-server.toml";
+/// The address and port the server listens on by default.
+const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_PORT: u16 = 8770;
+/// The recordings' folder by default (Windows only): KovOBS's.
+const DEFAULT_VODS: &str = r"E:\OBS\KovOBS";
+/// Steam's folder on Windows, and under the home folder elsewhere.
+const STEAM_WINDOWS: &str = r"C:\Program Files (x86)\Steam";
+const STEAM_UNDER_HOME: &str = ".steam/steam";
+/// KovaaK's app id on Steam: the name of its workshop's folder.
+const KOVAAK_STEAM_APP_ID: &str = "824270";
+/// The ffmpeg setting that means "the PATH's ffmpeg only", in any case.
+const FFMPEG_FROM_PATH: &str = "path";
+/// The characters a token may hold besides ASCII letters and digits (URL-safe without percent-encoding).
+const TOKEN_SYMBOLS: &[u8] = b"-._~";
 
 /// Where the detector runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, ValueEnum)]
@@ -28,7 +45,7 @@ pub enum Device {
 impl Device {
     /// Its name on the command line and in the settings file.
     pub fn flag(self) -> String {
-        self.to_possible_value().map_or_else(String::new, |v| v.get_name().to_string())
+        self.to_possible_value().map_or_else(String::new, |value| value.get_name().to_string())
     }
 }
 
@@ -92,8 +109,8 @@ pub struct Flags {
 }
 
 /// A path as given, empty too (clap's own parser refuses an empty one).
-fn any_path(s: &str) -> Result<PathBuf, std::convert::Infallible> {
-    Ok(PathBuf::from(s))
+fn any_path(text: &str) -> Result<PathBuf, std::convert::Infallible> {
+    Ok(PathBuf::from(text))
 }
 
 /// The settings file: the same settings as the flags, each one optional. Relative paths are taken from the file's
@@ -139,9 +156,9 @@ pub fn repo() -> PathBuf {
 /// Steam's folder, where KovaaK's (FPSAimTrainer) is installed.
 fn steam() -> PathBuf {
     if cfg!(windows) {
-        PathBuf::from(r"C:\Program Files (x86)\Steam")
+        PathBuf::from(STEAM_WINDOWS)
     } else {
-        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".steam/steam")
+        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(STEAM_UNDER_HOME)
     }
 }
 
@@ -152,14 +169,14 @@ impl Settings {
         let steamapps = steam().join("steamapps");
         let kovaak = steamapps.join("common").join("FPSAimTrainer").join("FPSAimTrainer");
         Settings {
-            host: "127.0.0.1".into(),
-            port: 8770,
+            host: DEFAULT_HOST.into(),
+            port: DEFAULT_PORT,
             data: repo.join("test_out"),
-            vods: cfg!(windows).then(|| PathBuf::from(r"E:\OBS\KovOBS")),
+            vods: cfg!(windows).then(|| PathBuf::from(DEFAULT_VODS)),
             stats: kovaak.join("stats"),
             scenarios: vec![
                 kovaak.join("Saved").join("SaveGames").join("Scenarios"),
-                steamapps.join("workshop").join("content").join("824270"),
+                steamapps.join("workshop").join("content").join(KOVAAK_STEAM_APP_ID),
             ],
             models: repo.join("python").join("model").join("exports"),
             device: Device::Auto,
@@ -173,52 +190,73 @@ impl Settings {
     pub fn url(&self) -> String {
         let host = match self.host.as_str() {
             "0.0.0.0" | "::" | "[::]" => "localhost",
-            h if h.contains(':') && !h.starts_with('[') => return format!("http://[{h}]:{}/", self.port),
-            h => h,
+            ipv6 if ipv6.contains(':') && !ipv6.starts_with('[') => return format!("http://[{ipv6}]:{}/", self.port),
+            host => host,
         };
         format!("http://{host}:{}/", self.port)
     }
 }
 
 /// A path from the settings file, taken from the file's folder when it is relative.
-fn from_file(base: &Path, p: PathBuf) -> PathBuf {
-    if p.is_absolute() || p.as_os_str().is_empty() { p } else { base.join(p) }
+fn from_file(base: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() || path.as_os_str().is_empty() { path } else { base.join(path) }
 }
 
 /// An empty path or token means "none".
-fn some_path(p: PathBuf) -> Option<PathBuf> {
-    (!p.as_os_str().is_empty()).then_some(p)
+fn some_path(path: PathBuf) -> Option<PathBuf> {
+    (!path.as_os_str().is_empty()).then_some(path)
 }
 
 /// The settings file's text.
 pub fn parse_file(text: &str) -> Result<FileSettings, String> {
-    toml::from_str(text).map_err(|e| e.to_string())
+    toml::from_str(text).map_err(|error| error.to_string())
+}
+
+/// The scenario folders: the flags' when they give any, else the file's, else the defaults'.
+fn resolve_scenarios(
+    flags: Vec<PathBuf>,
+    file: Option<Vec<PathBuf>>,
+    base: &Path,
+    defaults: Vec<PathBuf>,
+) -> Vec<PathBuf> {
+    if !flags.is_empty() {
+        flags
+    } else if let Some(folders) = file {
+        folders.into_iter().map(|folder| from_file(base, folder)).collect()
+    } else {
+        defaults
+    }
+}
+
+/// The token, the flag's over the file's; empty is none. Refused when it holds a character a URL would encode.
+fn resolve_token(flag: Option<String>, file: Option<String>) -> Result<Option<String>, String> {
+    let token = flag.or(file).filter(|token| !token.is_empty());
+    if let Some(token) = &token
+        && !token.bytes().all(|b| b.is_ascii_alphanumeric() || TOKEN_SYMBOLS.contains(&b))
+    {
+        return Err("the token may hold only letters, digits and - . _ ~".into());
+    }
+    Ok(token)
+}
+
+/// Where ffmpeg comes from: "path" for the PATH's; without a choice, the PATH's or else the data folder's (which
+/// follows --data).
+fn resolve_ffmpeg(flag: Option<PathBuf>, file: Option<PathBuf>, base: &Path, data: &Path) -> FfmpegChoice {
+    let is_path = |choice: &PathBuf| choice.as_os_str().eq_ignore_ascii_case(FFMPEG_FROM_PATH);
+    match flag.or(file.map(|choice| if is_path(&choice) { choice } else { from_file(base, choice) })) {
+        Some(choice) if is_path(&choice) => FfmpegChoice::Path,
+        Some(folder) if !folder.as_os_str().is_empty() => FfmpegChoice::Folder(folder),
+        _ => FfmpegChoice::Auto(data.join("ffmpeg")),
+    }
 }
 
 /// The flags over the file (whose relative paths are taken from `base`, its folder) over the defaults.
 pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings) -> Result<Settings, String> {
-    let path = |flag: Option<PathBuf>, file: Option<PathBuf>| flag.or_else(|| file.map(|p| from_file(base, p)));
-    let scenarios = if !flags.scenarios.is_empty() {
-        flags.scenarios
-    } else if let Some(s) = file.scenarios {
-        s.into_iter().map(|p| from_file(base, p)).collect()
-    } else {
-        defaults.scenarios
-    };
-    let token = flags.token.or(file.token).filter(|t| !t.is_empty());
-    if let Some(t) = &token
-        && !t.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
-    {
-        return Err("the token may hold only letters, digits and - . _ ~".into());
-    }
+    let path = |flag: Option<PathBuf>, file: Option<PathBuf>| flag.or_else(|| file.map(|path| from_file(base, path)));
+    let scenarios = resolve_scenarios(flags.scenarios, file.scenarios, base, defaults.scenarios);
+    let token = resolve_token(flags.token, file.token)?;
     let data = path(flags.data, file.data).unwrap_or(defaults.data);
-    // "path": the PATH's ffmpeg; without a choice, the PATH's or else the data folder's (which follows --data)
-    let is_path = |p: &PathBuf| p.as_os_str().eq_ignore_ascii_case("path");
-    let ffmpeg = match flags.ffmpeg.or(file.ffmpeg.map(|p| if is_path(&p) { p } else { from_file(base, p) })) {
-        Some(p) if is_path(&p) => FfmpegChoice::Path,
-        Some(p) if !p.as_os_str().is_empty() => FfmpegChoice::Folder(p),
-        _ => FfmpegChoice::Auto(data.join("ffmpeg")),
-    };
+    let ffmpeg = resolve_ffmpeg(flags.ffmpeg, file.ffmpeg, base, &data);
     let host = flags.host.or(file.host).unwrap_or(defaults.host);
     if host.is_empty() {
         return Err("the host is empty".into());
@@ -228,7 +266,7 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
         port: flags.port.or(file.port).unwrap_or(defaults.port),
         data,
         vods: match path(flags.vods, file.vods) {
-            Some(p) => some_path(p),
+            Some(vods) => some_path(vods),
             None => defaults.vods,
         },
         stats: path(flags.stats, file.stats).unwrap_or(defaults.stats),
@@ -246,11 +284,12 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
 pub fn load(flags: Flags) -> Result<(Settings, Option<PathBuf>), String> {
     let path = flags.config.clone().or_else(|| Path::new(DEFAULT_FILE).is_file().then(|| PathBuf::from(DEFAULT_FILE)));
     let (file, base) = match &path {
-        Some(p) => {
-            let text = std::fs::read_to_string(p).map_err(|e| format!("the settings file {}: {e}", p.display()))?;
-            let file = parse_file(&text).map_err(|e| format!("the settings file {}: {e}", p.display()))?;
-            let p = std::path::absolute(p).unwrap_or_else(|_| p.clone());
-            (file, p.parent().map(Path::to_path_buf).unwrap_or_default())
+        Some(path) => {
+            let unreadable = |error: String| format!("the settings file {}: {error}", path.display());
+            let text = std::fs::read_to_string(path).map_err(|error| unreadable(error.to_string()))?;
+            let file = parse_file(&text).map_err(unreadable)?;
+            let path = std::path::absolute(path).unwrap_or_else(|_| path.clone());
+            (file, path.parent().map(Path::to_path_buf).unwrap_or_default())
         }
         None => (FileSettings::default(), PathBuf::new()),
     };
@@ -267,14 +306,14 @@ mod tests {
 
     #[test]
     fn no_file_and_no_flags_give_the_defaults() {
-        let s = resolve(Flags::default(), FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
-        assert_eq!(s, Settings::defaults());
-        assert_eq!((s.host.as_str(), s.port), ("127.0.0.1", 8770));
-        assert!(s.data.ends_with("test_out"));
-        assert!(s.ui.ends_with(Path::new("ui").join("dist").join("server").join("browser")));
-        assert_eq!(s.scenarios.len(), 2);
-        assert_eq!(s.device, Device::Auto);
-        assert_eq!(s.token, None);
+        let settings = resolve(Flags::default(), FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
+        assert_eq!(settings, Settings::defaults());
+        assert_eq!((settings.host.as_str(), settings.port), ("127.0.0.1", 8770));
+        assert!(settings.data.ends_with("test_out"));
+        assert!(settings.ui.ends_with(Path::new("ui").join("dist").join("server").join("browser")));
+        assert_eq!(settings.scenarios.len(), 2);
+        assert_eq!(settings.device, Device::Auto);
+        assert_eq!(settings.token, None);
     }
 
     #[test]
@@ -293,39 +332,40 @@ mod tests {
         )
         .unwrap();
         let base = std::path::absolute("base").unwrap();
-        let s = resolve(Flags::default(), file, &base, Settings::defaults()).unwrap();
-        assert_eq!((s.host.as_str(), s.port), ("0.0.0.0", 9000));
-        assert_eq!(s.data, base.join("aim-data"));
-        assert_eq!(s.vods, Some(PathBuf::from(r"E:\OBS\KovOBS")));
-        assert_eq!(s.scenarios, vec![base.join("a"), base.join("sub/b")]);
-        assert_eq!(s.device, Device::DirectMl);
-        assert_eq!(s.token.as_deref(), Some("abc-123"));
-        assert_eq!(s.ffmpeg, FfmpegChoice::Folder(base.join("tools")));
+        let settings = resolve(Flags::default(), file, &base, Settings::defaults()).unwrap();
+        assert_eq!((settings.host.as_str(), settings.port), ("0.0.0.0", 9000));
+        assert_eq!(settings.data, base.join("aim-data"));
+        assert_eq!(settings.vods, Some(PathBuf::from(r"E:\OBS\KovOBS")));
+        assert_eq!(settings.scenarios, vec![base.join("a"), base.join("sub/b")]);
+        assert_eq!(settings.device, Device::DirectMl);
+        assert_eq!(settings.token.as_deref(), Some("abc-123"));
+        assert_eq!(settings.ffmpeg, FfmpegChoice::Folder(base.join("tools")));
         // the settings the file leaves out stay the defaults
-        assert_eq!(s.stats, Settings::defaults().stats);
+        assert_eq!(settings.stats, Settings::defaults().stats);
     }
 
     #[test]
     fn flags_override_the_file() {
         let file = parse_file("port = 9000\ndevice = \"cpu\"\nscenarios = [\"x\"]\ntoken = \"from-file\"").unwrap();
-        let f = flags(&[
+        let given = flags(&[
             "--port", "8775", "--device", "cuda", "--scenarios", "s1", "s2", "--scenarios", "s3", "--token", "flag",
             "--vods=", "--ffmpeg", "path",
         ]);
-        let s = resolve(f, file, Path::new("base"), Settings::defaults()).unwrap();
-        assert_eq!(s.port, 8775);
-        assert_eq!(s.device, Device::Cuda);
-        assert_eq!(s.scenarios, ["s1", "s2", "s3"].map(PathBuf::from).to_vec());
-        assert_eq!(s.token.as_deref(), Some("flag"));
+        let settings = resolve(given, file, Path::new("base"), Settings::defaults()).unwrap();
+        assert_eq!(settings.port, 8775);
+        assert_eq!(settings.device, Device::Cuda);
+        assert_eq!(settings.scenarios, ["s1", "s2", "s3"].map(PathBuf::from).to_vec());
+        assert_eq!(settings.token.as_deref(), Some("flag"));
         // "" for the VODs folder: none
-        assert_eq!(s.vods, None);
-        assert_eq!(s.ffmpeg, FfmpegChoice::Path);
+        assert_eq!(settings.vods, None);
+        assert_eq!(settings.ffmpeg, FfmpegChoice::Path);
         // ffmpeg follows the data folder
-        let s = resolve(flags(&["--data", "d"]), FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
-        assert_eq!(s.ffmpeg, FfmpegChoice::Auto(Path::new("d").join("ffmpeg")));
+        let given = flags(&["--data", "d"]);
+        let settings = resolve(given, FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
+        assert_eq!(settings.ffmpeg, FfmpegChoice::Auto(Path::new("d").join("ffmpeg")));
         let file = parse_file("ffmpeg = \"PATH\"").unwrap();
-        let s = resolve(Flags::default(), file, Path::new("base"), Settings::defaults()).unwrap();
-        assert_eq!(s.ffmpeg, FfmpegChoice::Path);
+        let settings = resolve(Flags::default(), file, Path::new("base"), Settings::defaults()).unwrap();
+        assert_eq!(settings.ffmpeg, FfmpegChoice::Path);
     }
 
     #[test]
@@ -348,17 +388,17 @@ mod tests {
         assert!(resolve(bad, FileSettings::default(), Path::new(""), Settings::defaults()).is_err());
         // an empty token is no token
         let empty = flags(&["--token", ""]);
-        let s = resolve(empty, FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
-        assert_eq!(s.token, None);
+        let settings = resolve(empty, FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
+        assert_eq!(settings.token, None);
     }
 
     #[test]
     fn the_url_to_open() {
-        let mut s = Settings::defaults();
-        assert_eq!(s.url(), "http://127.0.0.1:8770/");
-        s.host = "0.0.0.0".into();
-        assert_eq!(s.url(), "http://localhost:8770/");
-        s.host = "::1".into();
-        assert_eq!(s.url(), "http://[::1]:8770/");
+        let mut settings = Settings::defaults();
+        assert_eq!(settings.url(), "http://127.0.0.1:8770/");
+        settings.host = "0.0.0.0".into();
+        assert_eq!(settings.url(), "http://localhost:8770/");
+        settings.host = "::1".into();
+        assert_eq!(settings.url(), "http://[::1]:8770/");
     }
 }
