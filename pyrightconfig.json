@@ -1,0 +1,5 @@
+{
+  "include": ["python", "scripts"],
+  "exclude": ["python/retired", "**/node_modules", "target", "test_out"],
+  "extraPaths": ["python", "python/model"]
+}
