@@ -24,7 +24,7 @@ default = ["native"]
 # what needs this computer: ONNX Runtime, ffmpeg and yt-dlp (processes and threads), and the time zone. Without it the
 # service is built for the browser (browser-service/): its files go through the page (disk.rs), the page runs the
 # review and the area finder, and links are the page's to download.
-native = ["dep:ort", "dep:ffmpeg-sidecar", "dep:libc"]
+native = ["dep:ort", "dep:ffmpeg-sidecar", "dep:libc", "dep:windows"]
 # the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
 cuda = ["native", "ort/cuda"]
 # `bun run types`: the TypeScript types of the JSON the UI reads, made from these structs and the core's (ts-rs)
@@ -48,6 +48,19 @@ zip = { version = "4.6", default-features = false, features = ["deflate"] }
 [target.'cfg(windows)'.dependencies]
 # its prebuilt library is downloaded at build time
 ort = { version = "=2.0.0-rc.10", features = ["directml"], optional = true }
+# frames decoded and converted on the GPU (gpu_frames.rs): Media Foundation, Direct3D 11 and its shader compiler
+windows = { version = "0.62.2", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+] }
 
 [target.'cfg(unix)'.dependencies]
 # the local time zone's offset at a given time (localtime_r), for local time stamps off Windows

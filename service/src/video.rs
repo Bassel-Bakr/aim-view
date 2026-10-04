@@ -14,7 +14,8 @@ use serde::Deserialize;
 const WHOLE_RATE_TOLERANCE: f64 = 0.01;
 
 /// What a recording is: its frames' size, rate and colours, every frame's time (from 0 on, in order: the edit list's
-/// pre-roll before 0 is not shown), the key frames' times, and its duration as ffprobe gives it, in seconds.
+/// pre-roll before 0 is not shown), the key frames' times, its duration as ffprobe gives it, and its earliest frame's
+/// time, the pre-roll's included (Media Foundation counts its times from that frame: gpu_frames.rs), in seconds.
 pub struct VideoInfo {
     pub width: usize,
     pub height: usize,
@@ -24,6 +25,7 @@ pub struct VideoInfo {
     pub times: Vec<f64>,
     pub keys: Vec<f64>,
     pub duration: f64,
+    pub earliest: f64,
 }
 
 #[derive(Deserialize)]
@@ -66,12 +68,15 @@ fn tool(name: &str) -> Command {
     command
 }
 
-/// The frame times from 0 on and the key frames' times, each in order, from the packets.
-fn frame_times(packets: &[ProbePacket]) -> (Vec<f64>, Vec<f64>) {
+/// The frame times from 0 on and the key frames' times, each in order, from the packets, and the earliest packet's
+/// time (the pre-roll's included; 0 when there are none).
+fn frame_times(packets: &[ProbePacket]) -> (Vec<f64>, Vec<f64>, f64) {
     let mut times = Vec::new();
     let mut keys = Vec::new();
+    let mut earliest: Option<f64> = None;
     for packet in packets {
         let Some(time) = packet.pts_time.as_deref().and_then(|time| time.parse::<f64>().ok()) else { continue };
+        earliest = Some(earliest.map_or(time, |before| before.min(time)));
         if time < 0.0 {
             continue;
         }
@@ -82,7 +87,7 @@ fn frame_times(packets: &[ProbePacket]) -> (Vec<f64>, Vec<f64>) {
     }
     times.sort_by(f64::total_cmp);
     keys.sort_by(f64::total_cmp);
-    (times, keys)
+    (times, keys, earliest.unwrap_or(0.0))
 }
 
 /// The frame rate ffprobe gives ("60/1"), as a constant rate as the browser's review gives it: a whole number when it
@@ -116,7 +121,7 @@ pub fn probe(video: &Path) -> Result<VideoInfo, String> {
     let probed: Probe =
         serde_json::from_slice(&out.stdout).map_err(|error| format!("ffprobe gave no video ({error})"))?;
     let stream = probed.streams.first().ok_or("the file has no video")?;
-    let (times, keys) = frame_times(&probed.packets);
+    let (times, keys, earliest) = frame_times(&probed.packets);
     let duration = probed.format.duration.and_then(|duration| duration.parse().ok());
     Ok(VideoInfo {
         width: stream.width,
@@ -127,6 +132,7 @@ pub fn probe(video: &Path) -> Result<VideoInfo, String> {
         duration: duration.unwrap_or_else(|| times.last().copied().unwrap_or(0.0)),
         times,
         keys,
+        earliest,
     })
 }
 

@@ -71,6 +71,9 @@ pub struct Request {
     pub window: Option<TimeWindow>,
     pub areas: Vec<AreaBox>,
     pub keep_parts: Option<PathBuf>,
+    /// Decode and convert on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 MP4s); else, or
+    /// false, ffmpeg's software decode.
+    pub gpu_frames: bool,
 }
 
 /// A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas the area finder
@@ -102,7 +105,7 @@ pub fn add_device(devices: &mut String, device: &str) {
 /// The size of one frame as ffmpeg gives it (YUV 4:2:0 at the video's size: the Y plane, then U and V at half the size
 /// each way).
 #[cfg(feature = "native")]
-pub(crate) fn frame_bytes(info: &VideoInfo) -> usize {
+pub fn frame_bytes(info: &VideoInfo) -> usize {
     info.width * info.height + 2 * info.width.div_ceil(2) * info.height.div_ceil(2)
 }
 
@@ -306,6 +309,47 @@ type Batch = (Vec<u8>, usize);
 #[cfg(feature = "native")]
 type WatchFrame = (Vec<u8>, Vec<u8>);
 
+/// Where a run's frames come from: ffmpeg's software decode, converted here, or the GPU, which decodes and converts.
+#[cfg(feature = "native")]
+enum FrameSource {
+    Ffmpeg { frames: Frames, convert: Box<Converter>, yuv: Vec<u8> },
+    #[cfg(windows)]
+    Gpu(crate::gpu_frames::GpuFrames),
+}
+
+#[cfg(feature = "native")]
+impl FrameSource {
+    /// A run's frames: from the GPU when the request asks and the video allows it, else from ffmpeg.
+    fn open(req: &Request, info: &VideoInfo, from: Option<f64>, count: Option<usize>) -> Result<FrameSource, String> {
+        #[cfg(windows)]
+        if req.gpu_frames && crate::gpu_frames::usable(&req.video, info) {
+            return Ok(FrameSource::Gpu(crate::gpu_frames::GpuFrames::open(&req.video, info, from, count)?));
+        }
+        Ok(FrameSource::Ffmpeg {
+            frames: Frames::open(&req.video, from, count)?,
+            convert: Box::new(Converter::new(info.width, info.height, info.matrix, info.full)),
+            yuv: vec![0u8; frame_bytes(info)],
+        })
+    }
+
+    /// The next frame's RGB (1280 x 720) into `rgb` and its Y plane (at the video's size) into `luma`; false at the
+    /// end.
+    fn next_into(&mut self, rgb: &mut [u8], luma: &mut [u8]) -> Result<bool, String> {
+        match self {
+            FrameSource::Ffmpeg { frames, convert, yuv } => {
+                if !frames.next_into(yuv)? {
+                    return Ok(false);
+                }
+                convert.rgb24(yuv, rgb);
+                luma.copy_from_slice(&yuv[..luma.len()]);
+                Ok(true)
+            }
+            #[cfg(windows)]
+            FrameSource::Gpu(frames) => frames.next_into(rgb, luma),
+        }
+    }
+}
+
 /// A channel to one of a run's threads, and the buffers that thread sends back to be filled again.
 #[cfg(feature = "native")]
 struct Handoff<T> {
@@ -322,7 +366,7 @@ fn review_run(context: &RunContext, run: usize) -> Result<RunPart, String> {
     let RunContext { req, review, keys, info, .. } = *context;
     let planned = &review.runs()[run];
     let batch = req.batch.max(1);
-    let mut frames = Frames::open(&req.video, (planned.first > 0).then_some(planned.from), Some(planned.reads()))?;
+    let mut frames = FrameSource::open(req, info, (planned.first > 0).then_some(planned.from), Some(planned.reads()))?;
     let detector = Detector::new(&req.model, batch, &keys.fixed, req.device)?;
     let device = detector.device;
     (context.on_device)(device);
@@ -355,7 +399,7 @@ fn review_run(context: &RunContext, run: usize) -> Result<RunPart, String> {
 /// last batch with the frames it has). It stops where the tracking says the run ends.
 #[cfg(feature = "native")]
 fn decode_run(
-    frames: &mut Frames,
+    frames: &mut FrameSource,
     info: &VideoInfo,
     batch: usize,
     tracking: &Mutex<RunTracking>,
@@ -365,19 +409,19 @@ fn decode_run(
     let stopped = || "the detector stopped".to_string();
     let rows = countdown_bytes();
     let luma_bytes = info.width * info.height;
-    let mut convert = Converter::new(info.width, info.height, info.matrix, info.full);
-    let mut yuv = vec![0u8; frame_bytes(info)];
     let mut rgb = vec![0u8; RGB_BYTES];
     let mut waiting = vec![0u8; batch * RGB_BYTES];
     let mut count = 0;
-    while frames.next_into(&mut yuv)? {
+    loop {
+        // the frame's Y plane goes straight into a buffer the watch gave back
+        let mut luma = to_watch.spare.try_recv().unwrap_or_else(|_| vec![0u8; luma_bytes]);
+        if !frames.next_into(&mut rgb, &mut luma)? {
+            break;
+        }
         let next = tracking.lock().map_err(|_| "the tracker failed")?.next_frame();
         if next == NextFrame::Stop {
             break;
         }
-        convert.rgb24(&yuv, &mut rgb);
-        let mut luma = to_watch.spare.try_recv().unwrap_or_else(|_| vec![0u8; luma_bytes]);
-        luma.copy_from_slice(&yuv[..luma_bytes]);
         to_watch.send.send((luma, rgb[rows.clone()].to_vec())).map_err(|_| "the camera watch stopped")?;
         if next == NextFrame::Watch {
             continue;

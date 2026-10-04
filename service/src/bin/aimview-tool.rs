@@ -468,6 +468,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         window,
         areas,
         keep_parts: None,
+        gpu_frames: false,
     };
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();

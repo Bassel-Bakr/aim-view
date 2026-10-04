@@ -34,6 +34,8 @@ pub mod review;
 pub mod run_window;
 #[cfg(feature = "native")]
 pub mod video;
+#[cfg(all(windows, feature = "native"))]
+pub mod gpu_frames;
 #[cfg(feature = "native")]
 pub mod ytdlp;
 

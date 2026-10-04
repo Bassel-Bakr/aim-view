@@ -78,6 +78,7 @@ dependencies = [
  "serde_json",
  "ts-rs",
  "url",
+ "windows",
  "zip",
 ]
 

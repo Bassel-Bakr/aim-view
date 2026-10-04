@@ -215,6 +215,7 @@ impl Library {
             window,
             areas: self.exclude_boxes(id)?,
             keep_parts: None,
+            gpu_frames: false,
         })
     }
 
