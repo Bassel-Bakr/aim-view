@@ -356,7 +356,7 @@ impl Library {
     /// The recordings the user saved areas for: (its folder's name, its found areas, its saved areas), leaving out
     /// `but` and other games (python/server.py: labelled).
     pub fn labelled(&self, but: Option<&str>) -> Vec<(String, Value, Value)> {
-        let skip: Vec<PathBuf> = self.not_aim().iter().map(|id| self.review_dir(id)).chain(but.map(|id| self.review_dir(id))).collect();
+        let skip: BTreeSet<PathBuf> = self.not_aim().iter().map(|id| self.review_dir(id)).chain(but.map(|id| self.review_dir(id))).collect();
         let mut out = Vec::new();
         for e in crate::disk::read_dir(&self.folders().recordings).into_iter().flatten().flatten() {
             let d = e.path();
