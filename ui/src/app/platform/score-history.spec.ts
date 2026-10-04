@@ -40,9 +40,9 @@ const ROUTES: ApiRoutes = {
 };
 
 /** A file as a folder input gives it: its path below the folder chosen. */
-function chosen(f: FakeStats): File {
-  const file = new File([f.text], f.name);
-  Object.defineProperty(file, 'webkitRelativePath', { value: `stats/${f.name}` });
+function chosen(stats: FakeStats): File {
+  const file = new File([stats.text], stats.name);
+  Object.defineProperty(file, 'webkitRelativePath', { value: `stats/${stats.name}` });
   return file;
 }
 
@@ -51,7 +51,7 @@ async function settled(mode: ModeCase, ref: ResourceRef<PastRun[] | undefined>) 
   const read = (async () => {
     for (;;) {
       TestBed.tick();
-      await new Promise((r) => setTimeout(r));
+      await new Promise((resolve) => setTimeout(resolve));
       if (ref.error()) throw ref.error();
       if (ref.hasValue() && !ref.isLoading()) return ref.value();
     }
@@ -68,11 +68,11 @@ for (const mode of MODE_CASES) {
       const ref = TestBed.runInInjectionContext(() => history.runs(() => 'Air'));
       const runs = await settled(mode, ref);
       expect(runs).toHaveLength(AIR.length);
-      runs?.forEach((r, i) => {
-        expect(r.stamp).toBe(AIR[i].stamp);
-        expect(r.score).toBeCloseTo(AIR[i].score, 9);
-        expect(r.kills).toBe(AIR[i].kills);
-        expect(r.accuracy).toBeCloseTo(AIR[i].accuracy ?? Number.NaN, 9);
+      runs?.forEach((run, i) => {
+        expect(run.stamp).toBe(AIR[i].stamp);
+        expect(run.score).toBeCloseTo(AIR[i].score, 9);
+        expect(run.kills).toBe(AIR[i].kills);
+        expect(run.accuracy).toBeCloseTo(AIR[i].accuracy ?? Number.NaN, 9);
       });
     });
 

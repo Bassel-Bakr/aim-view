@@ -24,7 +24,8 @@ function fakeServer(): ApiRoutes {
   const skipped = new Set<string>();
   const other = new Set<string>();
   return {
-    '/api/vods': () => list.map((r) => ({ ...r, not_aim: other.has(r.id) })),
+    '/api/vods': () =>
+      list.map((recording) => ({ ...recording, not_aim: other.has(recording.id) })),
     '/api/upload': (req: HttpRequest<unknown>) => {
       const name = req.params.get('name') ?? '';
       const id = `uploads/${name}`;
@@ -32,7 +33,9 @@ function fakeServer(): ApiRoutes {
       return { id, saved: name };
     },
     '/api/label_queue': () =>
-      list.filter((r) => !skipped.has(r.id) && !other.has(r.id)).map((r) => r.id),
+      list
+        .filter((recording) => !skipped.has(recording.id) && !other.has(recording.id))
+        .map((recording) => recording.id),
     '/api/label_skip': (req: HttpRequest<unknown>) => {
       const id = req.params.get('id') ?? '';
       skipped.add(id);
@@ -73,7 +76,7 @@ for (const mode of MODE_CASES) {
       const row = () =>
         TestBed.inject(RecordingSource)
           .recordings()
-          .find((r) => r.id === ids[1]);
+          .find((recording) => recording.id === ids[1]);
       await mode.finish(labelling.setNotAim(ids[1], true), routes);
       expect(row()?.not_aim).toBe(true);
       expect(await mode.finish(labelling.queue(), routes)).toEqual([ids[0]]);

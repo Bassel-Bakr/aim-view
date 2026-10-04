@@ -13,7 +13,7 @@ export class Library {
   readonly selectedId = signal<string | null>(new URLSearchParams(location.search).get('id'));
   readonly selected = computed<Recording | null>(() => {
     const id = this.selectedId();
-    return this.all().find((r) => r.id === id) ?? null;
+    return this.all().find((recording) => recording.id === id) ?? null;
   });
 
   constructor() {

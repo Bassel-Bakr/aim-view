@@ -61,8 +61,8 @@ export class Review {
     this.watcher++;
     try {
       this.follow(await this.engine.start(id, again));
-    } catch (e) {
-      this.job.set({ stage: 'error', error: errorMessage(e) });
+    } catch (error) {
+      this.job.set({ stage: 'error', error: errorMessage(error) });
     }
   }
 
@@ -75,8 +75,8 @@ export class Review {
       const job = await this.engine.setMarks(id, marks);
       this.marks.reload();
       this.follow(job);
-    } catch (e) {
-      this.job.set({ stage: 'error', error: errorMessage(e) });
+    } catch (error) {
+      this.job.set({ stage: 'error', error: errorMessage(error) });
     }
   }
 
@@ -107,10 +107,10 @@ export class Review {
           return;
         }
         if (!this.running()) return;
-        await new Promise((r) => setTimeout(r, POLL_MS));
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       }
-    } catch (e) {
-      if (current()) this.job.set({ stage: 'error', error: errorMessage(e) });
+    } catch (error) {
+      if (current()) this.job.set({ stage: 'error', error: errorMessage(error) });
     }
   }
 }

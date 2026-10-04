@@ -22,8 +22,9 @@ function fakeServer(): ApiRoutes {
   );
   const id = (req: HttpRequest<unknown>) => req.params.get('id') ?? '';
   return {
-    '/api/vods': () => list.map((r) => ({ ...r, not_aim: other.has(r.id) })),
-    '/api/label_queue': () => IDS.filter((r) => !skipped.has(r) && !other.has(r)),
+    '/api/vods': () =>
+      list.map((recording) => ({ ...recording, not_aim: other.has(recording.id) })),
+    '/api/label_queue': () => IDS.filter((id) => !skipped.has(id) && !other.has(id)),
     '/api/label_skip': (req: HttpRequest<unknown>) => {
       skipped.add(id(req));
       return { id: id(req), skipped: true };

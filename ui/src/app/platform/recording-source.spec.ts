@@ -18,7 +18,9 @@ function fakeServer(): ApiRoutes {
       const name = req.params.get('name') ?? '';
       const id = req.params.get('id');
       if (id) {
-        list = list.map((r) => (r.id === id ? { ...r, stats: true } : r));
+        list = list.map((recording) =>
+          recording.id === id ? { ...recording, stats: true } : recording,
+        );
         return { id, saved: name, job: { stage: 'none' }, stats: true };
       }
       const added = `uploads/${name}`;
@@ -82,7 +84,7 @@ async function untilIn(source: RecordingSource, id: string, routes: ApiRoutes): 
   const end = Date.now() + 3000;
   while (source.video(id)?.state === 'downloading' && Date.now() < end) {
     await answer(routes);
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
 
@@ -94,7 +96,7 @@ for (const mode of MODE_CASES) {
       const added = await mode.finish(source.add(files), fakeServer());
       expect(added.notStats).toEqual([]);
       const [id] = added.ids;
-      expect(source.recordings().find((r) => r.id === id)).toMatchObject({
+      expect(source.recordings().find((recording) => recording.id === id)).toMatchObject({
         scenario: 'Air',
         stats: true,
       });
@@ -107,7 +109,9 @@ for (const mode of MODE_CASES) {
       const files = [new File(['v'], NAME), new File(['a,b\n1,2\n'], 'notes.csv')];
       const added = await mode.finish(source.add(files), fakeServer());
       expect(added.notStats).toEqual(['notes.csv']);
-      expect(source.recordings().find((r) => r.id === added.ids[0])?.stats).toBe(false);
+      expect(source.recordings().find((recording) => recording.id === added.ids[0])?.stats).toBe(
+        false,
+      );
     });
 
     it('offers a folder of recordings to open, unless the mode lists its own', () => {
@@ -130,22 +134,24 @@ for (const mode of MODE_CASES) {
       const source = setUp(mode, RecordingSource);
       const [id] = (await mode.finish(source.add([new File(['v'], NAME)]), fakeServer())).ids;
       source.patch(id, { analysed: true });
-      expect(source.recordings().find((r) => r.id === id)?.analysed).toBe(true);
+      expect(source.recordings().find((recording) => recording.id === id)?.analysed).toBe(true);
     });
+  });
 
+  describe(`RecordingSource's links (${mode.name} mode)`, () => {
     it("reads a link's qualities, and lists the recording at once while its video downloads", async () => {
       const source = setUp(mode, RecordingSource);
       const asked: unknown[] = [];
       const routes = linkServer(asked);
       const info = await mode.finish(source.linkInfo(LINK), routes);
-      expect(info.formats.map((f) => f.id)).toEqual(['400', '136']);
+      expect(info.formats.map((format) => format.id)).toEqual(['400', '136']);
       const id = await mode.finish(source.addLink(LINK, '400'), routes);
       expect(asked).toEqual([{ url: LINK, format: '400' }]);
       expect(source.recordings()[0]).toMatchObject({ id, scenario: 'Air' });
       expect(source.video(id)).toMatchObject({ state: 'downloading', done: 1, total: 2 });
       await untilIn(source, id, routes);
       expect(source.video(id)?.state).toBe('ready');
-      expect(source.recordings().filter((r) => r.id === id)).toHaveLength(1);
+      expect(source.recordings().filter((recording) => recording.id === id)).toHaveLength(1);
     });
 
     it('says why a link cannot be read', async () => {

@@ -59,7 +59,7 @@ async function settled(
   const read = (async () => {
     for (;;) {
       TestBed.tick();
-      await new Promise((r) => setTimeout(r));
+      await new Promise((resolve) => setTimeout(resolve));
       if (ref.error()) throw ref.error();
       if (ref.hasValue() && !ref.isLoading()) return ref.value() ?? null;
     }

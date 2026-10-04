@@ -11,7 +11,7 @@ const ID = 'x/run.mp4';
 async function serveUntil(routes: ApiRoutes, condition: () => boolean): Promise<void> {
   for (let i = 0; i < 80 && !condition(); i++) {
     await answer(routes);
-    if (!condition()) await new Promise((r) => setTimeout(r, 50));
+    if (!condition()) await new Promise((resolve) => setTimeout(resolve, 50));
   }
   expect(condition()).toBe(true);
 }

@@ -19,7 +19,9 @@ for (const mode of MODE_CASES) {
       const marks = { start: 2, end: 30, length: null };
       const routes = { '/api/run': { stage: 'none' } };
       const job = await mode.finish(
-        engine.setMarks(ID, marks).catch((e: unknown) => ({ stage: 'error', error: String(e) })),
+        engine
+          .setMarks(ID, marks)
+          .catch((error: unknown) => ({ stage: 'error', error: String(error) })),
         routes,
       );
       if (engine.unavailable(ID) === null) expect(job.stage).not.toBe('error');

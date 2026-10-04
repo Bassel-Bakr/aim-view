@@ -65,8 +65,8 @@ export class FaintQueue {
       this.ids.set(ids);
       this.position.set(0);
       this.open();
-    } catch (e) {
-      this.say(`Could not read the cut-off queue: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.say(`Could not read the cut-off queue: ${errorMessage(error)}`, true);
     } finally {
       this.loading.set(false);
     }
@@ -83,8 +83,8 @@ export class FaintQueue {
     if (!id) return;
     try {
       await this.cutoffs.skip(id);
-    } catch (e) {
-      this.say(`Could not keep the skip: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.say(`Could not keep the skip: ${errorMessage(error)}`, true);
     }
     if (this.current() === id) this.next();
   }
@@ -117,8 +117,8 @@ export class FaintQueue {
     const id = this.current();
     if (!id) return;
     this.library.selectedId.set(id);
-    const r = this.library.source.recordings().find((x) => x.id === id);
-    if (r && !r.analysed) void this.review.analyse(false);
+    const recording = this.library.source.recordings().find((listed) => listed.id === id);
+    if (recording && !recording.analysed) void this.review.analyse(false);
   }
 
   private say(text: string, failed = false): void {

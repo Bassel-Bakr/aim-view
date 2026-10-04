@@ -63,8 +63,8 @@ export class LabelQueue {
       this.ids.set(ids);
       this.position.set(0);
       this.open();
-    } catch (e) {
-      this.say(`Could not read the labelling queue: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.say(`Could not read the labelling queue: ${errorMessage(error)}`, true);
     } finally {
       this.loading.set(false);
     }
@@ -89,8 +89,8 @@ export class LabelQueue {
     if (!id) return;
     try {
       await this.labelling.skip(id);
-    } catch (e) {
-      this.say(`Could not keep the skip: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.say(`Could not keep the skip: ${errorMessage(error)}`, true);
     }
     if (this.current() === id) this.next();
   }
@@ -102,8 +102,8 @@ export class LabelQueue {
   async setNotAim(id: string, on: boolean): Promise<void> {
     try {
       await this.labelling.setNotAim(id, on);
-    } catch (e) {
-      this.say(`Could not mark it: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.say(`Could not mark it: ${errorMessage(error)}`, true);
       return;
     }
     if (on && this.current() === id) return this.next();

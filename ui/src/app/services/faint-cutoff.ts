@@ -64,13 +64,14 @@ export class FaintCutoff {
   /** On or off, as the user set it: the saved setting until changed (kept while it reloads). */
   readonly on = linkedSignal<SavedOf, boolean>({
     source: this.savedOf,
-    computation: (s, prev) =>
-      s.setting?.on ?? (prev && prev.source.id === s.id ? prev.value : false),
+    computation: (saved, previous) =>
+      saved.setting?.on ?? (previous && previous.source.id === saved.id ? previous.value : false),
   });
   readonly offset = linkedSignal<SavedOf, number>({
     source: this.savedOf,
-    computation: (s, prev) =>
-      s.setting?.offset ?? (prev && prev.source.id === s.id ? prev.value : DEFAULT_OFFSET),
+    computation: (saved, previous) =>
+      saved.setting?.offset ??
+      (previous && previous.source.id === saved.id ? previous.value : DEFAULT_OFFSET),
   });
   /** The panel was asked for (Cut-off on the run page). */
   readonly asked = signal(false);
@@ -87,12 +88,12 @@ export class FaintCutoff {
     this.review.tracks.hasValue() ? (this.review.tracks.value() ?? null) : null,
   );
   private readonly near = computed(() => {
-    const r = this.review.report.hasValue() ? this.review.report.value() : null;
-    return r?.mode === 'track' ? 0 : CLICK_NEAR;
+    const report = this.review.report.hasValue() ? this.review.report.value() : null;
+    return report?.mode === 'track' ? 0 : CLICK_NEAR;
   });
   readonly scores = computed<FaintScores | null>(() => {
-    const t = this.allTracks();
-    return t ? faintScores(t.frames, this.near()) : null;
+    const tracks = this.allTracks();
+    return tracks ? faintScores(tracks.frames, this.near()) : null;
   });
   /** The review has the detector's scores: the cut-off can work. */
   readonly has = computed(() => this.scores()?.level != null);
@@ -106,8 +107,8 @@ export class FaintCutoff {
   readonly dropped = computed(() => (this.on() ? this.under() : new Set<number>()));
   /** The tracks the page shows and measures: without those the cut-off leaves out. */
   readonly tracks = computed<Tracks | null>(() => {
-    const t = this.allTracks();
-    return t && tracksWithout(t, this.dropped());
+    const tracks = this.allTracks();
+    return tracks && tracksWithout(tracks, this.dropped());
   });
   /** The open recording is the cut-off queue's (FaintQueue sets it). */
   readonly queued = signal(false);
@@ -142,11 +143,11 @@ export class FaintCutoff {
 
   /** Saves a change still waiting, at once. */
   private flush(): Promise<void> {
-    const p = this.pending;
-    if (p) {
-      clearTimeout(p.timer);
+    const pending = this.pending;
+    if (pending) {
+      clearTimeout(pending.timer);
       this.pending = null;
-      this.saving = this.save(p.id, p.choice);
+      this.saving = this.save(pending.id, pending.choice);
     }
     return this.saving;
   }
@@ -159,9 +160,9 @@ export class FaintCutoff {
       // a measure the save started is followed; one already done (or a clicking run's last job) reloads the report
       if (!['none', 'done', 'error'].includes(job.stage)) this.review.follow(job);
       else if (job.stage === 'done') this.review.report.reload();
-    } catch (e) {
+    } catch (error) {
       if (this.library.selectedId() === id)
-        this.say(`Could not save the cut-off: ${errorMessage(e)}`, true);
+        this.say(`Could not save the cut-off: ${errorMessage(error)}`, true);
     }
   }
 
@@ -177,8 +178,8 @@ export class FaintCutoff {
       this.saved.reload();
       this.say(`Submitted: cut ${this.cut().toFixed(2)} saved; its labels are being written`);
       return true;
-    } catch (e) {
-      this.say(`Could not submit: ${errorMessage(e)}`, true);
+    } catch (error) {
+      this.say(`Could not submit: ${errorMessage(error)}`, true);
       return false;
     } finally {
       this.submitting.set(false);

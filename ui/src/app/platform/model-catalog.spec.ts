@@ -46,9 +46,10 @@ function fakeModels([gpu, cpu]: DevicePair): ApiRoutes {
       return list(chosen);
     },
     '/api/batch': (req: HttpRequest<unknown>) => {
-      const n = Number(req.params.get('n'));
-      if (![1, 2, 4, 8].includes(n)) return new Refused(`${n} frames at once is not a choice`);
-      batches.set(device, n);
+      const batch = Number(req.params.get('n'));
+      if (![1, 2, 4, 8].includes(batch))
+        return new Refused(`${batch} frames at once is not a choice`);
+      batches.set(device, batch);
       return list(chosen);
     },
   };
@@ -62,15 +63,17 @@ for (const mode of MODE_CASES) {
     it('lists the models, the default among them and the one in use', async () => {
       const catalog = setUp(mode, ModelCatalog);
       const routes = fakeServer();
-      await mode.finish(new Promise((r) => setTimeout(r)), routes);
+      await mode.finish(new Promise((resolve) => setTimeout(resolve)), routes);
       TestBed.tick();
       const list = await mode.finish(
-        new Promise<ModelList | undefined>((r) => setTimeout(() => r(catalog.list.value()))),
+        new Promise<ModelList | undefined>((resolve) =>
+          setTimeout(() => resolve(catalog.list.value())),
+        ),
         routes,
       );
       expect(list?.chosen).toBe('full_v3');
-      expect(list?.models.find((m) => m.default)?.name).toBe('full_v3');
-      expect(list?.models.map((m) => m.name)).toContain('small_v13');
+      expect(list?.models.find((model) => model.default)?.name).toBe('full_v3');
+      expect(list?.models.map((model) => model.name)).toContain('small_v13');
     });
 
     it('keeps the pick', async () => {

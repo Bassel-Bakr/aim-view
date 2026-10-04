@@ -53,7 +53,7 @@ class StandInFinder {
 /** KovOBS's layout as python/server.py gives it for ?layout=kovobs: its kinds by name (review.OVERLAY_SHARES). */
 function layoutByName(kinds: AreaKind[]): AreaBox[] {
   return kovobsLayout().map(([x0, y0, x1, y1, id]) => {
-    const name = kinds.find((k) => k.id === id)?.name ?? id;
+    const name = kinds.find((kind) => kind.id === id)?.name ?? id;
     return [x0, y0, x1, y1, name];
   });
 }
@@ -95,8 +95,8 @@ function fakeServer(): ApiRoutes {
       try {
         kinds = editKinds(kinds, req.body as KindEdit);
         return kinds;
-      } catch (e) {
-        return fail(e instanceof Error ? e.message : String(e));
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
       }
     },
     '/api/find_areas': () => PROPOSAL,
@@ -107,8 +107,8 @@ function fakeServer(): ApiRoutes {
 async function refusal(call: Promise<unknown>): Promise<string> {
   try {
     await call;
-  } catch (e) {
-    return errorMessage(e);
+  } catch (error) {
+    return errorMessage(error);
   }
   throw new Error('it was not refused');
 }
@@ -122,12 +122,29 @@ async function settled(
   const read = (async () => {
     for (;;) {
       TestBed.tick();
-      await new Promise((r) => setTimeout(r));
+      await new Promise((resolve) => setTimeout(resolve));
       if (ref.error()) throw ref.error();
       if (ref.hasValue() && !ref.isLoading()) return ref.value();
     }
   })();
   return mode.finish(read, routes);
+}
+
+/** Adds a recording through the mode's services: its id. */
+async function openIn(mode: ModeCase, routes: ApiRoutes, name = NAME): Promise<string> {
+  const source = TestBed.inject(RecordingSource);
+  return (await mode.finish(source.add([new File(['v'], name)]), routes)).ids[0];
+}
+
+/** A recording's areas, read through the mode's services. */
+function readIn(
+  mode: ModeCase,
+  routes: ApiRoutes,
+  id: string,
+): Promise<RecordingAreas | undefined> {
+  const service = TestBed.inject(AreaLabels);
+  const ref = TestBed.runInInjectionContext(() => service.areas(() => id));
+  return settled(mode, ref, routes);
 }
 
 for (const mode of MODE_CASES) {
@@ -137,17 +154,8 @@ for (const mode of MODE_CASES) {
 
     /** The mode's services; each test sets them up once. */
     const labels = () => setUp(mode, AreaLabels);
-
-    async function open(name = NAME): Promise<string> {
-      const source = TestBed.inject(RecordingSource);
-      return (await mode.finish(source.add([new File(['v'], name)]), routes)).ids[0];
-    }
-
-    function read(id: string): Promise<RecordingAreas | undefined> {
-      const service = TestBed.inject(AreaLabels);
-      const ref = TestBed.runInInjectionContext(() => service.areas(() => id));
-      return settled(mode, ref, routes);
-    }
+    const open = (name = NAME) => openIn(mode, routes, name);
+    const read = (id: string) => readIn(mode, routes, id);
 
     it("starts a recording from KovOBS's layout, with every kind", async () => {
       const service = labels();
@@ -155,7 +163,7 @@ for (const mode of MODE_CASES) {
       const areas = await read(id);
       expect(areas?.source).toBe('kovobs');
       expect(areas?.boxes).toEqual(kovobsLayout());
-      expect(areas?.kinds.map((k) => k.name)).toContain('Zoomed crosshair');
+      expect(areas?.kinds.map((kind) => kind.name)).toContain('Zoomed crosshair');
       const layout = await mode.finish(service.layout(), routes);
       expect(layout).toEqual({ boxes: kovobsLayout(), source: 'kovobs' });
     });
@@ -178,9 +186,15 @@ for (const mode of MODE_CASES) {
       );
       expect(why).toContain('x0, y0, x1, y1');
     });
+  });
+
+  describe(`AreaLabels' types and finder (${mode.name} mode)`, () => {
+    let routes: ApiRoutes;
+    beforeEach(() => (routes = fakeServer()));
+    const open = () => openIn(mode, routes);
 
     it('adds a kind with an id from its name, renames it, and turns down a name taken', async () => {
-      const service = labels();
+      const service = setUp(mode, AreaLabels);
       await open();
       const added = await mode.finish(
         service.saveKind({ id: null, name: 'Kill feed', about: '' }),
@@ -191,7 +205,7 @@ for (const mode of MODE_CASES) {
         service.saveKind({ id: 'kill_feed', name: 'Feed', about: 'who killed whom' }),
         routes,
       );
-      expect(renamed.find((k) => k.id === 'kill_feed')?.name).toBe('Feed');
+      expect(renamed.find((kind) => kind.id === 'kill_feed')?.name).toBe('Feed');
       const why = await refusal(
         mode.finish(service.saveKind({ id: null, name: 'timer', about: '' }), routes),
       );

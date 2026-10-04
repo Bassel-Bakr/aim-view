@@ -14,9 +14,9 @@ for (const mode of MODE_CASES) {
       const can = TestBed.inject(ReviewEngine).unavailable(ID) === null;
       const routes = { '/api/faint': SAVED, '/api/job': { stage: 'measuring' } };
       const job = await mode.finish(
-        cutoffs.save(ID, { on: true, offset: 0.35 }).catch((e: unknown) => ({
+        cutoffs.save(ID, { on: true, offset: 0.35 }).catch((error: unknown) => ({
           stage: 'error',
-          error: String(e),
+          error: String(error),
         })),
         routes,
       );
