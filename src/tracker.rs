@@ -2,6 +2,9 @@
 //! boxes kept or dropped (raw boxes kept too), its excluded areas watched for pop-ups, then the frames where a pop-up
 //! is off kept again, and all linked when the frames are in. The review session (src/session.rs) drives it for the
 //! browser and the desktop app.
+//!
+//! In: each frame's detector maps (or boxes already decoded) and its 720p RGB, and the other runs' parts. Out: the
+//! frames' tracks (tracks.json's `frames`), and a run's part for joining.
 
 use serde::{Deserialize, Serialize};
 
@@ -10,12 +13,17 @@ use crate::model::ModelSettings;
 use crate::popup::AreaWatch;
 use crate::track::{Mask, RawBox, Spot, TrackFrame, keep, link, reopen};
 
+/// The track step's state: the settings it decodes and keeps boxes with, and what it has of the frames so far.
 pub struct Tracker {
+    /// The detector model's settings, for decoding its maps.
     model: ModelSettings,
+    /// The excluded areas, as shares of the frame [x0, y0, x1, y1], and the pixels they leave.
     areas: Box<[[f64; 4]]>,
     mask: Mask,
+    /// The scenario's target count, when it is known.
     cap: Option<usize>,
     watch: AreaWatch,
+    /// Each frame's boxes as the detector gave them, and the targets kept of them.
     raw: Vec<Vec<RawBox>>,
     frames: Vec<Vec<Spot>>,
 }
@@ -70,18 +78,19 @@ impl Tracker {
         self.watch.add(rgb);
     }
 
-    /// One frame's detector output: the score map (gh x gw) and reg maps (4 x gh x gw). Returns the boxes kept.
-    pub fn push_maps(&mut self, score: &[f32], reg: &[f32], gw: usize, gh: usize) -> usize {
-        self.push_boxes(&detect::decode(score, reg, gw, gh, &self.model))
+    /// One frame's detector output: the score map (grid_height x grid_width) and the regression maps (4 x grid_height
+    /// x grid_width: `detect::decode`). Returns the boxes kept.
+    pub fn push_maps(&mut self, score: &[f32], regression: &[f32], grid_width: usize, grid_height: usize) -> usize {
+        self.push_boxes(&detect::decode(score, regression, grid_width, grid_height, &self.model))
     }
 
     /// One frame's boxes, already decoded (their scores on the reference model's scale). Returns the boxes kept.
     pub fn push_boxes(&mut self, raw: &[RawBox]) -> usize {
         let kept = keep(raw, &self.mask, self.cap);
-        let n = kept.len();
+        let kept_count = kept.len();
         self.frames.push(kept);
         self.raw.push(raw.to_vec());
-        n
+        kept_count
     }
 
     /// The run's part, for joining with the other runs'.
@@ -131,28 +140,28 @@ mod tests {
         assert_eq!(joined.add_part(run.part()), 3);
         let frames = joined.finish();
         assert_eq!(frames.len(), 8);
-        assert!(frames[..5].iter().all(|f| f.t.is_empty()));
-        assert!(frames[5..].iter().all(|f| f.t.len() == 1));
+        assert!(frames[..5].iter().all(|frame| frame.t.is_empty()));
+        assert!(frames[5..].iter().all(|frame| frame.t.len() == 1));
     }
 
-    /// A model's settings file decides which cells are boxes and their scores: a cell is one when its score, mapped onto
-    /// the reference model's scale, is over the threshold, and the tracks keep the mapped score.
+    /// A model's settings file decides which cells are boxes and their scores: a cell is one when its score, mapped
+    /// onto the reference model's scale, is over the threshold, and the tracks keep the mapped score.
     #[test]
     fn the_settings_file_decides_the_boxes_kept() {
         // one row of maps with four cells far apart, scoring 0.2, 0.35, 0.6 and 0.9
-        let (gw, gh) = (64, 1);
-        let mut score = vec![0f32; gw * gh];
-        for (x, s) in [(4, 0.2), (20, 0.35), (36, 0.6), (52, 0.9)] {
-            score[x] = s;
+        let (grid_width, grid_height) = (64, 1);
+        let mut score = vec![0f32; grid_width * grid_height];
+        for (x, cell_score) in [(4, 0.2), (20, 0.35), (36, 0.6), (52, 0.9)] {
+            score[x] = cell_score;
         }
-        let reg = vec![0f32; 4 * gw * gh];
+        let regression = vec![0f32; 4 * grid_width * grid_height];
         let scores = |file: Option<&str>| {
-            let mut t = Tracker::new(vec![], 0);
+            let mut tracker = Tracker::new(vec![], 0);
             if let Some(file) = file {
-                t.set_model(ModelSettings::from_json(file).unwrap());
+                tracker.set_model(ModelSettings::from_json(file).unwrap());
             }
-            t.push_maps(&score, &reg, gw, gh);
-            t.finish()[0].s.clone().unwrap_or_default()
+            tracker.push_maps(&score, &regression, grid_width, grid_height);
+            tracker.finish()[0].s.clone().unwrap_or_default()
         };
         assert_eq!(scores(None), vec![0.35, 0.6, 0.9]);
         let file = |threshold: f64, map: &str| {
