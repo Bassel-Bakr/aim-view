@@ -1,7 +1,9 @@
 //! What the user set, kept in settings.json: the VODs folder they chose in the app (`vods`), the model new reviews
 //! use (`model`), the device the detector runs on (`device`) and the frames it takes at once on each device (`batch`,
 //! by device name). Other keys in the file are kept as they are (the desktop app also kept KovaaK's folder as `kovaak`;
-//! python/server.py keeps only `model`). And the models to pick from.
+//! python/server.py keeps only `model`). And the models to pick from (models.json and the exports in the models
+//! folder). In: /api/model, /api/device, /api/batch and the app's folder dialog. Out: settings.json, /api/models'
+//! answer, and the model, device and frames at once new reviews use (reviews.rs).
 
 use std::path::{Path, PathBuf};
 
@@ -16,28 +18,28 @@ pub const BEST: &str = "full_v3";
 /// The frames the detector can take at once (the browser offers the same).
 pub const BATCHES: [usize; 4] = [1, 2, 4, 8];
 /// The frames at once until the user picks (av1: 4 was the fastest on the GPU).
-const BATCH: usize = 4;
+const DEFAULT_BATCH: usize = 4;
 
 /// settings.json's keys and values.
 #[derive(Clone, Default)]
 pub(super) struct Settings(Map<String, Value>);
 
 impl Settings {
-    /// The settings in `p`; none when it is missing or not a JSON object.
-    pub(super) fn read(p: &Path) -> Settings {
-        Settings(read_json(p).unwrap_or_default())
+    /// The settings in `path`; none when it is missing or not a JSON object.
+    pub(super) fn read(path: &Path) -> Settings {
+        Settings(read_json(path).unwrap_or_default())
     }
 }
 
 impl Library {
     fn settings(&self) -> Settings {
-        self.settings.lock().map(|s| s.clone()).unwrap_or_default()
+        self.settings.lock().map(|settings| settings.clone()).unwrap_or_default()
     }
 
     fn save_settings(&self, key: &str, value: Value) -> Answer<()> {
-        let mut s = self.settings.lock().map_err(|_| "the settings are broken".to_string())?;
-        s.0.insert(key.into(), value);
-        write_json(&self.file(FILE), &s.0)
+        let mut settings = self.settings.lock().map_err(|_| "the settings are broken".to_string())?;
+        settings.0.insert(key.into(), value);
+        write_json(&self.file(FILE), &settings.0)
     }
 
     /// The VODs folder: the one the configuration gives, else the one the user chose in the app.
@@ -55,24 +57,25 @@ impl Library {
     /// python/server.py kept can be a model only it runs).
     pub fn model(&self) -> String {
         let picked = self.settings().0.get("model").and_then(Value::as_str).map(str::to_string);
-        picked.filter(|m| crate::disk::is_file(self.model_file(m))).unwrap_or_else(|| self.default_model())
+        picked.filter(|name| crate::disk::is_file(self.model_file(name))).unwrap_or_else(|| self.default_model())
     }
 
     /// The device new reviews run the detector on: the user's pick when this build has it, else the configuration's.
     pub fn device(&self) -> Device {
         let picked = self.settings().0.get("device").and_then(Value::as_str).and_then(Device::from_name);
-        picked.filter(|d| Device::built().contains(d)).unwrap_or(self.config.device)
+        picked.filter(|device| Device::built().contains(device)).unwrap_or(self.config.device)
     }
 
-    /// The frames new reviews give the detector at once on `device`: the user's pick for it, else 4.
+    /// The frames new reviews give the detector at once on `device`: the user's pick for it, else DEFAULT_BATCH.
     pub fn batch(&self, device: Device) -> usize {
-        let picked = self.settings().0.get("batch").and_then(|b| b.get(device.name())).and_then(Value::as_u64);
-        picked.map(|b| b as usize).filter(|b| BATCHES.contains(b)).unwrap_or(BATCH)
+        let settings = self.settings();
+        let picked = settings.0.get("batch").and_then(|batches| batches.get(device.name())).and_then(Value::as_u64);
+        picked.map(|frames| frames as usize).filter(|frames| BATCHES.contains(frames)).unwrap_or(DEFAULT_BATCH)
     }
 
     /// The device new reviews use, kept for the next start.
     pub fn use_device(&self, name: &str) -> Answer<Value> {
-        let device = Device::from_name(name).filter(|d| Device::built().contains(d));
+        let device = Device::from_name(name).filter(|device| Device::built().contains(device));
         let device = device.ok_or_else(|| Failure::bad(format!("the detector cannot run on {name} here")))?;
         self.save_settings("device", json!(device.name()))?;
         self.models()
@@ -80,7 +83,7 @@ impl Library {
 
     /// The frames at once on the device in use, kept for each device.
     pub fn use_batch(&self, frames: &str) -> Answer<Value> {
-        let batch = frames.parse::<usize>().ok().filter(|b| BATCHES.contains(b));
+        let batch = frames.parse::<usize>().ok().filter(|batch| BATCHES.contains(batch));
         let batch = batch.ok_or_else(|| Failure::bad(format!("{frames} frames at once is not a choice")))?;
         let mut all = self.settings().0.get("batch").cloned().unwrap_or_else(|| json!({}));
         all[self.device().name()] = json!(batch);
@@ -91,8 +94,8 @@ impl Library {
     /// The model models.json names as the default ("default"), else BEST: a new model becomes the default by a change
     /// to that file, not to code.
     pub fn default_model(&self) -> String {
-        let named = self.models_info().and_then(|i| i["default"].as_str().map(str::to_string));
-        named.filter(|m| crate::disk::is_file(self.model_file(m))).unwrap_or_else(|| BEST.into())
+        let named = self.models_info().and_then(|info| info["default"].as_str().map(str::to_string));
+        named.filter(|name| crate::disk::is_file(self.model_file(name))).unwrap_or_else(|| BEST.into())
     }
 
     /// The detector export of a model.
@@ -111,18 +114,18 @@ impl Library {
         let info: Value = self.models_info().ok_or("models.json is missing".to_string())?;
         let mut models = Vec::new();
         let default = self.default_model();
-        for (name, m) in info["models"].as_object().into_iter().flatten() {
+        for (name, described) in info["models"].as_object().into_iter().flatten() {
             if !crate::disk::is_file(self.model_file(name)) {
                 continue;
             }
-            let mut m = m.clone();
-            m["name"] = json!(name);
-            if m.get("label").is_none() {
-                m["label"] = json!(name);
+            let mut model = described.clone();
+            model["name"] = json!(name);
+            if model.get("label").is_none() {
+                model["label"] = json!(name);
             }
-            m["default"] = json!(*name == default);
-            m["available"] = json!(true);
-            models.push(m);
+            model["default"] = json!(*name == default);
+            model["available"] = json!(true);
+            models.push(model);
         }
         let device = self.device();
         let devices: Vec<&str> = Device::built().into_iter().map(Device::name).collect();
