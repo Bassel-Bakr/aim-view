@@ -26,6 +26,14 @@
       "best": "Tracking a little nearer the stats files than full_v3, and 3 more static flicks measured (the acceptance gate, MODEL_STATUS.md).",
       "weak": "A trial: it fails the acceptance gate on kills matched. Smoothbot Switch Robots matches 51 of 56 kills (full_v3 54); its robots need more training data."
     },
+    "full_v4": {
+      "label": "full_v4 (trial)",
+      "params": 80765, "kb": 324.4,
+      "trained": "full_v3 fine-tuned on the crops checked by eye (moving targets on other themes, mined crops), at twice full_v5's learning rate.",
+      "speed_ms": {"gpu": 1.37, "cpu": 6.0, "browser": 24.1},
+      "best": "3 more static flicks and 6 more dynamic ones measured than full_v3 (the acceptance gate, MODEL_STATUS.md).",
+      "weak": "A trial: it fails the acceptance gate. It boxes the crosshair while the camera turns (5.9% of the turning frames on one run), matches 400 of 405 switching kills (full_v3 403), and finds fewer kills from the video alone (recall 0.928, full_v3 0.945)."
+    },
     "small_v13": {
       "params": 32037, "kb": 134.5,
       "trained": "Every scenario kind: static, dynamic, switching and tracking.",
