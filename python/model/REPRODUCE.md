@@ -71,6 +71,25 @@ python python/model/pick_checks.py --data test_out/vod_model/data_moving_themes 
 python python/model/label_check.py --data test_out/vod_model/check_moving_themes --n 150 --port 8774 --out test_out/vod_model/check_moving_themes/checked.jsonl
 ```
 
+Crops mined from full_v3's own mistakes (2026-10-04; not checked and not trained on yet). `build_mined.py` reviews
+recordings that have a stats file as the app does (full_v3's `_u8in` export on DirectML; each review kept in
+`data_mined/reviews/`, so a rerun skips it): the newest recording of each scenario folder, dynamic and switching
+first, then tracking, then static, the checks' runs left out, until `--budget` seconds of reviewing. Four rules, each
+strict (the script's docstring has them in full): `kill` places the killed target where the model lost it in the
+third of a second before a kill of a dynamic or switching run; `gap` fills a steadily tracked target that the model
+misses for 1 or 2 frames; `false_static` takes out a box that stays put on screen while the view turns; `false_lone`
+takes out a box seen in one frame with nothing near it or like it. The 2026-10-04 build stopped after 215 reviews
+(3,106 s); `--reviewed-only` mines only the recordings reviewed before. Then the contact sheet, 100 crops picked for
+a check by eye (spread over the rules and the recordings), and the check itself:
+
+```bash
+python python/model/build_mined.py --out test_out/vod_model/data_mined --budget 3600
+python python/model/build_mined.py --out test_out/vod_model/data_mined --reviewed-only
+python python/model/validate_data.py --data test_out/vod_model/data_mined --sheet test_out/vod_model/sheet_mined.png
+python python/model/build_mined.py --out test_out/vod_model/data_mined --pick 100 --check test_out/vod_model/check_mined
+python python/model/label_check.py --data test_out/vod_model/check_mined --n 100 --port 8775 --out test_out/vod_model/check_mined/checked.jsonl
+```
+
 ## 2. Train
 
 ```bash

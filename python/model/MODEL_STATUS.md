@@ -582,7 +582,7 @@ crosshair that the automatic labels miss, which those crops count as false.
   checked.
 - **Moving targets: dark ones on light walls only.** The moving data comes from recordings with dark targets on light
   walls (`dark_labels`); other themes' moving targets come only through the recolouring augmentation. A set for the
-  other themes is ready but not yet checked and not yet trained on: `data_moving_themes` (2026-10-04; REPRODUCE.md
+  other themes is checked by eye but not yet trained on: `data_moving_themes` (2026-10-04; REPRODUCE.md
   step 1), labelled by full_v3. Few such recordings exist: of 1,087 moving recordings, 986 are dark targets on light
   walls and 49 are the checks' runs. Of the other 52, 29 have too few key frames (5-second runs) and 16 have labels
   that are not steady or more labels than targets (among them a black game screen and another game). 7 are
@@ -601,6 +601,17 @@ crosshair that the automatic labels miss, which those crops count as false.
   10% on Controlsphere Advanced, 5% on Controlsphere Intermediate and Frogtagon) and sit about 0.7 px up and left,
   in every recording (from the boxes fixed by hand only). The user's earlier desktop hand labels of small static
   targets show no such offset (154 pairs: median 0.05 px, size ratio 0.99).
+- **Crops mined from full_v3's own mistakes** (`data_mined`, 2026-10-04; `build_mined.py`, REPRODUCE.md step 1). Not
+  checked by eye and not trained on yet. 215 recordings with a stats file were reviewed natively (3,106 s: 131
+  dynamic, 57 switching, 27 tracking; the checks' runs left out; static not reached), and strict rules mined 110
+  crops from 45 of them: `kill` 23 (the killed target placed where the model lost it before a kill, from 4
+  recordings), `gap` 76 (a steadily tracked target missed for 1 or 2 frames), `false_static` 7 (the crosshair's dot
+  boxed while the view turns) and `false_lone` 4 (a box in one frame with nothing near or like it). Train 100, val
+  5, test 5. Each crop's rule is its `mined` field. full_v3 rarely makes a clear-cut mistake there: most candidates
+  were dropped as unclear (another box touching the place, more boxes than the scenario's targets, a clock that
+  KovaaK's countdown does not confirm). Known wrong ones: AngelClick Revolving Avasive Easier (10 crops) and one
+  VT DriftTS crop place a box on overlapping spheres (two in one box, or one with the other unlabelled); Switching
+  Humanoid (3 `false_lone` crops) takes out a box on a robot's head, and the robots have no labels.
 - **Robots.** Only 2 recordings of robot targets exist: Smoothbot Switch Robots is a check run, and Close Fast
   Colosseum Robots was dropped for more labels than targets. More robot recordings are needed.
 - **Thin capsules.** The model splits a thin capsule into short boxes and can leave its end unboxed; on Centering II
