@@ -21,8 +21,6 @@ use crate::run_window::{RunMarks, covers};
 const OLD_TRACKS_TAIL_BYTES: u64 = 200;
 /// The key an old tracks.json ends with when a model made it (the hand-written detector's has none).
 const DETECTOR_KEY: &[u8] = b"\"detector\"";
-/// The threads a computer needs for a review in two runs at once (each run decodes on its own).
-const TWO_RUNS_THREADS: usize = 8;
 /// A job's and the log's times are rounded to a tenth of a second.
 const TENTHS_PER_SECOND: f64 = 10.0;
 
@@ -202,7 +200,7 @@ impl Library {
         let facts = self.facts_of(&video);
         let cap = facts.as_ref().and_then(|facts| facts.targets).unwrap_or(0);
         let threads = std::thread::available_parallelism().map_or(1, |threads| threads.get());
-        let runs = if threads >= TWO_RUNS_THREADS { 2 } else { 1 };
+        let runs = crate::review::parts_at_once(threads, self.config.gpu_frames);
         // the user's run window: only its part of the video is tracked
         let window = RunMarks::read(&self.review_dir(id)).tracked(facts.and_then(|facts| facts.limit));
         Ok(Request {

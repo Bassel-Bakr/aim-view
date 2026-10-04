@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use aimview::scenario::{Facts, Kind};
 use aimview_service::areas::kovobs_areas;
 use aimview_service::library::parse_name;
-use aimview_service::review::{AreaBox, Request, TimeWindow, review};
+use aimview_service::review::{AreaBox, Request, TimeWindow, parts_at_once, review};
 use aimview_service::{Config, Device, Failure, Ffmpeg, Layout, Library};
 use serde_json::{Value, json};
 
@@ -55,7 +55,8 @@ Review options:
   --cap N                 the scenario's targets alive at once
   --areas FILE|JSON       the areas to leave out, [[x0, y0, x1, y1, kind], ...] as shares of the frame [the
                           recording's in the app, else KovOBS's layout]
-  --runs N                the parts of the video reviewed at once [2 with 8 threads or more, else 1]
+  --runs N                the parts of the video reviewed at once [with 8 threads or more: 4 with GPU frames,
+                          else 2; else 1]
   --batch N               the frames the detector takes at once [4]
   --window START END      only this part of the video tracked, in seconds
   --no-report             no report.json
@@ -69,8 +70,6 @@ const USAGE_EXIT: u8 = 2;
 const DEFAULT_VODS: &str = r"E:\OBS\KovOBS";
 /// The frames the detector takes at once when --batch is not given.
 const DEFAULT_BATCH: usize = 4;
-/// With this many threads or more, a review runs in two parts at once when --runs is not given (as the app's).
-const TWO_RUNS_THREADS: usize = 8;
 /// How often a terminal's progress line is written again within a stage.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -472,7 +471,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         device: library.config().device,
         batch: line.number("batch")?.unwrap_or(DEFAULT_BATCH),
         cap: cap.unwrap_or(0),
-        runs: line.number("runs")?.unwrap_or(if threads >= TWO_RUNS_THREADS { 2 } else { 1 }),
+        runs: line.number("runs")?.unwrap_or(parts_at_once(threads, library.config().gpu_frames)),
         window,
         areas,
         keep_parts: None,

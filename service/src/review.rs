@@ -109,6 +109,24 @@ pub fn frame_bytes(info: &VideoInfo) -> usize {
     info.width * info.height + 2 * info.width.div_ceil(2) * info.height.div_ceil(2)
 }
 
+/// A machine with at least this many threads reviews a recording in several parts at once (each a decoder and a
+/// detector session of its own).
+const SPLIT_THREADS: usize = 8;
+/// The parts at once: with the GPU's frames the CPU is free, and more detector sessions keep the GPU busy (av1: 10.8 s
+/// in 2 parts, 9.6 s in 4, the GPU's compute 99% busy; test_out/baselines/756b1c5/gpu_frames/); with ffmpeg's, two
+/// software decoders already fill the CPU.
+const GPU_FRAME_PARTS: usize = 4;
+const FFMPEG_PARTS: usize = 2;
+
+/// How many parts of a recording a review works on at once, on a machine with `threads` threads.
+pub fn parts_at_once(threads: usize, gpu_frames: bool) -> usize {
+    match (threads >= SPLIT_THREADS, gpu_frames) {
+        (false, _) => 1,
+        (true, true) => GPU_FRAME_PARTS,
+        (true, false) => FFMPEG_PARTS,
+    }
+}
+
 /// Reviews a recording: its tracks and readings. `on_device` is told where each run's detector runs.
 #[cfg(feature = "native")]
 pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Result<Reviewed, String> {
