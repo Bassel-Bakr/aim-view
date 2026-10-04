@@ -18,12 +18,14 @@ code before it.
 
 ## Accuracy: the stats-file checks
 
-Baseline: commit 4b7ddc4, full_v3, the native review. Raw output: `test_out/baselines/4b7ddc4/`.
+Baseline: commit b8c56ef (the stats-file matching; the tracks are 4b7ddc4's), full_v3, the native review. Raw output:
+`test_out/baselines/b8c56ef/` (`before_after.txt`: eval_moving.py's runs before and after; eval_vods.py's numbers
+from the tracks its 4b7ddc4 run kept). Before it: `test_out/baselines/4b7ddc4/`.
 
 | Check | Command | Result |
 | --- | --- | --- |
 | Static runs | `python python/model/eval_vods.py full_v3` | 1w4ts Voltaic 143/143 kills, 142 flicks; 10 Sphere Hipfire Extra Small 155/155, 155; Pokeball 5 114/114, 113; Pokeball 1 84/84, 83 |
-| Every scenario kind | `python python/model/eval_moving.py name=full_v3` | static kills 854/854, flicks 847; dynamic and switching kills 1097/1112, flicks 1062; tracking on target minus accuracy: mean -0.033, mean abs 0.087 |
+| Every scenario kind | `python python/model/eval_moving.py full_v3=python/model/exports/detector_full_v3_u8in.onnx` (`name=path`: a bare name is read as the model's name and retracks) | static kills 854/854, flicks 847; dynamic and switching kills 1107/1112, flicks 1087 (Bounce 180 Sparky Jumbo 107/107, 105; Falling Targets 54/54, 54; Smoothbot Switch Robots 54/56, 43); tracking on target minus accuracy: mean -0.033, mean abs 0.087 |
 | Video alone (48 runs) | `python python/model/eval_video_alone.py full_v3` | all: recall 0.945, precision 0.957 (5,117 of 5,417 kills); held out: 0.974, 0.972; switching: 0.913, 0.903 |
 
 The video-alone benchmark's harness, caches and notes: `test_out/baselines/vbench/` (`bench.py`, `final_all.txt`).
@@ -33,7 +35,7 @@ The video-alone benchmark's harness, caches and notes: `test_out/baselines/vbenc
 | Check | Command | Baseline |
 | --- | --- | --- |
 | The core against Python | `cargo test --profile quick` | every test passes; fixtures in `test_out/parity/` |
-| The native review, byte for byte | `cargo run -p aimview-service --release --example track -- "<video>" python/model/exports/detector_full_v3_u8in.onnx <out> 0 2 4 - - <stats.csv>` (DirectML, 2 runs, 4 frames a call) | `test_out/baselines/4b7ddc4/native/`: av1 (1wall 2targets xsmall, with test_out/parity/av1/review/stats.csv, and `no_stats/` without it) and flower (Flower Easier); tracks, readings, hud and report. `python test_out/baselines/native_compare.py 4b7ddc4` reviews all three and compares. Equal through 47f8857 (the Vec refactor and the three loop fixes) |
+| The native review, byte for byte | `cargo run -p aimview-service --release --example track -- "<video>" python/model/exports/detector_full_v3_u8in.onnx <out> 0 2 4 - - <stats.csv>` (DirectML, 2 runs, 4 frames a call) | `test_out/baselines/b8c56ef/native/`: av1 (1wall 2targets xsmall, with test_out/parity/av1/review/stats.csv, and `no_stats/` without it) and flower (Flower Easier); tracks, readings, hud and report. `python test_out/baselines/native_compare.py b8c56ef` reviews all three and compares. Tracks, readings and hud equal to 4b7ddc4's through b8c56ef; its report's `appeared` changed there (the matching's joins). The script builds the checkout it is run from (a worktree too) |
 
 ## Speed
 
