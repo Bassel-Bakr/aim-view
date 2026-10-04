@@ -136,7 +136,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   no arrows.
 - **Nothing gets deleted.** Old files move to a `retired/` folder; the user's own data is never overwritten.
 - **Data the user labelled** (in `test_out/`): hand-labelled crops (`test_out/vod_model/hand/`), crops checked on the
-  phone (`test_out/vod_model/check_moving_themes/checked.jsonl`, `phone_answers/`), area labels and types
+  phone (`test_out/vod_model/check_moving_themes/checked.jsonl`, `phone_answers/`, `phone_answers_405/`;
+  `test_out/vod_model/data_moving_themes/checked_phone.jsonl`), area labels and types
   (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`), cut-offs (`faint.json`), run marks (`run.json`) and the
   stats file picked for it (`stats.json`) per recording. Keep them.
 

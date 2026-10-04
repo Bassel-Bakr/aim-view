@@ -594,7 +594,13 @@ crosshair that the automatic labels miss, which those crops count as false.
   19 targets had no box (18 boxed by hand, 1 marked by a tap and sized from the recording's other boxes). The picks
   lean toward uncertain crops, so the whole set's error rate is lower, but full_v3's labels on other themes cannot be
   trained on unchecked. Worst: 773TS 90 (17 of 25 wrong) and VT Controlsphere Intermediate S5 (10 of 20); best: VT
-  Frogtagon Advanced S5 (2 of 25).
+  Frogtagon Advanced S5 (2 of 25). Then the user checked the other 255 the same day, with zoom and an outline guide, and tightened
+  the first 150's boxes they had kept: every one of the 405 crops is checked (`data_moving_themes/checked_phone.jsonl`,
+  316 with targets, 89 without; the raw answers in `check_moving_themes/phone_answers_405/`). With zoom, the user
+  shrank 241 of the 252 model boxes they kept in the 255: on these moving spheres full_v3's boxes are too big (about
+  10% on Controlsphere Advanced, 5% on Controlsphere Intermediate and Frogtagon) and sit about 0.7 px up and left,
+  in every recording (from the boxes fixed by hand only). The user's earlier desktop hand labels of small static
+  targets show no such offset (154 pairs: median 0.05 px, size ratio 0.99).
 - **Robots.** Only 2 recordings of robot targets exist: Smoothbot Switch Robots is a check run, and Close Fast
   Colosseum Robots was dropped for more labels than targets. More robot recordings are needed.
 - **Thin capsules.** The model splits a thin capsule into short boxes and can leave its end unboxed; on Centering II
@@ -614,7 +620,7 @@ crosshair that the automatic labels miss, which those crops count as false.
 3. **Check the review's numbers.** Take the target radius from the scenario's `.sce` (size and distance) as a second
    check, and find out why Pokeball 5's median kill interval differs between the detectors.
 4. **Tracking scenarios.** Done (full_v3, small_v13). Next: moving targets on other themes (labelled with full_v3
-   in `data_moving_themes`; 150 crops checked by eye, the rest not: fix the labeller before training on them), thin capsules, and more
+   in `data_moving_themes`; all 405 crops checked by eye: `checked_phone.jsonl`), thin capsules, and more
    tracking runs in the check.
 5. **WebGPU.** The embed file already reads back only 100 boxes; the rest of the 12 ms floor is per-layer dispatch.
    A hand-written WebGPU shader for this small network, or fused layers, could cut it. Until then, WASM is the
