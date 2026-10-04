@@ -149,7 +149,7 @@ const TALL_SHARE: f64 = 0.5;
 /// A reading is stable when it stays the same for at least this many frames.
 const STABLE_FRAMES: usize = 3;
 /// A shape left over when the digits are learned is the digit it is at least this alike to (cosine), and a POINTS
-/// glyph less alike than this to every digit spoils its number.
+/// glyph, or an Accuracy line's hits or shots glyph, less alike than this to every digit spoils its number.
 const DIGIT_LIKENESS: f64 = 0.9;
 /// The Kill Count's likenesses tried, each with the share of its steps that must be +1. A very blurred upload can split
 /// one digit into two shapes at the usual likeness, and the digits are not learned; then looser likenesses are tried,
@@ -1770,29 +1770,35 @@ impl AccuracyReader<'_> {
     fn read(&mut self, line: u32) -> Option<(i64, i64)> {
         let read = match self.marks {
             None => self.by_likeness(line),
-            Some(marks) => self.by_marks(line, &marks),
+            Some(marks) => self.by_marks(line, &marks)?,
         };
         hits_and_shots(&read)
     }
 
-    /// A line's tall glyphs as the most alike of the digits (Some) and the marks (None).
-    fn by_marks(&self, line: u32, marks: &[[f32; GLYPH_PIXELS]; 2]) -> Vec<Option<u8>> {
+    /// A line's tall glyphs as the most alike of the digits (Some) and the marks (None). None when a glyph of the hits
+    /// or shots (before the second mark) is less than DIGIT_LIKENESS alike to it: a digit drawn closer to the next one
+    /// (the left 4 of "44", the 7 of "74") is like no learned shape, and the most alike is another digit (an 8, a 1).
+    fn by_marks(&self, line: u32, marks: &[[f32; GLYPH_PIXELS]; 2]) -> Option<Vec<Option<u8>>> {
         let prototypes: Vec<([f32; GLYPH_PIXELS], Option<u8>)> = (0..self.digits.len())
             .filter_map(|shape| self.digits[shape].map(|digit| (self.shapes.unit(shape), Some(digit))))
             .chain(marks.iter().map(|&mark| (mark, None)))
             .collect();
-        self.shapes
-            .store
-            .tall_glyphs(line, self.band)
-            .map(|glyph| {
-                let unit = self.shapes.unit_glyph(glyph.image);
-                prototypes
-                    .iter()
-                    .map(|(prototype, digit)| (dot(&unit, prototype), *digit))
-                    .fold((f64::MIN, None), |best, entry| if entry.0 > best.0 { entry } else { best })
-                    .1
-            })
-            .collect()
+        let mut marks_seen = 0;
+        let mut read = Vec::new();
+        for glyph in self.shapes.store.tall_glyphs(line, self.band) {
+            let unit = self.shapes.unit_glyph(glyph.image);
+            let (likeness, digit) = prototypes
+                .iter()
+                .map(|(prototype, digit)| (dot(&unit, prototype), *digit))
+                .fold((f64::MIN, None), |best, entry| if entry.0 > best.0 { entry } else { best });
+            if digit.is_none() {
+                marks_seen += 1;
+            } else if marks_seen < 2 && likeness < DIGIT_LIKENESS {
+                return None;
+            }
+            read.push(digit);
+        }
+        Some(read)
     }
 }
 
@@ -2090,6 +2096,15 @@ mod tests {
     /// A store fed with a synthetic HUD: the Kill Count counting to 40, ten frames a value, and Accuracy as
     /// `accuracy(frame, kills)`, hits/shots (percent).
     fn hud(frames: Range<usize>, accuracy: impl Fn(usize, i64) -> (i64, i64)) -> (Store, Layout) {
+        hud_drawn(frames, accuracy, |shots| line(shots, 18))
+    }
+
+    /// `hud` with the shots drawn by `draw_shots`.
+    fn hud_drawn(
+        frames: Range<usize>,
+        accuracy: impl Fn(usize, i64) -> (i64, i64),
+        draw_shots: impl Fn(i64) -> Vec<Cut>,
+    ) -> (Store, Layout) {
         let layout = Layout {
             x0: 0,
             x1: 100,
@@ -2103,7 +2118,7 @@ mod tests {
             let (hits, shots) = accuracy(frame, kills);
             let mut accuracy_line = line(hits, 18);
             accuracy_line.push(glyph(10, 18)); // "/"
-            accuracy_line.extend(line(shots, 18));
+            accuracy_line.extend(draw_shots(shots));
             accuracy_line.push(glyph(11, 18)); // "("
             accuracy_line.extend(line(90, 18));
             let rows = [
@@ -2144,6 +2159,28 @@ mod tests {
         assert_eq!(reading.totals, HudFinal { kills: 40, hits: Some(40), shots: Some(40) });
         assert_eq!((reading.hits.len(), reading.shots.len()), (40, 40));
         assert_eq!((reading.hits[0], reading.hits[39]), (15, 400)); // the run's first reading, and the last kill
+    }
+
+    #[test]
+    fn a_digit_like_no_digit_spoils_its_accuracy_line() {
+        // the left 4 of "44" drawn closer to its neighbor: most like an 8 (0.83), but less than DIGIT_LIKENESS
+        let squeezed_four = || {
+            let mut cut = glyph(8, 18);
+            cut.image[8 * GLYPH_WIDTH_PX..10 * GLYPH_WIDTH_PX].fill(170);
+            cut
+        };
+        let draw_shots = |shots: i64| {
+            let mut cuts = line(shots, 18);
+            if shots == 44 {
+                cuts[0] = squeezed_four();
+            }
+            cuts
+        };
+        let misses = |kills: i64| (1..=kills).filter(|kill| kill % 5 == 0).count() as i64;
+        let (store, layout) = hud_drawn(0..430, |_, kills| (kills, kills + misses(kills)), draw_shots);
+        let reading = kovaak(&store, &layout).unwrap();
+        assert_eq!(reading.totals, HudFinal { kills: 40, hits: Some(40), shots: Some(48) });
+        assert_eq!((reading.hits.len(), reading.shots.len()), (40, 48));
     }
 
     #[test]
