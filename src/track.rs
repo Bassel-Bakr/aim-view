@@ -197,9 +197,19 @@ fn view_shift(prev: &[Tracked], now: &[Spot]) -> Option<(f64, f64)> {
         return None;
     }
     let near = |k: usize, l: usize| (d[k].0 - d[l].0).hypot(d[k].1 - d[l].1) < 0.35;
+    // only pairings within 0.35 in x can be near (hypot(x, y) >= |x|): each count looks at those, found by a binary
+    // search in the pairings sorted by x, with a margin so rounding never leaves one out; `near` decides as before
+    let mut order: Vec<usize> = (0..d.len()).collect();
+    order.sort_unstable_by(|&a, &b| d[a].0.total_cmp(&d[b].0));
+    let xs: Vec<f64> = order.iter().map(|&i| d[i].0).collect();
     let mut best = (0, i64::MIN);
     for (k, &ok) in ok.iter().enumerate() {
-        let count = if ok { (0..d.len()).filter(|&l| near(k, l)).count() as i64 } else { -1 };
+        let count = if ok {
+            let (lo, hi) = (xs.partition_point(|&x| x < d[k].0 - 0.36), xs.partition_point(|&x| x <= d[k].0 + 0.36));
+            order[lo..hi].iter().filter(|&&l| near(k, l)).count() as i64
+        } else {
+            -1
+        };
         if count > best.1 {
             best = (k, count);
         }

@@ -33,7 +33,7 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 
 | Stage | Where | Cost | Notes |
 | --- | --- | --- | --- |
-| Link: the view shift | src/track.rs `view_shift` (in `link`, from `Tracker::finish`) | av1 1.2 to 1.6 ms; 10 Sphere Hipfire 46 to 49 ms; 2007_1w6ts_aimlab 118 to 122 ms (survey) | O(d^2) over pairs of spots; a sorted sweep measured 20 ms on the Aim Lab run, bit-equal; grows with clutter |
+| Link: the view shift | src/track.rs `view_shift` (in `link`, from `Tracker::finish`) | a sorted sweep (survey): 2007_1w6ts_aimlab 20 ms, 10 Sphere Hipfire 24 to 27 ms, av1 1.4 to 2.1 ms; before it, all pairs: 118 to 122, 46 to 49 and 1.2 to 1.6 ms | each pairing is compared only with those within 0.36 degrees in x (a binary search in the pairings sorted by x); grows with clutter |
 | Matching | src/matching.rs `match_times` | 9 ms on av1 (survey) | `clock_offset` is 4 to 5 ms of it (40 x 40 offsets, a linear nearest search per kill); a binary search measured 1.8 to 2.0 ms |
 | HUD layout median | src/hud.rs, the per-pixel median over the key frames | 17 ms (survey) | a 256-bin histogram measured 11.6 ms |
 | Camera's excluded pixels | src/camera.rs `excluded` | 4 to 7 ms (survey) | |
