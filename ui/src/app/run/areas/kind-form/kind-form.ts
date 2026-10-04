@@ -29,10 +29,10 @@ export class KindForm {
     name: this.kind()?.name ?? '',
     about: this.kind()?.about ?? '',
   }));
-  protected readonly fields = form(this.model, (p) => {
-    required(p.name);
-    maxLength(p.name, 40);
-    maxLength(p.about, 200);
+  protected readonly fields = form(this.model, (path) => {
+    required(path.name);
+    maxLength(path.name, 40);
+    maxLength(path.about, 200);
   });
   protected readonly saving = signal(false);
 

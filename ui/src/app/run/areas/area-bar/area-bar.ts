@@ -56,7 +56,7 @@ export class AreaBar {
   /** The kind form for the selected area's kind: a new name or description. */
   protected editKind(): void {
     const id = this.selectedKind();
-    const kind = this.draft.kinds().find((k) => k.id === id);
+    const kind = this.draft.kinds().find((candidate) => candidate.id === id);
     if (kind) this.kindForm.set({ kind });
   }
 

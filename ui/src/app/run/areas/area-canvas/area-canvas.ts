@@ -78,27 +78,31 @@ export class AreaCanvas {
   }
 
   private size(): ScreenSize {
-    const el = this.canvas().nativeElement;
-    return { width: el.clientWidth || 1, height: el.clientHeight || 1 };
+    const canvas = this.canvas().nativeElement;
+    return { width: canvas.clientWidth || 1, height: canvas.clientHeight || 1 };
   }
 
-  private at(e: PointerEvent): SharePoint {
-    const r = this.canvas().nativeElement.getBoundingClientRect();
-    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  private at(event: PointerEvent): SharePoint {
+    const bounds = this.canvas().nativeElement.getBoundingClientRect();
+    return [
+      (event.clientX - bounds.left) / bounds.width,
+      (event.clientY - bounds.top) / bounds.height,
+    ];
   }
 
   private draw(): void {
     const canvas = this.canvas().nativeElement;
     const size = this.size();
-    const dpr = devicePixelRatio || 1;
-    if (canvas.width !== Math.round(size.width * dpr)) canvas.width = Math.round(size.width * dpr);
-    if (canvas.height !== Math.round(size.height * dpr)) {
-      canvas.height = Math.round(size.height * dpr);
+    const pixelRatio = devicePixelRatio || 1;
+    if (canvas.width !== Math.round(size.width * pixelRatio))
+      canvas.width = Math.round(size.width * pixelRatio);
+    if (canvas.height !== Math.round(size.height * pixelRatio)) {
+      canvas.height = Math.round(size.height * pixelRatio);
     }
-    const c = canvas.getContext('2d');
-    if (!c) return;
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.clearRect(0, 0, size.width, size.height);
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, size.width, size.height);
     this.style ??= readAreaStyle(canvas);
     const sketch = this.sketch();
     const grip = this.grip();
@@ -109,7 +113,7 @@ export class AreaCanvas {
       Math.max(sketch.start[1], sketch.end[1]),
     ];
     drawAreas(
-      c,
+      context,
       {
         boxes: this.draft.boxes(),
         selected: this.draft.selected(),
@@ -123,10 +127,10 @@ export class AreaCanvas {
   }
 
   /** The selected area is taken first, then the topmost under the pointer; on the empty video, a new area starts. */
-  protected pressArea(e: PointerEvent): void {
-    if (e.button !== 0 || !this.draft.ready()) return;
-    this.canvas().nativeElement.setPointerCapture(e.pointerId);
-    const point = this.at(e);
+  protected pressArea(event: PointerEvent): void {
+    if (event.button !== 0 || !this.draft.ready()) return;
+    this.canvas().nativeElement.setPointerCapture(event.pointerId);
+    const point = this.at(event);
     const boxes = this.draft.boxes();
     const hold = holdAt(boxes, this.draft.selected(), point, this.size());
     if (!hold) {
@@ -135,19 +139,19 @@ export class AreaCanvas {
     }
     const wasSelected = this.draft.selected() === hold.index;
     this.draft.select(hold.index);
-    const [a, b, c, d] = boxes[hold.index];
+    const [left, top, right, bottom] = boxes[hold.index];
     this.grip.set({
       index: hold.index,
       edges: hold.edges,
       start: point,
-      from: [a, b, c, d],
+      from: [left, top, right, bottom],
       wasSelected,
       moved: false,
     });
   }
 
-  protected movePointer(e: PointerEvent): void {
-    const point = this.at(e);
+  protected movePointer(event: PointerEvent): void {
+    const point = this.at(event);
     const size = this.size();
     const grip = this.grip();
     if (grip) {
@@ -196,13 +200,14 @@ export class AreaCanvas {
    * Escape closes the editor; Delete or Backspace removes the selected area. Keys typed into a field are its own, and
    * a key the player already used (Escape leaving full screen) is the player's.
    */
-  protected handleKeydown(e: KeyboardEvent): void {
-    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.target instanceof Element && e.target.closest('input, textarea, select, dialog')) return;
-    if (e.key === 'Escape') {
+  protected handleKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, dialog'))
+      return;
+    if (event.key === 'Escape') {
       this.draft.stop();
-    } else if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault();
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
       this.draft.remove();
     }
   }

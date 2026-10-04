@@ -1,5 +1,13 @@
 import { computed, effect, inject, Service, linkedSignal, signal, untracked } from '@angular/core';
-import { AreaBox, AreaKind, AreaRect, AreaSource, errorMessage, FoundAreas } from '../../api';
+import {
+  AreaBox,
+  AreaKind,
+  AreaRect,
+  AreaSource,
+  errorMessage,
+  FoundAreas,
+  KeptAreas,
+} from '../../api';
 import { AreaLabels } from '../../platform/area-labels';
 import { LabelQueue } from '../../services/label-queue';
 import { Library } from '../../services/library';
@@ -19,18 +27,18 @@ const FROM: Record<AreaSource, string> = {
   kovobs: 'KovOBS’s layout (the default).',
 };
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 /** What the finder's proposal says: the recording it copied from, or how many areas it found and named how. */
-export function foundNote(r: FoundAreas): string {
-  const taught = `Learned from ${plural(r.recordings, 'recording')} you saved.`;
-  if (r.copied) {
-    const from = r.copied.replace(/_/g, ' ');
+export function foundNote(found: FoundAreas): string {
+  const taught = `Learned from ${plural(found.recordings, 'recording')} you saved.`;
+  if (found.copied) {
+    const from = found.copied.replace(/_/g, ' ');
     return `Same layout as ${from}: your areas from there. ${taught} Check them, then Save.`;
   }
   return (
-    `Found ${plural(r.boxes.length, 'area')}: ${r.by.learned ?? 0} named from what you taught, ` +
-    `${r.by.rule ?? 0} by rules. ${taught} Check them, then Save.`
+    `Found ${plural(found.boxes.length, 'area')}: ${found.by.learned ?? 0} named from what you taught, ` +
+    `${found.by.rule ?? 0} by rules. ${taught} Check them, then Save.`
   );
 }
 
@@ -156,7 +164,7 @@ export class AreaDraft {
 
   /** The kind's name, or its id where no kind has it. */
   kindName(id: string): string {
-    return this.kinds().find((k) => k.id === id)?.name ?? id;
+    return this.kinds().find((candidate) => candidate.id === id)?.name ?? id;
   }
 
   /** A new area, selected so the user can say what it is. */
@@ -168,7 +176,7 @@ export class AreaDraft {
   /** An area moved or resized. */
   place(index: number, [x0, y0, x1, y1]: AreaRect): void {
     this.boxes.update((list) =>
-      list.map((b, i): AreaBox => (i === index ? [x0, y0, x1, y1, b[4]] : b)),
+      list.map((box, i): AreaBox => (i === index ? [x0, y0, x1, y1, box[4]] : box)),
     );
   }
 
@@ -177,7 +185,7 @@ export class AreaDraft {
     const at = this.selected();
     if (at < 0) return;
     this.boxes.update((list) =>
-      list.map((b, i): AreaBox => (i === at ? [b[0], b[1], b[2], b[3], kind] : b)),
+      list.map((box, i): AreaBox => (i === at ? [box[0], box[1], box[2], box[3], kind] : box)),
     );
   }
 
@@ -185,7 +193,7 @@ export class AreaDraft {
   remove(): void {
     const at = this.selected();
     if (at < 0) return;
-    this.boxes.update((list) => list.filter((_, i) => i !== at));
+    this.boxes.update((list) => list.filter((_box, i) => i !== at));
     this.selected.set(-1);
   }
 
@@ -203,8 +211,8 @@ export class AreaDraft {
       this.boxes.set(layout.boxes);
       this.selected.set(-1);
       this.note.set(`${FROM.kovobs} Check them, then Save.`);
-    } catch (e) {
-      this.note.set(`Could not read KovOBS’s layout: ${errorMessage(e)}`);
+    } catch (error) {
+      this.note.set(`Could not read KovOBS’s layout: ${errorMessage(error)}`);
     }
   }
 
@@ -226,8 +234,8 @@ export class AreaDraft {
       this.boxes.set(found.boxes.map((b): AreaBox => [...b]));
       this.selected.set(-1);
       this.note.set(foundNote(found));
-    } catch (e) {
-      if (this.editing() === id) this.note.set(`Could not find areas: ${errorMessage(e)}`);
+    } catch (error) {
+      if (this.editing() === id) this.note.set(`Could not find areas: ${errorMessage(error)}`);
     } finally {
       if (this.editing() === id) this.busy.set(null);
     }
@@ -245,20 +253,30 @@ export class AreaDraft {
     try {
       const kept = await this.labels.save(id, this.boxes());
       if (this.editing() !== id) return;
-      const reviewed = this.library.selected()?.analysed ?? false;
-      const tracks = this.review.tracks.hasValue() ? this.review.tracks.value() : null;
-      const tracked = tracks?.areas;
-      if (kept.job && kept.job.stage !== 'none') this.review.follow(kept.job);
-      else if (reviewed && !(tracked && sameAreas(tracked, kept.boxes)))
-        void this.review.analyse(true);
+      this.trackAgain(kept);
       const queued = this.queued();
       this.stop();
       if (queued) this.queue.next();
-    } catch (e) {
-      if (this.editing() === id) this.note.set(`Could not save the areas: ${errorMessage(e)}`);
+    } catch (error) {
+      if (this.editing() === id) this.note.set(`Could not save the areas: ${errorMessage(error)}`);
     } finally {
       if (this.busy() === 'save') this.busy.set(null);
     }
+  }
+
+  /**
+   * A reviewed recording whose review was tracked with other areas (or with areas the review does not say) is tracked
+   * again with the kept ones, unless the service already started that.
+   */
+  private trackAgain(kept: KeptAreas): void {
+    if (kept.job && kept.job.stage !== 'none') {
+      this.review.follow(kept.job);
+      return;
+    }
+    const reviewed = this.library.selected()?.analysed ?? false;
+    const tracks = this.review.tracks.hasValue() ? this.review.tracks.value() : null;
+    const tracked = tracks?.areas;
+    if (reviewed && !(tracked && sameAreas(tracked, kept.boxes))) void this.review.analyse(true);
   }
 
   /**
@@ -271,11 +289,13 @@ export class AreaDraft {
       this.kinds.set(kinds);
       if (id === null && this.selected() >= 0) {
         const wanted = name.trim().toLowerCase();
-        this.setKind(kinds.find((k) => k.name.toLowerCase() === wanted)?.id ?? OTHER);
+        this.setKind(
+          kinds.find((candidate) => candidate.name.toLowerCase() === wanted)?.id ?? OTHER,
+        );
       }
       return true;
-    } catch (e) {
-      this.note.set(`Could not save the type: ${errorMessage(e)}`);
+    } catch (error) {
+      this.note.set(`Could not save the type: ${errorMessage(error)}`);
       return false;
     }
   }

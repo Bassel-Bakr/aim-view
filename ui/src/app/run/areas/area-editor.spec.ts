@@ -135,17 +135,17 @@ describe('the excluded areas editor', () => {
     // the page followed the review the save started, to its end
     expect(TestBed.inject(Review).job().stage).toBe('done');
   });
+});
+
+describe('the excluded areas editor', () => {
+  afterEach(() => history.replaceState(null, '', '/'));
 
   it('moves an area by its inside, resizes it by its edge, and removes it with Delete', async () => {
     const { draft, drag } = await render(fakeServer({ saved: null, analysed: [] }));
     drag([300, 150], [350, 175]);
-    expect(draft.boxes()[0].map((v) => (typeof v === 'number' ? +v.toFixed(6) : v))).toEqual([
-      0.15,
-      0.15,
-      0.55,
-      0.55,
-      'webcam',
-    ]);
+    expect(
+      draft.boxes()[0].map((value) => (typeof value === 'number' ? +value.toFixed(6) : value)),
+    ).toEqual([0.15, 0.15, 0.55, 0.55, 'webcam']);
     // the right edge, at x = 550 px
     drag([550, 150], [700, 150]);
     expect(draft.boxes()[0][2]).toBeCloseTo(0.7);
@@ -182,6 +182,10 @@ describe('the excluded areas editor', () => {
     expect(draft.boxes()[0][4]).toBe('kill_feed');
     expect(el.querySelector('form')).toBeNull();
   });
+});
+
+describe('the excluded areas editor', () => {
+  afterEach(() => history.replaceState(null, '', '/'));
 
   it('opens on each recording of the labelling queue with the finder’s proposal; Save and next moves on', async () => {
     const next = 'Air/Air - 2 - 2026.10.02-09.00.00.mp4';
@@ -232,6 +236,10 @@ describe('the excluded areas editor', () => {
     expect(queue.active()).toBe(false);
     expect(draft.open()).toBe(false);
   });
+});
+
+describe('the excluded areas editor', () => {
+  afterEach(() => history.replaceState(null, '', '/'));
 
   it('in the browser, follows the kinds loaded from a kinds file, keeping the areas drawn', async () => {
     // the review service reads the kinds from its data folder's area_kinds.json, which the page writes
