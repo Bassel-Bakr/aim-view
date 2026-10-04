@@ -5,10 +5,12 @@
 //!   cargo run --profile quick --example review_runs -- <out> [<root> ...] [--stats <KovaaK's stats folder>]
 //!
 //! A run is a folder under a root with tracks.json, readings.json, hud.json and report.json, as
-//! python/model/eval_video_alone.py keeps them (the default root: test_out/vod_model/eval/video_alone, every model's).
-//! Each is reviewed as the app's report request does (service/src/report.rs), as eval_video_alone.py does: with its
-//! stats file (named in its report.json) and the HUD's reading, into <out>/<run>/stats.json, and with neither, the
-//! video alone, into <out>/<run>/alone.json.
+//! python/model/eval_video_alone.py and build_mined.py keep them (the default roots:
+//! test_out/vod_model/eval/video_alone, every model's clicking runs, and test_out/vod_model/data_mined/reviews, runs of
+//! every kind). Each is reviewed as the app's report request does (service/src/report.rs): with its stats file (named
+//! in its report.json) and the HUD's reading, into <out>/<root's name>/<run>/stats.json, and with neither, the video
+//! alone, into .../alone.json. A run whose kept report is a tracking one (mode "track") is reviewed as tracking, over
+//! the time limit that report kept.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +18,7 @@ use std::path::{Path, PathBuf};
 use aimview::review::review_json;
 use serde_json::{Value, json};
 
-const DEFAULT_ROOT: &str = "test_out/vod_model/eval/video_alone";
+const DEFAULT_ROOTS: [&str; 2] = ["test_out/vod_model/eval/video_alone", "test_out/vod_model/data_mined/reviews"];
 const DEFAULT_STATS: &str = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats";
 
 /// The run folders under `root`, sorted.
@@ -42,6 +44,7 @@ fn read_json(path: &Path) -> Value {
 /// The report request for a run: with its stats file's text and the HUD's reading, or (None) with neither.
 fn request(run: &Path, stats_text: Option<&str>) -> Value {
     let (kept_report, readings) = (read_json(&run.join("report.json")), read_json(&run.join("readings.json")));
+    let tracking = kept_report["mode"] == "track";
     json!({
         "tracks": read_json(&run.join("tracks.json")),
         "statsText": stats_text.unwrap_or_default(),
@@ -49,8 +52,8 @@ fn request(run: &Path, stats_text: Option<&str>) -> Value {
         "stats": if stats_text.is_some() { kept_report["stats"].clone() } else { json!("") },
         "hud": if stats_text.is_some() { read_json(&run.join("hud.json")) } else { Value::Null },
         "run": null,
-        "tracking": false,
-        "limit": null,
+        "tracking": tracking,
+        "limit": if tracking { kept_report["limit"].clone() } else { Value::Null },
         "camera": readings["camera"],
         "countdown": readings["countdown"],
         "faint": null,
@@ -64,8 +67,11 @@ fn main() {
         None => PathBuf::from(DEFAULT_STATS),
     };
     let out = PathBuf::from(args.first().expect("usage: review_runs <out> [<root> ...] [--stats <folder>]"));
-    let roots: Vec<PathBuf> =
-        if args.len() > 1 { args[1..].iter().map(PathBuf::from).collect() } else { vec![PathBuf::from(DEFAULT_ROOT)] };
+    let roots: Vec<PathBuf> = if args.len() > 1 {
+        args[1..].iter().map(PathBuf::from).collect()
+    } else {
+        DEFAULT_ROOTS.iter().map(PathBuf::from).collect()
+    };
     let mut reviewed = 0;
     for root in &roots {
         for run in run_folders(root) {
@@ -74,7 +80,7 @@ fn main() {
                 fs::read(stats_folder.join(&name)).ok().map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
             let review =
                 |stats_text: Option<&str>| review_json(&serde_json::to_vec(&request(&run, stats_text)).unwrap());
-            let target = out.join(run.strip_prefix(root).unwrap());
+            let target = out.join(root.file_name().unwrap()).join(run.strip_prefix(root).unwrap());
             fs::create_dir_all(&target).unwrap();
             if let Some(text) = &stats_text {
                 fs::write(target.join("stats.json"), review(Some(text))).unwrap();
