@@ -36,7 +36,7 @@ export class RunCharts {
   protected readonly speeds = computed(() => flickSpeeds(this.report()));
   /** The speed curve of the kill in focus, drawn over the others. */
   protected readonly focusedSpeed = computed(
-    () => this.speeds().lines.find((l) => l.flick === this.focus.selected()) ?? null,
+    () => this.speeds().lines.find((line) => line.flick === this.focus.selected()) ?? null,
   );
   protected readonly words = CHART_WORDS;
   protected readonly shares = computed(() => killShares(this.report()));
@@ -46,7 +46,7 @@ export class RunCharts {
   protected readonly pace = computed(() => pace(this.report()));
   /** The direction of the kill in focus, as the wheel's wedge index. */
   protected readonly selectedSector = computed(() => {
-    const f = this.focus.selected();
-    return f ? sector(f.direction_deg) : null;
+    const kill = this.focus.selected();
+    return kill ? sector(kill.direction_deg) : null;
   });
 }

@@ -7,7 +7,7 @@ import { Flick, TrackPoint } from '../../api';
 export interface Fitts {
   a: number;
   b: number;
-  W: number;
+  widthDeg: number;
 }
 
 /** Fewer kills than this give no fit: a flat 0.1 s per unit is used. */
@@ -15,18 +15,18 @@ const MIN_FIT = 3;
 const DEFAULT_B = 0.1;
 
 export function fitFitts(flicks: Flick[], radius: number): Fitts {
-  const W = 2 * radius;
+  const widthDeg = 2 * radius;
   const pts = flicks
     .filter((m) => m.total != null && m.D0 > 0)
-    .map((m) => [Math.log2(1 + m.D0 / W), m.total]);
+    .map((m) => [Math.log2(1 + m.D0 / widthDeg), m.total]);
   const n = pts.length;
-  if (n < MIN_FIT) return { a: 0, b: DEFAULT_B, W };
+  if (n < MIN_FIT) return { a: 0, b: DEFAULT_B, widthDeg };
   const mx = pts.reduce((s, p) => s + p[0], 0) / n;
   const my = pts.reduce((s, p) => s + p[1], 0) / n;
   const sxy = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0);
   const sxx = pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
   const b = sxx > 0 && sxy > 0 ? sxy / sxx : DEFAULT_B;
-  return { a: my - b * mx, b, W };
+  return { a: my - b * mx, b, widthDeg };
 }
 
 /**
@@ -75,12 +75,12 @@ export class OrderSolver {
 
   /** From the crosshair to a target, in log units. */
   costFromCrosshair(p: TrackPoint): number {
-    return Math.log2(1 + Math.hypot(p[1], p[2]) / this.fitts.W);
+    return Math.log2(1 + Math.hypot(p[1], p[2]) / this.fitts.widthDeg);
   }
 
   /** From one target to another, in log units. */
   cost(p: TrackPoint, q: TrackPoint): number {
-    return Math.log2(1 + Math.hypot(p[1] - q[1], p[2] - q[2]) / this.fitts.W);
+    return Math.log2(1 + Math.hypot(p[1] - q[1], p[2] - q[2]) / this.fitts.widthDeg);
   }
 
   /** The time for n flicks of so many log units in all. */
