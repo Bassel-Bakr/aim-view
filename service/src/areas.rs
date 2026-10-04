@@ -49,6 +49,7 @@ const OVERLAY_KINDS: [&str; 8] = ["Session stats", "Timer", "Clock", "Settings",
 
 /// A kind of area: its id never changes; its name and what it is can.
 #[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "AreaKind"))]
 pub struct Kind {
     id: String,
     name: String,

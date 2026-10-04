@@ -5,6 +5,7 @@ import { faintStrip } from './faint-strip';
 /** Ten frames of two tracks: one scoring 0.9 away from the crosshair, one 0.4 near it (1 degree off). */
 const FRAMES: TrackFrame[] = Array.from({ length: 10 }, (_, i) => ({
   i,
+  shift: [0, 0],
   t: [
     [1, 5, 0],
     [2, 1, 0],
@@ -36,11 +37,11 @@ describe('faint scores', () => {
   });
 
   it('takes the 90th percentile of a track, and needs 3 frames', () => {
-    const f = (s: number): TrackFrame => ({ i: 0, t: [[7, 3, 0]], s: [s] });
+    const f = (s: number): TrackFrame => ({ i: 0, shift: [0, 0], t: [[7, 3, 0]], a: [1], s: [s] });
     const sc = faintScores([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.05].map(f), 2);
     expect(sc.scores.get(7)).toBe(0.9);
     expect(faintScores([f(0.5), f(0.6)], 2).level).toBeNull();
-    expect(faintScores([{ i: 0, t: [[1, 3, 0]] }], 0).level).toBeNull();
+    expect(faintScores([{ i: 0, shift: [0, 0], t: [[1, 3, 0]], a: [1] }], 0).level).toBeNull();
   });
 
   it('leaves out the tracks under the cut, each target whole', () => {
@@ -49,7 +50,14 @@ describe('faint scores', () => {
     expect([...gone]).toEqual([2]);
     const tracks: Tracks = { fps: 60, frames: FRAMES };
     const kept = tracksWithout(tracks, gone);
-    expect(kept.frames[0]).toEqual({ i: 0, t: [[1, 5, 0]], a: [10], wh: [[1, 1]], s: [0.9] });
+    expect(kept.frames[0]).toEqual({
+      i: 0,
+      shift: [0, 0],
+      t: [[1, 5, 0]],
+      a: [10],
+      wh: [[1, 1]],
+      s: [0.9],
+    });
     expect(tracksWithout(tracks, new Set())).toBe(tracks);
   });
 

@@ -57,7 +57,7 @@ export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[
     flickSpeed: formatSpeed(m.peak),
     onTheMove: formatSpeed(m.click_speed),
     shots: formatCount(m.shots),
-    missed: m.shots > 1,
+    missed: (m.shots ?? 0) > 1,
     pathing: pickText(paths, m.n),
     reaction: formatMs(m.react),
     flickTime: formatMs(m.flick),

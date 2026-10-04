@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::matching::{KillSource, MatchInfo};
 use crate::measure::{flick_profile, Choice, FlickProfile, Measure};
+use crate::optional_fields::OptionalFields;
 use crate::reload::{ReloadCost, Reloads};
 use crate::statistics::{mean, med, median, pstdev};
 use crate::what_if::{click_what_if, ClickWhatIf};
@@ -13,6 +14,7 @@ use crate::what_if::{click_what_if, ClickWhatIf};
 /// Click: one shot a kill. Hold: the trigger is held on the target (the median kill takes more than 3 shots).
 /// Track: a tracking run, on the target all along.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     Click,
@@ -23,21 +25,29 @@ pub enum Mode {
 /// A hold-fire run's holding: the median time from reaching a target to its kill, the share of kills where the
 /// crosshair slipped off, and the share of that time spent off the target.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Holding {
+    #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub hold: Option<f64>,
+    #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub slipped: f64,
+    #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub off_share: f64,
 }
 
 /// The median kill time in the first and the last third of the run.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Pace {
+    #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub pace_first: Option<f64>,
+    #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub pace_last: Option<f64>,
 }
 
 /// Flicks of one distance range (degrees).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DistanceGroup {
     pub lo: u32,
     pub hi: u32,
@@ -51,7 +61,9 @@ pub struct DistanceGroup {
 
 /// Flicks of one direction (a 45-degree sector), with the median time each took beyond what its distance predicts.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DirectionGroup {
+    #[cfg_attr(feature = "ts", ts(as = "Direction"))]
     pub name: &'static str,
     pub n: usize,
     pub interval: Option<f64>,
@@ -63,6 +75,7 @@ pub struct DirectionGroup {
 
 /// A clicking run's summary: the stats file's facts, then the medians and shares of the measures.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Summary {
     pub scenario: Option<String>,
     pub score: Option<f64>,
@@ -91,18 +104,19 @@ pub struct Summary {
     pub mode: Mode,
     pub accuracy: Option<f64>,
     #[serde(flatten)]
-    pub holding: Option<Holding>,
+    pub holding: OptionalFields<Holding>,
     pub still_landed: Option<f64>,
     pub still_corrected: Option<f64>,
     pub short_covered: Option<f64>,
     pub mid_short_cost: Option<f64>,
+    #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::KillParts>"))]
     pub budget: Option<[f64; 5]>,
     pub by_distance: Vec<DistanceGroup>,
     pub by_direction: Vec<DirectionGroup>,
     pub nearest_chosen: Option<f64>,
     pub extra_when_not_nearest: Option<f64>,
     #[serde(flatten)]
-    pub pace: Option<Pace>,
+    pub pace: OptionalFields<Pace>,
     /// What would raise the score, biggest first (src/what_if.rs; Python's report has none).
     pub what_if: Vec<ClickWhatIf>,
     /// The camera's speed through the flicks, averaged (src/measure.rs; Python's report has none).
@@ -110,11 +124,27 @@ pub struct Summary {
     /// The reloads an empty magazine forced over the run (src/reload.rs; Python's report has none; none without the
     /// scenario's ammo rules or the kills' shots).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub reloads: Option<Reloads>,
 }
 
 /// Eight 45-degree sectors, each centered on its direction (0 = right, 90 = up).
 pub const DIRECTIONS: [&str; 8] = ["right", "up-right", "up", "up-left", "left", "down-left", "down", "down-right"];
+
+/// The names in DIRECTIONS, for the TypeScript types only (the core keeps them as strings).
+#[cfg(feature = "ts")]
+#[derive(ts_rs::TS)]
+#[ts(export, rename_all = "kebab-case")]
+pub enum Direction {
+    Right,
+    UpRight,
+    Up,
+    UpLeft,
+    Left,
+    DownLeft,
+    Down,
+    DownRight,
+}
 
 /// The distance groups (degrees).
 pub const DISTANCES: [(u32, u32); 5] = [(0, 5), (5, 10), (10, 15), (15, 25), (25, 90)];
@@ -208,11 +238,11 @@ pub fn summarize(
             (Some(h), Some(m)) if h + m > 0.0 => Some(h / (h + m)),
             _ => None,
         },
-        holding: (!held.is_empty()).then(|| Holding {
+        holding: OptionalFields((!held.is_empty()).then(|| Holding {
             hold: med(held.iter().map(|m| m.hold)),
             slipped: share(&held, |m| m.breaks > 0),
             off_share: held.iter().map(|m| m.off).sum::<f64>() / held.iter().map(|m| m.hold.unwrap()).sum::<f64>().max(1e-9),
-        }),
+        })),
         still_landed: still_of(&|m| m.end_left <= r),
         still_corrected: still_of(&|m| m.end_left > r),
         short_covered: (!short.is_empty()).then(|| 1.0 - median(&short)),
@@ -258,10 +288,10 @@ pub fn summarize(
             .collect(),
         nearest_chosen: (!ch.is_empty()).then(|| ch.iter().filter(|c| c.rank == 0).count() as f64 / ch.len() as f64),
         extra_when_not_nearest: med(ch.iter().filter(|c| c.rank > 0).map(|c| Some(c.extra))),
-        pace: (n >= 30).then(|| Pace {
+        pace: OptionalFields((n >= 30).then(|| Pace {
             pace_first: med(totals[..n / 3].iter().map(|&t| Some(t))),
             pace_last: med(totals[n - n / 3..].iter().map(|&t| Some(t))),
-        }),
+        })),
         what_if: Vec::new(),
         flick_profile: flick_profile(ms),
         reloads: reload.map(|c| c.run.clone()),
@@ -273,6 +303,7 @@ pub fn summarize(
 
 /// A check's verdict.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Flag {
     Attention,
@@ -281,6 +312,7 @@ pub enum Flag {
 
 /// One check: the issue's number (as in docs/issues.md), the number it reads, a plain verdict and why.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Issue {
     pub issue: u32,
     pub title: &'static str,
@@ -348,7 +380,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
             ),
         );
     }
-    if let (true, Some(h)) = (hold, &s.holding) {
+    if let (true, Some(h)) = (hold, &*s.holding) {
         add(
             24,
             "Unstable landing",
@@ -412,7 +444,7 @@ pub fn judge(s: &Summary) -> Vec<Issue> {
                 .into(),
         );
     }
-    if let Some(Pace { pace_first: Some(first), pace_last: Some(last) }) = &s.pace
+    if let Some(Pace { pace_first: Some(first), pace_last: Some(last) }) = &*s.pace
         && *first != 0.0
         && *last != 0.0
     {

@@ -55,6 +55,7 @@ const ROWS: usize = 4;
 
 /// Which game's HUD was read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum HudGame {
     Kovaak,
@@ -64,6 +65,7 @@ pub enum HudGame {
 /// The run's totals as the HUD shows them at the end: the kills counted, and the hits and shots (None where the
 /// Accuracy line was not read).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct HudFinal {
     pub kills: i64,
     pub hits: Option<i64>,
@@ -73,6 +75,7 @@ pub struct HudFinal {
 /// What the HUD read (python/hud.py: read() and read_aimlab()). Frames are the recording's frame indexes (0 is the
 /// first frame from time 0 on), on the video's own clock.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct HudReading {
     pub game: HudGame,
     /// One entry per kill: the frame its count went up.

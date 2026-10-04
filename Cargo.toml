@@ -16,10 +16,15 @@ exclude = ["python/model/rust"]
 # rlib: the desktop app links it; cdylib: the WebAssembly module the browser loads (src/wasm.rs)
 crate-type = ["rlib", "cdylib"]
 
+[features]
+# `bun run types`: the TypeScript types of the JSON the UI reads, made from these structs (ts-rs). Off in every build.
+ts = ["dep:ts-rs"]
+
 [dependencies]
 rustfft = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
 
 [profile.release]
 lto = true

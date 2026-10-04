@@ -111,7 +111,7 @@ describe('click stats', () => {
       dir: 0,
       end_left: 0,
       past: 0,
-      parts: null,
+      parts: undefined,
       reloads: 1,
       reload_time: 0.8,
     } as Flick;

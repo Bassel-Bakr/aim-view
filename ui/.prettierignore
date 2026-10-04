@@ -1,2 +1,2 @@
 # what bun run assets copies in (the core, the models, the user's area finder data): not source
-generated/
+/generated/

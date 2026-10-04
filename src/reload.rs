@@ -24,6 +24,7 @@ pub struct KillReloads {
 /// Forced reloads over a run: how many, their time in seconds, and the points they took off (None when the scenario
 /// takes none for a reload).
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Reloads {
     pub count: i64,
     pub seconds: f64,

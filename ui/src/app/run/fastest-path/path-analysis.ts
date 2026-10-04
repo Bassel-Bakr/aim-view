@@ -155,9 +155,11 @@ export interface CostlyPick {
   cost: string;
 }
 
-/** The Pathing check, with its costliest picks. */
+/**
+ * The Pathing check, the page's own (it has no issue number, which the core's checks have), with its costliest picks.
+ */
 export interface Pathing {
-  issue: Issue;
+  issue: Omit<Issue, 'issue'>;
   costliest: CostlyPick[];
 }
 

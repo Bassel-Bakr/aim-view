@@ -4,7 +4,7 @@ import { answer, serverMode } from '../../fake-api';
 import { FlickFocus } from '../flick-focus';
 import { ClickSide } from './click-side';
 
-const FLICK = { n: 4, D0: 8, dir: 0, total: 0.4, end_left: 0, parts: null, shots: 1 } as Flick;
+const FLICK = { n: 4, D0: 8, dir: 0, total: 0.4, end_left: 0, parts: undefined, shots: 1 } as Flick;
 const REPORT = {
   mode: 'click',
   fps: 120,

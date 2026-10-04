@@ -12,6 +12,7 @@ pub mod hud;
 pub mod matching;
 pub mod measure;
 pub mod model;
+pub mod optional_fields;
 pub mod mouse;
 pub mod popup;
 pub mod py_random;
@@ -26,6 +27,8 @@ pub mod summary;
 pub mod track;
 pub mod tracker;
 pub mod tracking;
+#[cfg(feature = "ts")]
+pub mod typescript;
 pub mod what_if;
 
 #[cfg(target_arch = "wasm32")]

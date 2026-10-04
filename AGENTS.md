@@ -42,6 +42,8 @@ python tests/fixtures.py <video> [--areas exclude.json]   # Python's results sta
 python tests/fixtures.py --faint                          # the faint-target cut-off in Python (--test faint_parity)
 bun run assets                                 # the core as WebAssembly, the models and the area finder's data,
                                                # into ui/generated/ (--no-data: without the data; see below)
+bun run types                                  # the UI's types of the JSON the Rust structs write (ts-rs), into
+                                               # ui/src/app/generated/: run after changing a Rust struct the UI reads
 ```
 
 Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
@@ -86,7 +88,10 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   carries only its own mode's code. Each contract has one spec that runs against every mode
   (`platform/*.spec.ts`).
 - **Named types.** In TypeScript, every object or tuple type gets a name (an interface or a type alias). No inline
-  anonymous types such as `{ gpu: number; cpu: number }` in a field or a signature. ESLint enforces it.
+  anonymous types such as `{ gpu: number; cpu: number }` in a field or a signature. ESLint enforces it. The types of
+  the JSON the core and the service write from Rust structs are made from them (`bun run types`, the `ts` feature,
+  into `ui/src/app/generated/`, kept in git), and `api.ts` re-exports them under the UI's names; only the answers the
+  service builds with `json!`, the bodies the page sends and the UI's own types are written by hand.
 - **Styles are SCSS, and every design value is a token.** A token is a CSS variable (so it can be edited live in the
   browser), with an SCSS name for it: `$surface-0: var(--surface-0)`. The main tokens are in `ui/src/themes/theme.scss`;
   page and module tokens (values only one part uses) are in `ui/src/themes/<page or module>.scss`. Each file has a

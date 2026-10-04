@@ -28,6 +28,7 @@ pub struct Flick {
 
 /// Where the kill times came from.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum KillSource {
     Stats,
@@ -39,15 +40,18 @@ pub enum KillSource {
 /// How the kills matched: kills seen in the video and in the kill times, kills matched, kills confirmed (the target
 /// last seen at the crosshair within 2 frames of its kill time), the kill times' offset on the video's clock (s).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct MatchInfo {
     pub kills_video: usize,
     pub kills_stats: Option<usize>,
     pub matched: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub confirmed: Option<usize>,
     pub offset: Option<f64>,
     pub fps: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub source: Option<KillSource>,
 }
 

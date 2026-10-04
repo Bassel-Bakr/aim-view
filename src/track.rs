@@ -141,14 +141,19 @@ pub type TrackPoint = (u32, f64, f64);
 /// One frame of tracks, as tracks.json keeps it: the view's shift since the frame before (degrees), each target with
 /// its id, its area, and from the model its box (w, h in degrees, 3 decimals) and score (3 decimals).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackFrame {
     pub i: usize,
+    #[cfg_attr(feature = "ts", ts(as = "crate::typescript::ViewShift"))]
     pub shift: (f64, f64),
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::TrackPoint>"))]
     pub t: Vec<TrackPoint>,
     pub a: Vec<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::TargetSize>>", optional))]
     pub wh: Option<Vec<(f64, f64)>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub s: Option<Vec<f64>>,
 }
 

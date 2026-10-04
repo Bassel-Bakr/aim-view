@@ -278,17 +278,17 @@ export interface DistanceBar {
 }
 
 export function distanceBars(bands: DistanceBand[]): DistanceBar[] {
-  const longest = Math.max(...bands.map((b) => b.interval));
+  const longest = Math.max(...bands.map((b) => b.interval ?? 0));
   return distanceRows(bands).map((r, i) => ({
     band: bands[i].hi === OPEN_BAND ? `${bands[i].lo}°+` : r.band,
     kill: r.kill,
     short: r.short,
-    share: longest > 0 ? bands[i].interval / longest : 0,
+    share: longest > 0 ? (bands[i].interval ?? 0) / longest : 0,
   }));
 }
 
-/** The checks, those to look at first. */
-export function sortedIssues(issues: Issue[]): Issue[] {
+/** The checks, those to look at first (the core's, and the page's own Pathing check, which has no issue number). */
+export function sortedIssues(issues: Omit<Issue, 'issue'>[]): Omit<Issue, 'issue'>[] {
   return [...issues].sort(
     (a, b) => Number(b.flag === 'attention') - Number(a.flag === 'attention'),
   );
@@ -336,7 +336,7 @@ export function directionRows(bands: DirectionBand[]): DirectionRow[] {
     toward: `${DIRECTION_ARROWS[b.name]} ${b.name}`,
     flicks: b.n,
     kill: formatMs(b.interval),
-    distance: `${b.distance.toFixed(1)}°`,
+    distance: b.distance == null ? '–' : `${b.distance.toFixed(1)}°`,
     beyond: b.beyond == null ? '–' : `${b.beyond >= 0 ? '+' : '−'}${formatMs(Math.abs(b.beyond))}`,
     short: formatPercent(b.short),
     past: formatPercent(b.past),

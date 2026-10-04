@@ -47,6 +47,7 @@ describe('ScenarioFacts', () => {
     kind: text.trim() as ScenarioInfo['kind'],
     limit: 60,
     targets: 3,
+    reload: null,
   });
   const source = (path: string, name: string, text: string): ScenarioSource => ({
     path,

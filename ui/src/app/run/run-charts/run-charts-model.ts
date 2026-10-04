@@ -262,7 +262,7 @@ export function clickGroup(r: ClickReport): ClickGroupModel {
       flick: p.flick,
       x: q.x,
       y: q.y,
-      missed: p.flick.shots > 1,
+      missed: (p.flick.shots ?? 0) > 1,
       title: `Kill ${p.flick.n}: ${Math.abs(p.along).toFixed(2)}° ${way} the center, ${Math.abs(p.across).toFixed(2)}° to the side`,
     };
   });
@@ -284,7 +284,10 @@ export function clickGroup(r: ClickReport): ClickGroupModel {
 export function flickSpeeds(r: ClickReport): SpeedsModel {
   const box = BOX;
   const lined = r.flicks
-    .filter((m) => m.react != null && m.flick != null && r.paths[String(m.n)]?.length)
+    .filter(
+      (m): m is ReactedFlick =>
+        m.react != null && m.flick != null && !!r.paths[String(m.n)]?.length,
+    )
     .map((m) => {
       const end = m.start_frame / r.fps + m.react + m.flick;
       const points = speeds(r.paths[String(m.n)], r.fps, true)
@@ -498,7 +501,17 @@ const PACE_WINDOW = 10;
 const percentLabel = (share: number) => `${Math.round(100 * share)}%`;
 const signed = (v: number, digits: number) =>
   `${v > 0 ? '+' : ''}${(Math.abs(v) < 1e-9 ? 0 : v).toFixed(digits)}`;
-const timedFlick = (m: Flick) => m.flick != null && m.flick > 0;
+/** A flick with its main flick's time (null without a main flick). */
+interface TimedFlick extends Flick {
+  flick: number;
+}
+
+/** A flick with its reaction's and its main flick's time. */
+interface ReactedFlick extends TimedFlick {
+  react: number;
+}
+
+const timedFlick = (m: Flick): m is TimedFlick => m.flick != null && m.flick > 0;
 
 /** Each kill's time as shares of its four parts (a kill whose parts were not found leaves a gap). */
 export function killShares(r: ClickReport): KillSharesModel {
@@ -619,7 +632,7 @@ export function landings(r: ClickReport): LandingModel {
  */
 export function fitFlickTimes(flicks: Flick[], radius: number): Fitts | null {
   const W = 2 * radius;
-  const timed = flicks.filter((m) => timedFlick(m) && m.D0 > 0);
+  const timed = flicks.filter((m): m is TimedFlick => timedFlick(m) && m.D0 > 0);
   const n = timed.length;
   if (n < 3 || W <= 0) return null;
   const xs = timed.map((m) => Math.log2(1 + m.D0 / W));
@@ -635,7 +648,7 @@ export function fitFlickTimes(flicks: Flick[], radius: number): Fitts | null {
 /** Each flick's time against its distance, with Fitts' law fitted to the run's flicks. */
 export function flickTimes(r: ClickReport): FlickTimesModel {
   const box = BOX;
-  const timed = r.flicks.filter((m) => timedFlick(m) && m.D0 > 0);
+  const timed = r.flicks.filter((m): m is TimedFlick => timedFlick(m) && m.D0 > 0);
   const fit = fitFlickTimes(timed, r.summary.radius);
   const far = Math.max(5, ...timed.map((m) => m.D0)) * 1.05;
   const slow = Math.max(0.1, ...timed.map((m) => m.flick)) * 1.05;
@@ -683,7 +696,10 @@ export function directionWheel(r: ClickReport): DirectionWheelModel {
   const groups: number[][] = DIRECTIONS.map(() => []);
   for (const g of DISTANCE_GROUPS) {
     const fast = r.flicks
-      .filter((m) => g.from <= m.D0 && m.D0 < g.to && timedFlick(m) && m.D0 - m.end_left > 0)
+      .filter(
+        (m): m is TimedFlick =>
+          g.from <= m.D0 && m.D0 < g.to && timedFlick(m) && m.D0 - m.end_left > 0,
+      )
       .map((m) => ({ flick: m, speed: (m.D0 - m.end_left) / m.flick }));
     const mid = fast.length >= 3 ? median(fast.map((p) => p.speed)) : null;
     if (!mid) continue;

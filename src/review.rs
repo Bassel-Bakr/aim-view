@@ -23,6 +23,7 @@ use crate::tracking::{CameraReading, FaintCut, TrackSummary, countdown_end, stat
 
 /// The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees come from.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[allow(non_snake_case)]
 pub struct Geometry {
     pub W: usize,
@@ -34,21 +35,28 @@ pub struct Geometry {
 
 /// A clicking run's report, as report.json keeps it.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ClickReport"))]
 pub struct Report {
     pub video: String,
     pub stats: Option<String>,
     pub summary: Summary,
     pub issues: Vec<Issue>,
     pub flicks: Vec<Measure>,
+    #[cfg_attr(feature = "ts", ts(type = r#""click" | "hold""#))]
     pub mode: Mode,
+    #[cfg_attr(feature = "ts", ts(as = "BTreeMap<String, Vec<crate::typescript::PathPoint>>"))]
     pub paths: BTreeMap<String, Vec<PathPoint>>,
     pub fps: f64,
     pub geometry: Geometry,
     pub appeared: BTreeMap<String, i64>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::CrosshairSpot>"))]
     pub crosshair: Vec<(f64, f64)>,
+    /// The user's run marks as given ({start, end, length}: the service's RunMarks).
+    #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub run: Option<serde_json::Value>,
     /// Kept by an older version of the review (`REVIEW_VERSION`): review again for what it lacks.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub outdated: bool,
 }
 
@@ -225,21 +233,27 @@ fn unpaired_kills(
 
 /// A tracking run's report, as report.json keeps it: the summary, with the clicking run's parts empty.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackReport {
     pub video: String,
     pub stats: Option<String>,
     pub summary: TrackSummary,
     pub issues: Vec<Issue>,
     pub flicks: Vec<Measure>,
+    #[cfg_attr(feature = "ts", ts(type = r#""track""#))]
     pub mode: Mode,
+    #[cfg_attr(feature = "ts", ts(as = "BTreeMap<String, Vec<crate::typescript::PathPoint>>"))]
     pub paths: BTreeMap<String, Vec<PathPoint>>,
     pub fps: f64,
     pub geometry: Geometry,
     pub appeared: BTreeMap<String, i64>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::CrosshairSpot>"))]
     pub crosshair: Vec<(f64, f64)>,
+    #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub run: Option<serde_json::Value>,
     pub limit: Option<f64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub outdated: bool,
 }
 

@@ -48,6 +48,7 @@ pub type AreaBox = (f64, f64, f64, f64, String);
 
 /// A part of a video, in seconds.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TimeWindow {
     pub start: f64,
     pub end: f64,

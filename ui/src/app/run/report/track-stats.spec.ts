@@ -1,4 +1,4 @@
-import { Motion, TrackSummary } from '../../api';
+import { Motion, MotionBand, TrackSummary } from '../../api';
 import { motionView, trackNote, trackStats, whatIfTable } from './track-stats';
 
 const SUMMARY = {
@@ -52,7 +52,12 @@ describe('track stats', () => {
   });
 
   it('shows the lag as behind or ahead', () => {
-    const m = motionView({ camera: 1, lag: -0.16, lag_ms: -9.1, by_direction: [] } as Motion);
+    const m = motionView({
+      camera: 1,
+      lag: -0.16,
+      lag_ms: -9.1,
+      by_direction: [] as MotionBand[],
+    } as Motion);
     expect(m?.stats[0]).toMatchObject({ value: '0.16° behind', detail: '9 ms at its speed' });
   });
 

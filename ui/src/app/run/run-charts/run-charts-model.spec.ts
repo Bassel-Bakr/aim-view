@@ -43,7 +43,7 @@ describe('run charts', () => {
   });
 
   it("stacks each kill's parts from the bottom, a kill without parts in one bar", () => {
-    const m = killTimes(report([flick(1, {}), flick(2, { total: 0.8, parts: null })]));
+    const m = killTimes(report([flick(1, {}), flick(2, { total: 0.8, parts: undefined })]));
     const [a, b] = m.bars;
     expect(a.segments).toHaveLength(5);
     // each part sits on the one before it, and the bar reaches the kill's time
@@ -99,7 +99,7 @@ describe('run charts', () => {
 
   it("splits each kill's time into reaction, flick, micro and confirmation shares", () => {
     // parts [0.1, 0.2, 0.1, 0.05, 0.05]: reaction 20%, flick 40%, micro (0.1 + 0.05) 30%, confirmation 10%
-    const m = killShares(report([flick(1, {}), flick(2, { parts: null }), flick(3, {})]));
+    const m = killShares(report([flick(1, {}), flick(2, { parts: undefined }), flick(3, {})]));
     expect(m.bars.map((b) => b.flick.n)).toEqual([1, 3]);
     const plot = BOX.height - BOX.top - BOX.bottom;
     const heights = m.bars[0].segments.map((s) => s.height / plot);

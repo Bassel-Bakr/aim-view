@@ -24,6 +24,6 @@ export class TrackReport {
     trackStats(this.report().summary).slice(HEADLINE_TILES),
   );
   protected readonly about = computed(() => trackNote(this.report().summary));
-  protected readonly motion = computed(() => motionView(this.report().summary.motion));
-  protected readonly whatIf = computed(() => whatIfTable(this.report().summary.what_if));
+  protected readonly motion = computed(() => motionView(this.report().summary.motion ?? null));
+  protected readonly whatIf = computed(() => whatIfTable(this.report().summary.what_if ?? []));
 }

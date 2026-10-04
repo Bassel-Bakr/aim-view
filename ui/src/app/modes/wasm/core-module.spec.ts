@@ -100,7 +100,12 @@ function standInCore(reading: HudReading | null, calls: CoreCalls): Core {
 /** A run's part: its tracked frames from `first` on, and its watches' frames. */
 function part(first: number, frames: number, camera: number, hud: number): RunPart {
   const track: TrackerPart = {
-    frames: Array.from({ length: frames }, (_, k) => ({ i: first + k, t: [] })),
+    frames: Array.from({ length: frames }, (_, k) => ({
+      i: first + k,
+      shift: [0, 0],
+      t: [],
+      a: [],
+    })),
   };
   const watch = (n: number): WatchPart => ({ frames: n });
   return {

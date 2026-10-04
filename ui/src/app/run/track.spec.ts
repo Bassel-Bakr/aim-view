@@ -44,6 +44,8 @@ describe('boxes and nearest', () => {
   it('finds the crosshair inside a target over it, and the distance to the edge of one beside it', () => {
     const bs = boxes({
       i: 0,
+      shift: [0, 0],
+      a: [1, 1],
       t: [
         [1, 0.1, 0],
         [2, 3, 0],
@@ -61,7 +63,7 @@ describe('boxes and nearest', () => {
 
   it('measures a capsule from its long axis, not its center', () => {
     // 4 deg tall and 0.5 wide, 2 above the crosshair: its axis runs from 0.25 to 3.75 above it
-    const [capsule] = boxes({ i: 0, t: [[1, 0, 2]], wh: [[0.5, 4]] });
+    const [capsule] = boxes({ i: 0, shift: [0, 0], t: [[1, 0, 2]], a: [1], wh: [[0.5, 4]] });
     expect(capsule.d).toBeCloseTo(0.25);
   });
 });
@@ -75,12 +77,12 @@ describe('timeline', () => {
   const tracks: Tracks = {
     fps: 10,
     frames: [
-      { i: 0, t: [] },
-      { i: 1, t: [[1, 0, 0]], wh: [[1, 1]] },
-      { i: 2, t: [[1, 2, 0]], wh: [[1, 1]] },
-      { i: 3, t: [[2, 0, 0]], wh: [[1, 1]] },
-      { i: 4, t: [] },
-      { i: 5, t: [[1, 0, 0]], wh: [[1, 1]] },
+      { i: 0, shift: [0, 0], t: [], a: [] },
+      { i: 1, shift: [0, 0], t: [[1, 0, 0]], a: [1], wh: [[1, 1]] },
+      { i: 2, shift: [0, 0], t: [[1, 2, 0]], a: [1], wh: [[1, 1]] },
+      { i: 3, shift: [0, 0], t: [[2, 0, 0]], a: [1], wh: [[1, 1]] },
+      { i: 4, shift: [0, 0], t: [], a: [] },
+      { i: 5, shift: [0, 0], t: [[1, 0, 0]], a: [1], wh: [[1, 1]] },
     ],
   };
 

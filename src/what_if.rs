@@ -11,6 +11,7 @@ use crate::summary::{Mode, Summary, DIRECTIONS, DISTANCES};
 
 /// The part of the run a line is about.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ClickWhatIfGroup"))]
 #[serde(rename_all = "lowercase")]
 pub enum Group {
     Pace,
@@ -21,6 +22,7 @@ pub enum Group {
 /// One line: the extra kills over the run, the extra score (null when the run gives no score per kill), and what was
 /// assumed.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ClickWhatIf {
     pub group: Group,
     pub what: &'static str,

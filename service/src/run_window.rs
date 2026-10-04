@@ -16,6 +16,7 @@ const FILE: &str = "run.json";
 
 /// The marks in seconds, any of them None.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct RunMarks {
     pub start: Option<f64>,
     pub end: Option<f64>,

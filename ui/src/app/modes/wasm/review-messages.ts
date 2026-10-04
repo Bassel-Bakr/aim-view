@@ -114,29 +114,9 @@ export interface VideoReadings {
   countdown: boolean[];
 }
 
-/** Which game's HUD was read (src/hud.rs: HudGame). */
-export type HudGame = 'kovaak' | 'aimlab';
-
-/** The run's totals as the HUD shows them at the end; hits and shots null where the Accuracy line was not read. */
-export interface HudFinal {
-  kills: number;
-  hits: number | null;
-  shots: number | null;
-}
-
-/**
- * What the HUD read (src/hud.rs: HudReading): the frame of each kill, shot and hit (the tracks' frame indexes), the
- * totals at the end, the share of the count's steps that were plausible, and Aim Lab's points (null for KovaaK's).
- */
-export interface HudReading {
-  game: HudGame;
-  kills: number[];
-  shots: number[];
-  hits: number[];
-  final: HudFinal;
-  checked: number;
-  points: number | null;
-}
+export type { HudFinal } from '../../generated/hud-final';
+export type { HudGame } from '../../generated/hud-game';
+export type { HudReading } from '../../generated/hud-reading';
 
 /**
  * A run's part of the review, for the page to join with the other runs' in order (core-module.ts: joinRuns): its

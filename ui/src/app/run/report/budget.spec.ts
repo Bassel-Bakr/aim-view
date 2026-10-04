@@ -29,7 +29,7 @@ describe('budget', () => {
   });
 
   it("says so when a kill's steps could not be split", () => {
-    const b = budget(AVERAGE, { n: 3, total: 0.8, parts: null } as Flick);
+    const b = budget(AVERAGE, { n: 3, total: 0.8, parts: undefined } as Flick);
     expect(b?.note).toContain('was not found');
     expect(b?.bars).toHaveLength(1);
   });
@@ -81,7 +81,7 @@ describe('budget', () => {
     const split = [
       { ...flick, reload_time: 0.5 },
       flick,
-      { parts: null, reload_time: 0.8 } as Flick,
+      { parts: undefined, reload_time: 0.8 } as Flick,
     ];
     expect(averageReload(reloads, split)).toBe(0.25);
   });

@@ -11,6 +11,7 @@ use crate::track::Tracks;
 /// One flick's measures (seconds, degrees and degrees a second): the keys measure.py has always written, plus
 /// settle, still and the time parts.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Measure {
     pub n: usize,
     pub shots: Option<i64>,
@@ -33,6 +34,7 @@ pub struct Measure {
     pub corr: usize,
     pub click_speed: f64,
     pub click_off: f64,
+    #[cfg_attr(feature = "ts", ts(as = "crate::typescript::TargetOffset"))]
     pub click_off_xy: (f64, f64),
     pub settle: Option<f64>,
     pub still: Option<f64>,
@@ -45,15 +47,19 @@ pub struct Measure {
     pub off: f64,
     /// React, main flick, onto the target, settle, still.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::KillParts>", optional))]
     pub parts: Option<[f64; 5]>,
     /// The camera's speed through the main flick (none without a main flick).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub speed: Option<SpeedCurve>,
     /// The reloads an empty magazine forced in this kill, and their time in seconds (src/reload.rs; none without the
     /// scenario's ammo rules or the kills' shots).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub reloads: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub reload_time: Option<f64>,
 }
 
@@ -61,6 +67,7 @@ pub struct Measure {
 /// into the frame before, that frame and the next, averaged), and on past its end for a quarter of its length (at least 2 frames) to show the braking. `end`
 /// is the index of the flick's last frame.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SpeedCurve {
     pub v: Vec<f64>,
     pub end: usize,
@@ -234,6 +241,7 @@ const PROFILE_POINTS: usize = 26;
 /// `peak_at`: when the peak comes, as a share of the flick; `braking`: how much of the flick the braking takes, from
 /// the last frame at 90% of the peak speed to the first under 15% (medians over the flicks).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct FlickProfile {
     pub n: usize,
     pub step: f64,

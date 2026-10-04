@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::geometry::{K, degrees};
+use crate::optional_fields::OptionalFields;
 use crate::matching::KillSource;
 use crate::python::{hypot, round};
 use crate::stats_file::StatsFile;
@@ -95,7 +96,9 @@ fn med(v: &[f64]) -> Option<f64> {
 /// The tracking per direction of the target's motion: the share of the moving time, the share on the target, the
 /// median distance from its center line and the median offset along the motion.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct MotionDirection {
+    #[cfg_attr(feature = "ts", ts(as = "crate::summary::Direction"))]
     pub name: &'static str,
     pub share: f64,
     pub on: f64,
@@ -105,6 +108,7 @@ pub struct MotionDirection {
 
 /// What the off-target time went on, in frames (for the what-if estimates).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct OffFrames {
     pub ahead: usize,
     pub behind: usize,
@@ -114,16 +118,22 @@ pub struct OffFrames {
 
 /// The counts behind the swings: swings, corrections, and swings as a share of corrections.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MotionCounts {
+    #[cfg_attr(feature = "ts", ts(as = "Option<usize>", optional))]
     pub swing_count: usize,
+    #[cfg_attr(feature = "ts", ts(as = "Option<usize>", optional))]
     pub corrections: usize,
+    #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub overcorrect: Option<f64>,
+    #[cfg_attr(feature = "ts", ts(as = "Option<OffFrames>", optional))]
     pub frames: OffFrames,
 }
 
 /// One of the bot's direction changes: its frame, and the seconds from it until the crosshair was on the bot again
 /// (0 when it stayed on; None when it was not back before the next change or the run's end).
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TurnBack {
     pub frame: usize,
     pub back: Option<f64>,
@@ -150,6 +160,7 @@ fn turns_back(turns: &[usize], inside: &[bool], stop: &[bool], window: usize, en
 
 /// Tracking diagnostics from the target's own motion and the camera's (see review.py: `track_motion`).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Motion {
     pub camera: f64,
     pub target_speed: Option<f64>,
@@ -173,15 +184,18 @@ pub struct Motion {
     /// Each moving frame's offset along the target's motion (positive: ahead of it) and across it, and the target's
     /// radius, in degrees: where the crosshair sat around the target.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::AroundPoint>>", optional))]
     pub around: Option<Vec<[f64; 3]>>,
     /// Each direction change of the bot (both axes' together when they fall within 0.2 s), and how long the crosshair
     /// took to get back on it. Not in Python's review.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub turns_back: Option<Vec<TurnBack>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub reason: Option<&'static str>,
     #[serde(flatten)]
-    pub counts: Option<MotionCounts>,
+    pub counts: OptionalFields<MotionCounts>,
 }
 
 /// Tracking diagnostics, frames i0 to i1: the target is the track nearest the crosshair; its own motion is its move
@@ -247,7 +261,7 @@ pub fn track_motion(
         around: None,
         turns_back: None,
         reason: None,
-        counts: None,
+        counts: OptionalFields(None),
     };
     if (moving.len() as f64) < fps * (0.2 * span as f64 / fps).max(10.0) {
         out.reason = Some("too little tracking of a moving target to read");
@@ -402,7 +416,7 @@ pub fn track_motion(
         .filter(|v| v.0 > 0 && v.0 as f64 >= 0.05 * moving.len() as f64)
         .map(|v| v.1 as f64 / v.0 as f64)
         .fold(0.0, f64::max);
-    out.counts = Some(MotionCounts {
+    *out.counts = Some(MotionCounts {
         swing_count: swings,
         corrections,
         overcorrect: (corrections > 0).then(|| swings as f64 / corrections as f64),
@@ -430,6 +444,7 @@ pub fn track_motion(
 
 /// One what-if estimate: how much of the run's time on target one change would add (a share of the run).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct WhatIf {
     pub what: &'static str,
     pub gain: f64,
@@ -439,14 +454,19 @@ pub struct WhatIf {
 /// The shares of the run that need its frames: on a target over the whole run (switching included), and what the
 /// lost stretches and the shorter slips cost.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunShares {
+    #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub on_all: f64,
+    #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub lost_cost: f64,
+    #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub slip_cost: f64,
 }
 
 /// The user's faint-target cut-off, when on: its offset, the score it cuts at, and how many tracks it left out.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct FaintCut {
     pub offset: f64,
     pub cut: Option<f64>,
@@ -455,12 +475,14 @@ pub struct FaintCut {
 
 /// Where the tracking run's kill times came from.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackInfo {
     pub source: KillSource,
 }
 
 /// A tracking run's summary (see review.py: `track_summary`).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackSummary {
     pub scenario: Option<String>,
     pub score: Option<f64>,
@@ -473,21 +495,25 @@ pub struct TrackSummary {
     pub lost: Option<f64>,
     pub back: Option<f64>,
     pub longest_off: Option<f64>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::SecondShares>"))]
     pub per_second: Vec<[f64; 2]>,
     pub start: Option<usize>,
     pub end: Option<usize>,
     pub bots: usize,
     /// Per bot death: [death, back on a target, first frame a target shows].
+    #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::Switch>"))]
     pub switches: Vec<[usize; 3]>,
     pub to_next: Option<f64>,
     pub waiting: Option<f64>,
     pub onto: Option<f64>,
     pub switching: Option<f64>,
     #[serde(flatten)]
-    pub shares: Option<RunShares>,
+    pub shares: OptionalFields<RunShares>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub motion: Option<Motion>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub what_if: Option<Vec<WhatIf>>,
     pub faint: Option<FaintCut>,
     pub info: TrackInfo,
@@ -581,7 +607,7 @@ pub fn track_summary(
         waiting: None,
         onto: None,
         switching: None,
-        shares: None,
+        shares: OptionalFields(None),
         motion: None,
         what_if: None,
         faint: None,
@@ -645,7 +671,7 @@ pub fn track_summary(
     s.longest_off = offs.iter().max().map(|&k| k as f64 / fps);
     s.start = Some(i0);
     s.end = Some(i1);
-    s.shares = Some(RunShares {
+    *s.shares = Some(RunShares {
         on_all: mean(&span.clone().map(|i| inside[i]).collect::<Vec<_>>()),
         lost_cost: lost as f64 / t,
         slip_cost: (1.0 - on_all as f64 / t - lost as f64 / t).max(0.0),

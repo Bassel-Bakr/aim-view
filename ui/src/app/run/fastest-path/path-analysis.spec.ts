@@ -1,4 +1,4 @@
-import { ClickReport, Flick, Tracks } from '../../api';
+import { ClickReport, Flick, TrackFrame } from '../../api';
 import { analysePaths, pathing, pickText } from './path-analysis';
 
 // Three targets: the first kill took the far one (at x 9) while a near one (x 2) was on screen; the second took the
@@ -10,9 +10,11 @@ const FLICKS = [
   { n: 3, start_frame: 70, kill_frame: 80, react: 0, D0: 4, total: 0.4 },
 ] as Flick[];
 
-const frames = Array.from({ length: 81 }, (_, i) => ({
+const frames: TrackFrame[] = Array.from({ length: 81 }, (_, i) => ({
   i,
-  t: [] as Tracks['frames'][number]['t'],
+  shift: [0, 0],
+  t: [],
+  a: [],
 }));
 frames[33].t = [
   [1, 9, 0],

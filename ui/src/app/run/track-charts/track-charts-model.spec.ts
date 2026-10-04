@@ -1,4 +1,4 @@
-import { AroundPoint, Motion, TrackFrame, TrackReport, Tracks } from '../../api';
+import { AroundPoint, Motion, TrackFrame, TrackReport, Tracks, TurnBack } from '../../api';
 import { Timeline, TrackState } from '../track';
 import { aroundMap, distanceSpread, onTargetWindows, turnsBack } from './track-charts-model';
 
@@ -48,7 +48,13 @@ describe('track charts', () => {
 
   it("spreads the distances from the bot's center line, near it only", () => {
     // a sphere 0.6 degrees across: 0.1 degrees off its center in 3 frames, 0.5 in one, 5 (too far) in one
-    const frame = (x: number): TrackFrame => ({ i: 0, t: [[1, x, 0]], wh: [[0.6, 0.6]] });
+    const frame = (x: number): TrackFrame => ({
+      i: 0,
+      shift: [0, 0],
+      t: [[1, x, 0]],
+      a: [1],
+      wh: [[0.6, 0.6]],
+    });
     const frames = [0.1, 0.1, 0.1, 0.5, 5].map(frame);
     const tracks = { fps: FPS, frames } as Tracks;
     const m = distanceSpread(tracks, timeline(new Array<TrackState>(5).fill(TrackState.Off)));
@@ -115,6 +121,8 @@ describe('track charts', () => {
       'Not measured: too little tracking.',
     );
     expect(reason({ camera: 1 } as Motion)).toContain('review it again');
-    expect(reason({ camera: 1, turns_back: [] } as Motion)).toContain('did not change direction');
+    expect(reason({ camera: 1, turns_back: [] as TurnBack[] } as Motion)).toContain(
+      'did not change direction',
+    );
   });
 });

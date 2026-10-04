@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// The kinds of run the review tells apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Static,
@@ -17,6 +18,7 @@ pub enum Kind {
 /// A scenario's facts: its kind, its time limit in seconds, its targets alive at once (one per bot added), and the
 /// player's weapon's ammo rules (none when its magazine never runs out).
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Facts {
     pub kind: Kind,
     pub limit: Option<f64>,
@@ -29,6 +31,7 @@ pub struct Facts {
 /// full magazine (AmmoReloadedOnKill), the reload's time in seconds from an empty magazine and from a part-used one
 /// (ReloadTimeFromEmpty, ReloadTimeFromPartial), and the points a reload takes off (ScoreLossPerReload).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AmmoRules {
     pub magazine: i64,

@@ -62,7 +62,13 @@ function frameWithout(f: TrackFrame, gone: ReadonlySet<number>): TrackFrame {
   const keep = f.t.map(([id]) => !gone.has(id));
   if (keep.every(Boolean)) return f;
   const pick = <T>(v: readonly T[] | undefined) => v?.filter((_, k) => keep[k]);
-  return { ...f, t: f.t.filter((_, k) => keep[k]), a: pick(f.a), wh: pick(f.wh), s: pick(f.s) };
+  return {
+    ...f,
+    t: f.t.filter((_, k) => keep[k]),
+    a: f.a.filter((_, k) => keep[k]),
+    wh: pick(f.wh),
+    s: pick(f.s),
+  };
 }
 
 /** The tracks without those the cut-off leaves out (python/review.py: `without_faint`). */

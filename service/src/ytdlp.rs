@@ -23,6 +23,7 @@ const SOCKET_TIMEOUT_S: &str = "15";
 /// What a link offers: its title, its length in seconds, when it was uploaded, and the qualities to choose from, best
 /// first.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct LinkInfo {
     pub title: String,
     pub duration: Option<f64>,
@@ -36,6 +37,7 @@ pub struct LinkInfo {
 /// A quality to download: yt-dlp's format id, its frame size, frame rate, video codec, and size in bytes (with the
 /// best audio) where yt-dlp knows it.
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "LinkFormat"))]
 pub struct Choice {
     pub id: String,
     pub width: Option<u32>,
