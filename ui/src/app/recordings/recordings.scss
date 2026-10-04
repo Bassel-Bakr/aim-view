@@ -13,10 +13,9 @@
     background: t.$surface-1;
   }
 
-  // Rows out of view skip rendering and hold their space: the list stays quick with every recording in it
-  .rec {
-    content-visibility: auto;
-    contain-intrinsic-size: auto rec.$row-height;
+  // Every row one height (the virtual scroll lays them out by it): the badges stay on one line, cut at the edge
+  .row {
+    height: rec.$row-height;
   }
 
   .row[aria-selected='true'] {
@@ -70,7 +69,7 @@
   }
 
   .meta {
-    @apply mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted;
+    @apply mt-1 flex items-center gap-x-4 overflow-hidden text-sm whitespace-nowrap text-muted;
   }
 
   .note {

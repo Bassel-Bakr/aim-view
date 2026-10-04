@@ -242,7 +242,7 @@ fn stats_by_name(lib: &Library, video: &Path) -> Option<PathBuf> {
 /// Every recording (/api/vods), each with its video, folder, stats file, and the stats file its scenario and time stamp
 /// give; and the library's folders.
 fn recordings(lib: &Library) -> Result<Value, Failure> {
-    let Value::Array(list) = lib.recordings()? else { return Err(Failure::from("the recordings are not a list".to_string())) };
+    let Value::Array(list) = lib.recordings(false)? else { return Err(Failure::from("the recordings are not a list".to_string())) };
     let list: Vec<Value> = list
         .into_iter()
         .map(|mut r| {

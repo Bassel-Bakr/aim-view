@@ -45,15 +45,29 @@ const LINK_STAGES: Partial<Record<JobStage, string>> = {
 @Service()
 export class ServerRecordings implements RecordingSource {
   private readonly http = inject(HttpClient);
+  /**
+   * The list from the recordings' names alone, which the server gives at once (/api/vods?quick=1), shown until the
+   * whole list (each recording's stats file, review and kind) is in. Asked first, so it comes first.
+   */
+  private readonly quickList = httpResource<Recording[]>(() => ({
+    url: '/api/vods',
+    params: { quick: '1' },
+  }));
   protected readonly list = httpResource<Recording[]>(() => '/api/vods');
   protected readonly links = signal<ReadonlyMap<string, LinkDownload>>(new Map());
   readonly recordings = computed<Recording[]>(() => {
-    const listed = this.list.hasValue() ? this.list.value() : [];
+    const listed = this.list.hasValue()
+      ? this.list.value()
+      : this.quickList.hasValue()
+        ? this.quickList.value()
+        : [];
     const ids = new Set(listed.map((r) => r.id));
     const coming = [...this.links().values()].map((d) => d.row).filter((r) => !ids.has(r.id));
     return [...coming.reverse(), ...listed];
   });
-  readonly loading = computed(() => this.list.isLoading() && !this.list.hasValue());
+  readonly loading = computed(
+    () => this.list.isLoading() && !this.list.hasValue() && !this.quickList.hasValue(),
+  );
   readonly problem: Signal<string | null> = computed(() =>
     this.list.error() ? 'The review server is not running. Start it with bun run server.' : null,
   );

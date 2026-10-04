@@ -39,6 +39,14 @@ pub(super) fn remove_stale_spools(dir: &Path, pid: u32) {
     }
 }
 
+/// A row of the quick list (`Library::recordings`): what the file's name gives; the rest is not looked at yet.
+fn quick_row(id: &str, scenario: &str, score: Option<f64>, stamp: &str, not_aim: bool) -> Value {
+    json!({
+        "id": id, "scenario": scenario, "kind": null, "score": score, "stamp": stamp, "mtime": 0, "size": 0,
+        "stats": false, "analysed": false, "not_aim": not_aim, "quick": true,
+    })
+}
+
 impl Library {
     /// Where videos (and in stats/, stats files) added from the user's computer are kept.
     pub(crate) fn uploads(&self) -> PathBuf {
@@ -109,8 +117,11 @@ impl Library {
         self.facts().get(&scenario.to_lowercase()).map_or(Value::Null, |f| json!(f.kind))
     }
 
-    /// The recordings, newest first (python/server.py: Library.list).
-    pub fn recordings(&self) -> Answer<Value> {
+    /// The recordings, newest first (python/server.py: Library.list). `quick`: only what each file's name gives (the
+    /// scenario, score and time stamp) and the user's marks, newest first by the stamp, each row marked `quick`: no
+    /// file is read, no stats file paired, no review looked for, so the page lists them at once and asks for the whole
+    /// list after (a VODs folder holds thousands, and in the browser each file read waits on the page).
+    pub fn recordings(&self, quick: bool) -> Answer<Value> {
         let (mut out, not_aim): (Vec<Value>, _) = (Vec::new(), self.not_aim());
         if let Some(vods) = self.vods() {
             for folder in crate::disk::read_dir(&vods).into_iter().flatten().flatten() {
@@ -122,6 +133,10 @@ impl Library {
                     let name = e.file_name().to_string_lossy().into_owned();
                     let Some((scenario, score, stamp)) = parse_name(&name) else { continue };
                     let id = format!("{}/{name}", folder.file_name().to_string_lossy());
+                    if quick {
+                        out.push(quick_row(&id, &scenario, Some(score), &stamp, not_aim.contains(&id)));
+                        continue;
+                    }
                     out.push(json!({
                         "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
                         "mtime": modified(&p), "size": crate::disk::metadata(&p).map_or(0, |m| m.len()),
@@ -133,17 +148,22 @@ impl Library {
         for e in crate::disk::read_dir(self.uploads()).into_iter().flatten().flatten() {
             let p = e.path();
             let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if !crate::disk::is_file(&p) || !VIDEO_TYPES.contains(&ext.as_str()) {
+            if (quick && e.is_dir()) || !VIDEO_TYPES.contains(&ext.as_str()) || (!quick && !crate::disk::is_file(&p)) {
                 continue;
             }
-            out.push(self.upload_row(&p, &not_aim));
+            out.push(self.upload_row(&p, &not_aim, quick));
         }
-        out.sort_by(|a, b| b["mtime"].as_f64().unwrap_or(0.0).total_cmp(&a["mtime"].as_f64().unwrap_or(0.0)));
+        if quick {
+            out.sort_by(|a, b| b["stamp"].as_str().unwrap_or("").cmp(a["stamp"].as_str().unwrap_or("")));
+        } else {
+            out.sort_by(|a, b| b["mtime"].as_f64().unwrap_or(0.0).total_cmp(&a["mtime"].as_f64().unwrap_or(0.0)));
+        }
         Ok(Value::Array(out))
     }
 
-    /// An upload's row of the list: named as KovOBS names a recording, or "<title> - <stamp>" (a link's), or anyhow.
-    pub(super) fn upload_row(&self, p: &Path, not_aim: &std::collections::BTreeSet<String>) -> Value {
+    /// An upload's row of the list: named as KovOBS names a recording, or "<title> - <stamp>" (a link's), or anyhow;
+    /// `quick`: from its name alone (`recordings`).
+    pub(super) fn upload_row(&self, p: &Path, not_aim: &std::collections::BTreeSet<String>, quick: bool) -> Value {
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let id = format!("uploads/{name}");
         let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -152,6 +172,11 @@ impl Library {
             (None, Some((title, stamp))) => (title, None, stamp),
             (None, None) => (stem, None, local_stamp(modified(p))),
         };
+        if quick {
+            let mut row = quick_row(&id, &scenario, score, &stamp, not_aim.contains(&id));
+            row["uploaded"] = json!(true);
+            return row;
+        }
         json!({
             "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
             "mtime": modified(p), "size": crate::disk::metadata(p).map_or(0, |m| m.len()),

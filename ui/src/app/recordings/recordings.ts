@@ -1,3 +1,8 @@
+import {
+  CdkFixedSizeVirtualScroll,
+  CdkVirtualForOf,
+  CdkVirtualScrollViewport,
+} from '@angular/cdk/scrolling';
 import { DecimalPipe } from '@angular/common';
 import {
   afterRenderEffect,
@@ -26,23 +31,46 @@ export interface KindChip {
 
 const KIND_ORDER: Kind[] = ['static', 'dynamic', 'switching', 'tracking'];
 const PAGE = 10;
+/** A row's height when the token cannot be read (tests): the token's value (themes/recordings.scss). */
+const ROW_HEIGHT = 54;
+
+/** A row's height in pixels, from its token (--recordings-row-height), which the virtual scroll needs as a number. */
+function rowHeight(): number {
+  if (typeof document === 'undefined') return ROW_HEIGHT;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(
+    '--recordings-row-height',
+  );
+  return parseFloat(value) || ROW_HEIGHT;
+}
 
 /**
- * The recordings: a text filter (Ctrl K from anywhere), a chip per kind of run, and a list. The arrow keys, Home, End,
- * Page Up and Page Down move the selection; the list keeps the selected recording in view.
+ * The recordings: a text filter (Ctrl K from anywhere), a chip per kind of run, and a list, of which only the rows in
+ * view are made (a virtual scroll: a VODs folder holds thousands). The arrow keys, Home, End, Page Up and Page Down
+ * move the selection; the list keeps the selected recording in view.
  */
 @Component({
   selector: 'app-recordings',
-  imports: [DecimalPipe, StampPipe, Badge, Button],
+  imports: [
+    CdkVirtualScrollViewport,
+    CdkFixedSizeVirtualScroll,
+    CdkVirtualForOf,
+    DecimalPipe,
+    StampPipe,
+    Badge,
+    Button,
+  ],
   host: { '(document:keydown)': 'focusSearch($event)' },
   templateUrl: './recordings.html',
   styleUrl: './recordings.scss',
 })
 export class Recordings {
   protected readonly library = inject(Library);
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly viewport = viewChild(CdkVirtualScrollViewport);
   private readonly search = viewChild.required<ElementRef<HTMLInputElement>>('q');
   protected readonly kindLabels = KIND_LABELS;
+  /** Every row's height (the virtual scroll lays the rows out by it). */
+  protected readonly rowHeight = rowHeight();
+  protected readonly byId = (_: number, r: Recording): string => r.id;
   protected readonly query = signal('');
   protected readonly kind = signal<KindFilter>('all');
 
@@ -78,9 +106,17 @@ export class Recordings {
   }
 
   constructor() {
+    // the selected row in view, scrolled the least: a row out of view is not in the page to scroll into view
     afterRenderEffect(() => {
-      const id = this.activeId();
-      if (id) this.host.nativeElement.querySelector(`#${id}`)?.scrollIntoView({ block: 'nearest' });
+      const i = this.shown().findIndex((r) => r.id === this.library.selectedId());
+      const v = this.viewport();
+      if (i < 0 || !v) return;
+      const top = i * this.rowHeight;
+      const from = v.measureScrollOffset('top');
+      const height = v.getViewportSize();
+      if (top < from) v.scrollToOffset(top);
+      else if (top + this.rowHeight > from + height)
+        v.scrollToOffset(top + this.rowHeight - height);
     });
   }
 

@@ -1,7 +1,7 @@
 // Module tokens: the recordings list.
 
 @mixin tokens {
-  // A row's height before it is drawn: rows out of view skip rendering (content-visibility) and hold this space
+  // Every row's height in the list: the virtual scroll lays the rows out by it (recordings.ts reads it)
   --recordings-row-height: 54px;
 }
 

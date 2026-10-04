@@ -42,22 +42,27 @@
   </p>
 }
 @if (!library.source.loading()) {
-  <div
-    class="list"
-    role="listbox"
-    tabindex="0"
-    aria-label="Recordings"
-    [attr.aria-activedescendant]="activeId()"
-    (click)="selectRow($event)"
-    (keydown)="moveSelection($event)"
-  >
-    @for (r of shown(); track r.id; let i = $index) {
+  @if (shown().length) {
+    <!-- only the rows in view (and a few either side) are made: the list stays quick with thousands of recordings -->
+    <cdk-virtual-scroll-viewport
+      class="list"
+      role="listbox"
+      tabindex="0"
+      aria-label="Recordings"
+      [itemSize]="rowHeight"
+      [attr.aria-activedescendant]="activeId()"
+      (click)="selectRow($event)"
+      (keydown)="moveSelection($event)"
+    >
       <div
-        class="rec row"
+        *cdkVirtualFor="let r of shown(); trackBy: byId; let i = index"
+        class="row"
         role="option"
         [id]="'rec-' + i"
         [attr.data-i]="i"
         [attr.aria-selected]="r.id === library.selectedId()"
+        [attr.aria-posinset]="i + 1"
+        [attr.aria-setsize]="shown().length"
       >
         <div class="row-top">
           <span class="name" [title]="r.scenario">{{ r.scenario }}</span>
@@ -79,7 +84,8 @@
           @if (r.local) {
             <span appBadge>in this browser</span>
           }
-          @if (!r.stats) {
+          <!-- the quick list has not looked for the stats file yet: no badge until it has -->
+          @if (!r.stats && !r.quick) {
             <span appBadge>no stats</span>
           }
           @if (r.not_aim) {
@@ -87,8 +93,8 @@
           }
         </div>
       </div>
-    } @empty {
-      <p class="note">No recording matches.</p>
-    }
-  </div>
+    </cdk-virtual-scroll-viewport>
+  } @else {
+    <p class="note">No recording matches.</p>
+  }
 }

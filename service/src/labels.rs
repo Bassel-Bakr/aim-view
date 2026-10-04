@@ -68,7 +68,7 @@ impl Library {
     /// first; one recording per scenario folder (each upload is its own), none from a probe scenario or another game,
     /// and none that `left_out` leaves out.
     pub(crate) fn queue(&self, left_out: impl Fn(&str) -> bool) -> Answer<Vec<String>> {
-        let Value::Array(mut list) = self.recordings()? else { return Ok(Vec::new()) };
+        let Value::Array(mut list) = self.recordings(false)? else { return Ok(Vec::new()) };
         // a stable sort, as Python's sorted(): equal times keep the list's order
         list.sort_by(|a, b| {
             let up = |v: &Value| v["uploaded"].as_bool() != Some(true);

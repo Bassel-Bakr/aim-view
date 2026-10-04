@@ -160,7 +160,7 @@ impl Library {
                 }
             }
         });
-        let mut row = self.upload_row(&self.uploads().join(&saved), &self.not_aim());
+        let mut row = self.upload_row(&self.uploads().join(&saved), &self.not_aim(), false);
         row["mtime"] = json!(now);
         Ok(json!({ "id": id, "saved": saved, "title": info.title, "recording": row }))
     }
@@ -275,7 +275,7 @@ mod tests {
             assert!(started.elapsed().as_secs() < 20, "the download never ended");
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        let list = lib.recordings().unwrap();
+        let list = lib.recordings(false).unwrap();
         assert!(list.as_array().unwrap().iter().any(|r| r["id"] == id.as_str()), "{list}");
         // only the video: the download's folder is gone
         let names: Vec<String> =

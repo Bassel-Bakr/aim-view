@@ -126,6 +126,11 @@ export interface Recording {
   uploaded?: boolean;
   /** Opened from this computer: it stays in this browser and is gone when the page closes. */
   local?: boolean;
+  /**
+   * From the quick list (/api/vods?quick=1): only what the file's name gives, its kind, stats file and review not
+   * looked at yet (they read as none until the whole list is in).
+   */
+  quick?: boolean;
 }
 
 /**

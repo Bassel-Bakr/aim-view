@@ -97,7 +97,7 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
         };
     }
     json_response(match (post, path.as_str()) {
-        (false, "/api/vods") => lib.recordings(),
+        (false, "/api/vods") => lib.recordings(query("quick").as_deref() == Some("1")),
         (false, "/api/models") => lib.models(),
         (true, "/api/model") => lib.pick(&query("name").unwrap_or_default()),
         (true, "/api/device") => lib.use_device(&query("name").unwrap_or_default()),
