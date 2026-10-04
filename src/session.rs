@@ -10,13 +10,17 @@
 //!    and countdown rows: the camera's turn, KovaaK's countdown bar and the HUD. A run but the last also reads the next
 //!    run's first frame, for the camera's turn into it.
 //! 4. `Joining` puts the runs' parts together: the tracks, the video's readings and what the HUD read.
+//!
+//! In: the setup (the video's frame times, key frames and format, the scenario's target count, the areas, the run
+//! window, the model's settings) and, from the hosts, the decoded frames and the detector's maps. Out: tracks.json,
+//! readings.json and hud.json's contents (`Joined`), which the service keeps and reviews from (review.rs).
 
 use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
 use crate::camera::{COUNTDOWN_ROWS, CameraPart, CameraWatch, VideoReadings, excluded};
-use crate::convert::{Converter, DST_H as H, DST_W as W, Matrix};
+use crate::convert::{Converter, DST_H as FRAME_HEIGHT, DST_W as FRAME_WIDTH, Matrix};
 use crate::fixed::FixedMap;
 use crate::hud::{HudKeys, HudPart, HudReading, HudWatch};
 use crate::model::ModelSettings;
@@ -45,9 +49,9 @@ pub struct FrameRange {
 /// for no window, or one with no frames.
 pub fn window_frames(times: &[f64], window: Option<TimeWindow>) -> FrameRange {
     let all = FrameRange { first: 0, end: times.len() };
-    let Some(w) = window else { return all };
-    let Some(first) = times.iter().position(|&t| t >= w.start) else { return all };
-    let end = times.iter().position(|&t| t > w.end).unwrap_or(times.len());
+    let Some(window) = window else { return all };
+    let Some(first) = times.iter().position(|&time| time >= window.start) else { return all };
+    let end = times.iter().position(|&time| time > window.end).unwrap_or(times.len());
     if end <= first { all } else { FrameRange { first, end } }
 }
 
@@ -70,25 +74,21 @@ impl Run {
 }
 
 /// The recording's frames in `range` split into up to `parts` runs, each from a key frame: the first from the key frame
-/// at or before the range's first frame (decoding starts at a key frame), each cut at the key frame nearest its share of
-/// the frames, and none that would leave a run of fewer than `least` frames.
+/// at or before the range's first frame (decoding starts at a key frame), each cut at the key frame nearest its share
+/// of the frames, and none that would leave a run of fewer than `least` frames.
 pub fn split_runs(times: &[f64], keys: &[f64], parts: usize, least: usize, range: FrameRange) -> Vec<Run> {
-    let begin = keys
-        .iter()
-        .filter_map(|&k| times.iter().position(|&t| t == k))
-        .filter(|&i| i <= range.first)
-        .max()
-        .unwrap_or(0);
-    let n = range.end - begin;
+    let frame_of = |key: f64| times.iter().position(|&time| time == key);
+    let begin = keys.iter().filter_map(|&key| frame_of(key)).filter(|&i| i <= range.first).max().unwrap_or(0);
+    let frame_count = range.end - begin;
     let mut starts = vec![begin];
     for i in 1..parts {
-        let want = times[begin + n * i / parts];
+        let want = times[begin + frame_count * i / parts];
         let best = keys
             .iter()
             .copied()
-            .filter(|&k| k > times[begin])
+            .filter(|&key| key > times[begin])
             .min_by(|a, b| (a - want).abs().total_cmp(&(b - want).abs()));
-        let Some(at) = best.and_then(|k| times.iter().position(|&t| t == k)) else { continue };
+        let Some(at) = best.and_then(frame_of) else { continue };
         if at >= starts[starts.len() - 1] + least && range.end >= at + least {
             starts.push(at);
         }
@@ -127,10 +127,10 @@ impl FrameFormat {
 }
 
 /// What a review is set up from: the video's frame rate, every frame's time and the key frames' (from 0 on, in order)
-/// and the frames' format; the scenario's target count (0: not known), the areas the review leaves out, the part of
-/// the video to track (None: all of it), the runs to split it into, and the detector model's settings (its settings
-/// file; today's values without one). Kept as JSON with a review's parts (tests/replay.rs), without the model's settings:
-/// the parts' boxes are already decoded.
+/// and the frames' format; the scenario's target count (0: not known), the areas the review leaves out, the part of the
+/// video to track (None: all of it), the runs to split it into, and the detector model's settings (its settings file;
+/// today's values without one). Kept as JSON with a review's parts (tests/replay.rs), without the model's settings: the
+/// parts' boxes are already decoded.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ReviewSetup"))]
 pub struct Setup {
@@ -179,68 +179,69 @@ impl Review {
 
     /// The frames the review tracks, every run's.
     pub fn frames(&self) -> usize {
-        self.runs.iter().map(|r| r.frames).sum()
+        self.runs.iter().map(|run| run.frames).sum()
     }
 
     /// The key frames' pass: every key frame in order, then `Keys::finish`.
     pub fn keys(&self) -> Keys {
-        let f = self.setup.format;
-        Keys { fixed: FixedMap::default(), hud: HudWatch::new(f.width, f.height, f.full) }
+        let format = self.setup.format;
+        Keys { fixed: FixedMap::default(), hud: HudWatch::new(format.width, format.height, format.full) }
     }
 
     /// Run `run`'s tracking.
     pub fn tracking(&self, run: usize) -> RunTracking {
-        let r = &self.runs[run];
+        let part = &self.runs[run];
         let mut tracker = self.tracker();
-        tracker.start_at(r.first);
-        RunTracking { tracker, from: r.from, frames: r.frames, reads: r.reads(), read: 0, pushed: 0 }
+        tracker.start_at(part.first);
+        RunTracking { tracker, from: part.from, frames: part.frames, reads: part.reads(), read: 0, pushed: 0 }
     }
 
     /// Run `run`'s watches, from what the key frames gave. In a review from part way in, the first run's watches have
     /// nothing before its first frame.
     pub fn watching(&self, run: usize, keys: &KeysRead) -> RunWatching {
-        let r = &self.runs[run];
-        let skip = if run == 0 { r.first } else { 0 };
-        let f = self.setup.format;
+        let part = &self.runs[run];
+        let skip = if run == 0 { part.first } else { 0 };
+        let format = self.setup.format;
         let mut camera = self.camera(&keys.fixed);
-        let mut hud = HudWatch::from_keys(f.width, f.height, f.full, &keys.hud);
+        let mut hud = HudWatch::from_keys(format.width, format.height, format.full, &keys.hud);
         camera.skip(skip);
         hud.skip(skip);
         RunWatching {
-            convert: f.converter(),
+            convert: format.converter(),
             camera,
             hud,
-            luma: vec![0; W * H].try_into().unwrap(),
-            rgb: vec![0; W * H * 3].try_into().unwrap(),
-            y_bytes: f.width * f.height,
-            from: r.from,
-            reads: r.reads(),
+            luma: vec![0; FRAME_WIDTH * FRAME_HEIGHT].try_into().unwrap(),
+            rgb: vec![0; FRAME_WIDTH * FRAME_HEIGHT * RGB_BYTES].try_into().unwrap(),
+            y_bytes: format.width * format.height,
+            from: part.from,
+            reads: part.reads(),
             read: 0,
         }
     }
 
     /// The runs' parts joined, in order; `fixed`: the key frames' fixed map.
     pub fn joining(&self, fixed: &[u8]) -> Joining {
-        let f = self.setup.format;
+        let format = self.setup.format;
         Joining {
             tracker: self.tracker(),
             camera: self.camera(fixed),
-            hud: HudWatch::new(f.width, f.height, f.full),
-            fixed: fixed.iter().map(|&v| v as f64).sum::<f64>() / fixed.len().max(1) as f64,
+            hud: HudWatch::new(format.width, format.height, format.full),
+            fixed: fixed.iter().map(|&pixel| pixel as f64).sum::<f64>() / fixed.len().max(1) as f64,
             added: 0,
             joined: true,
             review: self.clone(),
         }
     }
 
+    /// The areas' boxes, as shares of the frame [x0, y0, x1, y1].
     fn rects(&self) -> Vec<[f64; 4]> {
-        self.setup.areas.iter().map(|a| [a.0, a.1, a.2, a.3]).collect()
+        self.setup.areas.iter().map(|area| [area.0, area.1, area.2, area.3]).collect()
     }
 
     /// The tracker for the areas and the model's settings: the challenge's end screen among the areas is left out only
     /// while it shows.
     fn tracker(&self) -> Tracker {
-        let ends: Vec<bool> = self.setup.areas.iter().map(|a| a.4 == crate::popup::END_SCREEN).collect();
+        let ends: Vec<bool> = self.setup.areas.iter().map(|area| area.4 == crate::popup::END_SCREEN).collect();
         let mut tracker = Tracker::new(self.rects(), self.setup.cap).end_screens(&ends);
         tracker.set_model(self.setup.model.clone());
         tracker
@@ -322,9 +323,10 @@ impl RunTracking {
         self.tracker.watch(rgb);
     }
 
-    /// The detector's maps for the next tracked frame, in order: the score map (gh x gw) and the reg maps (4 x gh x gw).
-    pub fn maps(&mut self, score: &[f32], reg: &[f32], gw: usize, gh: usize) {
-        self.tracker.push_maps(score, reg, gw, gh);
+    /// The detector's maps for the next tracked frame, in order: the score map (grid_height x grid_width) and the
+    /// regression maps (4 x grid_height x grid_width).
+    pub fn maps(&mut self, score: &[f32], regression: &[f32], grid_width: usize, grid_height: usize) {
+        self.tracker.push_maps(score, regression, grid_width, grid_height);
         self.pushed += 1;
     }
 
@@ -341,9 +343,12 @@ impl RunTracking {
     }
 }
 
+/// An RGB24 pixel's bytes.
+const RGB_BYTES: usize = 3;
+
 /// The bytes of a frame's 720p RGB24 that the watches read: the rows of KovaaK's countdown bar.
 pub fn countdown_bytes() -> Range<usize> {
-    COUNTDOWN_ROWS.0 * W * 3..COUNTDOWN_ROWS.1 * W * 3
+    COUNTDOWN_ROWS.0 * FRAME_WIDTH * RGB_BYTES..COUNTDOWN_ROWS.1 * FRAME_WIDTH * RGB_BYTES
 }
 
 /// A run's watches (`Review::watching`): the camera watch and the HUD watch, fed each frame the run reads.
@@ -351,8 +356,9 @@ pub struct RunWatching {
     convert: Converter,
     camera: CameraWatch,
     hud: HudWatch,
-    luma: Box<[u8; W * H]>,
-    rgb: Box<[u8; W * H * 3]>,
+    /// The frame at 720p: its luma, and its RGB24 (only the countdown's rows are filled).
+    luma: Box<[u8; FRAME_WIDTH * FRAME_HEIGHT]>,
+    rgb: Box<[u8; FRAME_WIDTH * FRAME_HEIGHT * RGB_BYTES]>,
     y_bytes: usize,
     from: f64,
     reads: usize,
@@ -432,7 +438,7 @@ pub struct Joining {
 impl Joining {
     /// The next run's parts: its tracking's and its watches'.
     pub fn add(&mut self, track: TrackPart, watch: WatchPart) {
-        let frames = self.review.runs.get(self.added).map(|r| r.frames);
+        let frames = self.review.runs.get(self.added).map(|run| run.frames);
         self.joined &= Some(self.tracker.add_part(track)) == frames;
         self.camera.join(watch.camera);
         self.hud.join(watch.hud);
@@ -452,15 +458,15 @@ impl Joining {
         if self.hud.frames() != frames.len() {
             return Err("the HUD watch's runs do not join up".into());
         }
-        let s = self.review.setup;
+        let setup = self.review.setup;
         let tracks = Tracks {
-            fps: s.fps,
+            fps: setup.fps,
             frames,
             fixed: self.fixed,
             detector,
-            window: s.window,
+            window: setup.window,
             version: REVIEW_VERSION,
-            areas: s.areas,
+            areas: setup.areas,
         };
         Ok(Joined { tracks, readings, hud: self.hud.finish() })
     }
@@ -470,15 +476,15 @@ impl Joining {
 mod tests {
     use super::*;
 
-    /// n frames at 60 a second from 0, a key frame every `every` frames.
-    fn video(n: usize, every: usize) -> (Vec<f64>, Vec<f64>) {
-        let times: Vec<f64> = (0..n).map(|i| i as f64 / 60.0).collect();
+    /// `frame_count` frames at 60 a second from 0, a key frame every `every` frames.
+    fn video(frame_count: usize, every: usize) -> (Vec<f64>, Vec<f64>) {
+        let times: Vec<f64> = (0..frame_count).map(|i| i as f64 / 60.0).collect();
         let keys = times.iter().copied().step_by(every).collect();
         (times, keys)
     }
 
-    fn all(n: usize) -> FrameRange {
-        FrameRange { first: 0, end: n }
+    fn all(frame_count: usize) -> FrameRange {
+        FrameRange { first: 0, end: frame_count }
     }
 
     /// Cut at the key frame nearest the middle, and the runs cover every frame once.
@@ -493,14 +499,14 @@ mod tests {
             ]
         );
         let (times, keys) = video(9000, 300);
-        let firsts: Vec<usize> = split_runs(&times, &keys, 3, 600, all(9000)).iter().map(|r| r.first).collect();
+        let firsts: Vec<usize> = split_runs(&times, &keys, 3, 600, all(9000)).iter().map(|run| run.first).collect();
         assert_eq!(firsts, vec![0, 3000, 6000]);
     }
 
     /// A short recording, one with a single key frame, and one whose only cut would leave a short run: one run each.
     #[test]
     fn no_cut_leaves_a_run_too_short() {
-        let one = |n: usize| vec![Run { from: 0.0, to: None, first: 0, frames: n }];
+        let one = |frames: usize| vec![Run { from: 0.0, to: None, first: 0, frames }];
         let (times, keys) = video(900, 240);
         assert_eq!(split_runs(&times, &keys, 2, 600, all(900)), one(900));
         let (times, _) = video(6000, 240);
@@ -542,10 +548,10 @@ mod tests {
             model: ModelSettings::default(),
         };
         let review = Review::new(setup).unwrap();
-        assert_eq!(review.runs().iter().map(|r| r.frames).collect::<Vec<_>>(), vec![600, 700]);
+        assert_eq!(review.runs().iter().map(|run| run.frames).collect::<Vec<_>>(), vec![600, 700]);
         let mut first = review.tracking(0);
         let uses: Vec<NextFrame> = (0..602).map(|_| first.next_frame()).collect();
-        assert!(uses[..600].iter().all(|&u| u == NextFrame::Track));
+        assert!(uses[..600].iter().all(|&next| next == NextFrame::Track));
         assert_eq!(&uses[600..], &[NextFrame::Watch, NextFrame::Stop]);
         let mut last = review.tracking(1);
         assert_eq!((0..701).filter(|_| last.next_frame() == NextFrame::Track).count(), 700);
@@ -558,7 +564,7 @@ mod tests {
     #[test]
     fn a_run_joins_into_tracks_readings_and_hud() {
         let times: Vec<f64> = (0..5).map(|i| i as f64 / 60.0).collect();
-        let format = FrameFormat { width: W, height: H, matrix: 1, full: false };
+        let format = FrameFormat { width: FRAME_WIDTH, height: FRAME_HEIGHT, matrix: 1, full: false };
         let area: AreaBox = (0.75, 0.0, 1.0, 0.25, crate::popup::END_SCREEN.into());
         let setup = Setup {
             fps: 60.0,
@@ -573,18 +579,20 @@ mod tests {
         };
         let review = Review::new(setup).unwrap();
         assert_eq!(review.runs().len(), 1, "too short for two runs");
-        let y = vec![16u8; W * H];
+        let pixels = FRAME_WIDTH * FRAME_HEIGHT;
+        let y = vec![16u8; pixels];
         let mut keys = review.keys();
-        keys.add(&vec![16u8; W * H * 3 / 2], &y);
+        keys.add(&vec![16u8; pixels * 3 / 2], &y);
         let keys = keys.finish();
-        let (gw, gh) = (W / 4, H / 4);
-        let (score, reg, rgb) = (vec![0f32; gw * gh], vec![0f32; 4 * gw * gh], vec![0u8; W * H * 3]);
+        let (grid_width, grid_height) = (FRAME_WIDTH / 4, FRAME_HEIGHT / 4);
+        let cells = grid_width * grid_height;
+        let (score, regression, rgb) = (vec![0f32; cells], vec![0f32; 4 * cells], vec![0u8; pixels * 3]);
         let rows = vec![0u8; countdown_bytes().len()];
         let part = || {
             let (mut tracking, mut watching) = (review.tracking(0), review.watching(0, &keys));
             while tracking.next_frame() != NextFrame::Stop {
                 tracking.watch(&rgb);
-                tracking.maps(&score, &reg, gw, gh);
+                tracking.maps(&score, &regression, grid_width, grid_height);
                 watching.frame(&y, &rows);
             }
             (tracking.part().unwrap(), watching.part().unwrap())
