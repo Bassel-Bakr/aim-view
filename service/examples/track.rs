@@ -1,54 +1,78 @@
 //! A recording reviewed natively, without the app: its tracks, readings and HUD reading written as JSON, the time it
 //! took, and the report the core works out from them (report.json), with the stats file when one is given, else from
 //! the HUD's reading or the video alone.
-//! cargo run -p aimview-service --release --example track -- <video> <model _u8in.onnx> <out folder> [cap] [runs] [batch]
-//! [window start] [window end] (seconds: only that part is tracked; "-" for none) [stats file] [exclude.json]
+//! cargo run -p aimview-service --release --example track -- <video> <model _u8in.onnx> <out folder> [cap] [runs]
+//! [batch] [window start] [window end] (seconds: only that part is tracked; "-" for none) [stats file] [exclude.json]
 //! [--parts <folder>] (the review's parts kept there before they are joined, for tests/replay.rs)
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use aimview::hud::HudReading;
 use aimview_service::review::{Request, TimeWindow, review};
 
-fn main() {
-    let mut a: Vec<String> = std::env::args().collect();
-    let parts = a.iter().position(|v| v == "--parts");
-    let parts = parts.map(|i| PathBuf::from(a.drain(i..i + 2).nth(1).expect("--parts <folder>")));
-    let arg = |i: usize, default: usize| a.get(i).and_then(|v| v.parse().ok()).unwrap_or(default);
-    let seconds = |i: usize| a.get(i).and_then(|v| v.parse::<f64>().ok());
-    let window = seconds(7).zip(seconds(8)).map(|(start, end)| TimeWindow { start, end });
-    let req = Request {
-        video: a[1].clone().into(),
-        model: a[2].clone().into(),
+/// The arguments' places on the command line (after the program's own name, 0).
+const VIDEO_ARG: usize = 1;
+const MODEL_ARG: usize = 2;
+const OUT_ARG: usize = 3;
+const CAP_ARG: usize = 4;
+const RUNS_ARG: usize = 5;
+const BATCH_ARG: usize = 6;
+const WINDOW_START_ARG: usize = 7;
+const WINDOW_END_ARG: usize = 8;
+const STATS_ARG: usize = 9;
+const AREAS_ARG: usize = 10;
+/// The defaults: the target count not known (0), two runs, four frames in each detector call.
+const DEFAULT_CAP: usize = 0;
+const DEFAULT_RUNS: usize = 2;
+const DEFAULT_BATCH: usize = 4;
+
+/// The review request the command line gives (`--parts` already taken out of it).
+fn request(args: &[String], parts: Option<PathBuf>) -> Request {
+    let count = |i: usize, default: usize| args.get(i).and_then(|arg| arg.parse().ok()).unwrap_or(default);
+    let seconds = |i: usize| args.get(i).and_then(|arg| arg.parse::<f64>().ok());
+    let window = seconds(WINDOW_START_ARG).zip(seconds(WINDOW_END_ARG)).map(|(start, end)| TimeWindow { start, end });
+    Request {
+        video: args[VIDEO_ARG].clone().into(),
+        model: args[MODEL_ARG].clone().into(),
         device: aimview_service::Device::Auto,
-        cap: arg(4, 0),
-        runs: arg(5, 2),
-        batch: arg(6, 4),
+        cap: count(CAP_ARG, DEFAULT_CAP),
+        runs: count(RUNS_ARG, DEFAULT_RUNS),
+        batch: count(BATCH_ARG, DEFAULT_BATCH),
         window,
         // the areas to leave out: an exclude.json ([[x0, y0, x1, y1, kind], ...]), else KovOBS's layout
-        areas: a.get(10).map_or_else(aimview_service::areas::kovobs_areas, |f| {
-            serde_json::from_slice(&std::fs::read(f).expect("the areas file")).expect("an exclude.json")
+        areas: args.get(AREAS_ARG).map_or_else(aimview_service::areas::kovobs_areas, |file| {
+            serde_json::from_slice(&std::fs::read(file).expect("the areas file")).expect("an exclude.json")
         }),
         keep_parts: parts,
-    };
-    let out = PathBuf::from(&a[3]);
+    }
+}
+
+fn main() {
+    let mut args: Vec<String> = std::env::args().collect();
+    let parts = args.iter().position(|arg| arg == "--parts");
+    let parts = parts.map(|i| PathBuf::from(args.drain(i..i + 2).nth(1).expect("--parts <folder>")));
+    let request = request(&args, parts);
+    let out = PathBuf::from(&args[OUT_ARG]);
     std::fs::create_dir_all(&out).unwrap();
-    let t = Instant::now();
-    let reviewed = review(&req, &|stage, done, total| eprint!("\r{stage} {done}/{total}      "), &|_| {}).unwrap_or_else(|e| panic!("{e}"));
-    eprintln!("\nreviewed in {:.1} s with {}", t.elapsed().as_secs_f64(), reviewed.tracks.detector);
-    let hud = reviewed.hud.as_ref().map_or("not read".into(), |h| format!("{:?}, {} kills", h.game, h.kills.len()));
+    let started = Instant::now();
+    let progress = |stage: &str, done: usize, total: usize| eprint!("\r{stage} {done}/{total}      ");
+    let reviewed = review(&request, &progress, &|_| {}).unwrap_or_else(|error| panic!("{error}"));
+    eprintln!("\nreviewed in {:.1} s with {}", started.elapsed().as_secs_f64(), reviewed.tracks.detector);
+    let hud_text = |hud: &HudReading| format!("{:?}, {} kills", hud.game, hud.kills.len());
+    let hud = reviewed.hud.as_ref().map_or("not read".into(), hud_text);
     eprintln!("{} frames; the HUD: {hud}", reviewed.tracks.frames.len());
     std::fs::write(out.join("tracks.json"), serde_json::to_vec(&reviewed.tracks).unwrap()).unwrap();
     std::fs::write(out.join("readings.json"), serde_json::to_vec(&reviewed.readings).unwrap()).unwrap();
     std::fs::write(out.join("hud.json"), serde_json::to_vec(&reviewed.hud).unwrap()).unwrap();
-    let stats = a.get(9).map(Path::new);
-    match aimview_service::report::work_out(&out, &req.video, stats, None, None, None) {
+    let stats = args.get(STATS_ARG).map(Path::new);
+    match aimview_service::report::work_out(&out, &request.video, stats, None, None, None) {
         Ok(Some(report)) => {
             let summary = &report["summary"];
             eprintln!("report: kills from {}, {} kills", summary["info"]["source"], summary["kills"]);
             std::fs::write(out.join("report.json"), serde_json::to_vec(&report).unwrap()).unwrap();
         }
         Ok(None) => eprintln!("report: no tracks"),
-        Err(e) => eprintln!("report: {e}"),
+        Err(error) => eprintln!("report: {error}"),
     }
 }

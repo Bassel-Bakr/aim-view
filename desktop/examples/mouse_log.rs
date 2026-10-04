@@ -19,6 +19,26 @@ use aimview_desktop::mouse::{bench, local_stamp, log_to, logged_text, time_ns};
 static STOP: AtomicBool = AtomicBool::new(false);
 static DONE: AtomicBool = AtomicBool::new(false);
 
+/// The console control event for the console closing (Windows' CTRL_CLOSE_EVENT).
+const CTRL_CLOSE_EVENT: u32 = 2;
+/// How long a closing console waits for the logger's stop pair.
+const CLOSE_WAIT: Duration = Duration::from_secs(3);
+/// `--bench`'s WM_INPUT messages posted in each of its rounds, and the records it decodes (mouse_log.py --bench's).
+const BENCH_MESSAGES: usize = 5000;
+const BENCH_RECORDS: usize = 200_000;
+/// `--stream`'s moves a second when `--hz` is not given.
+const DEFAULT_STREAM_HZ: f64 = 8000.0;
+/// How long the stream waits for the logger to start, and how much longer than the stream the logger runs.
+const LOGGER_START: Duration = Duration::from_millis(500);
+const LOGGER_EXTRA_S: f64 = 1.0;
+/// SendInput's INPUT_MOUSE, and MOUSEEVENTF_MOVE: a relative move.
+const INPUT_MOUSE: u32 = 0;
+const MOUSEEVENTF_MOVE: u32 = 0x0001;
+/// A move counts as sent late when it went out more than this many intervals after it was due.
+const LATE_INTERVALS: f64 = 2.0;
+const MS_PER_S: f64 = 1000.0;
+const NS_PER_S: f64 = 1e9;
+
 #[repr(C)]
 struct MouseInput {
     dx: i32,
@@ -42,16 +62,16 @@ unsafe extern "system" {
 
 #[link(name = "user32")]
 unsafe extern "system" {
-    fn SendInput(n: u32, inputs: *const Input, size: i32) -> u32;
+    fn SendInput(count: u32, inputs: *const Input, size: i32) -> u32;
 }
 
 /// Ctrl+C, Ctrl+Break or the console closing: the logger stops and writes its stop pair (a closing console waits for
 /// it, up to 3 s).
 unsafe extern "system" fn on_ctrl(kind: u32) -> i32 {
     STOP.store(true, Ordering::Relaxed);
-    if kind == 2 {
-        let t0 = Instant::now();
-        while !DONE.load(Ordering::Relaxed) && t0.elapsed() < Duration::from_secs(3) {
+    if kind == CTRL_CLOSE_EVENT {
+        let closing = Instant::now();
+        while !DONE.load(Ordering::Relaxed) && closing.elapsed() < CLOSE_WAIT {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -61,21 +81,22 @@ unsafe extern "system" fn on_ctrl(kind: u32) -> i32 {
 fn default_out(prefix: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../test_out/mouse")
-        .join(format!("{prefix}_{}.bin", local_stamp(time_ns() as f64 / 1e9)))
+        .join(format!("{prefix}_{}.bin", local_stamp(time_ns() as f64 / NS_PER_S)))
 }
 
 fn main() {
-    let a: Vec<String> = std::env::args().collect();
-    let value = |name: &str| a.iter().position(|v| v == name).and_then(|i| a.get(i + 1)).cloned();
-    if a.iter().any(|v| v == "--bench") {
-        match bench(5000, 200_000) {
+    let args: Vec<String> = std::env::args().collect();
+    let value = |name: &str| args.iter().position(|arg| arg == name).and_then(|i| args.get(i + 1)).cloned();
+    if args.iter().any(|arg| arg == "--bench") {
+        match bench(BENCH_MESSAGES, BENCH_RECORDS) {
             Ok(text) => println!("{text}"),
-            Err(e) => eprintln!("{e}"),
+            Err(error) => eprintln!("{error}"),
         }
         return;
     }
-    if let Some(seconds) = value("--stream").and_then(|v| v.parse::<f64>().ok()) {
-        stream(seconds, value("--hz").and_then(|v| v.parse().ok()).unwrap_or(8000.0), value("--out"));
+    if let Some(seconds) = value("--stream").and_then(|arg| arg.parse::<f64>().ok()) {
+        let hz = value("--hz").and_then(|arg| arg.parse().ok()).unwrap_or(DEFAULT_STREAM_HZ);
+        stream(seconds, hz, value("--out"));
         return;
     }
     let out = value("--out").map_or_else(|| default_out("mouse"), PathBuf::from);
@@ -84,10 +105,10 @@ fn main() {
     }
     // SAFETY: the handler only sets flags and waits
     unsafe { SetConsoleCtrlHandler(Some(on_ctrl), 1) };
-    let seconds = value("--seconds").and_then(|v| v.parse().ok());
+    let seconds = value("--seconds").and_then(|arg| arg.parse().ok());
     let logged = log_to(&out, seconds, &STOP, &|line| println!("{line}"));
     DONE.store(true, Ordering::Relaxed);
-    let logged = logged.unwrap_or_else(|e| panic!("{}: {e}", out.display()));
+    let logged = logged.unwrap_or_else(|error| panic!("{}: {error}", out.display()));
     if logged.bad > 0 {
         println!("  {} WM_INPUT messages could not be read", logged.bad);
     }
@@ -102,33 +123,37 @@ fn stream(seconds: f64, hz: f64, out: Option<String>) {
         std::fs::create_dir_all(dir).expect("the log's folder");
     }
     let path = out.clone();
-    let logger = std::thread::spawn(move || log_to(&path, Some(seconds + 1.0), &STOP, &|line| println!("{line}")));
-    std::thread::sleep(Duration::from_millis(500));
-    let input = Input { kind: 0, mouse: MouseInput { dx: 0, dy: 0, data: 0, flags: 0x0001, time: 0, extra: 0 } };
-    let (t0, mut sent, mut late) = (Instant::now(), 0u64, 0u64);
-    while t0.elapsed().as_secs_f64() < seconds {
+    let logged_s = Some(seconds + LOGGER_EXTRA_S);
+    let logger = std::thread::spawn(move || log_to(&path, logged_s, &STOP, &|line| println!("{line}")));
+    std::thread::sleep(LOGGER_START);
+    let mouse = MouseInput { dx: 0, dy: 0, data: 0, flags: MOUSEEVENTF_MOVE, time: 0, extra: 0 };
+    let input = Input { kind: INPUT_MOUSE, mouse };
+    let (started, mut sent, mut late) = (Instant::now(), 0u64, 0u64);
+    while started.elapsed().as_secs_f64() < seconds {
         let due = sent as f64 / hz;
-        let now = t0.elapsed().as_secs_f64();
+        let now = started.elapsed().as_secs_f64();
         if now < due {
             std::hint::spin_loop();
             continue;
         }
-        if now - due > 2.0 / hz {
+        if now - due > LATE_INTERVALS / hz {
             late += 1;
         }
         // SAFETY: one INPUT of the size given: a relative move of zero counts
         sent += u64::from(unsafe { SendInput(1, &input, size_of::<Input>() as i32) });
     }
-    let logged = logger.join().unwrap().unwrap_or_else(|e| panic!("{}: {e}", out.display()));
+    let logged = logger.join().unwrap().unwrap_or_else(|error| panic!("{}: {error}", out.display()));
     let log = reader::read_log(&std::fs::read(&out).unwrap()).unwrap();
     print!("{}", logged_text(&log, &out, &logged.names));
-    let f = reader::log_facts(&log, 0);
-    let median = f.median_interval.map_or("-".into(), |m| format!("{:.3} ms", m * 1000.0));
+    // a UTC offset of 0: the numbers printed here do not depend on the time zone
+    let facts = reader::log_facts(&log, 0);
+    let median_ms = facts.median_interval.map(|interval_s| interval_s * MS_PER_S);
+    let median = median_ms.map_or("-".into(), |ms| format!("{ms:.3} ms"));
     println!(
-        "stream: sent {sent} moves in {seconds} s ({:.0} a second, {late} sent late); logged {} events, median interval \
-         {median}, busiest 100 ms {:.0} Hz",
+        "stream: sent {sent} moves in {seconds} s ({:.0} a second, {late} sent late); logged {} events, median \
+         interval {median}, busiest 100 ms {:.0} Hz",
         sent as f64 / seconds,
-        f.events,
-        f.busiest_hz
+        facts.events,
+        facts.busiest_hz
     );
 }
