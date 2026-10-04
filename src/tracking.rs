@@ -73,7 +73,7 @@ const FASTER_SWITCH_S: f64 = 0.1;
 pub type CameraReading = Option<(f64, f64, usize)>;
 
 /// The radius in degrees of a target of `area_px` pixels taken as a disc.
-fn disc_radius_deg(area_px: i64) -> f64 {
+pub(crate) fn disc_radius_deg(area_px: i64) -> f64 {
     degrees(((area_px as f64 / std::f64::consts::PI).sqrt() / K).atan())
 }
 

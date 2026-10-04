@@ -1,10 +1,18 @@
-//! How the camera turned, from the video alone (review.py: `camera_motion`), and KovaaK's countdown bar
-//! (`countdown_showing`). Each frame is resampled onto an angular grid around the crosshair (azimuth -36 to 36 degrees,
-//! elevation 18 to -18, 0.15 degrees apart), cut into 18 tiles of 12 degrees, and each tile is matched with the frame
-//! before by phase correlation, in single precision as SciPy's FFT works for Python. A tile is left out while a
-//! tracked target is in it, when a tenth of it is excluded area or the fixed map, or when its peak is under 0.08. The
-//! frame's reading is the mean of the tiles that agree with their median within 0.1 degrees, if 3 or more do.
+//! How the camera turned, from the video alone (python/retired/review.py: `camera_motion`), and whether KovaaK's
+//! countdown bar shows (`countdown_showing`). The review session (src/session.rs) feeds the watch each frame's luma
+//! and the countdown bar's rows of its RGB: in the camera worker in the browser, on a thread of its own natively. A
+//! recording split into run parts has a watch for each, joined in order (`CameraPart`). Once the tracks are known,
+//! `finish` gives the readings (`VideoReadings`): the camera's turn, which src/tracking.rs measures a tracking run
+//! with, and the countdown, which src/review.rs places the run's start with when no kill does.
+//!
+//! Each frame is resampled onto an angular grid around the crosshair (azimuth -36 to 36 degrees, elevation 18 to -18,
+//! 0.15 degrees apart), cut into 18 tiles of 12 degrees, and each tile is matched with the frame before by phase
+//! correlation, in single precision as SciPy's FFT works for Python: every operation keeps Python's order and type. A
+//! tile is left out while a tracked target is in it, when a tenth of it is excluded area or the fixed map, or when its
+//! peak is under 0.08. The frame's reading is the mean of the tiles that agree with their median within 0.1 degrees,
+//! if 3 or more do.
 
+use std::f64::consts::PI;
 use std::sync::Arc;
 
 use rustfft::num_complex::Complex32;
@@ -12,235 +20,384 @@ use rustfft::{Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
 
 use crate::capped::Capped;
-use crate::geometry::{CX, CY, H, K, W, degrees, radians};
+use crate::geometry::{CX, CY, H, K, W, radians};
 use crate::track::TrackFrame;
-use crate::tracking::CameraReading;
+use crate::tracking::{CameraReading, disc_radius_deg};
 
-const STEP: f64 = 0.15;
-const T: usize = 80;
-const TILES: usize = 18;
-const COLS: usize = 6 * T;
-const BINS: usize = T / 2 + 1;
-/// The grid's cells: 3 tiles down, 6 across.
-const CELLS: usize = COLS * 3 * T;
-const THR: f32 = 0.08;
+/// The grid's spacing (degrees), across and down.
+const GRID_STEP_DEG: f64 = 0.15;
+/// A tile's side, in grid cells (12 degrees).
+const TILE_SIDE: usize = 80;
+const TILE_CELLS: usize = TILE_SIDE * TILE_SIDE;
+/// The grid's tiles: 6 across, 3 down; tile k is at row k / 6, column k % 6.
+const TILES_ACROSS: usize = 6;
+const TILES_DOWN: usize = 3;
+const TILES: usize = TILES_ACROSS * TILES_DOWN;
+const GRID_COLUMNS: usize = TILES_ACROSS * TILE_SIDE;
+const GRID_ROWS: usize = TILES_DOWN * TILE_SIDE;
+const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
+/// The columns of a tile's spectrum: a real FFT along x keeps the frequencies 0 to half the side.
+const SPECTRUM_COLUMNS: usize = TILE_SIDE / 2 + 1;
+const SPECTRUM_CELLS: usize = TILE_SIDE * SPECTRUM_COLUMNS;
+/// A tile whose phase correlation peaks under this matched nothing.
+const MIN_PEAK: f32 = 0.08;
+/// A tile is left out when this share of it or more is excluded area or the fixed map.
+const MAX_EXCLUDED_SHARE: f64 = 0.1;
+/// The tiles that must agree for a reading.
+const MIN_AGREEING_TILES: usize = 3;
+/// A tile agrees when its shift is under this from the tiles' median (degrees).
+const AGREE_DEG: f32 = 0.1;
+/// The least magnitude a cross-power value is divided by, so a frequency with no energy does not divide by 0.
+const MIN_MAGNITUDE: f32 = 1e-6;
+/// The fixed map is grown by this many pixels (the cross's iterations): the edges of a fixed thing count too.
+const FIXED_GROWTH_PX: usize = 3;
+/// Half a tile's side (degrees): a target is in a tile when it lies under this plus its reach from the tile's center,
+/// along each axis.
+const TILE_HALF_DEG: f64 = 6.0;
+/// A target's reach past its disc's radius (degrees).
+const TARGET_MARGIN_DEG: f64 = 1.5;
+/// NumPy's float32 sum adds in this many running sums, over blocks of up to `PAIRWISE_BLOCK` values.
+const PAIRWISE_LANES: usize = 8;
+const PAIRWISE_BLOCK: usize = 128;
 
 /// Each tile's shift since the frame before (degrees, the room's move on screen), or None where its peak is too low.
 pub type TileShifts = [Option<(f32, f32)>; TILES];
 
-/// The grid's bilinear gather (top-left pixel and weights per grid cell), each tile's center, and the Hann window.
+/// The grid's bilinear gather (per grid cell, the top-left pixel of the four it is read from, and the weights of the
+/// pixels right and below), each tile's center (degrees), and the Hann window.
 struct Grid {
-    i00: Box<[usize; CELLS]>,
-    fx: Box<[f32; CELLS]>,
-    fy: Box<[f32; CELLS]>,
-    taz: [f64; TILES],
-    tel: [f64; TILES],
-    hann: Box<[f32; T * T]>,
+    top_left: Box<[usize; GRID_CELLS]>,
+    weight_x: Box<[f32; GRID_CELLS]>,
+    weight_y: Box<[f32; GRID_CELLS]>,
+    tile_azimuth_deg: [f64; TILES],
+    tile_elevation_deg: [f64; TILES],
+    hann: Box<[f32; TILE_CELLS]>,
 }
 
 impl Grid {
     fn new() -> Grid {
-        let az: [f64; COLS] = std::array::from_fn(|c| (c as f64 - (3 * T) as f64 + 0.5) * STEP);
-        let el: [f64; 3 * T] = std::array::from_fn(|r| (1.5 * T as f64 - r as f64 - 0.5) * STEP);
-        let mut g = Grid {
-            i00: vec![0; CELLS].try_into().unwrap(),
-            fx: vec![0.0; CELLS].try_into().unwrap(),
-            fy: vec![0.0; CELLS].try_into().unwrap(),
-            taz: [0.0; TILES],
-            tel: [0.0; TILES],
-            hann: vec![0.0; T * T].try_into().unwrap(),
+        let azimuth_deg: [f64; GRID_COLUMNS] =
+            std::array::from_fn(|column| (column as f64 - (GRID_COLUMNS / 2) as f64 + 0.5) * GRID_STEP_DEG);
+        let elevation_deg: [f64; GRID_ROWS] =
+            std::array::from_fn(|row| ((GRID_ROWS / 2) as f64 - row as f64 - 0.5) * GRID_STEP_DEG);
+        let mut grid = Grid {
+            top_left: vec![0; GRID_CELLS].try_into().unwrap(),
+            weight_x: vec![0.0; GRID_CELLS].try_into().unwrap(),
+            weight_y: vec![0.0; GRID_CELLS].try_into().unwrap(),
+            tile_azimuth_deg: tile_centers(&azimuth_deg, |tile| tile % TILES_ACROSS),
+            tile_elevation_deg: tile_centers(&elevation_deg, |tile| tile / TILES_ACROSS),
+            hann: hann_window(),
         };
-        for (r, &e) in el.iter().enumerate() {
-            for (c, &a) in az.iter().enumerate() {
-                let p = r * COLS + c;
-                let px = CX + K * radians(a).tan();
-                let py = CY - radians(e).tan() * K.hypot(px - CX);
-                let (x0, y0) = (px.floor(), py.floor());
-                g.fx[p] = (px - x0) as f32;
-                g.fy[p] = (py - y0) as f32;
-                let (x0, y0) = ((x0 as i64).clamp(0, W as i64 - 2), (y0 as i64).clamp(0, H as i64 - 2));
-                g.i00[p] = y0 as usize * W + x0 as usize;
-            }
-        }
-        for k in 0..TILES {
-            let (c, r) = ((k % 6) * T, (k / 6) * T);
-            g.taz[k] = az[c..c + T].iter().sum::<f64>() / T as f64;
-            g.tel[k] = el[r..r + T].iter().sum::<f64>() / T as f64;
-        }
-        // np.hanning
-        let w: [f64; T] = std::array::from_fn(|i| {
-            0.5 + 0.5 * (std::f64::consts::PI * (2 * i as i64 + 1 - T as i64) as f64 / (T - 1) as f64).cos()
-        });
-        for (i, &a) in w.iter().enumerate() {
-            for (j, &b) in w.iter().enumerate() {
-                g.hann[i * T + j] = (a * b) as f32;
-            }
-        }
-        g
+        grid.set_gather(&azimuth_deg, &elevation_deg);
+        grid
     }
 
-    /// The image resampled onto the grid, as 18 tiles of T x T (row by row), tile k at row k / 6, column k % 6.
-    fn tiles(&self, img: &[u8]) -> Vec<f32> {
-        let mut out = vec![0.0f32; TILES * T * T];
-        let f = |j: usize| img[j] as f32;
-        for r in 0..3 * T {
-            let row = (r / T) * 6 * T * T + (r % T) * T;
-            for c in 0..COLS {
-                let p = r * COLS + c;
-                let (i, fx, fy) = (self.i00[p], self.fx[p], self.fy[p]);
-                let v = (f(i) * (1.0 - fx) + f(i + 1) * fx) * (1.0 - fy) + (f(i + W) * (1.0 - fx) + f(i + W + 1) * fx) * fy;
-                out[row + (c / T) * T * T + c % T] = v;
+    /// Per grid cell, where its azimuth and elevation fall on the frame (pixels): the top-left pixel of the four it is
+    /// read from, and the weights of the others.
+    fn set_gather(&mut self, azimuth_deg: &[f64; GRID_COLUMNS], elevation_deg: &[f64; GRID_ROWS]) {
+        for (row, &elevation) in elevation_deg.iter().enumerate() {
+            for (column, &azimuth) in azimuth_deg.iter().enumerate() {
+                let cell = row * GRID_COLUMNS + column;
+                let x = CX + K * radians(azimuth).tan();
+                let y = CY - radians(elevation).tan() * K.hypot(x - CX);
+                let (left, top) = (x.floor(), y.floor());
+                self.weight_x[cell] = (x - left) as f32;
+                self.weight_y[cell] = (y - top) as f32;
+                let (left, top) = ((left as i64).clamp(0, W as i64 - 2), (top as i64).clamp(0, H as i64 - 2));
+                self.top_left[cell] = top as usize * W + left as usize;
+            }
+        }
+    }
+
+    /// The image resampled onto the grid, as 18 tiles of TILE_SIDE x TILE_SIDE (row by row), tile k at row k / 6,
+    /// column k % 6.
+    fn tiles(&self, image: &[u8]) -> Vec<f32> {
+        let mut out = vec![0.0f32; TILES * TILE_CELLS];
+        for row in 0..GRID_ROWS {
+            let row_start = (row / TILE_SIDE) * TILES_ACROSS * TILE_CELLS + (row % TILE_SIDE) * TILE_SIDE;
+            for column in 0..GRID_COLUMNS {
+                let value = self.bilinear(image, row * GRID_COLUMNS + column);
+                out[row_start + (column / TILE_SIDE) * TILE_CELLS + column % TILE_SIDE] = value;
             }
         }
         out
     }
+
+    /// A grid cell's value: the image's four pixels around its place, weighted.
+    fn bilinear(&self, image: &[u8], cell: usize) -> f32 {
+        let pixel = |index: usize| f32::from(image[index]);
+        let (i, weight_x, weight_y) = (self.top_left[cell], self.weight_x[cell], self.weight_y[cell]);
+        (pixel(i) * (1.0 - weight_x) + pixel(i + 1) * weight_x) * (1.0 - weight_y)
+            + (pixel(i + W) * (1.0 - weight_x) + pixel(i + W + 1) * weight_x) * weight_y
+    }
+}
+
+/// Each tile's center along one axis (degrees): the mean of its cells' places, `cells_deg`, from the tile's position
+/// along that axis.
+fn tile_centers(cells_deg: &[f64], position: fn(usize) -> usize) -> [f64; TILES] {
+    std::array::from_fn(|tile| {
+        let start = position(tile) * TILE_SIDE;
+        cells_deg[start..start + TILE_SIDE].iter().sum::<f64>() / TILE_SIDE as f64
+    })
+}
+
+/// The Hann window over a tile: np.hanning's along each side, multiplied.
+fn hann_window() -> Box<[f32; TILE_CELLS]> {
+    let side: [f64; TILE_SIDE] = std::array::from_fn(|i| {
+        0.5 + 0.5 * (PI * (2 * i as i64 + 1 - TILE_SIDE as i64) as f64 / (TILE_SIDE - 1) as f64).cos()
+    });
+    let mut window: Box<[f32; TILE_CELLS]> = vec![0.0; TILE_CELLS].try_into().unwrap();
+    for (i, &a) in side.iter().enumerate() {
+        for (j, &b) in side.iter().enumerate() {
+            window[i * TILE_SIDE + j] = (a * b) as f32;
+        }
+    }
+    window
+}
+
+/// The mean of a tile's cells, summed in double precision.
+fn tile_mean(cells: &[f32]) -> f64 {
+    cells.iter().map(|&value| f64::from(value)).sum::<f64>() / TILE_CELLS as f64
 }
 
 /// NumPy's float32 sum (pairwise: 8 running sums for up to 128 values, then halves).
-fn sum_f32(v: &[f32]) -> f32 {
-    if v.len() < 8 {
-        return v.iter().fold(0.0f32, |a, &b| a + b);
+fn sum_f32(values: &[f32]) -> f32 {
+    if values.len() < PAIRWISE_LANES {
+        return values.iter().fold(0.0f32, |a, &b| a + b);
     }
-    if v.len() <= 128 {
-        let mut r = [0.0f32; 8];
-        r.copy_from_slice(&v[..8]);
-        let whole = v.len() - v.len() % 8;
-        for chunk in v[8..whole].chunks_exact(8) {
-            for (a, &b) in r.iter_mut().zip(chunk) {
+    if values.len() <= PAIRWISE_BLOCK {
+        let mut lanes = [0.0f32; PAIRWISE_LANES];
+        lanes.copy_from_slice(&values[..PAIRWISE_LANES]);
+        let whole = values.len() - values.len() % PAIRWISE_LANES;
+        for chunk in values[PAIRWISE_LANES..whole].chunks_exact(PAIRWISE_LANES) {
+            for (a, &b) in lanes.iter_mut().zip(chunk) {
                 *a += b;
             }
         }
-        let mut s = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
-        for &b in &v[whole..] {
-            s += b;
+        let mut total =
+            ((lanes[0] + lanes[1]) + (lanes[2] + lanes[3])) + ((lanes[4] + lanes[5]) + (lanes[6] + lanes[7]));
+        for &b in &values[whole..] {
+            total += b;
         }
-        return s;
+        return total;
     }
-    let half = v.len() / 2 / 8 * 8;
-    sum_f32(&v[..half]) + sum_f32(&v[half..])
+    let half = values.len() / 2 / PAIRWISE_LANES * PAIRWISE_LANES;
+    sum_f32(&values[..half]) + sum_f32(&values[half..])
 }
 
-fn median_f32(v: &mut [f32]) -> f32 {
-    v.sort_by(f32::total_cmp);
-    let n = v.len();
-    if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 }
+/// NumPy's median: the middle value, or the mean of the middle two.
+fn median_f32(values: &mut [f32]) -> f32 {
+    values.sort_by(f32::total_cmp);
+    let count = values.len();
+    if count % 2 == 1 { values[count / 2] } else { (values[count / 2 - 1] + values[count / 2]) / 2.0 }
 }
 
-/// The parabola's vertex offset from three samples around a peak m (review.py: `sub`).
-fn vertex(a: f32, b: f32, m: f32) -> f32 {
-    let d = a - 2.0 * m + b;
-    if d >= 0.0 { 0.0 } else { 0.5 * (a - b) / d }
+/// The offset of a parabola's vertex from the peak it is fitted through, with the samples before and after it
+/// (review.py: `sub`); 0 where they do not curve down.
+fn vertex(before: f32, after: f32, peak: f32) -> f32 {
+    let curvature = before - 2.0 * peak + after;
+    if curvature >= 0.0 { 0.0 } else { 0.5 * (before - after) / curvature }
 }
 
-/// A frame's camera reading from its tiles' shifts: the tiles allowed (`ok`) that agree with their median.
-fn agreed(shifts: &TileShifts, ok: &[bool; TILES]) -> CameraReading {
-    let sh: Capped<(f32, f32), TILES> = (0..TILES).filter(|&k| ok[k]).filter_map(|k| shifts[k]).collect();
-    if sh.len() < 3 {
+/// One axis of the shifts.
+fn axis(shifts: &[(f32, f32)], pick: fn(&(f32, f32)) -> f32) -> Capped<f32, TILES> {
+    shifts.iter().map(pick).collect()
+}
+
+/// A frame's camera reading from its tiles' shifts: the tiles allowed (`clear`) that agree with their median.
+fn agreed(shifts: &TileShifts, clear: &[bool; TILES]) -> CameraReading {
+    let allowed: Capped<(f32, f32), TILES> =
+        (0..TILES).filter(|&tile| clear[tile]).filter_map(|tile| shifts[tile]).collect();
+    if allowed.len() < MIN_AGREEING_TILES {
         return None;
     }
-    let part = |v: &[(f32, f32)], f: fn(&(f32, f32)) -> f32| v.iter().map(f).collect::<Capped<f32, TILES>>();
-    let m = (median_f32(&mut part(&sh, |s| s.0)), median_f32(&mut part(&sh, |s| s.1)));
-    let agree: Capped<(f32, f32), TILES> = sh.iter().filter(|s| (s.0 - m.0).hypot(s.1 - m.1) < 0.1).copied().collect();
-    if agree.len() < 3 {
+    let median = (median_f32(&mut axis(&allowed, |shift| shift.0)), median_f32(&mut axis(&allowed, |shift| shift.1)));
+    let agreeing: Capped<(f32, f32), TILES> = allowed
+        .iter()
+        .filter(|shift| (shift.0 - median.0).hypot(shift.1 - median.1) < AGREE_DEG)
+        .copied()
+        .collect();
+    if agreeing.len() < MIN_AGREEING_TILES {
         return None;
     }
-    let n = agree.len() as f32;
-    let mx = sum_f32(&part(&agree, |s| s.0)) / n;
-    let my = sum_f32(&part(&agree, |s| s.1)) / n;
-    Some((mx as f64, my as f64, agree.len()))
+    let count = agreeing.len() as f32;
+    let mean_x = sum_f32(&axis(&agreeing, |shift| shift.0)) / count;
+    let mean_y = sum_f32(&axis(&agreeing, |shift| shift.1)) / count;
+    Some((f64::from(mean_x), f64::from(mean_y), agreeing.len()))
 }
 
 /// The pixels a tile must not be read from: the excluded areas (`keep` false) and the fixed map grown by 3 pixels
 /// (SciPy's `binary_dilation`, 3 iterations of the cross).
 pub fn excluded(keep: &[bool], fixed: &[u8]) -> Vec<bool> {
-    let mut grown: Vec<bool> = fixed.iter().map(|&v| v != 0).collect();
-    for _ in 0..3 {
-        let g = grown.clone();
-        for y in 0..H {
-            for x in 0..W {
-                let i = y * W + x;
-                grown[i] = g[i]
-                    || (x > 0 && g[i - 1])
-                    || (x + 1 < W && g[i + 1])
-                    || (y > 0 && g[i - W])
-                    || (y + 1 < H && g[i + W]);
-            }
+    let mut grown: Vec<bool> = fixed.iter().map(|&count| count != 0).collect();
+    for _ in 0..FIXED_GROWTH_PX {
+        grown = grown_by_one(&grown);
+    }
+    grown.iter().zip(keep).map(|(&fixed_pixel, &kept)| fixed_pixel || !kept).collect()
+}
+
+/// The pixels set (1280 x 720) and the pixels beside them: left, right, above and below.
+fn grown_by_one(set: &[bool]) -> Vec<bool> {
+    let mut grown = set.to_vec();
+    for y in 0..H {
+        for x in 0..W {
+            let i = y * W + x;
+            grown[i] = set[i]
+                || (x > 0 && set[i - 1])
+                || (x + 1 < W && set[i + 1])
+                || (y > 0 && set[i - W])
+                || (y + 1 < H && set[i + W]);
         }
     }
-    grown.iter().zip(keep).map(|(&g, &k)| g || !k).collect()
+    grown
+}
+
+/// Copies `source`'s first `target_rows` columns (its rows `source_width` long) into `target` as rows: target's row r
+/// is source's column r, `target_width` long (source's first rows).
+fn transpose(
+    source: &[Complex32],
+    source_width: usize,
+    target: &mut [Complex32],
+    target_rows: usize,
+    target_width: usize,
+) {
+    for row in 0..target_rows {
+        for column in 0..target_width {
+            target[row * target_width + column] = source[column * source_width + row];
+        }
+    }
+}
+
+/// The normalized cross-power spectrum of a tile's spectra now and before (rows of SPECTRUM_COLUMNS), into `columns`
+/// column by column.
+fn cross_power_columns(now: &[Complex32], before: &[Complex32], columns: &mut [Complex32]) {
+    for column in 0..SPECTRUM_COLUMNS {
+        for y in 0..TILE_SIDE {
+            let at = y * SPECTRUM_COLUMNS + column;
+            let product = now[at] * before[at].conj();
+            columns[column * TILE_SIDE + y] = product / product.norm().max(MIN_MAGNITUDE);
+        }
+    }
+}
+
+/// The rows of a real tile's full spectrum from its half (`columns`, SPECTRUM_COLUMNS of TILE_SIDE): each column past
+/// the half is the conjugate of its mirror.
+fn full_spectrum_rows(columns: &[Complex32], rows: &mut [Complex32]) {
+    for y in 0..TILE_SIDE {
+        for x in 0..SPECTRUM_COLUMNS {
+            rows[y * TILE_SIDE + x] = columns[x * TILE_SIDE + y];
+        }
+        for x in SPECTRUM_COLUMNS..TILE_SIDE {
+            rows[y * TILE_SIDE + x] = columns[(TILE_SIDE - x) * TILE_SIDE + y].conj();
+        }
+    }
+}
+
+/// A cyclic shift (cells) as the one nearest 0: past half a tile it is the other way.
+fn wrapped(cells: f32) -> f32 {
+    if cells > (TILE_SIDE / 2) as f32 { cells - TILE_SIDE as f32 } else { cells }
+}
+
+/// A tile's shift (degrees, right and up positive) from its phase correlation (TILE_SIDE x TILE_SIDE): the highest
+/// value's place, each axis refined by a parabola through its neighbors, or None where it peaks under MIN_PEAK.
+fn peak_shift(correlation: &[f32]) -> Option<(f32, f32)> {
+    let peak = (0..TILE_CELLS).fold(0, |b, i| if correlation[i] > correlation[b] { i } else { b });
+    let (peak_y, peak_x) = (peak / TILE_SIDE, peak % TILE_SIDE);
+    let height = correlation[peak];
+    if height < MIN_PEAK {
+        return None;
+    }
+    let at = |y: usize, x: usize| correlation[y * TILE_SIDE + x];
+    let (left, right) = ((peak_x + TILE_SIDE - 1) % TILE_SIDE, (peak_x + 1) % TILE_SIDE);
+    let (above, below) = ((peak_y + TILE_SIDE - 1) % TILE_SIDE, (peak_y + 1) % TILE_SIDE);
+    let shift_x = peak_x as f32 + vertex(at(peak_y, left), at(peak_y, right), height);
+    let shift_y = peak_y as f32 + vertex(at(above, peak_x), at(below, peak_x), height);
+    Some((wrapped(shift_x) * GRID_STEP_DEG as f32, -wrapped(shift_y) * GRID_STEP_DEG as f32))
 }
 
 /// The camera watch over a recording: fed each frame's luma (1280 x 720), it keeps each frame's tile shifts and its
 /// countdown bar's showing; the readings come once the tracks are known (a tile with a target in it is left out).
 pub struct CameraWatch {
     grid: Grid,
-    static_ok: [bool; TILES],
-    row: Arc<dyn Fft<f32>>,
-    row_inv: Arc<dyn Fft<f32>>,
+    /// The tiles clear of the pixels no tile may be read from.
+    clear_tiles: [bool; TILES],
+    forward_fft: Arc<dyn Fft<f32>>,
+    inverse_fft: Arc<dyn Fft<f32>>,
     /// The FFTs' working space, kept from frame to frame.
     scratch: Box<[Complex32]>,
-    prev: Option<Vec<Complex32>>,
+    /// The frame before's tile spectra.
+    previous_spectra: Option<Vec<Complex32>>,
     pub shifts: Vec<TileShifts>,
     pub countdown: Vec<bool>,
 }
 
 impl CameraWatch {
-    /// `bad`: the pixels no tile may be read from (`excluded`).
-    pub fn new(bad: &[bool]) -> CameraWatch {
+    /// `excluded_pixels`: the pixels no tile may be read from (`excluded`).
+    pub fn new(excluded_pixels: &[bool]) -> CameraWatch {
         let grid = Grid::new();
-        let share = grid.tiles(&bad.iter().map(|&b| b as u8).collect::<Vec<u8>>());
-        let mut static_ok = [false; TILES];
-        for (k, ok) in static_ok.iter_mut().enumerate() {
-            let t = &share[k * T * T..(k + 1) * T * T];
-            *ok = (t.iter().map(|&v| v as f64).sum::<f64>() / (T * T) as f64) < 0.1;
+        let excluded_share = grid.tiles(&excluded_pixels.iter().map(|&pixel| u8::from(pixel)).collect::<Vec<u8>>());
+        let mut clear_tiles = [false; TILES];
+        for (clear, cells) in clear_tiles.iter_mut().zip(excluded_share.chunks_exact(TILE_CELLS)) {
+            *clear = tile_mean(cells) < MAX_EXCLUDED_SHARE;
         }
         let mut planner = FftPlanner::new();
-        let (row, row_inv) = (planner.plan_fft_forward(T), planner.plan_fft_inverse(T));
-        let scratch = vec![Complex32::default(); row.get_inplace_scratch_len().max(row_inv.get_inplace_scratch_len())]
-            .into_boxed_slice();
+        let (forward_fft, inverse_fft) = (planner.plan_fft_forward(TILE_SIDE), planner.plan_fft_inverse(TILE_SIDE));
+        let scratch_length = forward_fft.get_inplace_scratch_len().max(inverse_fft.get_inplace_scratch_len());
         CameraWatch {
             grid,
-            static_ok,
-            row,
-            row_inv,
-            scratch,
-            prev: None,
+            clear_tiles,
+            forward_fft,
+            inverse_fft,
+            scratch: vec![Complex32::default(); scratch_length].into_boxed_slice(),
+            previous_spectra: None,
             shifts: Vec::new(),
             countdown: Vec::new(),
         }
     }
 
-    /// Each tile's spectrum (T rows of BINS, rfft2 of the tile less its mean, times the Hann window). The FFTs run a
-    /// tile at a time: its T rows in one call, then its BINS columns in one call.
-    fn spectra(&mut self, gray: &[u8]) -> Vec<Complex32> {
-        let tiles = self.grid.tiles(gray);
-        let mut out = vec![Complex32::default(); TILES * T * BINS];
-        let mut rows = vec![Complex32::default(); T * T];
-        let mut cols = vec![Complex32::default(); BINS * T];
-        for k in 0..TILES {
-            let t = &tiles[k * T * T..(k + 1) * T * T];
-            let mean = (t.iter().map(|&v| v as f64).sum::<f64>() / (T * T) as f64) as f32;
-            for (i, v) in rows.iter_mut().enumerate() {
-                *v = Complex32::new((t[i] - mean) * self.grid.hann[i], 0.0);
+    /// Each tile's spectrum (TILE_SIDE rows of SPECTRUM_COLUMNS: rfft2 of the tile less its mean, times the Hann
+    /// window). The FFTs run a tile at a time: its rows in one call, then its spectrum's columns in one call.
+    fn spectra(&mut self, luma: &[u8]) -> Vec<Complex32> {
+        let tiles = self.grid.tiles(luma);
+        let mut out = vec![Complex32::default(); TILES * SPECTRUM_CELLS];
+        let mut rows = vec![Complex32::default(); TILE_CELLS];
+        let mut columns = vec![Complex32::default(); SPECTRUM_CELLS];
+        for (cells, spectrum) in tiles.chunks_exact(TILE_CELLS).zip(out.chunks_exact_mut(SPECTRUM_CELLS)) {
+            let mean = tile_mean(cells) as f32;
+            for ((value, &cell), &weight) in rows.iter_mut().zip(cells).zip(self.grid.hann.iter()) {
+                *value = Complex32::new((cell - mean) * weight, 0.0);
             }
-            self.row.process_with_scratch(&mut rows, &mut self.scratch);
-            for c in 0..BINS {
-                for y in 0..T {
-                    cols[c * T + y] = rows[y * T + c];
-                }
-            }
-            self.row.process_with_scratch(&mut cols, &mut self.scratch);
-            let f = &mut out[k * T * BINS..(k + 1) * T * BINS];
-            for c in 0..BINS {
-                for y in 0..T {
-                    f[y * BINS + c] = cols[c * T + y];
-                }
-            }
+            self.forward_fft.process_with_scratch(&mut rows, &mut self.scratch);
+            transpose(&rows, TILE_SIDE, &mut columns, SPECTRUM_COLUMNS, TILE_SIDE);
+            self.forward_fft.process_with_scratch(&mut columns, &mut self.scratch);
+            transpose(&columns, TILE_SIDE, spectrum, TILE_SIDE, SPECTRUM_COLUMNS);
         }
         out
     }
 
-    /// The watch for a recording, its tiles kept clear of the KovOBS overlay and of the fixed map (1280 x 720, 1 fixed).
+    /// Each tile's shift from the frame before (`previous`, its spectra) to this one (`current`).
+    fn tile_shifts(&mut self, current: &[Complex32], previous: &[Complex32]) -> TileShifts {
+        let mut shifts = [None; TILES];
+        let mut columns = vec![Complex32::default(); SPECTRUM_CELLS];
+        let mut rows = vec![Complex32::default(); TILE_CELLS];
+        let mut correlation = vec![0.0f32; TILE_CELLS];
+        let tiles = current.chunks_exact(SPECTRUM_CELLS).zip(previous.chunks_exact(SPECTRUM_CELLS));
+        for (shift, (now, before)) in shifts.iter_mut().zip(tiles) {
+            cross_power_columns(now, before, &mut columns);
+            // irfft2: the inverse along y for each column (one call), then the real inverse along x for each row
+            self.inverse_fft.process_with_scratch(&mut columns, &mut self.scratch);
+            full_spectrum_rows(&columns, &mut rows);
+            self.inverse_fft.process_with_scratch(&mut rows, &mut self.scratch);
+            for (value, sum) in correlation.iter_mut().zip(&rows) {
+                *value = sum.re / TILE_CELLS as f32;
+            }
+            *shift = peak_shift(&correlation);
+        }
+        shifts
+    }
+
+    /// The watch for a recording, its tiles kept clear of the KovOBS overlay and of the fixed map (1280 x 720, 1
+    /// fixed).
     pub fn for_recording(fixed: &[u8]) -> CameraWatch {
         let overlay = crate::track::Mask::without(&crate::geometry::overlay_shares());
         CameraWatch::new(&excluded(overlay.kept(), fixed))
@@ -273,69 +430,33 @@ impl CameraWatch {
     }
 
     /// One frame: its luma (1280 x 720) and its RGB24 (for the countdown bar).
-    pub fn add(&mut self, gray: &[u8], rgb: &[u8]) {
+    pub fn add(&mut self, luma: &[u8], rgb: &[u8]) {
         self.countdown.push(countdown_showing(rgb));
-        let f = self.spectra(gray);
-        let Some(prev) = self.prev.replace(f) else {
-            self.shifts.push([None; TILES]);
-            return;
+        let spectra = self.spectra(luma);
+        let shifts = match self.previous_spectra.take() {
+            Some(previous) => self.tile_shifts(&spectra, &previous),
+            None => [None; TILES],
         };
-        let f = self.prev.as_ref().unwrap();
-        let mut shifts = [None; TILES];
-        let mut cols = vec![Complex32::default(); BINS * T];
-        let mut rows = vec![Complex32::default(); T * T];
-        let mut c = vec![0.0f32; T * T];
-        for (k, shift) in shifts.iter_mut().enumerate() {
-            let at = k * T * BINS;
-            // the normalized cross-power spectrum, column by column
-            for col in 0..BINS {
-                for y in 0..T {
-                    let v = f[at + y * BINS + col] * prev[at + y * BINS + col].conj();
-                    cols[col * T + y] = v / v.norm().max(1e-6);
-                }
-            }
-            // irfft2: the inverse along y for each column (one call), then the real inverse along x for each row
-            self.row_inv.process_with_scratch(&mut cols, &mut self.scratch);
-            for y in 0..T {
-                for x in 0..BINS {
-                    rows[y * T + x] = cols[x * T + y];
-                }
-                for x in BINS..T {
-                    rows[y * T + x] = cols[(T - x) * T + y].conj();
-                }
-            }
-            self.row_inv.process_with_scratch(&mut rows, &mut self.scratch);
-            for (ci, v) in c.iter_mut().zip(&rows) {
-                *ci = v.re / (T * T) as f32;
-            }
-            let peak = (0..T * T).fold(0, |b, i| if c[i] > c[b] { i } else { b });
-            let (py, px) = (peak / T, peak % T);
-            let pk = c[peak];
-            if pk < THR {
-                continue;
-            }
-            let dx = px as f32 + vertex(c[py * T + (px + T - 1) % T], c[py * T + (px + 1) % T], pk);
-            let dy = py as f32 + vertex(c[((py + T - 1) % T) * T + px], c[((py + 1) % T) * T + px], pk);
-            let wrap = |v: f32| if v > (T / 2) as f32 { v - T as f32 } else { v };
-            *shift = Some((wrap(dx) * STEP as f32, -wrap(dy) * STEP as f32));
-        }
+        self.previous_spectra = Some(spectra);
         self.shifts.push(shifts);
     }
 
     /// A frame's reading from its tiles' shifts, leaving out the tiles a target is in, in it or the frame before.
     pub fn reading(&self, shifts: &TileShifts, near: &[&TrackFrame]) -> CameraReading {
-        let mut ok = self.static_ok;
-        for f in near {
-            for (&(_, x, y), &a) in f.t.iter().zip(&f.a) {
-                let r = degrees(((a as f64 / std::f64::consts::PI).sqrt() / K).atan()) + 1.5;
-                for ((ok, &az), &el) in ok.iter_mut().zip(&self.grid.taz).zip(&self.grid.tel) {
-                    if (az - x).abs() < 6.0 + r && (el - y).abs() < 6.0 + r {
-                        *ok = false;
+        let mut clear = self.clear_tiles;
+        for frame in near {
+            for (&(_, x, y), &area_px) in frame.t.iter().zip(&frame.a) {
+                let reach_deg = disc_radius_deg(area_px) + TARGET_MARGIN_DEG;
+                let within_deg = TILE_HALF_DEG + reach_deg;
+                let centers = self.grid.tile_azimuth_deg.iter().zip(&self.grid.tile_elevation_deg);
+                for (tile_clear, (&azimuth, &elevation)) in clear.iter_mut().zip(centers) {
+                    if (azimuth - x).abs() < within_deg && (elevation - y).abs() < within_deg {
+                        *tile_clear = false;
                     }
                 }
             }
         }
-        agreed(shifts, &ok)
+        agreed(shifts, &clear)
     }
 
     /// Every frame's reading, the tracks known.
@@ -368,46 +489,117 @@ pub struct CameraPart {
 
 /// The rows of a frame the countdown test reads (y from, to): the camera watch needs only these rows of a frame's RGB.
 pub const COUNTDOWN_ROWS: (usize, usize) = (214, 247);
+/// The countdown bar's box's columns (x from, to).
+const COUNTDOWN_COLUMNS: (usize, usize) = (520, 761);
+/// The bar inside its box: its first row below the box's top, and its rows.
+const BAR_TOP: usize = 6;
+const BAR_ROWS: usize = 21;
+/// The fill's color is read from these columns at the bar's left end: the first after the box's left, and how many.
+const FILL_SAMPLE_LEFT: usize = 2;
+const FILL_SAMPLE_COLUMNS: usize = 4;
+/// The track must show at the bar's right end, in these columns: the first before the box's right, and how many.
+const TRACK_END_LEFT: usize = 12;
+const TRACK_END_COLUMNS: usize = 8;
+/// The bar's dark gray track (RGB).
+const TRACK_RGB: [f64; 3] = [64.0, 60.0, 68.0];
+/// A fill color this near the track's in every channel is the track: no fill shows.
+const FILL_LIKE_TRACK: f64 = 40.0;
+/// A pixel this near the fill's color, or the track's, in every channel is fill, or track.
+const FILL_TOLERANCE: f64 = 24.0;
+const TRACK_TOLERANCE: f64 = 12.0;
+/// A pixel this bright in every channel is a digit's (white).
+const WHITE_MIN: i32 = 170;
+/// The fill pixels a bar needs, and the shares of its box the track and the pixels known (fill, track or digits) need.
+const MIN_FILL_PIXELS: usize = 40;
+const MIN_TRACK_SHARE: f64 = 0.05;
+const MIN_KNOWN_SHARE: f64 = 0.9;
+/// The share of the bar's right end that must be track.
+const MIN_TRACK_END_SHARE: f64 = 0.8;
+
+/// A pixel of a frame's RGB24 (1280 x 720).
+fn pixel(rgb: &[u8], x: usize, y: usize) -> [i32; 3] {
+    let i = (y * W + x) * 3;
+    [i32::from(rgb[i]), i32::from(rgb[i + 1]), i32::from(rgb[i + 2])]
+}
+
+/// Whether a color is within `tolerance` of another in every channel.
+fn near_color(color: [i32; 3], to: [f64; 3], tolerance: f64) -> bool {
+    (0..3).all(|channel| (f64::from(color[channel]) - to[channel]).abs() <= tolerance)
+}
+
+/// The fill's color: per channel, the median of the bar's left end, which the fill covers to the last frame.
+fn fill_color(rgb: &[u8]) -> [f64; 3] {
+    let (left, top) = (COUNTDOWN_COLUMNS.0 + FILL_SAMPLE_LEFT, COUNTDOWN_ROWS.0 + BAR_TOP);
+    std::array::from_fn(|channel| {
+        let mut values: [i32; BAR_ROWS * FILL_SAMPLE_COLUMNS] = std::array::from_fn(|j| {
+            pixel(rgb, left + j % FILL_SAMPLE_COLUMNS, top + j / FILL_SAMPLE_COLUMNS)[channel]
+        });
+        values.sort();
+        let middle = values.len() / 2;
+        (values[middle - 1] + values[middle]) as f64 / 2.0
+    })
+}
+
+/// What the countdown box holds: its fill pixels and its track pixels, each with the sum of their x from the box's
+/// left, and the pixels known (fill, track or a digit's white).
+#[derive(Default)]
+struct BoxCounts {
+    fill: usize,
+    track: usize,
+    known: usize,
+    fill_x_sum: usize,
+    track_x_sum: usize,
+}
+
+impl BoxCounts {
+    fn read(rgb: &[u8], fill_rgb: [f64; 3]) -> BoxCounts {
+        let mut counts = BoxCounts::default();
+        let ((left, right), (top, bottom)) = (COUNTDOWN_COLUMNS, COUNTDOWN_ROWS);
+        for y in top..bottom {
+            for x in left..right {
+                let color = pixel(rgb, x, y);
+                let is_fill = near_color(color, fill_rgb, FILL_TOLERANCE);
+                let is_track = near_color(color, TRACK_RGB, TRACK_TOLERANCE);
+                let white = color.iter().all(|&value| value >= WHITE_MIN);
+                counts.fill += usize::from(is_fill);
+                counts.track += usize::from(is_track);
+                counts.known += usize::from(is_fill || is_track || white);
+                counts.fill_x_sum += if is_fill { x - left } else { 0 };
+                counts.track_x_sum += if is_track { x - left } else { 0 };
+            }
+        }
+        counts
+    }
+}
+
+/// The track's pixels at the bar's right end.
+fn track_end_pixels(rgb: &[u8]) -> usize {
+    let (left, top) = (COUNTDOWN_COLUMNS.1 - TRACK_END_LEFT, COUNTDOWN_ROWS.0 + BAR_TOP);
+    (top..top + BAR_ROWS)
+        .flat_map(|y| (left..left + TRACK_END_COLUMNS).map(move |x| (x, y)))
+        .filter(|&(x, y)| near_color(pixel(rgb, x, y), TRACK_RGB, TRACK_TOLERANCE))
+        .count()
+}
 
 /// Whether a frame (RGB24, 1280 x 720) shows KovaaK's countdown bar ("Challenge begins in"): its box (x 520 to 760,
 /// y 214 to 246) holds the bar's dark gray track and one fill color, the fill on the left, the track at the right
 /// end, and white digits. The fill takes the HUD's color, so the color is read from the bar's left end, which the
 /// fill covers to the last frame.
 pub fn countdown_showing(rgb: &[u8]) -> bool {
-    const TRACK: [i32; 3] = [64, 60, 68];
-    let (x0, x1, (y0, y1)) = (520, 761, COUNTDOWN_ROWS);
-    let px = |x: usize, y: usize| {
-        let i = (y * W + x) * 3;
-        [rgb[i] as i32, rgb[i + 1] as i32, rgb[i + 2] as i32]
-    };
-    let near = |c: [i32; 3], to: [f64; 3], by: f64| (0..3).all(|k| (c[k] as f64 - to[k]).abs() <= by);
-    let track_f = TRACK.map(|v| v as f64);
-    let mut fill_c = [0.0; 3];
-    for (k, f) in fill_c.iter_mut().enumerate() {
-        let mut v: [i32; 21 * 4] = std::array::from_fn(|j| px(x0 + 2 + j % 4, y0 + 6 + j / 4)[k]);
-        v.sort();
-        *f = (v[v.len() / 2 - 1] + v[v.len() / 2]) as f64 / 2.0;
-    }
-    if (0..3).all(|k| (fill_c[k] - track_f[k]).abs() <= 40.0) {
+    let fill_rgb = fill_color(rgb);
+    if (0..3).all(|channel| (fill_rgb[channel] - TRACK_RGB[channel]).abs() <= FILL_LIKE_TRACK) {
         return false;
     }
-    let (mut fill, mut track, mut known, mut fill_x, mut track_x) = (0usize, 0usize, 0usize, 0usize, 0usize);
-    for y in y0..y1 {
-        for x in x0..x1 {
-            let c = px(x, y);
-            let (is_fill, is_track) = (near(c, fill_c, 24.0), near(c, track_f, 12.0));
-            let white = c.iter().all(|&v| v >= 170);
-            fill += is_fill as usize;
-            track += is_track as usize;
-            known += (is_fill || is_track || white) as usize;
-            fill_x += if is_fill { x - x0 } else { 0 };
-            track_x += if is_track { x - x0 } else { 0 };
-        }
-    }
-    let area = (x1 - x0) * (y1 - y0);
-    if fill < 40 || (track as f64) < 0.05 * area as f64 || (known as f64) < 0.9 * area as f64 {
+    let counts = BoxCounts::read(rgb, fill_rgb);
+    let area = (COUNTDOWN_COLUMNS.1 - COUNTDOWN_COLUMNS.0) * (COUNTDOWN_ROWS.1 - COUNTDOWN_ROWS.0);
+    if counts.fill < MIN_FILL_PIXELS
+        || (counts.track as f64) < MIN_TRACK_SHARE * area as f64
+        || (counts.known as f64) < MIN_KNOWN_SHARE * area as f64
+    {
         return false;
     }
-    let right = (y0 + 6..y0 + 27).flat_map(|y| (x1 - 12..x1 - 4).map(move |x| (x, y))).filter(|&(x, y)| near(px(x, y), track_f, 12.0)).count();
-    (fill_x as f64 / fill as f64) < (track_x as f64 / track as f64) && right as f64 > 0.8 * (21 * 8) as f64
+    let fill_left_of_track =
+        (counts.fill_x_sum as f64 / counts.fill as f64) < (counts.track_x_sum as f64 / counts.track as f64);
+    fill_left_of_track
+        && track_end_pixels(rgb) as f64 > MIN_TRACK_END_SHARE * (BAR_ROWS * TRACK_END_COLUMNS) as f64
 }
