@@ -20,56 +20,76 @@ from pathlib import Path
 import numpy as np
 
 CROP = 256
+TAG_CHARS = 10                      # train.py --repeat reads a crop name's first 10 characters
+BOX_VALUES = 4                      # cx, cy, w, h
+
+
+def last_checks(labels):
+    """Each crop's check, by its file: a later check of a crop wins."""
+    last = {}
+    for line in Path(labels).read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            last[row["file"]] = row
+    return last
+
+
+def ellipse_mask(boxes):
+    """The target mask: the ellipse that fills each box."""
+    target_mask = np.zeros((CROP, CROP), np.uint8)
+    yy, xx = np.ogrid[0:CROP, 0:CROP]
+    for box_x, box_y, box_w, box_h in boxes:
+        target_mask[((xx - box_x) / max(1.0, box_w / 2)) ** 2 + ((yy - box_y) / max(1.0, box_h / 2)) ** 2 <= 1] = 1
+    return target_mask
+
+
+def write_crop(source, out, tag, file, row, counts):
+    """One checked crop's npz in its split folder of `out`, its boxes and mask replaced and its covered boxes added."""
+    crop = np.load(source / file)
+    boxes = np.array(row["boxes"] if row["verdict"] == "correct" else [], np.float32).reshape(-1, BOX_VALUES)
+    split = Path(file).parent.name
+    (out / split).mkdir(parents=True, exist_ok=True)
+    extra = {}
+    if row.get("covered"):                              # a target under the crosshair: train.py learns nothing there
+        extra["ignore"] = np.array(row["covered"], np.float32).reshape(-1, BOX_VALUES)
+        counts["ignore boxes"] += len(extra["ignore"])
+    kept = {key: crop[key] for key in crop.files if key not in ("boxes", "tmask")}
+    np.savez_compressed(out / split / f"{tag}{Path(file).name}", **kept, tmask=ellipse_mask(boxes), boxes=boxes,
+                        **extra)
+    counts[split] += 1
+    counts["boxes"] += len(boxes)
+    counts["without targets"] += len(boxes) == 0
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--labels", required=True, help="checked.jsonl; its file paths are relative to its folder")
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--tag", required=True, help="10 characters put before each crop's name (train.py --repeat's key)")
-    ap.add_argument("--leave-out", default="", help="comma-separated crop files (as the labels name them) to leave out")
-    a = ap.parse_args()
-    if len(a.tag) != 10:
-        ap.error("--tag must be 10 characters: train.py --repeat reads a name's first 10")
-    src, out = Path(a.labels).parent, Path(a.out)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--labels", required=True, help="checked.jsonl; its file paths are relative to its folder")
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--tag", required=True, help="10 characters put before each crop's name (train.py --repeat's "
+                        "key)")
+    parser.add_argument("--leave-out", default="", help="comma-separated crop files (as the labels name them) to leave "
+                        "out")
+    args = parser.parse_args()
+    if len(args.tag) != TAG_CHARS:
+        parser.error("--tag must be 10 characters: train.py --repeat reads a name's first 10")
+    source, out = Path(args.labels).parent, Path(args.out)
     if out.exists() and any(out.glob("*/*.npz")):
         raise SystemExit(f"{out} has crops already: give another folder")
-    last = {}
-    for line in Path(a.labels).read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            r = json.loads(line)
-            last[r["file"]] = r                         # a later check of a crop wins
-    leave = {f for f in a.leave_out.split(",") if f}
+    last = last_checks(args.labels)
+    leave = {file for file in args.leave_out.split(",") if file}
     if leave - set(last):
         raise SystemExit(f"--leave-out names crops the labels do not have: {sorted(leave - set(last))}")
-    n = collections.Counter()
-    yy, xx = np.ogrid[0:CROP, 0:CROP]
-    for f, r in sorted(last.items()):
-        if r["verdict"] == "unsure" or f in leave:
-            n["left out"] += 1
+    counts = collections.Counter()
+    for file, row in sorted(last.items()):
+        if row["verdict"] == "unsure" or file in leave:
+            counts["left out"] += 1
             continue
-        if r["verdict"] not in ("correct", "skip"):
-            raise SystemExit(f"{f}: verdict {r['verdict']!r}")
-        z = np.load(src / f)
-        bb = np.array(r["boxes"] if r["verdict"] == "correct" else [], np.float32).reshape(-1, 4)
-        tmask = np.zeros((CROP, CROP), np.uint8)
-        for bx, by, bw, bh in bb:
-            tmask[((xx - bx) / max(1.0, bw / 2)) ** 2 + ((yy - by) / max(1.0, bh / 2)) ** 2 <= 1] = 1
-        split = Path(f).parent.name
-        (out / split).mkdir(parents=True, exist_ok=True)
-        extra = {}
-        if r.get("covered"):                            # a target under the crosshair: train.py learns nothing there
-            extra["ignore"] = np.array(r["covered"], np.float32).reshape(-1, 4)
-            n["ignore boxes"] += len(extra["ignore"])
-        np.savez_compressed(out / split / f"{a.tag}{Path(f).name}", **{k: z[k] for k in z.files if k not in
-                                                                        ("boxes", "tmask")}, tmask=tmask, boxes=bb,
-                            **extra)
-        n[split] += 1
-        n["boxes"] += len(bb)
-        n["without targets"] += len(bb) == 0
-    if (src / "manifest.jsonl").is_file():
-        shutil.copyfile(src / "manifest.jsonl", out / "manifest.jsonl")
-    print(dict(n), "in", out)
+        if row["verdict"] not in ("correct", "skip"):
+            raise SystemExit(f"{file}: verdict {row['verdict']!r}")
+        write_crop(source, out, args.tag, file, row, counts)
+    if (source / "manifest.jsonl").is_file():
+        shutil.copyfile(source / "manifest.jsonl", out / "manifest.jsonl")
+    print(dict(counts), "in", out)
 
 
 if __name__ == "__main__":

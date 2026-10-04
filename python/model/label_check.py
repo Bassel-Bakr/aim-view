@@ -5,7 +5,7 @@ limitations"): the crop scores mean something once the labels they are scored ag
 Which crops: where the current model (on the CPU, ONNX Runtime) and the automatic labels disagree at the threshold,
 then crops with a target near the crosshair (the weak case), then random ones; from every split.
 
-On the page: click a target's centre to add a box (drag to size it), click a box to remove it, Enter or "Correct" to
+On the page: click a target's center to add a box (drag to size it), click a box to remove it, Enter or "Correct" to
 save and go on, "Skip" to leave a crop out. Saved to test_out/vod_model/checked.jsonl, one line per crop:
 {"file": ..., "boxes": [[cx, cy, w, h], ...], "verdict": "correct" | "skip" | "unsure", "auto": [...], "model": [...]}.
 "skip" means no target in the crop; "unsure" leaves the crop out.
@@ -28,42 +28,56 @@ import infer  # noqa: E402
 
 DATA = HERE.parents[1] / "test_out" / "vod_model" / "data"
 OUT = HERE.parents[1] / "test_out" / "vod_model" / "checked.jsonl"
+CANDIDATES_PER_CROP = 6             # crops looked at for each one asked for
+MATCH_MIN_PX = 2.0                  # a model box matches a label within this, or half the label's larger side
+NEAR_CROSSHAIR_PX = 12              # a label this close to the fixed map's middle is a target near the crosshair
 
 
-def pick(n, seed=1):
+def disagreement(labels, found):
+    """The labels the model's boxes miss (nearest box too far, or taken) and the boxes no label took."""
+    used, missed = set(), 0
+    for label in labels:
+        distances = [np.hypot(box[0] - label[0], box[1] - label[1]) for box in found]
+        nearest = int(np.argmin(distances)) if distances else -1
+        if nearest < 0 or distances[nearest] > max(MATCH_MIN_PX, 0.5 * max(label[2], label[3])) or nearest in used:
+            missed += 1
+        else:
+            used.add(nearest)
+    return missed, len(found) - len(used)
+
+
+def near_crosshair(labels, fixed):
+    """Whether a label sits near the middle of the crop's fixed map (the crosshair)."""
+    fixed_at = np.argwhere(fixed > 0)
+    if not len(fixed_at):
+        return False
+    cross = fixed_at.mean(0)[::-1]
+    return any(np.hypot(label[0] - cross[0], label[1] - cross[1]) < NEAR_CROSSHAIR_PX for label in labels)
+
+
+def pick(count, seed=1):
     """The crops to check, most informative first: disagreements, then a target near the crosshair, then random."""
-    det = infer.OnnxDetector(HERE / "exports" / f"detector_{infer.BEST}_u8in.onnx", threads=4)
+    detector = infer.OnnxDetector(HERE / "exports" / f"detector_{infer.BEST}_u8in.onnx", threads=4)
     done = set()
     if OUT.exists():
         done = {json.loads(line)["file"] for line in OUT.read_text(encoding="utf-8").splitlines() if line.strip()}
-    files = [f for f in sorted(DATA.glob("*/*.npz")) if f"{f.parent.name}/{f.name}" not in done]
+    files = [path for path in sorted(DATA.glob("*/*.npz")) if f"{path.parent.name}/{path.name}" not in done]
     rnd = random.Random(seed)
     rnd.shuffle(files)
     disagree, near, other = [], [], []
-    for f in files[:6 * n]:
-        z = np.load(f)
-        auto = z["boxes"]
-        model = det(z["rgb"], z["fixed"], infer.THRESHOLD)
-        used, miss = set(), 0
-        for b in auto:
-            d = [np.hypot(m[0] - b[0], m[1] - b[1]) for m in model]
-            j = int(np.argmin(d)) if d else -1
-            if j < 0 or d[j] > max(2.0, 0.5 * max(b[2], b[3])) or j in used:
-                miss += 1
-            else:
-                used.add(j)
-        extra = len(model) - len(used)
-        fx = np.argwhere(z["fixed"] > 0)
-        cross = fx.mean(0)[::-1] if len(fx) else None
-        item = (f, auto, model)
-        if miss or extra:
+    for path in files[:CANDIDATES_PER_CROP * count]:
+        crop = np.load(path)
+        auto = crop["boxes"]
+        model = detector(crop["rgb"], crop["fixed"], infer.THRESHOLD)
+        item = (path, auto, model)
+        if any(disagreement(auto, model)):
             disagree.append(item)
-        elif cross is not None and any(np.hypot(b[0] - cross[0], b[1] - cross[1]) < 12 for b in auto):
+        elif near_crosshair(auto, crop["fixed"]):
             near.append(item)
         else:
             other.append(item)
     order = disagree + near + other
-    return order[:n], dict(disagree=len(disagree), near=len(near), other=len(other))
+    return order[:count], dict(disagree=len(disagree), near=len(near), other=len(other))
 
 
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Check the labels</title>
@@ -132,67 +146,71 @@ next();
 class Handler(BaseHTTPRequestHandler):
     queue, why, pos = [], {}, 0
 
-    def log_message(self, fmt, *args):
+    def log_message(self, message_format, *args):
         pass
 
     def send(self, body, kind="application/json", code=200):
-        b = body.encode() if isinstance(body, str) else body
+        data = body.encode() if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", kind)
-        self.send_header("Content-Length", str(len(b)))
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(b)
+        self.wfile.write(data)
 
     def checked(self):
         return sum(1 for line in OUT.read_text(encoding="utf-8").splitlines() if line.strip()) if OUT.exists() else 0
+
+    def next_crop(self):
+        """The next crop to check, as the page reads it."""
+        handler = type(self)
+        if handler.pos >= len(handler.queue):
+            return json.dumps(dict(done=True, checked=self.checked()))
+        path, auto, model = handler.queue[handler.pos]
+        crop = np.load(path)
+        from PIL import Image
+        png = io.BytesIO()
+        Image.fromarray(crop["rgb"]).save(png, "PNG")
+        return json.dumps(dict(
+            file=f"{path.parent.name}/{path.name}", index=handler.pos, total=len(handler.queue), checked=self.checked(),
+            why=handler.why.get(path, ""), png=base64.b64encode(png.getvalue()).decode(),
+            auto=[[round(float(value), 2) for value in box] for box in auto],
+            model=[[round(float(value), 2) for value in box[:4]] for box in model]))
 
     def do_GET(self):
         if self.path == "/":
             return self.send(PAGE, "text/html; charset=utf-8")
         if self.path == "/api/next":
-            cls = type(self)
-            if cls.pos >= len(cls.queue):
-                return self.send(json.dumps(dict(done=True, checked=self.checked())))
-            f, auto, model = cls.queue[cls.pos]
-            z = np.load(f)
-            from PIL import Image
-            buf = io.BytesIO()
-            Image.fromarray(z["rgb"]).save(buf, "PNG")
-            return self.send(json.dumps(dict(
-                file=f"{f.parent.name}/{f.name}", index=cls.pos, total=len(cls.queue), checked=self.checked(),
-                why=cls.why.get(f, ""), png=base64.b64encode(buf.getvalue()).decode(),
-                auto=[[round(float(v), 2) for v in b] for b in auto],
-                model=[[round(float(v), 2) for v in m[:4]] for m in model])))
+            return self.send(self.next_crop())
         self.send(json.dumps(dict(error="not found")), code=404)
 
     def do_POST(self):
         if self.path != "/api/save":
             return self.send(json.dumps(dict(error="not found")), code=404)
-        rec = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        check = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         OUT.parent.mkdir(parents=True, exist_ok=True)
-        with open(OUT, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec) + "\n")
+        with open(OUT, "a", encoding="utf-8") as checks:
+            checks.write(json.dumps(check) + "\n")
         type(self).pos += 1
         self.send(json.dumps(dict(ok=True)))
 
 
 def main():
     global DATA, OUT
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=400)
-    ap.add_argument("--port", type=int, default=8773)
-    ap.add_argument("--data", default=str(DATA), help="the dataset folder (train, val, test inside)")
-    ap.add_argument("--out", default=str(OUT), help="where the checked crops are saved")
-    a = ap.parse_args()
-    DATA, OUT = Path(a.data), Path(a.out)
-    queue, counts = pick(a.n)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n", type=int, default=400)
+    parser.add_argument("--port", type=int, default=8773)
+    parser.add_argument("--data", default=str(DATA), help="the dataset folder (train, val, test inside)")
+    parser.add_argument("--out", default=str(OUT), help="where the checked crops are saved")
+    args = parser.parse_args()
+    DATA, OUT = Path(args.data), Path(args.out)
+    queue, counts = pick(args.n)
     Handler.queue = queue
-    n_dis = min(counts["disagree"], a.n)
-    for k, (f, _, _) in enumerate(queue):
-        Handler.why[f] = ("the model and the automatic labels disagree" if k < n_dis
-                          else "a target near the crosshair" if k < n_dis + counts["near"] else "a random crop")
-    print(f"{len(queue)} crops to check ({counts}); http://127.0.0.1:{a.port}/", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()
+    disagreeing = min(counts["disagree"], args.n)
+    for k, (path, _, _) in enumerate(queue):
+        Handler.why[path] = ("the model and the automatic labels disagree" if k < disagreeing
+                             else "a target near the crosshair" if k < disagreeing + counts["near"] else "a random crop")
+    print(f"{len(queue)} crops to check ({counts}); http://127.0.0.1:{args.port}/", flush=True)
+    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
