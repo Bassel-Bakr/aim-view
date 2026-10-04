@@ -50,7 +50,7 @@ function standInCore(answer: string, calls: CoreCalls): Core {
       return out(answer);
     },
   };
-  return Object.assign(Object.create(Core.prototype) as Core, { x: exports as CoreExports });
+  return Object.assign(Object.create(Core.prototype) as Core, { exports: exports as CoreExports });
 }
 
 /** A run's parts as a review worker gives them. */

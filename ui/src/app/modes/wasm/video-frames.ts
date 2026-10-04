@@ -69,10 +69,14 @@ export class VideoFrames {
     const only = { metadataOnly: true };
     const times: number[] = [];
     const keys: number[] = [];
-    for (let p = await packets.getFirstPacket(only); p; p = await packets.getNextPacket(p, only)) {
-      if (p.timestamp < 0) continue;
-      times.push(p.timestamp);
-      if (p.type === 'key') keys.push(p.timestamp);
+    for (
+      let packet = await packets.getFirstPacket(only);
+      packet;
+      packet = await packets.getNextPacket(packet, only)
+    ) {
+      if (packet.timestamp < 0) continue;
+      times.push(packet.timestamp);
+      if (packet.type === 'key') keys.push(packet.timestamp);
     }
     times.sort((a, b) => a - b);
     return { times, keys };
@@ -81,10 +85,14 @@ export class VideoFrames {
   /** Every key frame from time 0 on, decoded, in order (ffmpeg -skip_frame nokey). */
   async *keySamples(): AsyncGenerator<VideoSample> {
     const packets = new EncodedPacketSink(this.track);
-    for (let p = await packets.getFirstKeyPacket(); p; p = await packets.getNextKeyPacket(p)) {
-      if (p.timestamp < 0) continue;
-      const s = await this.samples.getSample(p.timestamp);
-      if (s) yield s;
+    for (
+      let packet = await packets.getFirstKeyPacket();
+      packet;
+      packet = await packets.getNextKeyPacket(packet)
+    ) {
+      if (packet.timestamp < 0) continue;
+      const sample = await this.samples.getSample(packet.timestamp);
+      if (sample) yield sample;
     }
   }
 }

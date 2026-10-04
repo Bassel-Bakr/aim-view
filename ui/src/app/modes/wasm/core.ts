@@ -76,6 +76,21 @@ export interface CoreExports {
   joining_finish(joining: number, detector: number, len: number): number;
 }
 
+/** The review's frame size: every frame is scaled to 1280 x 720 (ffmpeg's `scale=1280:720:flags=area`). */
+export const FRAME_WIDTH_PX = 1280;
+export const FRAME_HEIGHT_PX = 720;
+export const FRAME_PIXELS = FRAME_WIDTH_PX * FRAME_HEIGHT_PX;
+/** A frame as RGB (three bytes a pixel) and as YUV 4:2:0 (a byte a pixel, then a quarter as many for U and V each). */
+export const RGB_CHANNELS = 3;
+export const FRAME_RGB_BYTES = FRAME_PIXELS * RGB_CHANNELS;
+export const FRAME_YUV420_BYTES = (FRAME_PIXELS * 3) / 2;
+
+/** A float's bytes, and the u32 length in front of a result the core hands back. */
+const FLOAT_BYTES = 4;
+const LENGTH_BYTES = 4;
+/** BT.601's number: a frame that names no matrix is taken as BT.601, as ffmpeg takes it. */
+const BT601 = 1;
+
 /** What `tracking_next` says a decoded frame is for (src/session.rs: `NextFrame`). */
 export const NEXT_FRAME = { stop: 0, watch: 1, track: 2 } as const;
 
@@ -102,11 +117,11 @@ const MATRICES: Record<string, number> = {
 
 /** The converter's number for a frame's colour matrix: BT.601 when the frame does not say, as ffmpeg takes it. */
 export function matrixNumber(matrix: string | null | undefined): number {
-  return MATRICES[matrix ?? ''] ?? 1;
+  return MATRICES[matrix ?? ''] ?? BT601;
 }
 
 export class Core {
-  private constructor(readonly x: CoreExports) {}
+  private constructor(readonly exports: CoreExports) {}
 
   static async load(url: string): Promise<Core> {
     const { instance } = await WebAssembly.instantiateStreaming(fetch(url));
@@ -114,25 +129,25 @@ export class Core {
   }
 
   reserve(len: number): CoreBlock {
-    return { ptr: this.x.alloc(len), len };
+    return { ptr: this.exports.alloc(len), len };
   }
 
   free(block: CoreBlock): void {
-    this.x.dealloc(block.ptr, block.len);
+    this.exports.dealloc(block.ptr, block.len);
   }
 
   /** The block's bytes. A fresh view each time: the memory can grow, which leaves older views empty. */
   bytes(block: CoreBlock): Uint8Array {
-    return new Uint8Array(this.x.memory.buffer, block.ptr, block.len);
+    return new Uint8Array(this.exports.memory.buffer, block.ptr, block.len);
   }
 
   floats(block: CoreBlock): Float32Array {
-    return new Float32Array(this.x.memory.buffer, block.ptr, block.len / 4);
+    return new Float32Array(this.exports.memory.buffer, block.ptr, block.len / FLOAT_BYTES);
   }
 
   /** A review from its setup (src/session.rs: `Setup`, as JSON). Throws when the core cannot read it. */
   review(setup: string): number {
-    const review = this.textIn(setup, (ptr, len) => this.x.review_new(ptr, len));
+    const review = this.textIn(setup, (ptr, len) => this.exports.review_new(ptr, len));
     if (!review) throw new Error("The review's setup could not be read");
     return review;
   }
@@ -143,7 +158,7 @@ export class Core {
    */
   setModel(review: number, settings: string): void {
     const why = this.takeText(
-      this.textIn(settings, (ptr, len) => this.x.review_set_model(review, ptr, len)),
+      this.textIn(settings, (ptr, len) => this.exports.review_set_model(review, ptr, len)),
     );
     if (why) throw new Error(`The model's settings file: ${why}`);
   }
@@ -167,9 +182,11 @@ export class Core {
 
   /** A result the core hands back: its length (u32), then its bytes, read as text and freed. */
   takeText(ptr: number): string {
-    const len = new DataView(this.x.memory.buffer).getUint32(ptr, true);
-    const text = new TextDecoder().decode(new Uint8Array(this.x.memory.buffer, ptr + 4, len));
-    this.x.dealloc(ptr, 4 + len);
+    const len = new DataView(this.exports.memory.buffer).getUint32(ptr, true);
+    const text = new TextDecoder().decode(
+      new Uint8Array(this.exports.memory.buffer, ptr + LENGTH_BYTES, len),
+    );
+    this.exports.dealloc(ptr, LENGTH_BYTES + len);
     return text;
   }
 }

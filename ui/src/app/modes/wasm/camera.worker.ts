@@ -6,11 +6,8 @@
 // plane and the rows of its RGB the countdown test reads. This worker feeds them to its own copy of the core (the same
 // converter makes the 720p luma, so the same bytes) and sends each buffer back. In the review worker the watches held
 // up the detector (av1: 76 frames a second with them there, 99 to 119 without them).
-import { Core, CoreBlock } from './core';
+import { Core, CoreBlock, FRAME_PIXELS } from './core';
 import { CameraReply, CameraTask, WatchStart } from './review-messages';
-
-const W = 1280;
-const H = 720;
 
 /** The run's watches, once started: the core, the session's watches, and the block each frame is read into. */
 interface Watch {
@@ -19,16 +16,17 @@ interface Watch {
   frame: CoreBlock | null;
 }
 
-addEventListener('message', (e: MessageEvent<MessagePort>) => serve(e.data));
+addEventListener('message', (event: MessageEvent<MessagePort>) => serve(event.data));
 
 /** Takes the review worker's tasks from the port, one at a time and in order. */
 function serve(port: MessagePort): void {
-  const say = (m: CameraReply, transfer: Transferable[] = []) => port.postMessage(m, transfer);
+  const say = (reply: CameraReply, transfer: Transferable[] = []) =>
+    port.postMessage(reply, transfer);
   let core: Promise<Core> | null = null;
   let watch: Watch | null = null;
   let queue: Promise<void> = Promise.resolve();
-  port.onmessage = (e: MessageEvent<CameraTask>) => {
-    const task = e.data;
+  port.onmessage = (event: MessageEvent<CameraTask>) => {
+    const task = event.data;
     // the core loads as soon as the worker opens, while the review worker reads the key frames
     if (task.kind === 'open') core = Core.load(task.coreUrl);
     queue = queue
@@ -39,38 +37,41 @@ function serve(port: MessagePort): void {
           watch = start(await core, task);
           return;
         }
-        const w = watch;
-        if (!w) throw new Error('The camera worker was not started');
+        const started = watch;
+        if (!started) throw new Error('The camera worker was not started');
         if (task.kind === 'frame') {
-          read(w, task.frame);
+          read(started, task.frame);
           say({ kind: 'free', frame: task.frame }, [task.frame]);
         } else {
-          say({ kind: 'part', part: w.core.takeOutcome(w.core.x.watching_part(w.watching)) });
+          say({
+            kind: 'part',
+            part: started.core.takeOutcome(started.core.exports.watching_part(started.watching)),
+          });
         }
       })
-      .catch((err: unknown) =>
-        say({ kind: 'error', error: err instanceof Error ? err.message : String(err) }),
+      .catch((error: unknown) =>
+        say({ kind: 'error', error: error instanceof Error ? error.message : String(error) }),
       );
   };
 }
 
 /** The run's watches, from the review's setup and what the key frames gave. */
-function start(core: Core, t: WatchStart): Watch {
-  const review = core.review(t.setup);
-  const fixed = core.reserve(W * H);
-  core.bytes(fixed).set(t.fixed);
-  const watching = core.textIn(t.hud, (ptr, len) =>
-    core.x.review_watching(review, t.run, fixed.ptr, ptr, len),
+function start(core: Core, task: WatchStart): Watch {
+  const review = core.review(task.setup);
+  const fixed = core.reserve(FRAME_PIXELS);
+  core.bytes(fixed).set(task.fixed);
+  const watching = core.textIn(task.hud, (ptr, len) =>
+    core.exports.review_watching(review, task.run, fixed.ptr, ptr, len),
   );
   core.free(fixed);
-  core.x.review_free(review);
+  core.exports.review_free(review);
   if (!watching) throw new Error("The HUD's boxes from the key frames could not be read");
   return { core, watching, frame: null };
 }
 
 /** One frame: its Y plane and countdown rows, to the watches. */
-function read(w: Watch, frame: ArrayBuffer): void {
-  w.frame ??= w.core.reserve(frame.byteLength);
-  w.core.bytes(w.frame).set(new Uint8Array(frame));
-  w.core.x.watching_frame(w.watching, w.frame.ptr, w.frame.len);
+function read(watch: Watch, frame: ArrayBuffer): void {
+  watch.frame ??= watch.core.reserve(frame.byteLength);
+  watch.core.bytes(watch.frame).set(new Uint8Array(frame));
+  watch.core.exports.watching_frame(watch.watching, watch.frame.ptr, watch.frame.len);
 }

@@ -4,62 +4,47 @@
 // decoded as the review worker decodes them (the browser's decoder, the frames before time 0 dropped) and converted by
 // the core's converter, so they are ffmpeg's pixels. Python seeks to each frame with ffmpeg's -ss, which can land a
 // frame off in OBS's files; here each crop is from its own frame.
+import { VideoSample } from 'mediabunny';
 import {
-  ALL_FORMATS,
-  BlobSource,
-  EncodedPacketSink,
-  Input,
-  VideoSample,
-  VideoSampleSink,
-} from 'mediabunny';
-import { Core, CoreBlock, matrixNumber } from './core';
+  Core,
+  CoreBlock,
+  FRAME_PIXELS,
+  FRAME_RGB_BYTES,
+  FRAME_WIDTH_PX,
+  FRAME_YUV420_BYTES,
+  matrixNumber,
+  RGB_CHANNELS,
+} from './core';
 import { CropPixels, CutoffReply, CutoffWork } from './cutoff-messages';
+import { i420Layout, packNv12, unreadableFormat } from './frame-converter';
+import { VideoFrames } from './video-frames';
 
-const W = 1280;
-const H = 720;
 /** A label's crop: 256 pixels square. */
 const CROP = 256;
+/** The fixed map's bytes a pixel. */
+const FIXED_CHANNELS = 1;
 
-const say = (m: CutoffReply) => postMessage(m);
+const say = (reply: CutoffReply) => postMessage(reply);
 
-addEventListener('message', (e: MessageEvent<CutoffWork>) => {
-  readCrops(e.data).catch((err: unknown) =>
-    say({ kind: 'error', error: err instanceof Error ? err.message : String(err) }),
+addEventListener('message', (event: MessageEvent<CutoffWork>) => {
+  readCrops(event.data).catch((error: unknown) =>
+    say({ kind: 'error', error: error instanceof Error ? error.message : String(error) }),
   );
 });
 
 /** A frame's planes as packed YUV 4:2:0 (Y, U, V), from the decoder's I420 or NV12. */
-async function packedI420(s: VideoSample): Promise<Uint8Array<ArrayBuffer>> {
-  const { width: w, height: h } = s.visibleRect;
-  const [cw, ch] = [w >> 1, h >> 1];
-  const out = new Uint8Array(w * h + 2 * cw * ch);
-  if (s.format === 'I420') {
-    await s.copyTo(out, {
-      layout: [
-        { offset: 0, stride: w },
-        { offset: w * h, stride: cw },
-        { offset: w * h + cw * ch, stride: cw },
-      ],
-      rect: s.visibleRect,
-    });
+async function packedI420(sample: VideoSample): Promise<Uint8Array<ArrayBuffer>> {
+  const { width, height } = sample.visibleRect;
+  const chromaBytes = (width >> 1) * (height >> 1);
+  const out = new Uint8Array(width * height + 2 * chromaBytes);
+  if (sample.format === 'I420') {
+    await sample.copyTo(out, { layout: i420Layout(width, height), rect: sample.visibleRect });
     return out;
   }
-  if (s.format !== 'NV12') {
-    throw new Error(
-      `The decoder gave ${s.format ?? 'an unknown'} frames; the labels read 8-bit YUV 4:2:0`,
-    );
-  }
-  const scratch = new Uint8Array(s.allocationSize());
-  const [yp, up] = await s.copyTo(scratch);
-  for (let r = 0; r < h; r++)
-    out.set(scratch.subarray(yp.offset + r * yp.stride, yp.offset + r * yp.stride + w), r * w);
-  for (let r = 0; r < ch; r++) {
-    const row = up.offset + r * up.stride;
-    for (let c = 0; c < cw; c++) {
-      out[w * h + r * cw + c] = scratch[row + 2 * c];
-      out[w * h + cw * ch + r * cw + c] = scratch[row + 2 * c + 1];
-    }
-  }
+  if (sample.format !== 'NV12') throw unreadableFormat(sample, 'the labels read');
+  const scratch = new Uint8Array(sample.allocationSize());
+  const planes = await sample.copyTo(scratch);
+  packNv12(scratch, planes, out, width, height);
   return out;
 }
 
@@ -71,78 +56,87 @@ function cropOf(
   y0: number,
 ): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(CROP * CROP * channels);
-  for (let r = 0; r < CROP; r++) {
-    const from = ((y0 + r) * W + x0) * channels;
-    out.set(image.subarray(from, from + CROP * channels), r * CROP * channels);
+  for (let row = 0; row < CROP; row++) {
+    const from = ((y0 + row) * FRAME_WIDTH_PX + x0) * channels;
+    out.set(image.subarray(from, from + CROP * channels), row * CROP * channels);
   }
   return out;
 }
 
-async function readCrops(work: CutoffWork): Promise<void> {
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(work.file) });
-  const track = await input.getPrimaryVideoTrack();
-  if (!track) throw new Error('The file has no video');
-  const core = await Core.load(work.coreUrl);
-  const samples = new VideoSampleSink(track);
-  const packets = new EncodedPacketSink(track);
-  // every frame's time from 0 on, in order: frame i of the tracks is the i-th
-  const only = { metadataOnly: true };
-  const times: number[] = [];
-  for (let p = await packets.getFirstPacket(only); p; p = await packets.getNextPacket(p, only)) {
-    if (p.timestamp >= 0) times.push(p.timestamp);
-  }
-  times.sort((a, b) => a - b);
+/**
+ * The labels' frames in the core: its converter, made for the first frame's size and colors, and the block each
+ * frame's planes are written into.
+ */
+class PackedFrames {
+  /** The converter; 0 until the first frame. */
+  converter = 0;
+  private block: CoreBlock | null = null;
 
-  let converter = 0;
-  let yuv: CoreBlock | null = null;
-  const yuv720 = core.reserve((W * H * 3) / 2);
-  const rgb = core.reserve(W * H * 3);
-  /** The sample's planes in the core's memory, the converter made for the first sample's size and colours. */
-  const load = async (s: VideoSample): Promise<CoreBlock> => {
-    const planes = await packedI420(s);
-    if (!converter) {
-      const { width: w, height: h } = s.visibleRect;
-      converter = core.x.converter_new(
-        w,
-        h,
-        matrixNumber(s.colorSpace.matrix),
-        s.colorSpace.fullRange ? 1 : 0,
-      );
-      yuv = core.reserve(planes.length);
+  constructor(private readonly core: Core) {}
+
+  /** The sample's planes in the core's memory, the sample closed. */
+  async load(sample: VideoSample): Promise<CoreBlock> {
+    const planes = await packedI420(sample);
+    if (!this.converter) {
+      const { width, height } = sample.visibleRect;
+      const matrix = matrixNumber(sample.colorSpace.matrix);
+      const full = sample.colorSpace.fullRange ? 1 : 0;
+      this.converter = this.core.exports.converter_new(width, height, matrix, full);
+      this.block = this.core.reserve(planes.length);
     }
-    const block = yuv as CoreBlock;
-    core.bytes(block).set(planes);
-    s.close();
+    const block = this.block as CoreBlock;
+    this.core.bytes(block).set(planes);
+    sample.close();
     return block;
-  };
-
-  // the fixed map, from the key frames (ffmpeg -skip_frame nokey), as the review makes it
-  const builder = core.x.fixed_new();
-  for (let p = await packets.getFirstKeyPacket(); p; p = await packets.getNextKeyPacket(p)) {
-    if (p.timestamp < 0) continue;
-    const s = await samples.getSample(p.timestamp);
-    if (!s) continue;
-    const block = await load(s);
-    core.x.converter_yuv420p(converter, block.ptr, block.len, yuv720.ptr);
-    core.x.fixed_add(builder, yuv720.ptr);
   }
-  const fixedBlock = core.reserve(W * H);
-  core.x.fixed_finish(builder, fixedBlock.ptr);
+
+  /** The converter is done. */
+  free(): void {
+    if (this.converter) this.core.exports.converter_free(this.converter);
+  }
+}
+
+/** The fixed map from the key frames (ffmpeg -skip_frame nokey), as the review makes it. */
+async function fixedMap(
+  core: Core,
+  video: VideoFrames,
+  frames: PackedFrames,
+  yuv720: CoreBlock,
+): Promise<Uint8Array> {
+  const builder = core.exports.fixed_new();
+  for await (const sample of video.keySamples()) {
+    const block = await frames.load(sample);
+    core.exports.converter_yuv420p(frames.converter, block.ptr, block.len, yuv720.ptr);
+    core.exports.fixed_add(builder, yuv720.ptr);
+  }
+  const fixedBlock = core.reserve(FRAME_PIXELS);
+  core.exports.fixed_finish(builder, fixedBlock.ptr);
   const fixed = core.bytes(fixedBlock).slice();
   core.free(fixedBlock);
+  return fixed;
+}
 
+async function readCrops(work: CutoffWork): Promise<void> {
+  const video = await VideoFrames.open(work.file, 'any');
+  const core = await Core.load(work.coreUrl);
+  // every frame's time from 0 on, in order: frame i of the tracks is the i-th
+  const { times } = await video.frameTimes();
+  const frames = new PackedFrames(core);
+  const yuv720 = core.reserve(FRAME_YUV420_BYTES);
+  const rgb = core.reserve(FRAME_RGB_BYTES);
+  const fixed = await fixedMap(core, video, frames, yuv720);
   const crops: CropPixels[] = [];
-  for (const c of work.crops) {
-    const at = times[c.frame];
-    const s = at === undefined ? null : await samples.getSample(at);
-    if (!s) throw new Error(`The video has no frame ${c.frame}`);
-    const block = await load(s);
-    core.x.converter_rgb24(converter, block.ptr, block.len, rgb.ptr);
+  for (const crop of work.crops) {
+    const at = times[crop.frame];
+    const sample = at === undefined ? null : await video.samples.getSample(at);
+    if (!sample) throw new Error(`The video has no frame ${crop.frame}`);
+    const block = await frames.load(sample);
+    core.exports.converter_rgb24(frames.converter, block.ptr, block.len, rgb.ptr);
     crops.push({
-      rgb: cropOf(core.bytes(rgb), 3, c.x0, c.y0),
-      fixed: cropOf(fixed, 1, c.x0, c.y0),
+      rgb: cropOf(core.bytes(rgb), RGB_CHANNELS, crop.x0, crop.y0),
+      fixed: cropOf(fixed, FIXED_CHANNELS, crop.x0, crop.y0),
     });
   }
-  if (converter) core.x.converter_free(converter);
+  frames.free();
   say({ kind: 'read', crops });
 }

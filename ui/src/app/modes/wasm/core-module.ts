@@ -82,23 +82,28 @@ export class CoreModule {
     const review = core.review(parts[0].setup);
     const fixed = core.reserve(parts[0].fixed.length);
     core.bytes(fixed).set(parts[0].fixed);
-    const joining = core.x.review_joining(review, fixed.ptr);
+    const joining = core.exports.review_joining(review, fixed.ptr);
     core.free(fixed);
-    core.x.review_free(review);
-    for (const p of parts) {
-      core.textIn(p.track, (track, trackLen) =>
-        core.textIn(p.watch, (watch, watchLen) =>
-          core.x.joining_add(joining, track, trackLen, watch, watchLen),
+    core.exports.review_free(review);
+    for (const part of parts) {
+      core.textIn(part.track, (track, trackLen) =>
+        core.textIn(part.watch, (watch, watchLen) =>
+          core.exports.joining_add(joining, track, trackLen, watch, watchLen),
         ),
       );
     }
-    const joined = core.textIn(detector, (ptr, len) => core.x.joining_finish(joining, ptr, len));
+    const joined = core.textIn(detector, (ptr, len) =>
+      core.exports.joining_finish(joining, ptr, len),
+    );
     return JSON.parse(core.takeOutcome(joined)) as JoinedReview;
   }
 
   /** The crops a submitted cut-off's labels take, as Python's hand_crops.py picks them: src/faint.rs. */
   async cutoffCrops(request: CutoffRequest): Promise<CutoffCrop[]> {
-    const text = await this.call((c, p, n) => c.x.cutoff_crops(p, n), JSON.stringify(request));
+    const text = await this.call(
+      (core, ptr, len) => core.exports.cutoff_crops(ptr, len),
+      JSON.stringify(request),
+    );
     const out = JSON.parse(text) as CutoffCrop[] | CoreRefusal;
     if ('error' in out) throw new Error(out.error);
     return out;

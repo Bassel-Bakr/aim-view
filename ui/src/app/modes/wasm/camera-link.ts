@@ -17,7 +17,7 @@ export class CameraLink {
   private failed: ((error: Error) => void) | null = null;
 
   constructor(private readonly port: MessagePort) {
-    port.onmessage = (e: MessageEvent<CameraReply>) => this.hear(e.data);
+    port.onmessage = (event: MessageEvent<CameraReply>) => this.hear(event.data);
   }
 
   /** Opens the worker (its core loads), before the key frames. */
@@ -34,7 +34,7 @@ export class CameraLink {
   async take(size: number): Promise<ArrayBuffer> {
     while (!this.free.length && this.made >= IN_FLIGHT) {
       this.check();
-      await new Promise<void>((r) => (this.wake = r));
+      await new Promise<void>((resolve) => (this.wake = resolve));
     }
     this.check();
     const reused = this.free.pop();
@@ -62,11 +62,11 @@ export class CameraLink {
     if (this.failure) throw this.failure;
   }
 
-  private hear(m: CameraReply): void {
-    if (m.kind === 'free') this.free.push(m.frame);
-    else if (m.kind === 'part') this.done?.(m.part);
+  private hear(reply: CameraReply): void {
+    if (reply.kind === 'free') this.free.push(reply.frame);
+    else if (reply.kind === 'part') this.done?.(reply.part);
     else {
-      this.failure = new Error(`The camera watch failed: ${m.error}`);
+      this.failure = new Error(`The camera watch failed: ${reply.error}`);
       this.failed?.(this.failure);
     }
     const wake = this.wake;
