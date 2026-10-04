@@ -1,17 +1,18 @@
 //! A recording's reviews (each model's in models/<model>/ in its folder: tracks.json, readings.json, hud.json): the
-//! review on show, the review jobs (each runs in a thread of its own), the user's run window and the report, worked
-//! out when it is shown (python/server.py: shown, analyse, run, set_run, /api/report).
+//! review on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it, browser.rs),
+//! the user's run window and the report, worked out when it is shown (python/server.py: shown, analyse, run, set_run,
+//! /api/report).
 
 use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
+use aimview::areas::Found;
 use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{Answer, Library, modified, read_json, write_json};
-use crate::review::{Request, TimeWindow, add_device, review};
+use crate::review::{Request, TimeWindow};
 use crate::run_window::{RunMarks, covers};
 
 /// A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded ("DirectML",
@@ -24,25 +25,57 @@ pub struct Job {
     pub(super) done: usize,
     pub(super) total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    seconds: Option<f64>,
+    pub(super) seconds: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) error: Option<String>,
-    model: String,
+    pub(super) model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    device: Option<String>,
+    pub(super) device: Option<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) link: bool,
+    /// The browser build's: what the page is to review (browser.rs: `review_json`), until it reports progress.
+    #[cfg(not(feature = "native"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) review: Option<Value>,
 }
 
 impl Job {
     pub(crate) fn new(stage: &str, model: &str) -> Job {
-        Job { stage: stage.into(), done: 0, total: 1, seconds: None, error: None, model: model.into(), device: None, link: false }
+        Job {
+            stage: stage.into(),
+            done: 0,
+            total: 1,
+            seconds: None,
+            error: None,
+            model: model.into(),
+            device: None,
+            link: false,
+            #[cfg(not(feature = "native"))]
+            review: None,
+        }
     }
 
     /// A link's download, starting.
+    #[cfg(feature = "native")]
     pub(super) fn download() -> Job {
         Job { link: true, ..Job::new("downloading", "") }
     }
+}
+
+/// Writes a review's files in its folder `out` (models/<model> in the recording's): its tracks, the video's readings
+/// and what the HUD read, and keeps what the area finder found (`finder::keep_with_review`). The native review's end and
+/// the page's (/api/reviewed) both write them so.
+pub(super) fn keep_review(
+    out: &Path,
+    tracks: &impl Serialize,
+    readings: &impl Serialize,
+    hud: &impl Serialize,
+    found: Option<&Found>,
+) -> Result<(), String> {
+    write_json(&out.join("tracks.json"), tracks).map_err(|f| f.message)?;
+    write_json(&out.join("readings.json"), readings).map_err(|f| f.message)?;
+    write_json(&out.join("hud.json"), hud).map_err(|f| f.message)?;
+    crate::finder::keep_with_review(out, found)
 }
 
 impl Library {
@@ -55,26 +88,26 @@ impl Library {
         let dir = self.review_dir(id);
         let models = dir.join("models");
         let own = models.join(&model);
-        if own.join("tracks.json").is_file() {
+        if crate::disk::is_file(own.join("tracks.json")) {
             return (Some(model), own);
         }
         let old = dir.join("tracks.json");
-        if old.is_file() {
+        if crate::disk::is_file(&old) {
             // the detector's name ends the file; the hand-written detector's has none
             let mut end = Vec::new();
-            if let Ok(mut f) = std::fs::File::open(&old) {
+            if let Ok(mut f) = crate::disk::File::open(&old) {
                 let size = f.metadata().map_or(0, |m| m.len());
                 let _ = f.seek(SeekFrom::Start(size.saturating_sub(200))).and_then(|_| f.read_to_end(&mut end));
             }
             let named = end.windows(10).any(|w| w == b"\"detector\"");
             return ((!named).then(|| "hand".to_string()), dir);
         }
-        let other = std::fs::read_dir(&models)
+        let other = crate::disk::read_dir(&models)
             .into_iter()
             .flatten()
             .flatten()
             .map(|e| e.path())
-            .filter(|p| p.join("tracks.json").is_file())
+            .filter(|p| crate::disk::is_file(p.join("tracks.json")))
             .max_by(|a, b| modified(&a.join("tracks.json")).total_cmp(&modified(&b.join("tracks.json"))));
         match other {
             Some(dir) => (Some(dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()), dir),
@@ -85,8 +118,8 @@ impl Library {
     /// Whether the recording has a review.
     pub(crate) fn reviewed(&self, id: &str) -> bool {
         let dir = self.review_dir(id);
-        dir.join("tracks.json").is_file()
-            || std::fs::read_dir(dir.join("models")).into_iter().flatten().flatten().any(|e| e.path().join("tracks.json").is_file())
+        crate::disk::is_file(dir.join("tracks.json"))
+            || crate::disk::read_dir(dir.join("models")).into_iter().flatten().flatten().any(|e| crate::disk::is_file(e.path().join("tracks.json")))
     }
 
     pub fn job(&self, id: &str) -> Value {
@@ -95,7 +128,9 @@ impl Library {
     }
 
     /// Reviews a recording: with again, a new review by the chosen model; else the one on show, or a new one when
-    /// there is none. The review runs in a thread of its own; `job` follows it.
+    /// there is none. The review runs in a thread of its own; `job` follows it. In the browser build the page runs it:
+    /// the job waits as "starting" and carries the review to run (`review`, browser.rs: `review_json`) until the page
+    /// reports progress.
     pub fn analyse(self: &Arc<Self>, id: &str, again: bool) -> Answer<Value> {
         let mut jobs = self.jobs.lock().map_err(|_| "the jobs are broken".to_string())?;
         if let Some(job) = jobs.get(id)
@@ -107,31 +142,49 @@ impl Library {
         }
         let video = self.resolve(id)?;
         let (shown, dir) = self.shown(id);
-        if !again && dir.join("tracks.json").is_file() && self.tracked_with_areas(id, &dir) {
+        if !again && crate::disk::is_file(dir.join("tracks.json")) && self.tracked_with_areas(id, &dir) {
             return Ok(json!(Job::new("done", &shown.unwrap_or_default())));
         }
         let model = self.model();
-        let out = self.review_dir(id).join("models").join(&model);
+        let req = self.review_request(id, video, &model)?;
+        #[cfg(not(feature = "native"))]
+        let job = Arc::new(Mutex::new(Job { review: Some(super::browser::review_json(&req, &model)), ..Job::new("starting", &model) }));
+        #[cfg(feature = "native")]
+        let job = Arc::new(Mutex::new(Job::new("starting", &model)));
+        jobs.insert(id.to_string(), job.clone());
+        drop(jobs);
+        let first = json!(*job.lock().map_err(|_| "the job is broken".to_string())?);
+        #[cfg(feature = "native")]
+        self.run_review(id, req, job, model);
+        Ok(first)
+    }
+
+    /// What a new review of the recording by `model` takes: the scenario's target count, the runs to split it into,
+    /// the user's run window (only its part of the video is tracked) and the recording's areas.
+    fn review_request(&self, id: &str, video: PathBuf, model: &str) -> Answer<Request> {
         let facts = self.facts_of(&video);
         let cap = facts.as_ref().and_then(|f| f.targets).unwrap_or(0);
         let runs = if std::thread::available_parallelism().map_or(1, |n| n.get()) >= 8 { 2 } else { 1 };
         // the user's run window: only its part of the video is tracked
         let window = RunMarks::read(&self.review_dir(id)).tracked(facts.and_then(|f| f.limit));
-        let req = Request {
+        Ok(Request {
             video,
-            model: self.model_file(&model),
+            model: self.model_file(model),
             device: self.device(),
             batch: self.batch(self.device()),
             cap,
             runs,
             window,
             areas: self.exclude_boxes(id)?,
-        };
-        let job = Arc::new(Mutex::new(Job::new("starting", &model)));
-        jobs.insert(id.to_string(), job.clone());
-        drop(jobs);
-        let started = Instant::now();
-        let first = json!(*job.lock().map_err(|_| "the job is broken".to_string())?);
+        })
+    }
+
+    /// Runs a review in a thread of its own, its progress, device and end kept in `job`.
+    #[cfg(feature = "native")]
+    fn run_review(&self, id: &str, req: Request, job: Arc<Mutex<Job>>, model: String) {
+        use crate::review::{add_device, review};
+        let out = self.review_dir(id).join("models").join(&model);
+        let started = std::time::Instant::now();
         let id = id.to_string();
         std::thread::spawn(move || {
             let progress = |stage: &str, done: usize, total: usize| {
@@ -145,12 +198,7 @@ impl Library {
                 }
             };
             let reviewed = crate::ffmpeg::ensure(|mb, of| progress("ffmpeg", mb, of)).and_then(|()| review(&req, &progress, &on_device));
-            let outcome = reviewed.and_then(|r| {
-                write_json(&out.join("tracks.json"), &r.tracks).map_err(|f| f.message)?;
-                write_json(&out.join("readings.json"), &r.readings).map_err(|f| f.message)?;
-                write_json(&out.join("hud.json"), &r.hud).map_err(|f| f.message)?;
-                crate::finder::keep_with_review(&out, r.found.as_ref())
-            });
+            let outcome = reviewed.and_then(|r| keep_review(&out, &r.tracks, &r.readings, &r.hud, r.found.as_ref()));
             if let Ok(mut j) = job.lock() {
                 // one line in the log for each review: the model, the device it ran on, and the time or the error
                 let on = j.device.as_ref().map_or(String::new(), |d| format!(" on {d}"));
@@ -168,7 +216,6 @@ impl Library {
                 }
             }
         });
-        Ok(first)
     }
 
     /// The user's run window for the recording (all three null when none is marked).
@@ -195,7 +242,7 @@ impl Library {
 
     /// The shown review's tracks (tracks.json), or None.
     pub fn tracks(&self, id: &str) -> Option<Vec<u8>> {
-        std::fs::read(self.shown(id).1.join("tracks.json")).ok()
+        crate::disk::read(self.shown(id).1.join("tracks.json")).ok()
     }
 
     /// The shown review's report, worked out by the core (report.rs) from its tracks and the stats file, or without

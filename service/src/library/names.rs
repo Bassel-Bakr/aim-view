@@ -92,7 +92,7 @@ pub(crate) fn free_name(p: PathBuf) -> PathBuf {
     );
     let mut out = p.clone();
     let mut n = 2;
-    while out.exists() {
+    while crate::disk::exists(&out) {
         out = p.with_file_name(format!("{stem} ({n}){ext}"));
         n += 1;
     }
@@ -126,7 +126,7 @@ fn offset_at(_secs: f64) -> i64 {
 
 #[cfg(not(windows))]
 fn offset_at(secs: f64) -> i64 {
-    crate::mouse::utc_offset_at(secs)
+    crate::disk::utc_offset_at(secs)
 }
 
 /// This computer's offset from UTC in seconds (its time zone, now).

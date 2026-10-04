@@ -7,9 +7,10 @@ publish = false
 
 [workspace]
 # desktop/: the Tauri app; service/: the review server's API and the native review, which the desktop app and the HTTP
-# server (server/) serve, and its aimview-tool gives the Python scripts. The detector prototype keeps its own build
-# until its code moves into src/.
-members = ["desktop", "service", "server"]
+# server (server/) serve, and its aimview-tool gives the Python scripts; browser-service/: the same service as
+# WebAssembly, which browser mode runs in a worker. The detector prototype keeps its own build until its code moves
+# into src/.
+members = ["browser-service", "desktop", "service", "server"]
 exclude = ["python/model/rust"]
 
 [lib]

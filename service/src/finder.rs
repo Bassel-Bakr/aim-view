@@ -1,17 +1,25 @@
 //! The area finder (src/areas.rs, python/areas.py) on a recording: its frames read, and what it found kept in the
 //! recording's folder as python/areas.py keeps it (areas.json: the found areas; areas_maps.npz: the stand-out and
 //! change maps). A review keeps what the finder found in the key frames it reads anyway (review.rs); a recording not
-//! reviewed yet is read here when its areas are first asked for.
+//! reviewed yet is read here when its areas are first asked for (in the browser build the page reads it, with the
+//! core's finder in a worker, and sends what it found: library/browser.rs).
 
 use std::path::Path;
 
-use aimview::areas::{Area, AreaFinder, FRAME, Found, Maps, sample_frames};
-use aimview::convert::{Converter, DST_H as H, DST_W as W};
+use aimview::areas::{Area, Found, Maps};
+#[cfg(feature = "native")]
+use aimview::areas::{AreaFinder, FRAME, sample_frames};
+use aimview::convert::{DST_H as H, DST_W as W};
+#[cfg(feature = "native")]
+use aimview::convert::Converter;
+#[cfg(feature = "native")]
 use aimview::hud::HudWatch;
 
 use crate::npz::{self, Array};
 use crate::pyjson;
+#[cfg(feature = "native")]
 use crate::review::{fixed_map, frame_bytes};
+#[cfg(feature = "native")]
 use crate::video::{Frames, probe};
 
 const FOUND: &str = "areas.json";
@@ -19,6 +27,7 @@ const MAPS: &str = "areas_maps.npz";
 
 /// Finds the recording's areas (python/areas.py: analyse): from its key frames, or when it has too few, from the frames
 /// `sample_frames` picks over the whole recording; KovaaK's session box from the key frames.
+#[cfg(feature = "native")]
 pub fn analyse(video: &Path) -> Result<Found, String> {
     crate::ffmpeg::ensure(|_, _| {})?;
     let info = probe(video)?;
@@ -66,11 +75,11 @@ pub fn maps(dir: &Path) -> Option<Maps> {
 /// Keeps what the finder found for the recording in `dir` where nothing is kept yet: with no found areas kept, both
 /// files; else the maps when they are missing (python/areas.py: find, maps).
 pub fn keep(dir: &Path, found: &Found) -> Result<(), String> {
-    let fresh = !dir.join(FOUND).exists();
+    let fresh = !crate::disk::exists(dir.join(FOUND));
     if fresh {
         pyjson::dump(&dir.join(FOUND), &found.areas, false)?;
     }
-    if fresh || !dir.join(MAPS).exists() {
+    if fresh || !crate::disk::exists(dir.join(MAPS)) {
         let stand = Array::u8(&[H, W], found.maps.stand().to_vec());
         let change = Array::u8(&[H, W], found.maps.change().to_vec());
         npz::save(&dir.join(MAPS), &[("stand", &stand), ("change", &change)])?;

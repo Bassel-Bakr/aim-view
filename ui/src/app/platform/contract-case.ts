@@ -2,12 +2,12 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { EnvironmentProviders, Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { answer, ApiRoutes, serverMode } from '../fake-api';
+import { ApiRoutes, served, serverMode } from '../fake-api';
 import { MODE as BROWSER } from '../modes/mode.browser';
 
 /**
  * A mode a contract spec runs against: its providers, and how to let a call finish (its calls wait for the fake
- * review server's answers: the browser mode's only for links).
+ * review server's answers: in browser mode, the review service in the page stands in for it).
  */
 export interface ModeCase {
   name: string;
@@ -15,18 +15,12 @@ export interface ModeCase {
   finish: <T>(call: Promise<T>, routes: ApiRoutes) => Promise<T>;
 }
 
-/** Answers the fake review server's requests until the call ends. */
-async function served<T>(call: Promise<T>, routes: ApiRoutes): Promise<T> {
-  let done = false;
-  const end = () => (done = true);
-  call.then(end, end);
-  while (!done) await answer(routes);
-  return call;
-}
-
-/** The modes every contract spec runs against. Desktop runs the browser mode's services until desktop/ exists. */
+/**
+ * The modes every contract spec runs against. The browser mode's requests to its review service (and its own files in
+ * the service's mounts, /files/...) are answered by the fake review server too: the interceptor that sends them to the
+ * worker is left out. The desktop mode is the server mode's services over another transport.
+ */
 export const MODE_CASES: ModeCase[] = [
-  // the browser mode asks the Aim View server on this computer for links only (BrowserLinks)
   {
     name: 'browser',
     providers: () => [provideHttpClient(), provideHttpClientTesting(), ...BROWSER.providers],

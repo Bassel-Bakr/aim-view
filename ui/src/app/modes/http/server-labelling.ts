@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { NotAimMark } from '../../api';
-import { Labelling } from '../../platform/labelling';
+import { ExamplesStore, Labelling } from '../../platform/labelling';
 import { RecordingSource } from '../../platform/recording-source';
 
 /**
@@ -13,7 +13,7 @@ import { RecordingSource } from '../../platform/recording-source';
 export class ServerLabelling implements Labelling {
   private readonly http = inject(HttpClient);
   private readonly source = inject(RecordingSource);
-  readonly examples = null;
+  readonly examples: ExamplesStore | null = null;
 
   queue(): Promise<string[]> {
     return firstValueFrom(this.http.get<string[]>('/api/label_queue'));

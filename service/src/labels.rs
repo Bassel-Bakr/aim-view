@@ -15,7 +15,7 @@ const LABEL_SKIPPED: &str = "label_skipped.json";
 
 /// A list of recording ids kept in a file; none when it is missing.
 pub(crate) fn read_ids(p: &Path) -> BTreeSet<String> {
-    std::fs::read(p).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    crate::disk::read(p).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
 /// Keeps the ids, sorted, as `json.dump(sorted(ids), indent=1)`.
@@ -60,7 +60,7 @@ impl Library {
     /// scenario, leaving out probes, other games, skipped ones and those with saved areas.
     pub fn label_queue(&self) -> Answer<Value> {
         let skipped = read_ids(&self.file(LABEL_SKIPPED));
-        let ids = self.queue(|id| skipped.contains(id) || self.review_dir(id).join("exclude.json").exists())?;
+        let ids = self.queue(|id| skipped.contains(id) || crate::disk::exists(self.review_dir(id).join("exclude.json")))?;
         Ok(json!(ids))
     }
 

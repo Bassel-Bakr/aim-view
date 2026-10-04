@@ -1,5 +1,5 @@
 import { HttpRequest } from '@angular/common/http';
-import { Provider, ResourceRef } from '@angular/core';
+import { ResourceRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   AreaBox,
@@ -10,10 +10,8 @@ import {
   Recording,
   RecordingAreas,
 } from '../api';
-import { ApiRoutes, recording, Refused } from '../fake-api';
-import { FinderResult } from '../modes/wasm/area-finder-messages';
-import { BrowserAreaFinder } from '../modes/wasm/browser-area-finder';
-import { AreasFindRequest, CoreModule } from '../modes/wasm/core-module';
+import { ApiRoutes, recording, Refused, Status } from '../fake-api';
+import { PageAreaFinder } from '../modes/service/page-area-finder';
 import {
   builtInKinds,
   editKinds,
@@ -37,27 +35,19 @@ const PROPOSAL: FoundAreas = {
   copied: null,
   by: { learned: 1, rule: 0 },
 };
-/** What the browser's area finder read in a recording: the webcam. */
-const FOUND: FinderResult = {
-  frames: 90,
-  areas: [{ box: [0.75, 0.7, 1, 1], feat: [], rule: 'webcam' }],
-  maps: null,
-};
-
 /**
- * The browser's area finder and core, standing in for its worker and the WebAssembly as the fake server does for the
- * review server: the finder reads FOUND in any recording, and the core proposes the areas it is given.
+ * The page's area finder, standing in for its worker: it notes the video it read, and the service then has the
+ * recording's found areas (as POST /api/found would give it them).
  */
-function browserFinder(): Provider[] {
-  const propose = (r: AreasFindRequest): Promise<FoundAreas> =>
-    Promise.resolve({
-      ...PROPOSAL,
-      boxes: r.found.map(({ box: [x0, y0, x1, y1], rule }): AreaBox => [x0, y0, x1, y1, rule]),
-    });
-  return [
-    { provide: BrowserAreaFinder, useValue: { result: () => Promise.resolve(FOUND) } },
-    { provide: CoreModule, useValue: { areasFind: propose } },
-  ];
+class StandInFinder {
+  readonly read: string[] = [];
+  found = false;
+
+  find(...asked: string[]): Promise<void> {
+    this.read.push(asked[1]);
+    this.found = true;
+    return Promise.resolve();
+  }
 }
 
 /** KovOBS's layout as python/server.py gives it for ?layout=kovobs: its kinds by name (review.OVERLAY_SHARES). */
@@ -209,12 +199,19 @@ for (const mode of MODE_CASES) {
     });
 
     it('proposes areas for a recording not reviewed (the browser reads its frames first)', async () => {
-      const extra = mode.name === 'browser' ? browserFinder() : [];
+      const finder = new StandInFinder();
+      const extra = mode.name === 'browser' ? [{ provide: PageAreaFinder, useValue: finder }] : [];
       TestBed.configureTestingModule({ providers: [...mode.providers(), ...extra] });
       const service = TestBed.inject(AreaLabels);
       const id = await open();
+      // the browser's service has nothing found for it until the page's finder has read it (409, need: found)
+      routes['/api/find_areas'] = () =>
+        mode.name === 'server' || finder.found
+          ? PROPOSAL
+          : new Status(409, { error: 'not found yet', need: 'found', video: `/data/${id}` });
       const found = await mode.finish(service.find(id, true), routes);
       expect(found.boxes).toEqual([WEBCAM]);
+      expect(finder.read).toEqual(mode.name === 'browser' ? [`/data/${id}`] : []);
     });
   });
 }

@@ -2,7 +2,7 @@
 //! detector labels (faint.rs) and the area finder's maps (areas.rs), so Python's tools read what the app writes and the
 //! app reads what Python wrote.
 
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
 use zip::write::SimpleFileOptions;
@@ -105,22 +105,22 @@ impl Array {
 /// Writes the arrays as `np.savez_compressed` does (each as "<name>.npy", deflated); a file there is replaced.
 pub fn save(path: &Path, arrays: &[(&str, &Array)]) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let file = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut zip = zip::ZipWriter::new(file);
+    // made in memory, then written: the same bytes a zip written straight to the file has
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for (name, array) in arrays {
         zip.start_file(format!("{name}.npy"), options).map_err(|e| e.to_string())?;
         zip.write_all(&array.npy()).map_err(|e| e.to_string())?;
     }
-    zip.finish().map_err(|e| e.to_string())?;
-    Ok(())
+    let bytes = zip.finish().map_err(|e| e.to_string())?.into_inner();
+    crate::disk::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// One array of a .npz file.
 pub fn load(path: &Path, name: &str) -> Result<Array, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let file = crate::disk::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     let mut entry = zip.by_name(&format!("{name}.npy")).map_err(|e| format!("{}: {name}: {e}", path.display()))?;
     let mut bytes = Vec::new();

@@ -2,16 +2,16 @@
 //! layout's mouse folder): the newest log that covers the recording's run, read by the core (src/mouse.rs, as
 //! python/mouse_read.py reads it).
 
-use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use aimview::mouse as reader;
 use serde_json::{Value, json};
 
+use crate::disk::File;
 use crate::library::{Answer, Failure, Library};
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "native"))]
 mod win {
     /// SYSTEMTIME.
     #[repr(C)]
@@ -37,7 +37,9 @@ mod win {
 
 /// This computer's offset from UTC (local minus UTC, seconds) at a moment (seconds since 1970), daylight saving time
 /// included, as Python's local time conversions take it: Windows' time zone, or on Linux and macOS the system's (TZ,
-/// else /etc/localtime), read by the C library's localtime_r. 0 where it cannot be read.
+/// else /etc/localtime), read by the C library's localtime_r. 0 where it cannot be read. (The browser build reads the
+/// browser's: disk.rs.)
+#[cfg(feature = "native")]
 pub fn utc_offset_at(secs: f64) -> i64 {
     #[cfg(unix)]
     {
@@ -84,9 +86,9 @@ impl Library {
 /// The measures of a stats file's run from the newest log in `dir` that covers it (see `Library::mouse_measures`).
 pub fn measures_in(dir: &Path, stats_path: &Path) -> Answer<Value> {
     let stats_name = stats_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let text = std::fs::read(stats_path).map_err(|e| Failure::from(format!("{}: {e}", stats_path.display())))?;
+    let text = crate::disk::read(stats_path).map_err(|e| Failure::from(format!("{}: {e}", stats_path.display())))?;
     let text = String::from_utf8_lossy(&text).into_owned();
-    let mut logs: Vec<PathBuf> = std::fs::read_dir(dir)
+    let mut logs: Vec<PathBuf> = crate::disk::read_dir(dir)
         .map(|d| d.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "bin")).collect())
         .unwrap_or_default();
     logs.sort();
@@ -94,7 +96,7 @@ pub fn measures_in(dir: &Path, stats_path: &Path) -> Answer<Value> {
     let mut first_error = None;
     for path in logs {
         let Some((wall0, end)) = span(&path) else { continue };
-        let offset = utc_offset_at(wall0);
+        let offset = crate::disk::utc_offset_at(wall0);
         let stats = match reader::read_stats(&stats_name, &text, offset) {
             Ok(stats) => stats,
             Err(e) => return Ok(json!({ "file": null, "run": null, "error": e })),
@@ -104,7 +106,7 @@ pub fn measures_in(dir: &Path, stats_path: &Path) -> Answer<Value> {
         if last.t < wall0 - 1.0 || first.t > end + 1.0 {
             continue;
         }
-        let bytes = std::fs::read(&path).map_err(|e| Failure::from(format!("{}: {e}", path.display())))?;
+        let bytes = crate::disk::read(&path).map_err(|e| Failure::from(format!("{}: {e}", path.display())))?;
         let file = path.file_name().map(|n| n.to_string_lossy().into_owned());
         let request = reader::ReadRequest { stats_name: Some(stats_name.clone()), stats_text: Some(text.clone()), options: Default::default(), utc_offset: offset };
         match reader::read(&bytes, &request) {

@@ -29,9 +29,14 @@ const AIR: PastRun[] = [
   { stamp: '2026.10.02-09.00.00', score: 620.5, kills: 60, accuracy: 0.75 },
 ];
 
-/** A review server that knows the runs of Air only. */
+/**
+ * A review server that knows the runs of Air only; in browser mode the page copies KovaaK's stats folder into its review
+ * service first (/files/kovaak), which then reads it again (/api/kovaak).
+ */
 const ROUTES: ApiRoutes = {
   '/api/history': (req: HttpRequest<unknown>) => (req.params.get('scenario') === 'Air' ? AIR : []),
+  '/files/kovaak': { copied: FILES.length },
+  '/api/kovaak': { changed: true },
 };
 
 /** A file as a folder input gives it: its path below the folder chosen. */
@@ -59,7 +64,7 @@ for (const mode of MODE_CASES) {
     it("gives a scenario's runs from its stats files, oldest first", async () => {
       const history = setUp(mode, ScoreHistory);
       const choose = TestBed.inject(StatsFiles).chooseFolder;
-      if (choose) await choose(FILES.map(chosen));
+      if (choose) await mode.finish(choose(FILES.map(chosen)), ROUTES);
       const ref = TestBed.runInInjectionContext(() => history.runs(() => 'Air'));
       const runs = await settled(mode, ref);
       expect(runs).toHaveLength(AIR.length);

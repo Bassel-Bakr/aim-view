@@ -1,0 +1,192 @@
+/// <reference lib="webworker" />
+import { ServiceAnswer } from './service-messages';
+
+/** Asyncify's states (Binaryen) besides running (0): unwinding the stack for an async call, rewinding it after one. */
+const UNWINDING = 1;
+const REWINDING = 2;
+/** The space Asyncify saves the stack in while an async call runs. */
+const STACK_BYTES = 1 << 20;
+
+/**
+ * The service's exports (browser-service/): its memory and allocator, the two calls (service_open, service_handle;
+ * each answers a result block it allocated), and Asyncify's controls (wasm-opt --asyncify).
+ */
+export interface ServiceExports {
+  memory: WebAssembly.Memory;
+  alloc(len: number): number;
+  dealloc(ptr: number, len: number): void;
+  service_open(config: number, len: number): number;
+  service_handle(req: number, reqLen: number, body: number, bodyLen: number): number;
+  asyncify_start_unwind(data: number): void;
+  asyncify_stop_unwind(): void;
+  asyncify_start_rewind(data: number): void;
+  asyncify_stop_rewind(): void;
+  asyncify_get_state(): number;
+}
+
+/** What a file system call gives back: its code (0 ok, 1 not found, 2 exists or not empty, 3 other) and bytes. */
+export interface FsResult {
+  code: number;
+  bytes: Uint8Array;
+}
+
+/** The host's file system call: the op, the path and the argument's bytes (copied out of the module's memory). */
+export type HostFs = (op: number, path: string, arg: Uint8Array) => Promise<FsResult>;
+
+/** The request service_handle takes: its method and path, and for an upload the file its body was written to. */
+export interface HandleRequest {
+  method: string;
+  path: string;
+  upload?: string;
+}
+
+/** A failed service_open: why. */
+export class OpenFailed extends Error {}
+
+/**
+ * The service as WebAssembly (browser-service/), with its file system calls answered by `fs`. The module waits for
+ * them with Binaryen's Asyncify: host_fs starts the call and unwinds the stack; the export's caller awaits the call,
+ * rewinds the stack and calls the export again, which then takes the answer. One call runs at a time.
+ */
+export class ServiceModule {
+  private readonly x: ServiceExports;
+  /** The Asyncify data: the stack's save space, with its start and end in front. */
+  private readonly data: number;
+  /** The file system call under way while the stack is unwound, and its answer once in (a result block). */
+  private pending: Promise<FsResult> | null = null;
+  private answer = 0;
+
+  private constructor(instance: WebAssembly.Instance) {
+    this.x = instance.exports as unknown as ServiceExports;
+    this.data = this.x.alloc(8 + STACK_BYTES);
+  }
+
+  /** Loads the module from `url`, its file system calls answered by `fs`. */
+  static async load(url: string, fs: HostFs): Promise<ServiceModule> {
+    let module: ServiceModule | null = null;
+    const imports: WebAssembly.Imports = {
+      host: {
+        host_fs: (op: number, path: number, pathLen: number, arg: number, argLen: number) =>
+          (module as ServiceModule).hostFs(fs, op, path, pathLen, arg, argLen),
+        host_now: () => Date.now() / 1000,
+        host_utc_offset: (secs: number) => -new Date(secs * 1000).getTimezoneOffset() * 60,
+      },
+    };
+    const response = await fetch(url);
+    if (!response.ok)
+      throw new Error(`The service could not be loaded: ${url} (${response.status})`);
+    const bytes = await response.arrayBuffer();
+    const { instance } = await WebAssembly.instantiate(bytes, imports);
+    module = new ServiceModule(instance);
+    return module;
+  }
+
+  /** Opens the service's library with the config (JSON); rejects with the service's reason. */
+  async open(config: string): Promise<void> {
+    const text = new TextEncoder().encode(config);
+    const block = await this.withBytes([text], ([c]) => this.x.service_open(c, text.length));
+    const view = this.view();
+    const [code, len] = [view.getUint32(block, true), view.getUint32(block + 4, true)];
+    const why = new TextDecoder().decode(this.bytes(block + 8, len));
+    this.x.dealloc(block, 8 + len);
+    if (code !== 0) throw new OpenFailed(why || 'The service could not open its library');
+  }
+
+  /** One request, answered by api::handle. */
+  async handle(request: HandleRequest, body: Uint8Array): Promise<ServiceAnswer> {
+    const req = new TextEncoder().encode(JSON.stringify(request));
+    const block = await this.withBytes([req, body], ([r, b]) =>
+      this.x.service_handle(r, req.length, b, body.length),
+    );
+    const view = this.view();
+    const status = view.getUint32(block, true);
+    const typeLen = view.getUint32(block + 4, true);
+    const type = new TextDecoder().decode(this.bytes(block + 8, typeLen));
+    const bodyAt = block + 8 + typeLen;
+    const bodyLen = view.getUint32(bodyAt, true);
+    const out = this.bytes(bodyAt + 4, bodyLen).slice();
+    this.x.dealloc(block, 12 + typeLen + bodyLen);
+    return { status, type, body: out };
+  }
+
+  /**
+   * Copies the inputs into the module's memory, runs the call (through Asyncify), and frees them; an empty input is
+   * passed as no bytes at 0.
+   */
+  private async withBytes(inputs: Uint8Array[], call: (ptrs: number[]) => number): Promise<number> {
+    const ptrs = inputs.map((b) => {
+      if (!b.length) return 0;
+      const ptr = this.x.alloc(b.length);
+      this.bytes(ptr, b.length).set(b);
+      return ptr;
+    });
+    try {
+      return await this.run(() => call(ptrs));
+    } finally {
+      ptrs.forEach((p, k) => {
+        if (p) this.x.dealloc(p, inputs[k].length);
+      });
+    }
+  }
+
+  /** Runs an export, waiting for each file system call it makes: unwound, awaited, rewound, called again. */
+  private async run(call: () => number): Promise<number> {
+    let out = call();
+    while (this.x.asyncify_get_state() === UNWINDING) {
+      this.x.asyncify_stop_unwind();
+      const result = await (this.pending as Promise<FsResult>);
+      this.pending = null;
+      this.answer = this.resultBlock(result);
+      this.x.asyncify_start_rewind(this.data);
+      out = call();
+    }
+    return out;
+  }
+
+  /** host_fs: starts the call and unwinds the stack; called again while rewinding, it gives the answer. */
+  private hostFs(
+    fs: HostFs,
+    op: number,
+    pathPtr: number,
+    pathLen: number,
+    argPtr: number,
+    argLen: number,
+  ): number {
+    if (this.x.asyncify_get_state() === REWINDING) {
+      this.x.asyncify_stop_rewind();
+      const block = this.answer;
+      this.answer = 0;
+      return block;
+    }
+    const path = new TextDecoder().decode(this.bytes(pathPtr, pathLen));
+    const arg = this.bytes(argPtr, argLen).slice();
+    this.pending = fs(op, path, arg).catch((e: unknown): FsResult => ({
+      code: 3,
+      bytes: new TextEncoder().encode(e instanceof Error ? e.message : String(e)),
+    }));
+    const view = this.view();
+    view.setUint32(this.data, this.data + 8, true);
+    view.setUint32(this.data + 4, this.data + 8 + STACK_BYTES, true);
+    this.x.asyncify_start_unwind(this.data);
+    // the module ignores what an unwinding call returns
+    return 0;
+  }
+
+  /** A result block the module frees: [u32 code][u32 len][len bytes]. */
+  private resultBlock(r: FsResult): number {
+    const block = this.x.alloc(8 + r.bytes.length);
+    const view = this.view();
+    view.setUint32(block, r.code, true);
+    view.setUint32(block + 4, r.bytes.length, true);
+    this.bytes(block + 8, r.bytes.length).set(r.bytes);
+    return block;
+  }
+
+  private view(): DataView {
+    return new DataView(this.x.memory.buffer);
+  }
+
+  private bytes(ptr: number, len: number): Uint8Array {
+    return new Uint8Array(this.x.memory.buffer, ptr, len);
+  }
+}

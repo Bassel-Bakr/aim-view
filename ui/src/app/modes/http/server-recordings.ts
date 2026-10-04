@@ -1,5 +1,5 @@
 import { HttpClient, HttpEventType, httpResource, HttpResponse } from '@angular/common/http';
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { filter, firstValueFrom, lastValueFrom, map, tap } from 'rxjs';
 import { errorMessage, Job, JobStage, LinkAdded, LinkInfo, Recording, Uploaded } from '../../api';
 import {
@@ -9,8 +9,7 @@ import {
   Transfer,
   VideoState,
 } from '../../platform/recording-source';
-import { readStats } from '../web-files/local-files';
-import { statsForVideo, StatsCsv } from '../web-files/stats-csv';
+import { readStats, statsForVideo, StatsCsv } from '../web-files/stats-csv';
 import { isCsv, isVideo, mp4Name, toMp4 } from '../web-files/video-files';
 
 /** The query of an upload: the file's name, and for a stats file the recording it is for. */
@@ -20,6 +19,12 @@ export type UploadParams = Record<string, string>;
 export interface LinkDownload {
   row: Recording;
   video: VideoState;
+}
+
+/** A video sent to the service: the recording's id, and the video as sent (an MP4). */
+export interface SentVideo {
+  id: string;
+  video: Blob;
 }
 
 /** How often a link's download is asked after, in milliseconds. */
@@ -41,7 +46,7 @@ const LINK_STAGES: Partial<Record<JobStage, string>> = {
 export class ServerRecordings implements RecordingSource {
   private readonly http = inject(HttpClient);
   protected readonly list = httpResource<Recording[]>(() => '/api/vods');
-  private readonly links = signal<ReadonlyMap<string, LinkDownload>>(new Map());
+  protected readonly links = signal<ReadonlyMap<string, LinkDownload>>(new Map());
   readonly recordings = computed<Recording[]>(() => {
     const listed = this.list.hasValue() ? this.list.value() : [];
     const ids = new Set(listed.map((r) => r.id));
@@ -49,18 +54,20 @@ export class ServerRecordings implements RecordingSource {
     return [...coming.reverse(), ...listed];
   });
   readonly loading = computed(() => this.list.isLoading() && !this.list.hasValue());
-  readonly problem = computed<string | null>(() =>
+  readonly problem: Signal<string | null> = computed(() =>
     this.list.error() ? 'The review server is not running. Start it with bun run server.' : null,
   );
   readonly addedFilesGo: string = 'They are sent to the review server, which keeps them.';
-  readonly transfer = signal<Transfer | null>(null);
+  /** The files being sent, for the top bar. */
+  protected readonly sending = signal<Transfer | null>(null);
+  readonly transfer: Signal<Transfer | null> = this.sending.asReadonly();
   /** The server lists its own recordings folder. */
-  readonly folder = signal<FolderAction | null>(null).asReadonly();
-  readonly clearable = false;
+  readonly folder: Signal<FolderAction | null> = signal<FolderAction | null>(null).asReadonly();
+  readonly clearable: boolean = false;
   /** The server downloads links itself. */
-  readonly linkServer = null;
+  readonly linkServer: WritableSignal<string> | null = null;
 
-  video(id: string): VideoState {
+  video(id: string): VideoState | null {
     return this.links().get(id)?.video ?? this.ready(id);
   }
 
@@ -120,7 +127,7 @@ export class ServerRecordings implements RecordingSource {
     }
   }
 
-  private setLink(id: string, download: LinkDownload): void {
+  protected setLink(id: string, download: LinkDownload): void {
     this.links.update((all) => new Map(all).set(id, download));
   }
 
@@ -137,21 +144,25 @@ export class ServerRecordings implements RecordingSource {
     const ids: string[] = [];
     try {
       for (const video of videos) {
-        const mp4 = await toMp4(video, (share) =>
-          this.show(`Remuxing ${video.name} into MP4`, share),
-        );
-        const name = mp4Name(video);
-        const { id } = await this.send(mp4, { name }, `Uploading ${name}`);
+        const { id } = await this.sendVideo(video);
         ids.push(id);
         const match = statsForVideo(video.name, stats, videos.length === 1);
         const csv = match && csvs[read.indexOf(match)];
         if (csv) await this.send(csv, { name: csv.name, id }, `Uploading ${csv.name}`);
       }
     } finally {
-      this.transfer.set(null);
+      this.sending.set(null);
       this.list.reload();
     }
     return { ids, notStats: csvs.filter((_, i) => read[i] === null).map((f) => f.name) };
+  }
+
+  /** Sends a video, remuxed into MP4 in the browser first when it is not one. */
+  protected async sendVideo(video: File): Promise<SentVideo> {
+    const mp4 = await toMp4(video, (share) => this.show(`Remuxing ${video.name} into MP4`, share));
+    const name = mp4Name(video);
+    const { id } = await this.send(mp4, { name }, `Uploading ${name}`);
+    return { id, video: mp4 };
   }
 
   patch(id: string, change: Partial<Recording>): void {
@@ -182,7 +193,7 @@ export class ServerRecordings implements RecordingSource {
   /** Shows what is being sent, in whole percents (each change redraws the top bar). */
   private show(label: string, share: number | null): void {
     const rounded = share === null ? null : Math.floor(100 * share) / 100;
-    const now = this.transfer();
-    if (now?.label !== label || now.share !== rounded) this.transfer.set({ label, share: rounded });
+    const now = this.sending();
+    if (now?.label !== label || now.share !== rounded) this.sending.set({ label, share: rounded });
   }
 }

@@ -8,6 +8,9 @@
 //! stamps. links.rs: recordings added from a link (yt-dlp). The areas (areas.rs), the faint-target cut-off (faint.rs), labelling (labels.rs) and the mouse logs'
 //! measures (mouse.rs) are kept beside it.
 
+#[cfg(not(feature = "native"))]
+mod browser;
+#[cfg(feature = "native")]
 mod links;
 mod names;
 mod recordings;
@@ -19,7 +22,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
 
 use aimview::scenario::Facts;
 use serde::{Deserialize, Serialize};
@@ -36,6 +38,9 @@ pub struct Failure {
     pub status: u16,
     pub message: String,
 }
+
+/// The status of an answer that needs the page's area finder first (the browser build's /api/find_areas).
+pub const FOUND_NEEDED: u16 = 409;
 
 impl Failure {
     pub fn missing(what: impl Into<String>) -> Failure {
@@ -70,26 +75,23 @@ pub struct Library {
     facts: Mutex<Option<Arc<HashMap<String, Facts>>>>,
     jobs: Mutex<HashMap<String, Arc<Mutex<Job>>>>,
     /// What links' qualities were read (links.rs), by link, kept for their download.
+    #[cfg(feature = "native")]
     links: Mutex<HashMap<String, crate::ytdlp::LinkInfo>>,
 }
 
 pub(crate) fn modified(p: &Path) -> f64 {
-    p.metadata()
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map_or(0.0, |d| d.as_secs_f64())
+    crate::disk::metadata(p).ok().and_then(|m| m.modified()).unwrap_or(0.0)
 }
 
 pub(crate) fn read_json<T: for<'a> Deserialize<'a>>(p: &Path) -> Option<T> {
-    serde_json::from_slice(&std::fs::read(p).ok()?).ok()
+    serde_json::from_slice(&crate::disk::read(p).ok()?).ok()
 }
 
 pub(crate) fn write_json(p: &Path, v: &impl Serialize) -> Answer<()> {
     if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    std::fs::write(p, serde_json::to_vec(v).map_err(|e| e.to_string())?).map_err(|e| e.to_string().into())
+    crate::disk::write(p, serde_json::to_vec(v).map_err(|e| e.to_string())?).map_err(|e| e.to_string().into())
 }
 
 impl Library {
@@ -99,7 +101,8 @@ impl Library {
     /// mid-upload) are removed. Fails when the data folder cannot be made.
     pub fn open(config: Config) -> Result<Arc<Library>, String> {
         let folders = config.folders();
-        std::fs::create_dir_all(&folders.files).map_err(|e| format!("{}: {e}", folders.files.display()))?;
+        crate::disk::create_dir_all(&folders.files).map_err(|e| format!("{}: {e}", folders.files.display()))?;
+        #[cfg(feature = "native")]
         crate::ffmpeg::set_source(config.ffmpeg.clone());
         let settings = Settings::read(&folders.files.join(settings::FILE));
         let lib = Arc::new(Library {
@@ -109,9 +112,10 @@ impl Library {
             stats: Mutex::default(),
             facts: Mutex::default(),
             jobs: Mutex::default(),
+            #[cfg(feature = "native")]
             links: Mutex::default(),
         });
-        recordings::remove_stale_spools(&lib.uploads(), std::process::id());
+        recordings::remove_stale_spools(&lib.uploads(), crate::disk::process_id());
         if let Err(e) = lib.fix_examples() {
             eprintln!("the area finder's examples: {}", e.message);
         }

@@ -2,7 +2,7 @@ import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http'
 import { inject, Injectable } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { FaintChoice, FaintSetting, Job } from '../../api';
-import { FaintCutoffs } from '../../platform/faint-cutoffs';
+import { CutoffLabelsStore, FaintCutoffs } from '../../platform/faint-cutoffs';
 
 /**
  * The cut-off on the review server (python/server.py): faint.json in the recording's folder (/api/faint), which a
@@ -12,7 +12,7 @@ import { FaintCutoffs } from '../../platform/faint-cutoffs';
 @Injectable({ providedIn: 'root' })
 export class ServerFaintCutoffs implements FaintCutoffs {
   private readonly http = inject(HttpClient);
-  readonly labels = null;
+  readonly labels: CutoffLabelsStore | null = null;
 
   setting(id: () => string | undefined): HttpResourceRef<FaintSetting | undefined> {
     return httpResource<FaintSetting>(() => {

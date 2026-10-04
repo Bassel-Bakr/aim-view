@@ -26,7 +26,7 @@ pub struct RunMarks {
 impl RunMarks {
     /// The recording's marks; none when it has no run.json.
     pub fn read(dir: &Path) -> RunMarks {
-        std::fs::read(dir.join(FILE)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        crate::disk::read(dir.join(FILE)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
     }
 
     pub fn is_set(&self) -> bool {
@@ -58,11 +58,11 @@ impl RunMarks {
     pub fn save(&self, dir: &Path) -> Result<(), String> {
         let path = dir.join(FILE);
         if !self.is_set() {
-            let _ = std::fs::remove_file(&path);
+            let _ = crate::disk::remove_file(&path);
             return Ok(());
         }
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        std::fs::write(path, serde_json::to_vec(self).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+        crate::disk::create_dir_all(dir).map_err(|e| e.to_string())?;
+        crate::disk::write(path, serde_json::to_vec(self).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
     }
 
     /// The part of the video to track (python/review.py's run_window, in seconds, with a margin): start and end, or one

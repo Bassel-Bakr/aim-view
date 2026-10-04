@@ -36,9 +36,9 @@ export class LabelMenu {
   }
 
   /** Saves one of the files to this computer, as the browser saves a download. */
-  protected downloadFile(name: string): void {
+  protected async downloadFile(name: string): Promise<void> {
     if (!this.store) return;
-    const url = URL.createObjectURL(this.store.file(name));
+    const url = URL.createObjectURL(await this.store.file(name));
     const link = document.createElement('a');
     link.href = url;
     link.download = name;

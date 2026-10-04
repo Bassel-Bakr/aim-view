@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::run_window::RunMarks;
 
 fn read(p: &Path) -> Option<Value> {
-    serde_json::from_slice(&std::fs::read(p).ok()?).ok()
+    serde_json::from_slice(&crate::disk::read(p).ok()?).ok()
 }
 
 /// The report of the review in `dir` of `video`, with its stats file when it has one, the user's run marks, the
@@ -28,7 +28,7 @@ pub fn work_out(
     let readings = read(&dir.join("readings.json")).unwrap_or(json!({ "camera": [], "countdown": [] }));
     let hud = read(&dir.join("hud.json")).unwrap_or(Value::Null);
     let stats_text = match stats {
-        Some(p) => String::from_utf8_lossy(&std::fs::read(p).map_err(|e| e.to_string())?).into_owned(),
+        Some(p) => String::from_utf8_lossy(&crate::disk::read(p).map_err(|e| e.to_string())?).into_owned(),
         None => String::new(),
     };
     let name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned());

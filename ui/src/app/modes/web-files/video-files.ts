@@ -6,7 +6,7 @@ export function isVideo(file: File): boolean {
   return isVideoName(file.name);
 }
 
-export function isVideoName(name: string): boolean {
+function isVideoName(name: string): boolean {
   return VIDEO.test(name);
 }
 

@@ -18,7 +18,7 @@ const STATS_NAME = /^(.+) - Challenge - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d) Sta
 const VOD_NAME = /^(.+) - ([-\d.]+) - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d)\.\w+$/;
 const STAMP = /^(\d{4})\.(\d\d)\.(\d\d)-(\d\d)\.(\d\d)\.(\d\d)$/;
 /** A stats file and a recording this many seconds apart or less are the same run. */
-export const SAME_RUN_S = 5;
+const SAME_RUN_S = 5;
 
 /**
  * Reads a stats file: every "key:,value" line, and the kill rows (the first table, up to its blank line; later tables
@@ -39,6 +39,11 @@ export function parseStatsCsv(name: string, text: string): StatsCsv | null {
   return 'Scenario' in meta ? { name, meta, killRows, text } : null;
 }
 
+/** Reads a .csv file as a stats file, or null when it is not one. */
+export async function readStats(file: File): Promise<StatsCsv | null> {
+  return parseStatsCsv(file.name, await file.text());
+}
+
 export function statsSummary(s: StatsCsv): StatsSummary {
   const num = (key: string): number | null => {
     const v = Number.parseFloat(s.meta[key] ?? '');
@@ -54,17 +59,6 @@ export function statsSummary(s: StatsCsv): StatsSummary {
     accuracy: hits !== null && misses !== null && shots > 0 ? hits / shots : null,
     stamp: STATS_NAME.exec(s.name)?.[2] ?? null,
   };
-}
-
-/** A stats file's name as KovaaK's writes it: "<scenario> - Challenge - <time the run ended> Stats.csv". */
-export interface StatsName {
-  scenario: string;
-  stamp: string;
-}
-
-export function parseStatsName(name: string): StatsName | null {
-  const m = STATS_NAME.exec(name);
-  return m ? { scenario: m[1], stamp: m[2] } : null;
 }
 
 /** A recording's name as KovOBS writes it: "<scenario> - <score> - <time>.mp4". */

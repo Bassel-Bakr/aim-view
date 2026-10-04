@@ -1,0 +1,17 @@
+[package]
+name = "aimview-browser-service"
+version = "0.1.0"
+edition = "2024"
+description = "Aim View's review service (aimview-service) as WebAssembly: browser mode runs it in a worker, its files the page's"
+publish = false
+
+[lib]
+# the WebAssembly module the page loads (`bun run assets`: ui/generated/service/aimview_service.wasm)
+crate-type = ["cdylib"]
+
+# only for WebAssembly: a native build of the workspace builds an empty library (the native service is the desktop
+# app's and the server's)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+aimview-service = { path = "../service", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

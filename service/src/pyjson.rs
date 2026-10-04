@@ -3,7 +3,7 @@
 //! the box the page sent), and written as Python's `json.dumps` writes them (", " and ": " between items, or one space
 //! of indent, non-ASCII as \u escapes, floats as Python's `repr`).
 
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 
 use serde::Serialize;
@@ -75,18 +75,17 @@ pub fn to_vec<T: Serialize + ?Sized>(v: &T, indent: bool) -> Vec<u8> {
 /// Text as Python's `open(path, "w")` writes it: on Windows each "\n" as "\r\n". The folder is made when missing.
 pub fn write_text(path: &Path, text: &[u8]) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, newlines(text)).map_err(|e| format!("{}: {e}", path.display()))
+    crate::disk::write(path, newlines(text)).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Text added at the end of a file, as Python's `open(path, "a")` adds it.
 pub fn append_text(path: &Path, text: &[u8]) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    f.write_all(&newlines(text)).map_err(|e| e.to_string())
+    crate::disk::append(path, &newlines(text)).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// `json.dump(v, open(path, "w"))`, or with `indent=1`.
@@ -96,7 +95,7 @@ pub fn dump<T: Serialize + ?Sized>(path: &Path, v: &T, indent: bool) -> Result<(
 
 /// A JSON file read exactly (`parse`); None when it is missing or not JSON.
 pub fn load(path: &Path) -> Option<Value> {
-    parse(&std::fs::read(path).ok()?).ok()
+    parse(&crate::disk::read(path).ok()?).ok()
 }
 
 fn newlines(text: &[u8]) -> Vec<u8> {

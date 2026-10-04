@@ -1,11 +1,11 @@
-import { HttpRequest } from '@angular/common/http';
+import { HttpRequest, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { AreaBox, AreaKind, KeptAreas, KindEdit } from '../../api';
-import { answer, ApiRoutes, recording, RouteHandler, serverMode } from '../../fake-api';
+import { answer, ApiRoutes, recording, RouteHandler, served, serverMode } from '../../fake-api';
 import { MODE as BROWSER } from '../../modes/mode.browser';
-import { AreaExamples } from '../../modes/web-files/area-examples';
 import { builtInKinds, editKinds } from '../../modes/web-files/area-kinds';
-import { LocalFiles } from '../../modes/web-files/local-files';
+import { Labelling } from '../../platform/labelling';
 import { LabelQueue } from '../../services/label-queue';
 import { Library } from '../../services/library';
 import { Review } from '../../services/review';
@@ -234,24 +234,35 @@ describe('the excluded areas editor', () => {
   });
 
   it('in the browser, follows the kinds loaded from a kinds file, keeping the areas drawn', async () => {
-    TestBed.configureTestingModule({ providers: BROWSER.providers });
-    const local = TestBed.inject(LocalFiles);
-    const [id] = (await local.add([new File(['v'], 'Air - 1 - 2026.10.01-16.23.03.mp4')])).ids;
-    TestBed.inject(Library).selectedId.set(id);
-    const draft = TestBed.inject(AreaDraft);
-    draft.start(id);
-    const ready = async () => {
-      for (let i = 0; i < 20; i++) {
-        TestBed.tick();
-        await new Promise((r) => setTimeout(r));
-      }
+    // the review service reads the kinds from its data folder's area_kinds.json, which the page writes
+    let kinds: AreaKind[] = builtInKinds();
+    const routes: ApiRoutes = {
+      ...fakeServer({ saved: null, analysed: [] }),
+      '/api/exclude': { kinds, boxes: [WEBCAM], source: 'saved' },
+      '/files/data/area_kinds.json': (req: HttpRequest<unknown>) => {
+        if (req.method !== 'PUT') return JSON.stringify(kinds);
+        kinds = JSON.parse(req.body as string) as AreaKind[];
+        routes['/api/exclude'] = { kinds, boxes: [WEBCAM], source: 'saved' };
+        return null;
+      },
     };
-    await ready();
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), ...BROWSER.providers],
+    });
+    TestBed.inject(Library).selectedId.set(ID);
+    const draft = TestBed.inject(AreaDraft);
+    draft.start(ID);
+    await answer(routes);
     expect(draft.ready()).toBe(true);
     draft.add([0.2, 0.2, 0.3, 0.3]);
-    const examples = TestBed.inject(AreaExamples);
-    await examples.setKinds([...draft.kinds(), { id: 'kill_feed', name: 'Kill feed', about: '' }]);
-    await ready();
+    const store = TestBed.inject(Labelling).examples;
+    if (!store) throw new Error('the browser keeps the examples');
+    const file = JSON.stringify([
+      ...draft.kinds(),
+      { id: 'kill_feed', name: 'Kill feed', about: '' },
+    ]);
+    await served(store.load([new File([file], 'area_kinds.json')]), routes);
+    await answer(routes);
     expect(draft.kinds().at(-1)?.name).toBe('Kill feed');
     expect(draft.boxes().at(-1)).toEqual([0.2, 0.2, 0.3, 0.3, 'other']);
   });

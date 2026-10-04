@@ -23,8 +23,8 @@ export interface ExamplesStore {
   readonly count: Signal<ExamplesCount>;
   /** The names of the review server's files it downloads as: area_examples.jsonl and area_kinds.json. */
   readonly fileNames: readonly string[];
-  /** One of those files, written as the review server writes it. */
-  file(name: string): Blob;
+  /** One of those files, as the review server writes it. */
+  file(name: string): Promise<Blob>;
   /** Loads area_examples.jsonl and area_kinds.json: what they hold replaces what is kept of the same recordings and types. */
   load(files: readonly File[]): Promise<ExamplesLoaded>;
 }

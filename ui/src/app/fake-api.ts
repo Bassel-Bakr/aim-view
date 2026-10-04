@@ -26,6 +26,17 @@ export class Refused {
   constructor(readonly error: string) {}
 }
 
+/**
+ * An answer with a status of its own and a JSON body: the service asking for something first (409, need: found), or
+ * any other failure with more than an error's text.
+ */
+export class Status {
+  constructor(
+    readonly status: number,
+    readonly body: unknown,
+  ) {}
+}
+
 const settle = () => new Promise((r) => setTimeout(r));
 
 /**
@@ -49,10 +60,21 @@ export async function answer(routes: ApiRoutes): Promise<void> {
       if (body === NO_SERVER) req.error(new ProgressEvent('error'));
       else if (body instanceof Refused) {
         req.flush({ error: body.error }, { status: 400, statusText: 'Bad Request' });
+      } else if (body instanceof Status) {
+        req.flush(body.body as Body, { status: body.status, statusText: 'Error' });
       } else req.flush(body as Body);
     }
     await settle();
   }
+}
+
+/** Answers the fake review server's requests until the call ends. */
+export async function served<T>(call: Promise<T>, routes: ApiRoutes): Promise<T> {
+  let done = false;
+  const end = () => (done = true);
+  call.then(end, end);
+  while (!done) await answer(routes);
+  return call;
 }
 
 /** A recording for tests: a reviewed static run with a stats file, unless overrides say otherwise. */

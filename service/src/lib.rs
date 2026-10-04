@@ -8,13 +8,20 @@
 //! finder. faint.rs: the faint-target cut-off. labels.rs: the labelling queues. mouse.rs: the mouse logs' measures.
 //! review.rs, detector.rs, video.rs, ffmpeg.rs: the native review. report.rs: the report the core works out.
 //! run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them. ytdlp.rs: yt-dlp, for
-//! recordings added from a link.
+//! recordings added from a link. disk.rs: the file system and the clock.
+//!
+//! The `native` feature (on by default) builds what needs this computer: ONNX Runtime, ffmpeg, yt-dlp, threads and the
+//! time zone. Without it the service is built for the browser (browser-service/, WebAssembly): its files are the
+//! page's (disk.rs), and the page runs the review and the area finder and downloads links (library/browser.rs).
 
 pub mod api;
 pub mod areas;
 pub mod config;
+#[cfg(feature = "native")]
 pub mod detector;
+pub mod disk;
 pub mod faint;
+#[cfg(feature = "native")]
 pub mod ffmpeg;
 pub mod finder;
 pub mod labels;
@@ -25,7 +32,9 @@ pub mod pyjson;
 pub mod report;
 pub mod review;
 pub mod run_window;
+#[cfg(feature = "native")]
 pub mod video;
+#[cfg(feature = "native")]
 pub mod ytdlp;
 
 pub use api::{ApiRequest, ApiResponse, handle};

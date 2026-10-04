@@ -28,6 +28,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aimview-browser-service"
+version = "0.1.0"
+dependencies = [
+ "aimview-service",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aimview-desktop"
 version = "0.1.0"
 dependencies = [

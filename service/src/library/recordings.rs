@@ -18,7 +18,7 @@ pub(crate) const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];
 /// (links.rs: ".link-<pid>-<n>") that a process other than `pid` left in `dir`: a server that stopped mid-upload or
 /// mid-download never moved them into place. Every other file stays.
 pub(super) fn remove_stale_spools(dir: &Path, pid: u32) {
-    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+    for e in crate::disk::read_dir(dir).into_iter().flatten().flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         let owner = |rest: Option<&str>| {
             rest.and_then(|r| r.split_once('-'))
@@ -26,10 +26,10 @@ pub(super) fn remove_stale_spools(dir: &Path, pid: u32) {
                 .and_then(|(p, _)| p.parse::<u32>().ok())
                 .is_some_and(|p| p != pid)
         };
-        let removed = if owner(name.strip_prefix(".incoming-").and_then(|r| r.strip_suffix(".part"))) && e.path().is_file() {
-            std::fs::remove_file(e.path())
-        } else if owner(name.strip_prefix(".link-")) && e.path().is_dir() {
-            std::fs::remove_dir_all(e.path())
+        let removed = if owner(name.strip_prefix(".incoming-").and_then(|r| r.strip_suffix(".part"))) && crate::disk::is_file(e.path()) {
+            crate::disk::remove_file(e.path())
+        } else if owner(name.strip_prefix(".link-")) && e.is_dir() {
+            crate::disk::remove_dir_all(e.path())
         } else {
             continue;
         };
@@ -53,8 +53,8 @@ impl Library {
         };
         let p = root.join(&rel);
         let ok_type = p.extension().is_some_and(|e| VIDEO_TYPES.contains(&e.to_string_lossy().to_lowercase().as_str()));
-        let inside = p.canonicalize().ok().zip(root.canonicalize().ok()).is_some_and(|(p, r)| p.starts_with(r));
-        if !ok_type || !inside || !p.is_file() {
+        let inside = crate::disk::canonicalize(&p).ok().zip(crate::disk::canonicalize(&root).ok()).is_some_and(|(p, r)| p.starts_with(r));
+        if !ok_type || !inside || !crate::disk::is_file(&p) {
             return Err(Failure::missing(format!("no recording {id}")));
         }
         Ok(p)
@@ -73,7 +73,7 @@ impl Library {
         }
         let mut files: Vec<PathBuf> = Vec::new();
         let sce = |dir: &Path, files: &mut Vec<PathBuf>| {
-            for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            for e in crate::disk::read_dir(dir).into_iter().flatten().flatten() {
                 let p = e.path();
                 if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("sce")) {
                     files.push(p);
@@ -82,15 +82,15 @@ impl Library {
         };
         for folder in &self.config.scenarios {
             sce(folder, &mut files);
-            for e in std::fs::read_dir(folder).into_iter().flatten().flatten() {
-                if e.path().is_dir() {
+            for e in crate::disk::read_dir(folder).into_iter().flatten().flatten() {
+                if e.is_dir() {
                     sce(&e.path(), &mut files);
                 }
             }
         }
         let mut out = HashMap::new();
         for p in files {
-            let Ok(bytes) = std::fs::read(&p) else { continue };
+            let Ok(bytes) = crate::disk::read(&p) else { continue };
             let name = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
             out.insert(name, aimview::scenario::facts(&String::from_utf8_lossy(&bytes)));
         }
@@ -113,27 +113,27 @@ impl Library {
     pub fn recordings(&self) -> Answer<Value> {
         let (mut out, not_aim): (Vec<Value>, _) = (Vec::new(), self.not_aim());
         if let Some(vods) = self.vods() {
-            for folder in std::fs::read_dir(&vods).into_iter().flatten().flatten() {
-                if !folder.path().is_dir() {
+            for folder in crate::disk::read_dir(&vods).into_iter().flatten().flatten() {
+                if !folder.is_dir() {
                     continue;
                 }
-                for e in std::fs::read_dir(folder.path()).into_iter().flatten().flatten() {
+                for e in crate::disk::read_dir(folder.path()).into_iter().flatten().flatten() {
                     let p = e.path();
                     let name = e.file_name().to_string_lossy().into_owned();
                     let Some((scenario, score, stamp)) = parse_name(&name) else { continue };
                     let id = format!("{}/{name}", folder.file_name().to_string_lossy());
                     out.push(json!({
                         "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
-                        "mtime": modified(&p), "size": p.metadata().map_or(0, |m| m.len()),
+                        "mtime": modified(&p), "size": crate::disk::metadata(&p).map_or(0, |m| m.len()),
                         "stats": self.stats_of(&id, &p).is_some(), "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
                     }));
                 }
             }
         }
-        for e in std::fs::read_dir(self.uploads()).into_iter().flatten().flatten() {
+        for e in crate::disk::read_dir(self.uploads()).into_iter().flatten().flatten() {
             let p = e.path();
             let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if !p.is_file() || !VIDEO_TYPES.contains(&ext.as_str()) {
+            if !crate::disk::is_file(&p) || !VIDEO_TYPES.contains(&ext.as_str()) {
                 continue;
             }
             out.push(self.upload_row(&p, &not_aim));
@@ -154,7 +154,7 @@ impl Library {
         };
         json!({
             "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
-            "mtime": modified(p), "size": p.metadata().map_or(0, |m| m.len()),
+            "mtime": modified(p), "size": crate::disk::metadata(p).map_or(0, |m| m.len()),
             "stats": self.stats_of(&id, p).is_some(), "uploaded": true, "analysed": self.reviewed(&id), "not_aim": not_aim.contains(&id),
         })
     }
@@ -162,22 +162,22 @@ impl Library {
     /// A video added from this computer (kept in the uploads), or a stats file for a recording (`id`), which it is then
     /// paired with. Nothing is overwritten.
     pub fn upload(&self, name: &str, id: Option<&str>, body: &[u8]) -> Answer<Value> {
-        self.add_upload(name, id, |dest| std::fs::write(dest, body))
+        self.add_upload(name, id, |dest| crate::disk::write(dest, body))
     }
 
     /// The same for an upload already on disk (`file`, from `spool`, written as it arrived): it is moved into place,
     /// never read into memory.
     pub fn upload_file(&self, name: &str, id: Option<&str>, file: &Path) -> Answer<Value> {
-        self.add_upload(name, id, |dest| std::fs::rename(file, dest).or_else(|_| std::fs::copy(file, dest).and_then(|_| std::fs::remove_file(file))))
+        self.add_upload(name, id, |dest| crate::disk::rename(file, dest).or_else(|_| crate::disk::copy(file, dest).and_then(|_| crate::disk::remove_file(file))))
     }
 
     /// A new file in the uploads folder for an upload's body, written as it arrives (the HTTP server does so), which
     /// `upload_file` then moves into place. Its name is not a video's or a stats file's: the list never shows it.
     pub fn spool(&self) -> Answer<PathBuf> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        std::fs::create_dir_all(self.uploads()).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(self.uploads()).map_err(|e| e.to_string())?;
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        Ok(self.uploads().join(format!(".incoming-{}-{n}.part", std::process::id())))
+        Ok(self.uploads().join(format!(".incoming-{}-{n}.part", crate::disk::process_id())))
     }
 
     /// An upload's checks and its place in the uploads; `save` writes it there.
@@ -193,7 +193,7 @@ impl Library {
         } else {
             return Err(Failure::bad(format!("not a video or a stats .csv: {name}")));
         };
-        std::fs::create_dir_all(dest.parent().unwrap_or(&self.uploads())).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(dest.parent().unwrap_or(&self.uploads())).map_err(|e| e.to_string())?;
         save(&dest).map_err(|e| e.to_string())?;
         let saved = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         match id {

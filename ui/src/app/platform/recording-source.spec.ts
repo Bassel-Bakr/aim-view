@@ -57,6 +57,11 @@ function linkServer(asked: unknown[]): ApiRoutes {
   let polls = 0;
   const row = recording({ id, scenario: 'Air', stats: false, analysed: false });
   return anywhere({
+    // the browser mode sends the video it downloaded to its review service
+    '/api/upload': () => {
+      list = [row];
+      return { id, saved: LINK_NAME };
+    },
     '/api/vods': () => list,
     '/api/link/formats': LINK_INFO,
     '/api/link': (req: HttpRequest<unknown>) => {
@@ -162,6 +167,7 @@ for (const mode of MODE_CASES) {
       const file = 'https://cdn.example.com/clips/Air%20-%201%20-%202026.10.01-16.23.03.mp4';
       const routes: ApiRoutes = {
         [file]: (req: HttpRequest<unknown>) => (req.method === 'HEAD' ? null : new Blob(['video'])),
+        ...fakeServer(),
       };
       const info = await mode.finish(source.linkInfo(file), routes);
       expect(info).toEqual({ title: LINK_NAME, duration: null, formats: [] });

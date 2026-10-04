@@ -9,32 +9,46 @@ publish = false
 [[bin]]
 name = "aimview-tool"
 path = "src/bin/aimview-tool.rs"
+required-features = ["native"]
+
+[[example]]
+name = "track"
+required-features = ["native"]
+
+[[example]]
+name = "mouse_read"
+required-features = ["native"]
 
 [features]
+default = ["native"]
+# what needs this computer: ONNX Runtime, ffmpeg and yt-dlp (processes and threads), and the time zone. Without it the
+# service is built for the browser (browser-service/): its files go through the page (disk.rs), the page runs the
+# review and the area finder, and links are the page's to download.
+native = ["dep:ort", "dep:ffmpeg-sidecar", "dep:libc"]
 # the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
-cuda = ["ort/cuda"]
+cuda = ["native", "ort/cuda"]
 # `bun run types`: the TypeScript types of the JSON the UI reads, made from these structs and the core's (ts-rs)
 ts = ["dep:ts-rs", "aimview/ts"]
 
 [dependencies]
 aimview = { path = ".." }
 # ONNX Runtime: on the CPU everywhere, DirectML on Windows (any GPU), CUDA with the `cuda` feature
-ort = "=2.0.0-rc.10"
+ort = { version = "=2.0.0-rc.10", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
 # the API's paths and queries, read as the desktop app's window sends them
 url = "2"
 # ffmpeg downloaded on first need, as KovOBS gets it (Config.ffmpeg: Ffmpeg::Download)
-ffmpeg-sidecar = "2.5.2"
+ffmpeg-sidecar = { version = "2.5.2", optional = true }
 anyhow = "1"
 # NumPy's .npz files (zips of arrays), as python/ writes and reads them
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 # its prebuilt library is downloaded at build time
-ort = { version = "=2.0.0-rc.10", features = ["directml"] }
+ort = { version = "=2.0.0-rc.10", features = ["directml"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # the local time zone's offset at a given time (localtime_r), for local time stamps off Windows
-libc = "0.2"
+libc = { version = "0.2", optional = true }

@@ -2,28 +2,43 @@
 //! for byte, the detector runs on the GPU (detector.rs), and the core's review session (aimview::session, which the
 //! browser's workers feed the same way) does the rest: it plans the runs, reads the key frames, tracks each run's
 //! frames, watches the camera's turn and the HUD, and joins the runs. The runs are reviewed at once: one ffmpeg decoder
-//! is the limit, as one browser decoder was.
+//! is the limit, as one browser decoder was. The browser build has only what a review is (`Request`): the page runs it
+//! (library/browser.rs).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(feature = "native")]
+use std::path::Path;
+#[cfg(feature = "native")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "native")]
 use std::sync::{Mutex, mpsc};
+#[cfg(feature = "native")]
 use std::thread;
 
-use aimview::areas::{AreaFinder, Found, sample_frames};
+use aimview::areas::Found;
+#[cfg(feature = "native")]
+use aimview::areas::{AreaFinder, sample_frames};
 use aimview::camera::VideoReadings;
+#[cfg(feature = "native")]
 use aimview::convert::{Converter, DST_H as H, DST_W as W};
+#[cfg(feature = "native")]
 use aimview::fixed::FixedMap;
 use aimview::hud::HudReading;
+#[cfg(feature = "native")]
 use aimview::session::{FrameFormat, KeysRead, NextFrame, Review, Setup, WatchPart, countdown_bytes};
+#[cfg(feature = "native")]
 use aimview::tracker::TrackPart;
 
 pub use aimview::session::{AreaBox, TimeWindow, Tracks};
 
 use crate::config::Device;
+#[cfg(feature = "native")]
 use crate::detector::{Detector, model_settings};
+#[cfg(feature = "native")]
 use crate::video::{Frames, VideoInfo, probe};
 
 /// Frames between progress reports.
+#[cfg(feature = "native")]
 const PROGRESS_EVERY: usize = 60;
 
 /// What to review: the video, the detector model (its _u8in export) and the device it runs on, the frames it takes at
@@ -68,11 +83,13 @@ pub fn add_device(devices: &mut String, device: &str) {
 }
 
 /// The size of one frame as ffmpeg gives it (YUV 4:2:0 at the video's size).
+#[cfg(feature = "native")]
 pub(crate) fn frame_bytes(info: &VideoInfo) -> usize {
     info.width * info.height + 2 * info.width.div_ceil(2) * info.height.div_ceil(2)
 }
 
 /// Reviews a recording: its tracks and readings. `on_device` is told where each run's detector runs.
+#[cfg(feature = "native")]
 pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Result<Reviewed, String> {
     let model = model_settings(&req.model)?;
     let info = probe(&req.video)?;
@@ -126,12 +143,14 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
 }
 
 /// A key frame: at 720p for the fixed map, and as decoded (the HUD reads its Y plane).
+#[cfg(feature = "native")]
 type KeyFrame = (Vec<u8>, Vec<u8>);
 
 /// Each key frame handed to `key`, in order: at 1280 x 720 (YUV 4:2:0), and its Y plane at the video's size. Each key
 /// frame is decoded on its own, from its exact time (ffmpeg's libaom ignores `-skip_frame nokey` and gives every
 /// frame), a few at once: decoder i takes every AT_ONCE-th key frame from the i-th and waits while its next one is not
 /// wanted yet, so only a few whole frames are held at a time.
+#[cfg(feature = "native")]
 pub(crate) fn key_frames(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8], &[u8])) -> Result<(), String> {
     const AT_ONCE: usize = 4;
     thread::scope(|s| {
@@ -178,6 +197,7 @@ pub(crate) fn key_frames(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u
 
 /// The fixed map from the key frames (as python/review.py builds it), each key frame also handed to `key` as
 /// `key_frames` does.
+#[cfg(feature = "native")]
 pub(crate) fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8], &[u8])) -> Result<Vec<u8>, String> {
     let mut map = FixedMap::default();
     key_frames(video, info, |small, y| {
@@ -188,6 +208,7 @@ pub(crate) fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8
 }
 
 /// A run's part of the review: its tracking's and its watches' parts, and where its detector ran.
+#[cfg(feature = "native")]
 struct RunPart {
     track: TrackPart,
     watch: WatchPart,
@@ -198,6 +219,7 @@ struct RunPart {
 /// tracks; a detector thread takes those frames a batch at a time and hands their maps to the tracking in order; a
 /// watch thread reads the camera's turn and the HUD from each frame's Y plane and countdown rows.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "native")]
 fn review_run(
     req: &Request,
     review: &Review,

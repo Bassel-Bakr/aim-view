@@ -3,7 +3,14 @@
 //! window with it (over a custom protocol), and the HTTP server answers the browser. Routes that need the desktop (the
 //! folder dialog, /api/folder; the mouse logger's switch, /api/mouse/logger) are answered by the desktop app before it
 //! asks here: here they are not found (404).
+//!
+//! The browser build (no `native` feature) answers the same routes, but for these: the page runs the review
+//! (/api/analyse answers what to review; /api/job and /api/reviewed take its progress and its end), the area finder
+//! (/api/find_areas answers 409 until /api/found takes what it found) and the cut-off's labels, and downloads links
+//! (501); it chooses the VODs folder (/api/folder), adds raw mouse logs (/api/mouse_log) and says when it copied new
+//! KovaaK files (/api/kovaak); it plays the videos itself (/video is not served).
 
+#[cfg(feature = "native")]
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
@@ -13,6 +20,7 @@ use serde_json::{Value, json};
 use crate::library::{Answer, Failure, Library};
 
 /// The most of a video one ranged response holds: the player asks again for the rest.
+#[cfg(feature = "native")]
 const VIDEO_CHUNK: u64 = 4 << 20;
 
 /// A request: its method ("GET", "POST"), its path with its query ("/api/report?id=..."), its Range header if any, and
@@ -55,10 +63,30 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
     let id = || query("id").ok_or_else(|| Failure::bad("id= is missing"));
     let body = || serde_json::from_slice::<Value>(req.body).unwrap_or(Value::Null);
     let post = req.method.eq_ignore_ascii_case("POST");
+    #[cfg(feature = "native")]
     if path == "/video" {
         return match id().and_then(|id| lib.resolve(&id)) {
             Ok(p) => video(&p, req.range),
             Err(f) => json_response(Err(f)),
+        };
+    }
+    if !post && path == "/api/area_examples" {
+        return match lib.examples_text() {
+            Ok(text) => ApiResponse::new(200, "text/plain; charset=utf-8", text),
+            Err(f) => json_response(Err(f)),
+        };
+    }
+    // the browser build: until the page's area finder sent what it found, it is asked to (409, `need`)
+    #[cfg(not(feature = "native"))]
+    if !post && path == "/api/find_areas" {
+        let answer = id().and_then(|id| lib.find_areas(&id, query("copy").as_deref().unwrap_or("1") == "1"));
+        return match answer {
+            Err(f) if f.status == crate::library::FOUND_NEEDED => {
+                let video = id().and_then(|id| lib.resolve(&id)).ok();
+                let body = json!({ "error": f.message, "need": "found", "video": video });
+                ApiResponse::new(f.status, "application/json", serde_json::to_vec(&body).unwrap_or_default())
+            }
+            answer => json_response(answer),
         };
     }
     if path == "/api/tracks" {
@@ -91,8 +119,14 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
                 None => lib.upload(&name, of.as_deref(), req.body),
             }
         }
+        #[cfg(feature = "native")]
         (true, "/api/link/formats") => lib.link_formats(&body()),
+        #[cfg(feature = "native")]
         (true, "/api/link") => lib.add_link(&body()),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/link/formats" | "/api/link") => {
+            Err(Failure { status: 501, message: "the page downloads links itself".into() })
+        }
         (false, "/api/mouse") => id().and_then(|id| lib.mouse_measures(&id)),
         (false, "/api/info") => Ok(json!({ "detector": lib.model(), "device": lib.config().device.name() })),
         (false, "/api/exclude") => lib.exclude_answer(query("id").as_deref(), query("layout").as_deref() == Some("kovobs")),
@@ -107,6 +141,19 @@ pub fn handle(lib: &Arc<Library>, req: &ApiRequest) -> ApiResponse {
         (false, "/api/faint_queue") => lib.faint_queue(),
         (true, "/api/faint_skip") => id().and_then(|id| lib.skip_faint(&id)),
         (true, "/api/faint_submit") => id().and_then(|id| lib.submit_faint(&id, offset(query("offset"))?)),
+        (true, "/api/area_examples") => lib.set_examples(req.body),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/folder") => lib.choose_vods(&query("path").unwrap_or_default()),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/job") => id().and_then(|id| lib.page_progress(&id, req.body)),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/reviewed") => id().and_then(|id| lib.review_done(&id, req.body)),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/found") => id().and_then(|id| lib.keep_found(&id, req.body)),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/mouse_log") => lib.keep_mouse_log(&query("name").unwrap_or_default(), req.body),
+        #[cfg(not(feature = "native"))]
+        (true, "/api/kovaak") if query("changed").as_deref() == Some("1") => lib.kovaak_changed(),
         _ => Err(Failure::missing(format!("not found: {path}"))),
     })
 }
@@ -119,6 +166,7 @@ fn offset(q: Option<String>) -> Answer<f64> {
 }
 
 /// A video, or the part of it a Range header asks for (at most VIDEO_CHUNK bytes), so the player can seek.
+#[cfg(feature = "native")]
 fn video(p: &Path, range: Option<&str>) -> ApiResponse {
     let Ok(mut f) = std::fs::File::open(p) else {
         return json_response(Err(Failure::missing("the video is gone")));

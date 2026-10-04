@@ -42,13 +42,20 @@ pub enum Layout {
 /// The detector's device.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
-    /// The GPU when there is one (DirectML on Windows, CUDA with the `cuda` feature), else the CPU.
+    /// The GPU when there is one (DirectML on Windows, CUDA with the `cuda` feature), else the CPU; in the browser
+    /// build WebGPU.
     Auto,
     /// DirectML: any GPU on Windows.
     DirectMl,
     /// CUDA: an NVIDIA GPU (needs the `cuda` feature).
     Cuda,
     Cpu,
+    /// The browser build's: the GPU through WebGPU.
+    #[cfg(not(feature = "native"))]
+    WebGpu,
+    /// The browser build's: the CPU through WebAssembly.
+    #[cfg(not(feature = "native"))]
+    Wasm,
 }
 
 /// Where ffmpeg and ffprobe come from.
@@ -107,12 +114,24 @@ impl Device {
             "directml" => Some(Device::DirectMl),
             "cuda" => Some(Device::Cuda),
             "cpu" => Some(Device::Cpu),
+            #[cfg(not(feature = "native"))]
+            "webgpu" => Some(Device::WebGpu),
+            #[cfg(not(feature = "native"))]
+            "wasm" => Some(Device::Wasm),
             _ => None,
         }
     }
 
+    /// The devices the browser build can run the detector on (the page runs it): the GPU through WebGPU, the CPU
+    /// through WebAssembly.
+    #[cfg(not(feature = "native"))]
+    pub fn built() -> Vec<Device> {
+        vec![Device::WebGpu, Device::Wasm]
+    }
+
     /// The devices this build can run the detector on: the GPU it has a provider for (DirectML on Windows, CUDA with
     /// the `cuda` feature), and the CPU.
+    #[cfg(feature = "native")]
     pub fn built() -> Vec<Device> {
         let mut out = Vec::new();
         if cfg!(windows) {
@@ -125,6 +144,18 @@ impl Device {
         out
     }
 
+    #[cfg(not(feature = "native"))]
+    pub fn name(self) -> &'static str {
+        match self {
+            Device::Auto | Device::WebGpu => "webgpu",
+            Device::Wasm => "wasm",
+            Device::DirectMl => "directml",
+            Device::Cuda => "cuda",
+            Device::Cpu => "cpu",
+        }
+    }
+
+    #[cfg(feature = "native")]
     pub fn name(self) -> &'static str {
         match self {
             Device::Auto if cfg!(windows) => "directml",

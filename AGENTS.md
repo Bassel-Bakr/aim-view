@@ -51,9 +51,10 @@ Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats i
 glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 
 Browser mode starts from the user's latest training data. `bun run assets` copies the area finder's examples and
-types (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`) into `ui/generated/data/`, and `AreaExamples` starts
-from them: a recording's examples learnt or loaded in the browser replace its shipped ones, and a type changed in the
-browser replaces the shipped type with the same id. The examples name the user's recordings, so a build for others
+types (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`) into `ui/generated/data/`, and the review service in
+the page copies them into its data folder on its first run (when it has none of its own). From then on the service
+keeps them there, as the review server keeps its own: it learns into them when areas are saved, and the user can
+download them and load the review server's files into them. The examples name the user's recordings, so a build for others
 must not ship them. `bun run assets` and the `dev*` scripts copy them (`--no-data` leaves them out). `--release`, which
 every `build:*` script uses, leaves them out unless `--data` is given. For a browser build with them, run
 `bun run assets --release --data`, then `bun run --cwd ui build --configuration production,browser`. The browser runs
@@ -79,14 +80,25 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   config warns on the older forms. Anything that changes every frame (the video overlay,
   timelines) is drawn on a canvas in `requestAnimationFrame` or `requestVideoFrameCallback`, never through a template.
   A resource's `value()` throws in its error state: check `error()` or `hasValue()` first.
-- **Three modes, one app.** The UI runs in browser mode (everything in the browser), server mode (the review server
-  does the work) or desktop mode (Tauri 2; the browser mode's services until `desktop/` exists). Features and
-  `services/` inject only the contracts in `ui/src/app/platform/` (`RecordingSource`, `StatsFiles`, `ReviewEngine`,
-  `ModelCatalog`), never `/api` or a mode's class. The implementations are in `ui/src/app/modes/`, in folders named
-  for what they wrap (`http/`, `web-files/`, `wasm/`, later `tauri/`), and each `mode.<name>.ts` picks one per
-  contract. The build configurations (`browser`, `server`, `desktop`) swap `modes/mode.ts` for it, so a build
-  carries only its own mode's code. Each contract has one spec that runs against every mode
-  (`platform/*.spec.ts`).
+- **Three modes, one app, one backend.** The UI runs in browser mode (everything in the browser), server mode (the
+  review server does the work) or desktop mode (Tauri 2). All three answer the same API with the same review service
+  (`service/`): the review server over HTTP, the desktop app over its own protocol, and browser mode as WebAssembly
+  (`browser-service/`) in a worker of the page's own (`modes/service/service.worker.ts`), which an interceptor
+  (`modes/service/service-api.ts`) sends the `/api` requests to. The service reads and writes files with plain calls;
+  in the browser they go to the page's storage, which only answers asynchronously, so `bun run assets` puts the
+  service's WebAssembly through Binaryen's Asyncify (`wasm-opt`), which lets those calls wait in every browser (JSPI
+  would leave out iOS before 27). So every mode uses the server mode's services
+  (`modes/http/`). Where the page itself must act, a mode's class extends the server's: in browser mode the VODs
+  folder picker and playing its videos, copying KovaaK's folders in, running the review, the area finder and the
+  cut-off's labels in workers, and downloading links (`modes/service/browser-*.ts`); in desktop mode its folder dialog
+  and mouse logger (`modes/tauri/`). Features and `services/` inject only the contracts in `ui/src/app/platform/`
+  (`RecordingSource`, `StatsFiles`, `ReviewEngine`, `ModelCatalog` and the others), never `/api` or a mode's class.
+  The implementations are in `ui/src/app/modes/`, in folders named for what they wrap (`http/` the API, `service/` the
+  service in the page, `tauri/` the desktop app, `wasm/` the review core and its workers, `web-files/` the page's own
+  files), and each `mode.<name>.ts` picks one per contract. The build configurations (`browser`, `server`,
+  `desktop`) swap `modes/mode.ts` for it, so a build carries only its own mode's code. Each contract has one spec that
+  runs against the browser and server modes (`platform/*.spec.ts`), both answered by the fake review server
+  (`fake-api.ts`; the browser mode's interceptor is left out there).
 - **Named types.** In TypeScript, every object or tuple type gets a name (an interface or a type alias). No inline
   anonymous types such as `{ gpu: number; cpu: number }` in a field or a signature. ESLint enforces it. The types of
   the JSON the core and the service write from Rust structs are made from them (`bun run types`, the `ts` feature,
@@ -142,20 +154,24 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   bot 10 s at a time, distance from its center line, and where the crosshair sat around it, from the motion's
   per-frame `around` offsets), and the fastest-path analysis (Pathing per kill, the
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
-  model panel, upload and the stats file panel, and the three modes. Browser mode: files added stay in the browser
-  (a video that is not an MP4 is remuxed into one with Mediabunny, streams copied; a stats .csv is read there). The
-  user opens a folder of recordings (VODs folder: Chrome's folder picker, remembered across visits; a recording's id
-  is its path there, and a non-MP4 one is remuxed when it is first opened), and Clear list empties the list. KovaaK's
-  folders are chosen as files (Chrome's picker refuses folders under Program Files): with Stats folder in the top bar,
-  in the stats file panel, or on the run page when the review needs them. FPSAimTrainer gives the stats and the
-  user's scenarios, workshop\content\824270 the workshop's. The browser keeps a copy of the stats files (IndexedDB,
-  `StatsCache`; choosing the folder again copies only new or changed files), each VOD's stats file, and the scenario
-  facts. The stats folder lets each run find its stats file by name and time. The scenario folders
-  give each scenario's kind, time limit and target count: the review waits for them unless the scenario is in neither
-  folder.
+  model panel, upload and the stats file panel, and the three modes. Browser mode runs the review service in the page
+  (see "Three modes, one app, one backend"); it keeps its data folder in the browser's private file system (OPFS
+  `aimview/data`, the app's layout) and KovaaK's files in `aimview/kovaak`, and reads the VODs folder and the models
+  where they are (`modes/service/mounts.ts`). Files added are uploads, as in server mode (a video that is not an MP4
+  is remuxed into one with Mediabunny first, streams copied). The user opens a folder of recordings (VODs folder:
+  Chrome's folder picker, remembered across visits, mounted at /vods; a recording's id is its path there, and a
+  non-MP4 one is remuxed in the page when it is first opened), and Clear list forgets the folder and the uploads.
+  KovaaK's folders are chosen as files (Chrome's picker refuses folders under Program Files): with Stats folder in the
+  top bar, in the stats file panel, or on the run page when the review needs them. FPSAimTrainer gives the stats and
+  the user's scenarios, workshop\content\824270 the workshop's. The page copies them into the browser (choosing the
+  folder again copies only new or changed files), and the service reads them as the review server reads KovaaK's
+  folders: the stats folder lets each run find its stats file by name and time, and the scenario folders give each
+  scenario's kind, time limit and target count. What the old browser mode kept in IndexedDB is moved into the
+  service once (`modes/service/browser-data-move.ts`).
   From a link (beside Upload; `RecordingSource.linkInfo`, `addLink`): the service downloads it with yt-dlp
   (service/src/ytdlp.rs, library/links.rs; /api/link/formats, /api/link, job stage `downloading`); browser mode
-  fetches a video file's address itself when the host allows it, else asks the local server (server/README.md).
+  fetches a video file's address itself when the host allows it, else asks the local server (server/README.md), then
+  adds the video as an upload.
   Server mode: files added are sent to the server, and the stats file panel lists KovaaK's stats files (`/api/stats`).
 - The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
   (review.worker.ts): decode (Mediabunny and the browser's decoder, its software one where it has one: the same YUV
@@ -186,21 +202,20 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   ms natively (8.5 ms before), h264_1920_tv's review 14.0 s in the browser (24.5 s before), the same bytes
   (`convert_parity`).
   The clicking
-  review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) runs on the page and
-  gives the report. On the test runs it equals Python's: every kill, frame, count and check text, and every number
+  review with a stats file (src/stats_file.rs, matching.rs, measure.rs, summary.rs, review.rs) gives the report (in
+  browser mode the service in the page runs it, as natively). On the test runs it equals Python's: every kill, frame, count and check text, and every number
   within 1e-9 (`cargo test --release --test review_parity`). After the track step the core uses plain floating point:
   it copies Python's logic, not its last bits. Tracking runs with a stats file too: the review worker sends each
   frame to the camera worker (camera.worker.ts, src/camera.rs: the camera's turn by phase correlation, and KovaaK's
   countdown bar), which runs beside it so the detector never waits for it: it gets the decoded Y plane and the rows of
   the RGB the countdown test reads, and makes only the 720p luma (the same bytes as the Y of yuv420p;
-  `--test camera_same` checks the watch's shifts to the bit), and the page's core gives
-  the summary (src/tracking.rs). Equal to Python's on 5 tracking runs (`--test tracking_parity`), the camera within
+  `--test camera_same` checks the watch's shifts to the bit), and the service gives the summary (src/tracking.rs). Equal to Python's on 5 tracking runs (`--test tracking_parity`), the camera within
   1e-8 degrees on the same frames (`--test camera_parity`). Two inputs differ from Python's on purpose: the camera
   reads the frame's Y plane, where Python reads ffmpeg's `format=gray` (which goes through the colors: readings differ
   by a median 0.001 degrees), and the countdown test does not depend on the HUD color (Python's looks for teal only).
   The run window (the run page's Run window: start and end, typed or from the playhead) works in every mode: the server
-  keeps it as run.json and measures again; the browser (SavedMarks) and the desktop app (run_window.rs, run.json) also
-  track only the window with a second either side (tracked-window.ts `trackedWindow`, src/session.rs `window_frames`: from the key frame
+  keeps it as run.json and measures again; the browser and the desktop app (run_window.rs, run.json) also
+  track only the window with a second either side (the service's review request, src/session.rs `window_frames`: from the key frame
   before it; the first run's tracker and camera watch start part way in, and the joins fill the frames before it with
   empty ones), and track again when a new window reaches past the tracked one. The core measures a tracking run from it
   as Python does (review.rs `run_window`). av1 with 0:20 to 0:40: the same boxes and camera readings inside the window
@@ -219,22 +234,24 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   `REVIEW_VERSION`, 2 since the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.
   The faint-target cut-off (the run page's Cut-off and the top bar's Cut-off queue; platform/faint-cutoffs.ts, the
-  core's src/faint.rs) works in every mode: the browser keeps it as SavedFaint, and the core measures a tracking run
+  core's src/faint.rs) works in every mode: the service keeps it (faint.json), and the core measures a tracking run
   without the tracks it cuts (`faint` in the review request: equal to Python's on 5 tracking runs at 3 offsets,
   `--test faint_parity`). A submit's labels in the browser are the crops Python picks (its random numbers, seeded
   alike: the same files, boxes and rows), each read from its own frame (Python's ffmpeg -ss lands a frame late on 6 of
-  flower's 20), kept in the browser and downloaded as cutoff.zip (checked.jsonl and train/).
+  flower's 20), made by the page (the service has no ffmpeg there: modes/service/browser-faint-cutoffs.ts), kept in
+  the browser (IndexedDB) and downloaded as cutoff.zip (checked.jsonl and train/).
   The excluded areas (the run page's Excluded areas editor: draw, move, type; Find areas and Detect fresh; KovOBS's
   layout; area types; platform/area-labels.ts) work in every mode, and a review tracks with the recording's areas
   (tracked again when they change). The area finder (src/areas.rs, python/areas.py's port) reads the key frames the
-  review decodes for the fixed map (90 frames over the run when it has fewer than 24; the browser reads them in a
-  worker of its own, area-finder.worker.ts, after the review or for Find areas without one, and keeps what it found),
+  review decodes for the fixed map (90 frames over the run when it has fewer than 24; in browser mode the page reads
+  them in a worker of its own, area-finder.worker.ts, after the review or for Find areas without one, when the
+  service has nothing found for the recording: its 409, then POST /api/found),
   and learns from saved areas: equal to Python's on 17 recordings (every area, map and kind) and on the 1,788
   examples' leave-one-out. An area of type challenge_results (the end screen, at the end or between runs) is left out only while it shows (src/popup.rs
   `END_SCREEN`; left out all the time it hid VT FlyTS: 0 of 5 kills, now 5 of 5). The labelling tools (the area queue,
-  Skip, Not an aim trainer; platform/labelling.ts) too; in the browser the examples and types are kept there and load
-  from and download to area_examples.jsonl and area_kinds.json. The raw mouse log (src/mouse.rs, mouse_read.py's port,
-  equal to it on 31 logs, `--test mouse_parity`): the browser reads a log the user adds; the desktop app logs in the
+  Skip, Not an aim trainer; platform/labelling.ts) too; in the browser the service keeps the examples and types in its
+  data folder there, and the page downloads them as area_examples.jsonl and area_kinds.json and loads those files. The raw mouse log (src/mouse.rs, mouse_read.py's port,
+  equal to it on 31 logs, `--test mouse_parity`): in the browser the service keeps a log the user adds in its mouse folder (POST /api/mouse_log); the desktop app logs in the
   background (a switch in the top bar; desktop/src/mouse.rs, Windows raw input) and finds a run's log itself; the run
   page shows the measures. Windows throttles a background logger to about 125 events a second unless
   RawMouseThrottleEnabled is 0. Measured (stats files): the user's areas against KovOBS's change nothing on 14 of 15

@@ -39,8 +39,7 @@ for (const mode of MODE_CASES) {
     it('gives the queue of recordings to set a cut-off in', async () => {
       const cutoffs = setUp(mode, FaintCutoffs);
       const queue = await mode.finish(cutoffs.queue(), { '/api/faint_queue': [ID] });
-      expect(Array.isArray(queue)).toBe(true);
-      if (mode.name === 'server') expect(queue).toEqual([ID]);
+      expect(queue).toEqual([ID]);
     });
 
     it('keeps the labels where training reads them, or here to download', () => {

@@ -55,7 +55,7 @@ impl Library {
     /// python/server.py kept can be a model only it runs).
     pub fn model(&self) -> String {
         let picked = self.settings().0.get("model").and_then(Value::as_str).map(str::to_string);
-        picked.filter(|m| self.model_file(m).is_file()).unwrap_or_else(|| self.default_model())
+        picked.filter(|m| crate::disk::is_file(self.model_file(m))).unwrap_or_else(|| self.default_model())
     }
 
     /// The device new reviews run the detector on: the user's pick when this build has it, else the configuration's.
@@ -92,7 +92,7 @@ impl Library {
     /// to that file, not to code.
     pub fn default_model(&self) -> String {
         let named = self.models_info().and_then(|i| i["default"].as_str().map(str::to_string));
-        named.filter(|m| self.model_file(m).is_file()).unwrap_or_else(|| BEST.into())
+        named.filter(|m| crate::disk::is_file(self.model_file(m))).unwrap_or_else(|| BEST.into())
     }
 
     /// The detector export of a model.
@@ -112,7 +112,7 @@ impl Library {
         let mut models = Vec::new();
         let default = self.default_model();
         for (name, m) in info["models"].as_object().into_iter().flatten() {
-            if !self.model_file(name).is_file() {
+            if !crate::disk::is_file(self.model_file(name)) {
                 continue;
             }
             let mut m = m.clone();
@@ -135,7 +135,7 @@ impl Library {
 
     /// The model new reviews use, kept for the next start.
     pub fn pick(&self, name: &str) -> Answer<Value> {
-        if !self.model_file(name).is_file() {
+        if !crate::disk::is_file(self.model_file(name)) {
             return Err(Failure::bad(format!("no model called {name} ships with the app")));
         }
         self.save_settings("model", json!(name))?;

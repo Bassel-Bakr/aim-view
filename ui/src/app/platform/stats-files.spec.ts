@@ -62,26 +62,3 @@ for (const mode of MODE_CASES) {
     });
   });
 }
-
-describe('StatsFiles: what the browser reads itself', () => {
-  it('says what the paired file says, read from the file', async () => {
-    const [browser] = MODE_CASES;
-    const source = setUp(browser, RecordingSource);
-    const [id] = (await source.add([new File(['v'], NAME)])).ids;
-    await TestBed.inject(StatsFiles).pairFile(id, new File([STATS], 'mine.csv'));
-    const fixture = TestBed.runInInjectionContext(() =>
-      TestBed.inject(StatsFiles).pairing(
-        () => id,
-        () => null,
-      ),
-    );
-    await new Promise((r) => setTimeout(r));
-    TestBed.tick();
-    await new Promise((r) => setTimeout(r));
-    expect(fixture.value()).toMatchObject({
-      file: 'mine.csv',
-      how: 'upload',
-      facts: { scenario: 'Air', kills: 1 },
-    });
-  });
-});

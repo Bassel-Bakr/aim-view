@@ -3,17 +3,25 @@
 //! submitted one written as detector labels (the core picks the crops, python/model/hand_crops.py's `cutoff_crops`;
 //! here each crop's pixels and the fixed map are read, and written as that script writes them).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(feature = "native")]
+use std::path::Path;
 
+#[cfg(feature = "native")]
 use aimview::convert::{Converter, DST_H as H, DST_W as W};
-use aimview::faint::{CROP, CutoffCrop, CutoffRequest, DEFAULT_OFFSET, cutoff_crops};
+use aimview::faint::DEFAULT_OFFSET;
+#[cfg(feature = "native")]
+use aimview::faint::{CROP, CutoffCrop, CutoffRequest, cutoff_crops};
+#[cfg(feature = "native")]
 use aimview::track::Tracks;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::library::{Answer, Failure, Library, local_stamp};
+#[cfg(feature = "native")]
 use crate::npz::{self, Array};
 use crate::pyjson;
+#[cfg(feature = "native")]
 use crate::video::{Frames, VideoInfo, probe};
 
 const FAINT: &str = "faint.json";
@@ -49,7 +57,7 @@ fn truthy(v: &Value) -> bool {
 
 /// The time now as Python's `datetime.now().isoformat(timespec="seconds")`.
 fn now_iso() -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+    let secs = crate::disk::now();
     let s = local_stamp(secs.floor());
     format!("{}-{}-{}T{}:{}:{}", &s[0..4], &s[5..7], &s[8..10], &s[11..13], &s[14..16], &s[17..19])
 }
@@ -100,14 +108,25 @@ impl Library {
     }
 
     /// The user's cut-off, submitted: kept (on), and the review's tracks written as detector labels in the background.
+    /// In the browser build only kept: the page makes the labels (cutoff.worker.ts) and downloads them.
     pub fn submit_faint(&self, id: &str, offset: f64) -> Answer<Value> {
         let dir = self.shown(id).1;
         let report = match self.report(id) {
-            Ok(r) if dir.join("tracks.json").is_file() && !r.is_null() => r,
+            Ok(r) if crate::disk::is_file(dir.join("tracks.json")) && !r.is_null() => r,
             Ok(_) => return Err(Failure::bad("review the recording first")),
             Err(f) => return Err(f),
         };
         let out = self.set_faint(id, &json!({ "on": true, "offset": offset }), Some(now_iso()))?;
+        #[cfg(feature = "native")]
+        self.write_cutoff_labels(id, dir, report, offset)?;
+        #[cfg(not(feature = "native"))]
+        let _ = (dir, report);
+        Ok(out)
+    }
+
+    /// A submitted cut-off's labels, written in the background (`cutoff_labels`), and their count kept in faint.json.
+    #[cfg(feature = "native")]
+    fn write_cutoff_labels(&self, id: &str, dir: PathBuf, report: Value, offset: f64) -> Answer<()> {
         let video: PathBuf = self.resolve(id)?.components().collect();
         let exclude: Vec<[f64; 4]> = self.exclude_areas(id);
         // the labels go where python/ keeps them (the layout's cutoff folder): crops in train/, rows in checked.jsonl
@@ -128,7 +147,7 @@ impl Library {
                 eprintln!("the cut-off's labels: {e}");
             }
         });
-        Ok(out)
+        Ok(())
     }
 
     /// Skipped in the cut-off queue: left out of it from now on.
@@ -148,8 +167,9 @@ impl Library {
 /// The labels of a submitted cut-off (python/server.py: submit_faint's run): the crops the core picks from the run's
 /// frames, each written as hand_crops.py writes them (train/<stem>_<frame>.npz: the crop's RGB and fixed map, an empty
 /// target mask, the boxes kept; a row in checked.jsonl). Returns how many.
+#[cfg(feature = "native")]
 fn cutoff_labels(video: &Path, tracks: &Path, report: &Value, exclude: Vec<[f64; 4]>, offset: f64, out: &Path) -> Result<usize, String> {
-    let tracks: Tracks = serde_json::from_slice(&std::fs::read(tracks).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let tracks: Tracks = serde_json::from_slice(&crate::disk::read(tracks).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     let frame_of = |v: &Value| v.as_f64().map(|f| f as i64);
     let ((start, end), near) = if report["mode"] == "track" {
         ((frame_of(&report["summary"]["start"]), frame_of(&report["summary"]["end"])), 0.0)
@@ -186,6 +206,7 @@ fn cutoff_labels(video: &Path, tracks: &Path, report: &Value, exclude: Vec<[f64;
 
 /// Frame `i` of the recording as RGB at 1280 x 720 (ffmpeg's `scale=1280:720:flags=area,format=rgb24`), decoded from
 /// the key frame before it, as the review decodes its runs.
+#[cfg(feature = "native")]
 fn frame_rgb(video: &Path, info: &VideoInfo, i: usize) -> Result<Vec<u8>, String> {
     let key = info
         .keys
@@ -207,6 +228,7 @@ fn frame_rgb(video: &Path, info: &VideoInfo, i: usize) -> Result<Vec<u8>, String
 }
 
 /// One crop's file, as `np.savez_compressed(rgb=, fixed=, tmask=, boxes=, hidden=)` in hand_crops.py.
+#[cfg(feature = "native")]
 fn write_crop(out: &Path, crop: &CutoffCrop, rgb: &[u8], fixed: &[u8]) -> Result<(), String> {
     let (x0, y0) = (crop.x0, crop.y0);
     let mut pixels = Vec::with_capacity(CROP * CROP * 3);

@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::time::{Instant, UNIX_EPOCH};
 
 use aimview::stats_file::StatsFile;
 
@@ -15,6 +14,7 @@ use serde_json::{Value, json};
 use super::names::{local_stamp, parse_stats_name, parse_video, stamp_seconds};
 use super::reviews::Job;
 use super::{Answer, Failure, Library, modified, read_json, write_json};
+use crate::disk::Instant;
 
 /// Stats files offered to pair with a recording.
 const CANDIDATES: usize = 40;
@@ -60,7 +60,7 @@ fn number(meta: &HashMap<String, String>, key: &str) -> Option<f64> {
 
 /// A stats file's run, read from its last few kB (the whole file when they hold no score). None when it has no score.
 fn past_run(path: &Path, stamp: &str) -> Option<PastRun> {
-    let mut f = std::fs::File::open(path).ok()?;
+    let mut f = crate::disk::File::open(path).ok()?;
     let from = f.metadata().ok()?.len().saturating_sub(FOOTER);
     let mut bytes = Vec::new();
     f.seek(SeekFrom::Start(from)).ok()?;
@@ -70,7 +70,7 @@ fn past_run(path: &Path, stamp: &str) -> Option<PastRun> {
     let tail = if from > 0 { text.split_once('\n').map_or("", |(_, rest)| rest) } else { &text };
     let mut meta = StatsFile::parse(tail).meta;
     if from > 0 && !meta.contains_key("Score") {
-        meta = StatsFile::parse(&String::from_utf8_lossy(&std::fs::read(path).ok()?)).meta;
+        meta = StatsFile::parse(&String::from_utf8_lossy(&crate::disk::read(path).ok()?)).meta;
     }
     let (hits, misses) = (number(&meta, "Hit Count"), number(&meta, "Miss Count"));
     let accuracy = match (hits, misses) {
@@ -98,17 +98,17 @@ impl Library {
         let mut index = self.stats.lock().unwrap_or_else(|e| e.into_inner());
         if index.listed.is_none_or(|t| t.elapsed().as_secs() > INDEX_AGE) {
             let mut by_scenario: HashMap<String, Vec<StatsEntry>> = HashMap::new();
-            for e in std::fs::read_dir(self.stats_folder()).into_iter().flatten().flatten() {
+            for e in crate::disk::read_dir(self.stats_folder()).into_iter().flatten().flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
                 if let Some((scenario, stamp)) = parse_stats_name(&name) {
                     let t = stamp_seconds(&stamp).unwrap_or(0.0);
-                    // cheap on Windows: the listing gives it
-                    let modified = e
-                        .metadata()
-                        .and_then(|m| m.modified())
-                        .ok()
-                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                        .map_or(0.0, |d| d.as_secs_f64());
+                    // cheap on Windows: the listing gives it. In the browser each file's would be a call to the
+                    // page (KovaaK's folder holds tens of thousands), so `history` reads it for its own files only.
+                    let modified = if cfg!(feature = "native") {
+                        e.metadata().ok().and_then(|m| m.modified()).unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
                     by_scenario.entry(scenario).or_default().push(StatsEntry { t, name, stamp, modified });
                 }
             }
@@ -116,6 +116,14 @@ impl Library {
             index.listed = Some(Instant::now());
         }
         use_index(&index.by_scenario)
+    }
+
+    /// Forgets the stats files listed: they are listed again when next needed (the runs read from them are kept by
+    /// their time of change).
+    #[cfg(not(feature = "native"))]
+    pub(super) fn forget_stats(&self) {
+        let mut index = self.stats.lock().unwrap_or_else(|e| e.into_inner());
+        (index.by_scenario, index.listed) = (HashMap::new(), None);
     }
 
     /// The stats file of a scenario's run that ended at `stamp` (a file-name time stamp): the one of that scenario
@@ -142,6 +150,12 @@ impl Library {
             })
         });
         files.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        if !cfg!(feature = "native") {
+            let folder = self.stats_folder();
+            for f in &mut files {
+                f.3 = modified(&folder.join(&f.1));
+            }
+        }
         let mut runs: Vec<Option<Option<PastRun>>> = {
             let index = self.stats.lock().unwrap_or_else(|e| e.into_inner());
             files
@@ -152,19 +166,25 @@ impl Library {
         let unread: Vec<usize> = (0..files.len()).filter(|&i| runs[i].is_none()).collect();
         if !unread.is_empty() {
             let folder = self.stats_folder();
-            let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(16);
-            let read: Vec<(usize, Option<PastRun>)> = std::thread::scope(|s| {
-                let jobs: Vec<_> = unread
-                    .chunks(unread.len().div_ceil(threads))
-                    .map(|part| {
-                        let (files, folder) = (&files, &folder);
-                        s.spawn(move || {
-                            part.iter().map(|&i| (i, past_run(&folder.join(&files[i].1), &files[i].2))).collect::<Vec<_>>()
+            #[cfg(feature = "native")]
+            let read: Vec<(usize, Option<PastRun>)> = {
+                let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(16);
+                std::thread::scope(|s| {
+                    let jobs: Vec<_> = unread
+                        .chunks(unread.len().div_ceil(threads))
+                        .map(|part| {
+                            let (files, folder) = (&files, &folder);
+                            s.spawn(move || {
+                                part.iter().map(|&i| (i, past_run(&folder.join(&files[i].1), &files[i].2))).collect::<Vec<_>>()
+                            })
                         })
-                    })
-                    .collect();
-                jobs.into_iter().flat_map(|j| j.join().unwrap_or_default()).collect()
-            });
+                        .collect();
+                    jobs.into_iter().flat_map(|j| j.join().unwrap_or_default()).collect()
+                })
+            };
+            // the browser build has one thread
+            #[cfg(not(feature = "native"))]
+            let read: Vec<(usize, Option<PastRun>)> = unread.iter().map(|&i| (i, past_run(&folder.join(&files[i].1), &files[i].2))).collect();
             let mut index = self.stats.lock().unwrap_or_else(|e| e.into_inner());
             for (i, run) in read {
                 index.runs.insert(files[i].1.clone(), (files[i].3, run.clone()));
@@ -194,10 +214,10 @@ impl Library {
     /// .csv), else by name and time.
     pub(crate) fn stats_of(&self, id: &str, video: &Path) -> Option<PathBuf> {
         if let Some(pick) = self.pairing(id) {
-            return pick.file.and_then(|f| self.stats_file(&f, &pick.source).ok()).filter(|p| p.is_file());
+            return pick.file.and_then(|f| self.stats_file(&f, &pick.source).ok()).filter(|p| crate::disk::is_file(p));
         }
         let beside = video.with_extension("csv");
-        if id.starts_with("uploads/") && beside.is_file() {
+        if id.starts_with("uploads/") && crate::disk::is_file(&beside) {
             return Some(beside);
         }
         let (scenario, _, stamp) = parse_video(video)?;
@@ -257,12 +277,12 @@ impl Library {
         let video = self.resolve(id)?;
         let path = self.review_dir(id).join("stats.json");
         if body["auto"].as_bool() == Some(true) {
-            let _ = std::fs::remove_file(&path);
+            let _ = crate::disk::remove_file(&path);
         } else {
             let file = body["file"].as_str().map(str::to_string);
             let source = body["source"].as_str().unwrap_or("kovaak").to_string();
             if let Some(f) = &file
-                && !self.stats_file(f, &source)?.is_file()
+                && !crate::disk::is_file(self.stats_file(f, &source)?)
             {
                 return Err(Failure::missing(f.clone()));
             }

@@ -1,9 +1,9 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Injectable, Signal, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { StatsChange, StatsChoice, StatsPairing, Uploaded } from '../../api';
 import { StatsFiles } from '../../platform/stats-files';
-import { readStats } from '../web-files/local-files';
+import { readStats } from '../web-files/stats-csv';
 
 /**
  * The stats files of the review server's recordings: KovaaK's stats files it lists (/api/stats), the user's choice
@@ -12,10 +12,10 @@ import { readStats } from '../web-files/local-files';
 @Injectable({ providedIn: 'root' })
 export class ServerStatsFiles implements StatsFiles {
   private readonly http = inject(HttpClient);
-  readonly searches = signal(true).asReadonly();
+  readonly searches: Signal<boolean> = signal(true).asReadonly();
   /** The server reaches the stats folder itself. */
-  readonly missing = signal<string | null>(null).asReadonly();
-  readonly chooseFolder = null;
+  readonly missing: Signal<string | null> = signal<string | null>(null).asReadonly();
+  readonly chooseFolder: ((files: File[]) => Promise<void>) | null = null;
 
   pairing(
     id: () => string | undefined,

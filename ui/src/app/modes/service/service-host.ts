@@ -1,0 +1,145 @@
+import { Injectable } from '@angular/core';
+import {
+  ChosenFile,
+  FilesOp,
+  FilesResult,
+  ServiceAnswer,
+  ServiceMethod,
+  ServiceReply,
+  ServiceStart,
+  ServiceTask,
+  VodsMount,
+} from './service-messages';
+
+/** Hears how far a task is: done of total (an upload's bytes, a copy's files). */
+export type TaskProgress = (done: number, total: number) => void;
+
+/** A task the worker has not answered yet: how to end it, and who hears its progress. */
+interface Waiting {
+  resolve: (value: ServiceAnswer | FilesResult) => void;
+  reject: (e: Error) => void;
+  progress?: TaskProgress;
+}
+
+/** A task the worker turned down: why, and the status it answers as (404: no such file; 503: no service). */
+export class ServiceFailure extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** What a file task takes besides its op and path. */
+export interface FilesTask {
+  body?: Blob | null;
+  files?: ChosenFile[];
+  limit?: number;
+}
+
+/**
+ * The page's side of the review service in a worker (service.worker.ts): it starts the worker on the first task,
+ * sends it the service's requests, the page's own file reads and writes in the mounts, and the VODs folder to mount.
+ * The interceptor (service-api.ts) sends every /api request through it.
+ */
+@Injectable({ providedIn: 'root' })
+export class ServiceHost {
+  private worker: Worker | null = null;
+  /** Why the worker stopped (it failed to load, or failed outside a task); null while it runs. */
+  private stopped: string | null = null;
+  private next = 0;
+  private readonly waiting = new Map<number, Waiting>();
+
+  /** A request to the service. */
+  ask(
+    method: ServiceMethod,
+    path: string,
+    body: Uint8Array | Blob | null,
+    progress?: TaskProgress,
+  ): Promise<ServiceAnswer> {
+    return this.send(
+      (id) => ({ kind: 'ask', id, method, path, body }),
+      progress,
+    ) as Promise<ServiceAnswer>;
+  }
+
+  /** One of the page's own file tasks in the mounts. */
+  files(
+    op: FilesOp,
+    path: string,
+    task: FilesTask = {},
+    progress?: TaskProgress,
+  ): Promise<FilesResult> {
+    return this.send(
+      (id) => ({
+        kind: 'files',
+        id,
+        op,
+        path,
+        body: task.body ?? null,
+        files: task.files ?? [],
+        limit: task.limit ?? 0,
+      }),
+      progress,
+    ) as Promise<FilesResult>;
+  }
+
+  /** Mounts the VODs folder at /vods (null: none). */
+  async mount(vods: VodsMount | null): Promise<void> {
+    await this.send((id) => ({ kind: 'mount', id, vods }));
+  }
+
+  private send(
+    task: (id: number) => ServiceTask,
+    progress?: TaskProgress,
+  ): Promise<ServiceAnswer | FilesResult> {
+    return new Promise((resolve, reject) => {
+      const worker = this.started();
+      const id = ++this.next;
+      this.waiting.set(id, { resolve, reject, progress });
+      worker.postMessage(task(id));
+    });
+  }
+
+  /** The worker, started once: it opens the service with the app's models and shipped data. */
+  private started(): Worker {
+    if (this.stopped !== null) throw new ServiceFailure(503, this.stopped);
+    if (this.worker) return this.worker;
+    if (typeof Worker === 'undefined')
+      throw new ServiceFailure(
+        503,
+        'This browser cannot run the review service: it has no workers',
+      );
+    const worker = new Worker(new URL('./service.worker', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<ServiceReply>) => this.hear(e.data);
+    worker.onerror = (e) => {
+      this.stopped = `The review service stopped: ${e.message || 'its worker failed'}`;
+      for (const w of this.waiting.values()) w.reject(new ServiceFailure(503, this.stopped));
+      this.waiting.clear();
+    };
+    const base = new URL(document.baseURI);
+    const start: ServiceStart = {
+      kind: 'start',
+      wasmUrl: new URL('service/aimview_service.wasm', base).href,
+      modelsUrl: new URL('models/', base).href,
+      dataUrl: new URL('data/', base).href,
+    };
+    worker.postMessage(start);
+    this.worker = worker;
+    return worker;
+  }
+
+  private hear(m: ServiceReply): void {
+    const w = this.waiting.get(m.id);
+    if (!w) return;
+    if (m.kind === 'progress') {
+      w.progress?.(m.done, m.total);
+      return;
+    }
+    this.waiting.delete(m.id);
+    if (m.kind === 'answer') w.resolve(m.answer);
+    else if (m.kind === 'done') w.resolve(m.result);
+    else w.reject(new ServiceFailure(m.status, m.error));
+  }
+}

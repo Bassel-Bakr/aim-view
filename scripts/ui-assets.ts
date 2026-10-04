@@ -1,5 +1,6 @@
 // Builds the review core for the browser (WebAssembly) and copies what the UI ships beside it into ui/generated/
-// (not in git): the core's module (core/aimview.wasm), the detector models the browser runs (models/, the _u8in
+// (not in git): the core's module (core/aimview.wasm), the review service's (service/aimview_service.wasm), the
+// detector models the browser runs (models/, the _u8in
 // exports, each with its settings file detector_<name>.json: python/model/MODEL_FILE.md) and the user's area finder
 // data (data/), which browser mode starts from. angular.json serves ui/generated/
 // as it is; Angular takes no files from outside ui/.
@@ -22,6 +23,26 @@ await $`cargo build --profile ${profile} --target wasm32-unknown-unknown`.cwd(ro
 mkdirSync(join(out, 'core'), { recursive: true });
 copyFileSync(join(root, `target/wasm32-unknown-unknown/${profile}/aimview.wasm`), join(out, 'core/aimview.wasm'));
 
+// the review service (browser-service/) for browser mode's worker, through Binaryen's Asyncify: its one asynchronous
+// import (host.host_fs, the page's file system) suspends the module while the page answers. wasm-opt keeps the
+// features rustc's output uses (SIMD and the rest of its target_features section). -O2 for --release; the quick
+// build's -O1 gives the same size in about half the time (37 s, not 67).
+await $`cargo build --profile ${profile} --target wasm32-unknown-unknown -p aimview-browser-service`.cwd(root).quiet();
+const level = release ? '-O2' : '-O1';
+mkdirSync(join(out, 'service'), { recursive: true });
+const features = [
+  '--enable-simd',
+  '--enable-bulk-memory',
+  '--enable-nontrapping-float-to-int',
+  '--enable-sign-ext',
+  '--enable-mutable-globals',
+  '--enable-multivalue',
+  '--enable-reference-types',
+];
+await $`${join(root, 'node_modules', '.bin', 'wasm-opt')} ${join(root, `target/wasm32-unknown-unknown/${profile}/aimview_browser_service.wasm`)} --asyncify --pass-arg=asyncify-imports@host.host_fs ${level} ${features} -o ${join(out, 'service', 'aimview_service.wasm')}`
+  .cwd(root)
+  .quiet();
+
 // the models the model panel offers (python/model/models.json), each as its _u8in export and its settings file (a
 // model without one takes today's values)
 const exports = join(root, 'python/model/exports');
@@ -39,7 +60,7 @@ for (const f of [
 copyFileSync(join(root, 'python/model/models.json'), join(out, 'models', 'models.json'));
 const unexported = listed.filter((n) => !exported.includes(n));
 const unsettled = exported.filter((n) => !settled.includes(n));
-console.log(`ui/generated: core/aimview.wasm and ${exported.length} models`);
+console.log(`ui/generated: core/aimview.wasm, service/aimview_service.wasm and ${exported.length} models`);
 if (unexported.length) console.log(`  listed with no _u8in export in python/model/exports: ${unexported.join(', ')}`);
 if (unsettled.length) console.log(`  with no settings file (detector_<name>.json): ${unsettled.join(', ')}`);
 
