@@ -1,4 +1,5 @@
 import { PastRun } from '../../platform/score-history';
+import { fingerprint } from '../recording-context';
 import { dotNear, ordinal, progressChart } from './progress-chart-model';
 
 const run = (stamp: string, score: number): PastRun => ({
@@ -19,28 +20,28 @@ const SIZE = { width: 600, height: 200 };
 
 describe('progressChart', () => {
   it('gives each day played the same width, its runs spread across it in order', () => {
-    const m = progressChart(RUNS, null, SIZE);
-    expect(m).not.toBeNull();
-    const xs = m?.dots.map((d) => d.x) ?? [];
-    const slot = (m!.right - m!.left) / 2;
-    expect(xs[0]).toBeCloseTo(m!.left + slot * 0.25);
-    expect(xs[1]).toBeCloseTo(m!.left + slot * 0.75);
-    expect(xs[2]).toBeCloseTo(m!.left + slot * (1 + 1 / 6));
-    expect(m?.dates.map((d) => d.label)).toEqual(['1 Sep 2026', '3 Sep 2026']);
+    const model = progressChart(RUNS, null, SIZE);
+    expect(model).not.toBeNull();
+    const xs = model?.dots.map((dot) => dot.x) ?? [];
+    const slot = (model!.right - model!.left) / 2;
+    expect(xs[0]).toBeCloseTo(model!.left + slot * 0.25);
+    expect(xs[1]).toBeCloseTo(model!.left + slot * 0.75);
+    expect(xs[2]).toBeCloseTo(model!.left + slot * (1 + 1 / 6));
+    expect(model?.dates.map((date) => date.label)).toEqual(['1 Sep 2026', '3 Sep 2026']);
   });
 
   it('marks the personal best and the run on the page, with its place', () => {
     // the recording's time is a second after its stats file's
-    const m = progressChart(RUNS, '2026.09.03-21.04.01', SIZE);
-    expect(m?.best.run.score).toBe(610);
-    expect(m?.current?.run.score).toBe(580);
-    expect(m?.rank).toBe(3);
-    expect(m?.summary).toBe(
+    const model = progressChart(RUNS, '2026.09.03-21.04.01', SIZE);
+    expect(model?.best.run.score).toBe(610);
+    expect(model?.current?.run.score).toBe(580);
+    expect(model?.rank).toBe(3);
+    expect(model?.summary).toBe(
       '5 runs since 1 Sep 2026 · best 610 on 3 Sep 2026 · this run 580: 3rd best of 5',
     );
-    expect(m?.dots.every((d) => d.y >= m.top && d.y <= m.bottom)).toBe(true);
+    expect(model?.dots.every((dot) => dot.y >= model.top && dot.y <= model.bottom)).toBe(true);
     // a higher score is higher up
-    expect(m!.best.y).toBeLessThan(m!.dots[0].y);
+    expect(model!.best.y).toBeLessThan(model!.dots[0].y);
   });
 
   it('says so when the run on the page is not among them', () => {
@@ -51,19 +52,44 @@ describe('progressChart', () => {
   });
 
   it('draws the median of the runs around each one', () => {
-    const m = progressChart(RUNS, null, SIZE)!;
+    const model = progressChart(RUNS, null, SIZE)!;
     // every run is within four of the others: each point is the median of all five, 580
-    const y580 = m.dots[3].y;
-    for (const p of m.median) expect(p.y).toBeCloseTo(y580);
+    const y580 = model.dots[3].y;
+    for (const point of model.median) expect(point.y).toBeCloseTo(y580);
   });
 
+  it('keeps every number of the chart (a digest of the model as JSON)', () => {
+    const days = Array.from({ length: 40 }, (_unused, i) =>
+      run(
+        `2026.${i < 30 ? '09' : '10'}.${String(1 + (i % 30)).padStart(2, '0')}-12.00.00`,
+        400 + ((i * 53) % 170),
+      ),
+    );
+    const models = [
+      progressChart(RUNS, '2026.09.03-21.04.01', SIZE),
+      progressChart(days, '2026.10.05-12.00.03', { width: 420, height: 180 }),
+      progressChart([run('2026.09.01-10.00.00', 750)], null, SIZE),
+      progressChart([run('2026.09.01-10.00.00', 0), run('2026.09.01-10.01.00', 0)], null, SIZE),
+    ];
+    expect(models.map((model) => fingerprint(JSON.stringify(model)))).toEqual([
+      '9c0eaaa2',
+      '32fd74e0',
+      '4f453761',
+      'd158823d',
+    ]);
+  });
+});
+
+describe('dotNear', () => {
   it('finds the dot under the pointer', () => {
-    const m = progressChart(RUNS, null, SIZE)!;
-    const d = m.dots[2];
-    expect(dotNear(m, d.x + 2, d.y - 2, 6)).toBe(d);
-    expect(dotNear(m, d.x + 40, d.y, 6)).toBeNull();
+    const model = progressChart(RUNS, null, SIZE)!;
+    const dot = model.dots[2];
+    expect(dotNear(model, dot.x + 2, dot.y - 2, 6)).toBe(dot);
+    expect(dotNear(model, dot.x + 40, dot.y, 6)).toBeNull();
   });
+});
 
+describe('ordinal', () => {
   it('names places', () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 101].map(ordinal)).toEqual([
       '1st',

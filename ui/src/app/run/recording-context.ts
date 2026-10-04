@@ -42,8 +42,11 @@ function recorded(value: unknown): CanvasValue {
   return `[${typeof value}]`;
 }
 
-/** FNV-1a over the text, as eight hex digits. */
-function fingerprint(text: string): string {
+/**
+ * A short fingerprint of a text (FNV-1a, as eight hex digits), to pin a long output in a spec: a drawing's calls, or a
+ * chart model as JSON.
+ */
+export function fingerprint(text: string): string {
   let hash = FNV_OFFSET;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);
