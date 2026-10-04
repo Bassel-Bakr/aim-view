@@ -8,6 +8,10 @@
 //! once by the track example's `--parts` (service/examples/track.rs; saved.txt there): setup.json, fixed.bin,
 //! run<k>_track.json, run<k>_watch.json and detector.txt. They change only with what comes before the join (decoding,
 //! the conversion, the detector, the watches' readings of each frame): keep them again then.
+//!
+//! After a change meant to move the outputs, `REPLAY_WRITE=<folder>` writes them into a new baseline instead of
+//! comparing: copy the old baseline's folder there first (the files the replay does not make stay), then check that
+//! only the intended things moved (`bun scripts/same-json.ts <old> <new> [path=name ...]`) and point `NATIVE` at it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,6 +93,7 @@ fn replayed_reviews_equal_the_native_ones() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut checked = 0;
     let mut wrong = Vec::new();
+    let write_to = std::env::var_os("REPLAY_WRITE").map(|folder| root.join(folder));
     for (video, stats, sub) in CASES {
         let dir = root.join(NATIVE).join(video);
         let parts = root.join(PARTS).join(video);
@@ -100,6 +105,12 @@ fn replayed_reviews_equal_the_native_ones() {
         let stats = stats.map(|s| root.join(s));
         let report = report(&[tracks.clone(), readings.clone(), hud.clone()], video, stats.as_deref());
         for (file, got) in FILES.iter().zip([tracks, readings, hud, report]) {
+            if let Some(folder) = &write_to {
+                let path = folder.join(video).join(sub).join(file);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, &got).unwrap();
+                continue;
+            }
             let path = dir.join(sub).join(file);
             let want = fs::read(&path).unwrap();
             checked += 1;
