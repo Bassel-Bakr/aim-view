@@ -18,6 +18,14 @@
       "weak": "2.3 times small_v13's compute. On the Aim Lab upload it measures 8 fewer flicks than small_v11.",
       "checks": {"static": [854, 844], "moving": [1097, 1060], "uploads": [997, 982], "tracking": [-0.025, 0.075]}
     },
+    "full_v5": {
+      "label": "full_v5 (trial)",
+      "params": 80765, "kb": 324.4,
+      "trained": "full_v3 fine-tuned on the crops checked by eye (moving targets on other themes, mined crops), with bots hidden under the crosshair left out of the loss.",
+      "speed_ms": {"gpu": 1.37, "cpu": 6.0, "browser": 24.1},
+      "best": "Tracking a little nearer the stats files than full_v3, and 3 more static flicks measured (the acceptance gate, MODEL_STATUS.md).",
+      "weak": "A trial: it fails the acceptance gate on kills matched. Smoothbot Switch Robots matches 51 of 56 kills (full_v3 54); its robots need more training data."
+    },
     "small_v13": {
       "params": 32037, "kb": 134.5,
       "trained": "Every scenario kind: static, dynamic, switching and tracking.",
