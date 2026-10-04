@@ -51,6 +51,15 @@ Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats i
 `C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats` (more than 70k CSVs: use a Python
 glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 
+Facts about the recordings, from the user (2026-10-04): the crosshair is always at the screen's center and never
+changes during a run (no hit flash, color change or expanding), though it differs between runs and players; one click
+kills at most one target; a recording can hold several runs, and the countdown can be turned off (never rely on it);
+FOV and KovaaK's HUD layout stay put within a run but can change between runs; the frame rate varies between
+recordings; targets are spheres, pills, humanoid bots or squares, and mostly vanish on death (some settings show a
+death animation); games are KovaaK's, Aim Lab, Valorant and Aim Beast; KovaaK's runs mostly have a stats file, but
+other people's recordings may not; some maps show a sky that can move on its own; zoom (ADS) is very rare but some
+scenarios allow it.
+
 Browser mode starts from the user's latest training data. `bun run assets` copies the area finder's examples and
 types (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`) into `ui/generated/data/`, and the review service in
 the page copies them into its data folder on its first run (when it has none of its own). From then on the service
