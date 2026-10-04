@@ -13,6 +13,8 @@ code before it.
   for a change on the path it times.
 - A run that sets a new baseline keeps its raw output in `test_out/baselines/<commit>/`, and its row here is updated
   in the same commit as the change.
+- A change on a function's path reruns that function's bench (`cargo bench -- <name>`, "Function benchmarks" below)
+  against the saved baseline. Whole reviews are timed only for changes to decode, convert or the detector.
 
 ## Accuracy: the stats-file checks
 
@@ -50,3 +52,50 @@ Measured from 2026-10-02 to 2026-10-04, before 4b7ddc4. Remeasure only for a cha
 | KovaaK's files into the browser | browser mode, 3,000 files | shown in 14 ms, copied in 1.0 s |
 | The recordings list, native | `/api/vods?quick=1` / `/api/vods` | 0.04 s / 0.16 s |
 | The recordings list, browser | the browser build on a stand-in VODs folder in the browser's storage (the real 3,351 names in 786 folders, 1-byte files; `test_out/baselines/browser_list/`) | the full list 0.5 s after the quick one, 2.6 to 2.9 s from page load (4b7ddc4: 2.4 s after, 4.5 s from load) |
+
+## Function benchmarks
+
+The hot paths (`HOT_PATHS.md`) timed one function at a time with criterion, on real inputs: the parity fixtures
+(`test_out/parity/`) and the native review's kept outputs (`test_out/baselines/4b7ddc4/native/`). The code is in
+`benches/hot_paths/`. A bench whose input is missing is skipped with a message. The whole suite takes about 80 s
+(each bench 0.5 s of warm-up and 2 s of samples), after a build of about 2 minutes (the release profile, with LTO).
+
+- Compare with the baseline: `CRITERION_HOME=test_out/baselines/criterion cargo bench -- <name> --baseline 9cbcbf7`
+  (`<name>`: part of a bench's name, such as `track/link`; leave it out for every bench). In PowerShell, set
+  `$env:CRITERION_HOME = 'test_out/baselines/criterion'` first.
+- Save a new baseline: the same with `--save-baseline <commit>`. Then update the table below.
+- Each bench's median: `python test_out/baselines/criterion_medians.py test_out/baselines/criterion <commit>`.
+
+Runs of the same code differ by up to about 10% on this machine (more on the cluttered links), so criterion reports a
+change only beyond 5%, and a change under 10% needs a second run before it counts.
+
+Baseline: commit 9cbcbf7 (2026-10-04), `test_out/baselines/criterion/` (each bench's `9cbcbf7/` folder).
+
+| Bench | What one call does | Median |
+| --- | --- | --- |
+| `fixed/contrast` | `fixed::contrast` of one av1 key frame (1280 x 720, YUV 4:2:0) | 2.78 ms |
+| `fixed/add` | `FixedMap::add`: one key frame into the map, av1's 25 in turn | 4.82 ms |
+| `convert/rgb24_2560` | `Converter::rgb24`, av1's frame (2560 x 1440, full range): the 2:1 shortcut | 316 µs |
+| `convert/luma_2560` | `Converter::luma`, the same frame | 562 µs |
+| `convert/rgb24_1920` | `Converter::rgb24`, a 1080p upload (limited range): swscale's full pipeline | 5.54 ms |
+| `convert/luma_1920` | `Converter::luma`, the same frame | 2.82 ms |
+| `track/keep_av1` | `track::keep` on every av1 frame (6,038), with its areas and target count | 3.82 ms |
+| `track/link_av1` | `track::link` (and its view shift) on av1's kept targets | 21.2 ms |
+| `track/link_2007_1w6ts_aimlab` | `track::link`, a cluttered Aim Lab run's targets (3,801 frames) | 59.7 ms |
+| `track/link_10_sphere_hipfire` | `track::link`, 10 Sphere Hipfire's targets (4,006 frames) | 68.6 ms |
+| `camera/add` | `CameraWatch::add`: one 720p luma frame of flower | 1.04 ms |
+| `camera/reading` | `CameraWatch::reading`: one frame's reading from its tiles' shifts | 303 ns |
+| `camera/countdown_showing` | `camera::countdown_showing` on av1's 720p RGB frame | 1.30 µs |
+| `camera/excluded` | `camera::excluded`: the tiles' excluded pixels from flower's fixed map | 4.42 ms |
+| `hud/keys_2560` | `HudWatch::add_key` on 25 key frames of av1 (its two decoded frames in turn), then `keys` | 34.2 ms |
+| `hud/add_2560` | `HudWatch::add`: one av1 frame's Y plane (2560 x 1440) | 206 µs |
+| `hud/add_1920` | `HudWatch::add`: one frame of the 1080p upload | 317 µs |
+| `popup/add_look` | `AreaWatch::add`, a frame it looks at (every second frame), av1's areas | 330 µs |
+| `areas/finish_av1` | `AreaFinder::finish` on av1's 25 key frames | 48.6 ms |
+| `matching/match_times_av1` | `matching::match_times`: av1's 66 kills from the stats file (with `clock_offset`) | 9.20 ms |
+| `matching/match_video_av1` | `matching::match_video`: av1's kills from the video alone | 12.4 ms |
+| `measure/measure_av1` | `measure::measure`: av1's matched flicks | 482 µs |
+| `report/clicks_av1` | `review::review_clicks` with the stats file: matching, measures, summary and checks | 14.5 ms |
+| `report/hud_av1` | `review::review_clicks` without it: the kills from the HUD's reading | 13.0 ms |
+| `report/json_av1` | `review::review_json`: the service's report request for av1, JSON in and out | 21.6 ms |
+| `report/tracking_flower` | `review::review_tracking`: flower with its stats file and camera readings | 3.40 ms |

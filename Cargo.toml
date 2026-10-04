@@ -16,6 +16,8 @@ exclude = ["python/model/rust"]
 [lib]
 # rlib: the desktop app links it; cdylib: the WebAssembly module the browser loads (src/wasm.rs)
 crate-type = ["rlib", "cdylib"]
+# `cargo bench` runs only the criterion benches: the lib's own test harness would refuse their options
+bench = false
 
 [features]
 # `bun run types`: the TypeScript types of the JSON the UI reads, made from these structs (ts-rs). Off in every build.
@@ -26,6 +28,14 @@ rustfft = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
+
+[dev-dependencies]
+# `cargo bench`: the hot paths' benches (benches/hot_paths/; BENCH.md, "Function benchmarks")
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "rayon"] }
+
+[[bench]]
+name = "hot_paths"
+harness = false
 
 [profile.release]
 lto = true
