@@ -7,7 +7,7 @@ the UI is Angular (`ui/`), and
 reference. Read `README.md` first, then `python/README.md` (how the review works) and
 `python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
 `python/model/REPRODUCE.md`. Every benchmark, its baseline and when to rerun it are in `BENCH.md`: check it before
-running one.
+running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing.
 
 It was copied from the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) on 2026-10-02, with its caches and
 training data in `test_out/` (ignored by git). Its `vod/` folder became `python/` here. The planned stack and layout
