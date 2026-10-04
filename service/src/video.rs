@@ -26,6 +26,8 @@ pub struct VideoInfo {
     pub keys: Vec<f64>,
     pub duration: f64,
     pub earliest: f64,
+    /// ffprobe's name for the video's codec ("av1", "h264", "hevc").
+    pub codec: String,
 }
 
 #[derive(Deserialize)]
@@ -43,6 +45,8 @@ struct ProbeFormat {
 
 #[derive(Deserialize)]
 struct ProbeStream {
+    #[serde(default)]
+    codec_name: String,
     width: usize,
     height: usize,
     r_frame_rate: String,
@@ -113,7 +117,7 @@ fn matrix(color_space: Option<&str>) -> Matrix {
 pub fn probe(video: &Path) -> Result<VideoInfo, String> {
     let out = tool("ffprobe")
         .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags"])
-        .args(["-show_entries", "stream=width,height,r_frame_rate,color_space,color_range"])
+        .args(["-show_entries", "stream=codec_name,width,height,r_frame_rate,color_space,color_range"])
         .args(["-show_entries", "format=duration", "-of", "json"])
         .arg(video)
         .output()
@@ -133,6 +137,7 @@ pub fn probe(video: &Path) -> Result<VideoInfo, String> {
         times,
         keys,
         earliest,
+        codec: stream.codec_name.clone(),
     })
 }
 

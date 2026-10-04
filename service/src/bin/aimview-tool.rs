@@ -42,6 +42,8 @@ Library options:
   --stats FOLDER          KovaaK's stats folder [FPSAimTrainer\stats in Steam's folder]
   --scenarios FOLDER...   the scenario folders [KovaaK's and the workshop's]
   --device auto|directml|cuda|cpu   where the detector runs [auto]
+  --gpu-frames on|off     decode and convert on the GPU where the video allows it (Windows, 2560 x 1440 AV1 or
+                          H.264 MP4s) [on]
   --ffmpeg FOLDER|path    where ffmpeg and ffprobe are [path: the PATH's]
   --download-ffmpeg       download ffmpeg into the --ffmpeg folder when a review first needs it
 
@@ -92,6 +94,7 @@ const LIBRARY: Options = &[
     ("stats", Takes::One),
     ("scenarios", Takes::Many),
     ("device", Takes::One),
+    ("gpu-frames", Takes::One),
     ("ffmpeg", Takes::One),
     ("download-ffmpeg", Takes::Nothing),
 ];
@@ -240,6 +243,11 @@ fn config(line: &Line) -> Result<Config, Failure> {
         "cuda" => Device::Cuda,
         "cpu" => Device::Cpu,
         other => return Err(Failure::bad(format!("--device: auto, directml, cuda or cpu, not {other}"))),
+    };
+    config.gpu_frames = match line.one("gpu-frames").unwrap_or("on") {
+        "on" => true,
+        "off" => false,
+        other => return Err(Failure::bad(format!("--gpu-frames: on or off, not {other}"))),
     };
     let download = line.has("download-ffmpeg");
     config.ffmpeg = match line.one("ffmpeg") {
@@ -468,7 +476,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         window,
         areas,
         keep_parts: None,
-        gpu_frames: false,
+        gpu_frames: library.config().gpu_frames,
     };
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();

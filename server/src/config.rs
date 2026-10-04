@@ -27,6 +27,13 @@ const FFMPEG_FROM_PATH: &str = "path";
 /// The characters a token may hold besides ASCII letters and digits (URL-safe without percent-encoding).
 const TOKEN_SYMBOLS: &[u8] = b"-._~";
 
+/// A setting turned on or off on the command line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Switch {
+    On,
+    Off,
+}
+
 /// Where the detector runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -96,6 +103,10 @@ pub struct Flags {
     /// Where the detector runs [default: auto]
     #[arg(long, value_enum)]
     pub device: Option<Device>,
+    /// Decode and convert the frames on the GPU where the video allows it (Windows, 2560 x 1440 AV1 or H.264 MP4s;
+    /// the reviews are the same, byte for byte, with a third to a half of the CPU) [default: on]
+    #[arg(long, value_enum)]
+    pub gpu_frames: Option<Switch>,
     /// ffmpeg: "path" for the one on the PATH only, or a folder: the ffmpeg in it [default: the PATH's when it has one,
     /// else ffmpeg/ in the data folder, downloaded there when missing (BtbN's build, with the dav1d AV1 decoder)]
     #[arg(long, value_name = "FOLDER|path")]
@@ -126,6 +137,7 @@ pub struct FileSettings {
     pub scenarios: Option<Vec<PathBuf>>,
     pub models: Option<PathBuf>,
     pub device: Option<Device>,
+    pub gpu_frames: Option<bool>,
     pub ffmpeg: Option<PathBuf>,
     pub ui: Option<PathBuf>,
     pub token: Option<String>,
@@ -142,6 +154,7 @@ pub struct Settings {
     pub scenarios: Vec<PathBuf>,
     pub models: PathBuf,
     pub device: Device,
+    pub gpu_frames: bool,
     pub ffmpeg: FfmpegChoice,
     pub ui: PathBuf,
     pub token: Option<String>,
@@ -180,6 +193,7 @@ impl Settings {
             ],
             models: repo.join("python").join("model").join("exports"),
             device: Device::Auto,
+            gpu_frames: true,
             ffmpeg: FfmpegChoice::Auto(repo.join("test_out").join("ffmpeg")),
             ui: repo.join("ui").join("dist").join("server").join("browser"),
             token: None,
@@ -273,6 +287,7 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
         scenarios,
         models: path(flags.models, file.models).unwrap_or(defaults.models),
         device: flags.device.or(file.device).unwrap_or(defaults.device),
+        gpu_frames: flags.gpu_frames.map(|switch| switch == Switch::On).or(file.gpu_frames).unwrap_or(defaults.gpu_frames),
         ffmpeg,
         ui: path(flags.ui, file.ui).unwrap_or(defaults.ui),
         token,
@@ -378,6 +393,14 @@ mod tests {
             assert_eq!(device.flag(), name);
         }
         assert!(Flags::try_parse_from(["aimview-server", "--device", "gpu"]).is_err());
+    }
+
+    #[test]
+    fn gpu_frames_are_on_unless_turned_off() {
+        assert!(Settings::defaults().gpu_frames);
+        assert_eq!(flags(&["--gpu-frames", "off"]).gpu_frames, Some(Switch::Off));
+        assert_eq!(parse_file("gpu_frames = false").unwrap().gpu_frames, Some(false));
+        assert!(Flags::try_parse_from(["aimview-server", "--gpu-frames", "maybe"]).is_err());
     }
 
     #[test]

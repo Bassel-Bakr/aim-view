@@ -26,6 +26,9 @@ pub struct Config {
     pub models: PathBuf,
     pub device: Device,
     pub ffmpeg: Ffmpeg,
+    /// Decode and convert the frames on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 AV1 or
+    /// H.264 MP4s); else ffmpeg's software decode. On by default: the reviews are the same, byte for byte.
+    pub gpu_frames: bool,
 }
 
 /// Where a library keeps its files in the data folder.
@@ -181,6 +184,7 @@ impl Config {
             models,
             device: Device::Auto,
             ffmpeg: Ffmpeg::Path,
+            gpu_frames: true,
         }
     }
 

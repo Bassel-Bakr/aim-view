@@ -30,6 +30,7 @@ With no settings, the server runs on the machine Aim View is made on:
 | Scenario folders | `--scenarios` (several) | KovaaK's `Saved\SaveGames\Scenarios` and `steamapps\workshop\content\824270` |
 | Models | `--models` | the repo's `python/model/exports` (`models.json` is found in the folder above) |
 | Device | `--device` | `auto`; also `directml`, `cuda`, `cpu` |
+| GPU frames | `--gpu-frames` | `on`: decoded and converted on the GPU where the video allows it (Windows, 2560 x 1440 AV1 or H.264 MP4s; the same reviews with a third to a half of the CPU); `off` for ffmpeg's software decode (TOML: `gpu_frames = false`) |
 | ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg/` in the data folder; `path` for the PATH's only |
 | UI build | `--ui` | the repo's `ui/dist/server/browser` |
 | Token | `--token` | none |

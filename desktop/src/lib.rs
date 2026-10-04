@@ -34,6 +34,8 @@ pub fn run() {
                 models: app.path().resource_dir()?.join("models"),
                 device: Device::Auto,
                 ffmpeg: Ffmpeg::Download(app.path().app_local_data_dir()?.join("ffmpeg")),
+                // frames decoded and converted on the GPU where the video allows it: the same reviews, less CPU
+                gpu_frames: true,
             };
             app.manage(Library::open(config)?);
             Ok(())

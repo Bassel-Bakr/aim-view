@@ -71,8 +71,8 @@ pub struct Request {
     pub window: Option<TimeWindow>,
     pub areas: Vec<AreaBox>,
     pub keep_parts: Option<PathBuf>,
-    /// Decode and convert on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 MP4s); else, or
-    /// false, ffmpeg's software decode.
+    /// Decode and convert on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 AV1 or H.264
+    /// MP4s); else, or false, ffmpeg's software decode.
     pub gpu_frames: bool,
 }
 

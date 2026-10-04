@@ -24,7 +24,8 @@ VODS_DEFAULT = r"E:\OBS\KovOBS"
 STATS_DEFAULT = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats"
 TOOL = ROOT / "target" / "release" / ("aimview-tool.exe" if os.name == "nt" else "aimview-tool")
 # the library's settings: aimview-tool's library options (download_ffmpeg: --download-ffmpeg)
-SETTINGS = ("data", "layout", "models", "vods", "stats", "scenarios", "device", "ffmpeg", "download_ffmpeg")
+SETTINGS = ("data", "layout", "models", "vods", "stats", "scenarios", "device", "gpu_frames", "ffmpeg",
+            "download_ffmpeg")
 # the tool's error statuses as Python's exceptions (anything else: RuntimeError)
 ERRORS = {404: FileNotFoundError, 400: ValueError}
 # a file-name time stamp, yyyy.mm.dd-hh.mm.ss: its length, its separators by place, and its fields' places

@@ -55,13 +55,17 @@ fn failed(what: &str) -> impl Fn(windows::core::Error) -> String + '_ {
     move |error| format!("{what}: {error}")
 }
 
-/// Whether a run of this video can take its frames from the GPU: an MP4 of exactly 2560 x 1440.
+/// The codecs whose frames were checked against ffmpeg's, byte for byte (frames_check, and whole reviews).
+const CHECKED_CODECS: [&str; 2] = ["av1", "h264"];
+
+/// Whether a run of this video can take its frames from the GPU: an MP4 of exactly 2560 x 1440 (the shader's 2:1),
+/// in a codec checked against ffmpeg's frames.
 pub fn usable(video: &Path, info: &VideoInfo) -> bool {
     let mp4 = video.extension().is_some_and(|extension| {
         let extension = extension.to_string_lossy().to_lowercase();
         extension == "mp4" || extension == "mov"
     });
-    mp4 && info.width == SRC_W as usize && info.height == SRC_H as usize
+    mp4 && info.width == SRC_W as usize && info.height == SRC_H as usize && CHECKED_CODECS.contains(&info.codec.as_str())
 }
 
 /// The GPU with the most memory of its own (the discrete one where there are two), and its device.
