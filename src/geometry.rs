@@ -42,6 +42,11 @@ pub fn degrees(radians: f64) -> f64 {
     radians * (180.0 / std::f64::consts::PI)
 }
 
+/// The radius in degrees of a round blob of `area_px` pixels at the crosshair.
+pub fn blob_radius_deg(area_px: f64) -> f64 {
+    degrees((area_px / std::f64::consts::PI).sqrt() / K)
+}
+
 /// CPython's `math.radians`.
 pub fn radians(degrees: f64) -> f64 {
     degrees * (std::f64::consts::PI / 180.0)

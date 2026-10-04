@@ -13,7 +13,7 @@ use crate::geometry::{CX, CY, H, K, W};
 use crate::hud::{HudGame, HudReading};
 use crate::matching::{
     appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
-    SPOTS,
+    JOIN_GAP_S, JOIN_RADIUS_DEG, SPOTS,
 };
 use crate::measure::{choices, measure, target_radius, Measure};
 use crate::reload::reload_cost;
@@ -184,10 +184,14 @@ pub fn review_clicks(
         summary,
         flicks: ms,
         mode,
-        paths: flicks.iter().map(|f| (f.n.to_string(), f.traj.clone())).collect(),
+        paths: flicks.iter().map(|f| (f.kill_number.to_string(), f.path.clone())).collect(),
         fps: tracks.fps,
         geometry: Geometry { W, H, CX, CY, K },
-        appeared: appearances(tracks, 0.5, 1.0).appeared.into_iter().map(|(t, i)| (t.to_string(), i)).collect(),
+        appeared: appearances(tracks, JOIN_GAP_S, JOIN_RADIUS_DEG)
+            .appeared
+            .into_iter()
+            .map(|(t, i)| (t.to_string(), i))
+            .collect(),
         crosshair: crosshair_spots(&tracks.frames),
         run,
         outdated: false,

@@ -8,14 +8,14 @@
 use serde::Serialize;
 
 use crate::capped::Capped;
-use crate::geometry::{degrees, K};
+use crate::geometry::{blob_radius_deg, degrees};
 use crate::matching::Flick;
 use crate::python::{hypot, numpy_percentile, round};
 use crate::statistics::{mean, median};
 use crate::track::{TrackPoint, Tracks};
 
 /// The targets' radius when fewer than `MIN_AREAS_FOR_RADIUS` areas were seen (degrees; 1w4ts Voltaic's).
-const DEFAULT_TARGET_RADIUS_DEG: f64 = 0.43;
+pub(crate) const DEFAULT_TARGET_RADIUS_DEG: f64 = 0.43;
 const MIN_AREAS_FOR_RADIUS: usize = 5;
 /// A flick is measured when its path has this many points and starts within `MAX_PATH_START_LAG_FRAMES` of the flick.
 const MIN_PATH_POINTS: usize = 4;
@@ -125,11 +125,11 @@ pub struct Choice {
 
 /// The targets' radius in degrees, from their median area near the crosshair.
 pub fn target_radius(flicks: &[Flick]) -> f64 {
-    let areas: Vec<f64> = flicks.iter().filter_map(|flick| flick.area).filter(|&area| area != 0.0).collect();
+    let areas: Vec<f64> = flicks.iter().filter_map(|flick| flick.area_px).filter(|&area| area != 0.0).collect();
     if areas.len() < MIN_AREAS_FOR_RADIUS {
         return DEFAULT_TARGET_RADIUS_DEG;
     }
-    degrees((median(&areas) / std::f64::consts::PI).sqrt() / K)
+    blob_radius_deg(median(&areas))
 }
 
 /// Each flick's measures, for targets of `radius_deg`; a flick with too short a path is left out.
@@ -348,7 +348,7 @@ fn kill_parts(
 }
 
 fn measure_one(flick: &Flick, fps: f64, radius_deg: f64, camera: &[f64]) -> Option<Measure> {
-    let points = &flick.traj;
+    let points = &flick.path;
     if points.len() < MIN_PATH_POINTS || points[0].0 > flick.start_frame + MAX_PATH_START_LAG_FRAMES {
         return None;
     }
@@ -377,7 +377,7 @@ fn measure_one(flick: &Flick, fps: f64, radius_deg: f64, camera: &[f64]) -> Opti
     let flick_time = flick_start.map(|flick_start| path.seconds(flick_start, flick_end));
     let arrive = arrived.map(|(_, at)| at / fps);
     Some(Measure {
-        kill_number: flick.n,
+        kill_number: flick.kill_number,
         shots: flick.shots,
         start_distance_deg: path.distance(0),
         direction_deg: degrees(way.1.atan2(way.0)),
@@ -497,12 +497,12 @@ pub fn choices(tracks: &Tracks, flicks: &[Flick]) -> Vec<Choice> {
         let (killed, next) = (&pair[0], &pair[1]);
         let chosen_frame = killed.kill_frame + CHOICE_DELAY_FRAMES;
         let Some(targets) = targets_by_frame.get(&chosen_frame).filter(|targets| !targets.is_empty()) else { continue };
-        let Some(&(_, x, y)) = next.traj.iter().find(|point| point.0 >= chosen_frame) else { continue };
+        let Some(&(_, x, y)) = next.path.iter().find(|point| point.0 >= chosen_frame) else { continue };
         let mut distances: Vec<f64> = targets.iter().map(|&(_, x, y)| hypot(x, y)).collect();
         distances.sort_by(f64::total_cmp);
         let chosen = hypot(x, y);
         choices.push(Choice {
-            kill_number: next.n,
+            kill_number: next.kill_number,
             rank: distances.iter().filter(|&&distance| distance < chosen - NEARER_MARGIN_DEG).count(),
             extra: chosen - distances[0],
         });
@@ -522,7 +522,7 @@ mod tests {
     fn speed_curve_and_profile_of_a_made_up_flick() {
         let moves = [0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 8.0, 12.0, 12.0, 8.0, 4.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let mut x = 50.0;
-        let traj: Vec<(i64, f64, f64)> = moves
+        let path: Vec<(i64, f64, f64)> = moves
             .iter()
             .enumerate()
             .map(|(i, step)| {
@@ -544,14 +544,14 @@ mod tests {
             .collect();
         let tracks = Tracks { fps: 100.0, frames, version: 0 };
         let flick = Flick {
-            n: 1,
+            kill_number: 1,
             kill_frame: 15,
             stats_frame: Some(15),
             start_frame: 0,
             shots: Some(1),
-            traj,
+            path,
             spawned: false,
-            area: None,
+            area_px: None,
         };
         let measures = measure(&[flick.clone(), flick.clone(), flick], &tracks, 0.5);
         let curve = measures[0].speed.as_ref().unwrap();

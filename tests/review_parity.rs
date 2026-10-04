@@ -52,6 +52,8 @@ fn without_words(issues: &Value) -> Value {
 
 /// Python's names for the measures' fields that the core names in full (src/measure.rs).
 const MEASURE_RENAMES: [(&str, &str); 3] = [("n", "kill_number"), ("dir", "direction_deg"), ("corr", "corrections")];
+/// Python's names for the flicks' fields that the core names in full (src/matching.rs).
+const FLICK_RENAMES: [(&str, &str); 3] = [("n", "kill_number"), ("traj", "path"), ("area", "area_px")];
 
 #[test]
 fn clicking_review_matches_python() {
@@ -71,7 +73,11 @@ fn clicking_review_matches_python() {
         };
         let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &stats_text }, want["video"].as_str().unwrap(), None, None).unwrap();
         let mut diff = Diff::default();
-        compare("flicks.json", &serde_json::to_value(&got.flicks).unwrap(), &read(&dir.join("flicks.json")), &mut diff);
+        let mut python_flicks = read(&dir.join("flicks.json"));
+        for (python, core) in FLICK_RENAMES {
+            rename_key(&mut python_flicks, &format!("[].{python}"), core);
+        }
+        compare("flicks.json", &serde_json::to_value(&got.flicks).unwrap(), &python_flicks, &mut diff);
         let mut measures = read(&dir.join("measures.json"));
         for (python, core) in MEASURE_RENAMES {
             rename_key(&mut measures, &format!("[].{python}"), core);

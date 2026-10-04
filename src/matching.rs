@@ -1,5 +1,11 @@
-//! Each kill matched to the target it killed and the flick to it (review.py: `match_times`, `_attach_kills`,
+//! Each kill matched to the target it killed, and the flick to it (review.py: `match_times`, `_attach_kills`,
 //! `appearances`, `crosshair_spots`).
+//!
+//! In: a run's tracks (src/track.rs) and, from its stats file or HUD, the kill times (src/review.rs). Out: one `Flick`
+//! per kill, with the target's path to the crosshair that src/measure.rs measures, and how the kills matched
+//! (`MatchInfo`, in the report's summary). With kill times, `match_times`; without, `match_video` finds the kills in
+//! the tracks. Both first drop what the detector boxed on the crosshair (`without_crosshair_ends`, `ghosts`), and join
+//! the tracks of a target the tracker lost and found again (`appearances`, `TrackIndex::continued`).
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -7,26 +13,108 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::capped::Capped;
-use crate::geometry::{H, W, to_deg};
+use crate::geometry::{H, W, blob_radius_deg, to_deg};
+use crate::measure::DEFAULT_TARGET_RADIUS_DEG;
 use crate::python::hypot;
+use crate::statistics::median;
 use crate::track::{TrackFrame, Tracks, spikes};
 
 /// A point of a target's path: frame, x and y (degrees from the crosshair).
 pub type PathPoint = (i64, f64, f64);
 
-/// A kill and the flick to it: its number, the frame it was seen on and the frame the kill times give, where the flick
-/// starts, the shots it took, the target's path, whether the target appeared after the kill before it, and its median
-/// area in pixels.
+/// A track's places by frame (degrees from the crosshair).
+type Places = BTreeMap<i64, (f64, f64)>;
+
+/// A track ends at the crosshair, as a killed target's does, when its last place is within this (degrees).
+const AT_CROSSHAIR_DEG: f64 = 0.6;
+/// A kill's track has at least this many places.
+const MIN_KILL_TRACK_POINTS: usize = 3;
+/// A track that ends within this many frames of the run's last frame was cut by the recording's end, not killed.
+const END_MARGIN_FRAMES: i64 = 2;
+/// `appearances` joins a track to one that ended up to this long before it starts (seconds), within this distance of
+/// where that one would be (degrees), as `match_times` and the report (src/review.rs) join them.
+pub const JOIN_GAP_S: f64 = 0.5;
+pub const JOIN_RADIUS_DEG: f64 = 1.0;
+/// A track may start up to this many frames before the one it continues ends: a hit target flashes and is picked up
+/// again while its old track still has a frame or two.
+const OVERLAP_FRAMES: i64 = 2;
+/// A target's own speed is taken over its last this many frames; the second join by it reaches this many frames back.
+const SPEED_FRAMES: i64 = 3;
+/// `appearances` leaves out tracks within this of a crosshair spot (degrees), where the detector marks the crosshair
+/// every frame.
+const SPOT_CLEARANCE_DEG: f64 = 0.2;
+/// The killed target's track is seen from the window before the kill to this many frames after it.
+const AFTER_KILL_FRAMES: i64 = 2;
+/// A track's distance from a kill: its degrees from the crosshair plus this many for each second from the kill's time.
+const DEG_PER_SECOND_OFF: f64 = 4.0;
+/// The farthest a killed target's center may be from the crosshair (degrees), unless its blob's radius plus RIM_DEG
+/// is farther: a big target can be hit at its rim.
+const MAX_KILL_DISTANCE_DEG: f64 = 1.5;
+const RIM_DEG: f64 = 0.25;
+/// A track last seen more than EARLY_FRAMES before the kill costs EARLY_COST_DEG more; one that never leaves a
+/// crosshair spot costs SPOT_COST_DEG more (it is the killed target only when no other track is near).
+const EARLY_FRAMES: i64 = 2;
+const EARLY_COST_DEG: f64 = 0.2;
+const SPOT_COST_DEG: f64 = 1.0;
+/// A target hidden under the crosshair longer than the window is looked for up to this many windows back.
+const HIDDEN_WINDOWS: i64 = 4;
+/// A target first seen more than this many frames after its flick's start spawned meanwhile.
+const SPAWN_FRAMES: i64 = 2;
+/// A kill is confirmed when its target was last seen at the crosshair within this many frames of its kill time.
+const CONFIRM_FRAMES: i64 = 2;
+/// The kill times' clock lines a kill up with a track's end within this many frames; the offset is voted from the
+/// first CLOCK_VOTES of each.
+const CLOCK_TOLERANCE_FRAMES: f64 = 2.5;
+const CLOCK_VOTES: usize = 40;
+/// `without_ghosts`: a track within GHOST_MAX_DEG of the crosshair that leaves more than GHOST_UNEXPLAINED_SHARE of
+/// the camera's turn unexplained, over a turn of more than GHOST_MIN_TURN_DEG, is the crosshair.
+const GHOST_MAX_DEG: f64 = 0.5;
+const GHOST_UNEXPLAINED_SHARE: f64 = 0.5;
+const GHOST_MIN_TURN_DEG: f64 = 0.3;
+/// A track this short on a crosshair spot is the crosshair: right after a kill it made the dead target look picked
+/// up again.
+const SHORT_SPOT_TRACK_POINTS: usize = 3;
+/// The detector sees a target whole within this of the crosshair (degrees): only blob areas there count.
+const WHOLE_TARGET_DEG: f64 = 3.0;
+/// The run's typical target needs this many tracks' areas.
+const MIN_TYPICAL_TRACKS: usize = 5;
+/// A track of STEADY_TRACK_POINTS or more is steady; RUN_END_TRACKS steady tracks ending within a frame end the run.
+const STEADY_TRACK_POINTS: usize = 5;
+const RUN_END_TRACKS: usize = 3;
+/// A blob less than this share of the run's typical target is no target (a hit marker, a spark).
+const MIN_TARGET_SHARE: f64 = 0.1;
+/// Kills found within this many frames of each other are one kill.
+const SAME_KILL_FRAMES: i64 = 3;
+/// A jump of more than this many times `near` is a false camera turn without a spike (`TrackIndex::repair`).
+const LONG_JUMP_SHARE: f64 = 2.0;
+/// A target missing LONG_GAP_FRAMES or more comes back within LONG_GAP_RADII of its radius and about as big; one
+/// missing SHORT_GAP_FRAMES, within SHORT_GAP_RADII.
+const LONG_GAP_FRAMES: i64 = 3;
+const LONG_GAP_RADII: f64 = 0.5;
+const SHORT_GAP_FRAMES: i64 = 2;
+const SHORT_GAP_RADII: f64 = 1.5;
+/// A missing target whose place came out from under the crosshair (beyond OUT_FROM_UNDER_SHARE of `near`) on
+/// SEEN_FRAMES or more frames would have been seen: it died.
+const OUT_FROM_UNDER_SHARE: f64 = 1.5;
+const SEEN_FRAMES: usize = 2;
+/// A target comes back about as big when its median blob area over SIZE_FRAMES frames is within these shares of its
+/// old one.
+const SIZE_FRAMES: usize = 3;
+const SAME_SIZE_SHARES: (f64, f64) = (0.5, 2.0);
+
+/// A kill and the flick to it: its number, the frame its target was last seen on and the frame the kill times give,
+/// where the flick starts, the shots it took, the target's path, whether the target appeared after the kill before it,
+/// and its median blob area in pixels.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Flick {
-    pub n: usize,
+    pub kill_number: usize,
     pub kill_frame: i64,
     pub stats_frame: Option<i64>,
     pub start_frame: i64,
     pub shots: Option<i64>,
-    pub traj: Vec<PathPoint>,
+    pub path: Vec<PathPoint>,
     pub spawned: bool,
-    pub area: Option<f64>,
+    pub area_px: Option<f64>,
 }
 
 /// Where the kill times came from.
@@ -63,32 +151,145 @@ fn round_frame(x: f64) -> i64 {
     x.round_ties_even() as i64
 }
 
-/// Each track's points by frame and its areas, with the tracks in the order they first appear.
+/// The camera's turn summed from the first frame, by frame (degrees).
+fn turned(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
+    let mut sum = Vec::with_capacity(frames.len().max(1));
+    sum.push((0.0, 0.0));
+    for frame in frames.iter().skip(1) {
+        let (x, y) = *sum.last().unwrap();
+        sum.push((x + frame.shift.0, y + frame.shift.1));
+    }
+    sum
+}
+
+/// Where a target last seen at `place` on frame `end` would be on frame `frame` (degrees from the crosshair): moved by
+/// the camera's turn since, and by `speed` over the world (degrees a frame).
+fn expected_place(place: (f64, f64), turned: &[(f64, f64)], end: i64, frame: i64, speed: (f64, f64)) -> (f64, f64) {
+    let (now, then, frames) = (turned[frame as usize], turned[end as usize], (frame - end) as f64);
+    (place.0 + now.0 - then.0 + speed.0 * frames, place.1 + now.1 - then.1 + speed.1 * frames)
+}
+
+/// A target's own speed (degrees a frame): over the world, with the camera's turn taken out, and on screen.
+#[derive(Clone, Copy)]
+struct OwnSpeed {
+    world: (f64, f64),
+    screen: (f64, f64),
+}
+
+/// A target's speed where its places end, at frame `end`, over its last SPEED_FRAMES frames. Zero for both with fewer
+/// than 2 places in those frames.
+fn own_speed(places: &Places, end: i64, turned: &[(f64, f64)]) -> OwnSpeed {
+    let mut window = places.range(end - SPEED_FRAMES..=end);
+    let (Some((&from, &(x0, y0))), Some(_)) = (window.next(), window.next()) else {
+        return OwnSpeed { world: (0.0, 0.0), screen: (0.0, 0.0) };
+    };
+    let (x1, y1) = places[&end];
+    let frames = (end - from) as f64;
+    let (then, now) = (turned[from as usize], turned[end as usize]);
+    OwnSpeed {
+        world: (((x1 - now.0) - (x0 - then.0)) / frames, ((y1 - now.1) - (y0 - then.1)) / frames),
+        screen: ((x1 - x0) / frames, (y1 - y0) / frames),
+    }
+}
+
+/// A track's places for its speed: a track of SPEED_FRAMES places or fewer with those of the tracks it continues
+/// (`before`), back to more than SPEED_FRAMES; any other track's own.
+fn places_for_speed<'a>(places: &'a HashMap<u32, Places>, before: &HashMap<u32, u32>, track: u32) -> Cow<'a, Places> {
+    let own = &places[&track];
+    if own.len() > SPEED_FRAMES as usize || !before.contains_key(&track) {
+        return Cow::Borrowed(own);
+    }
+    let mut all = own.clone();
+    let mut current = track;
+    while let Some(&earlier) = before.get(&current) {
+        if all.len() > SPEED_FRAMES as usize {
+            break;
+        }
+        current = earlier;
+        for (&frame, &place) in &places[&current] {
+            all.entry(frame).or_insert(place);
+        }
+    }
+    Cow::Owned(all)
+}
+
+/// A track and the tracks it continues (`before`), latest first.
+fn chain(track: u32, before: &HashMap<u32, u32>) -> Vec<u32> {
+    let mut chain = vec![track];
+    while let Some(&earlier) = before.get(chain.last().unwrap()) {
+        chain.push(earlier);
+    }
+    chain
+}
+
+/// Each track's places and blob areas by frame, with the tracks in the order they first appear (tracks split off by
+/// `repair` come last).
 struct TrackIndex {
     ids: Vec<u32>,
-    points: HashMap<u32, BTreeMap<i64, (f64, f64)>>,
-    areas: HashMap<u32, Vec<i64>>,
+    places: HashMap<u32, Places>,
+    areas: HashMap<u32, BTreeMap<i64, i64>>,
 }
 
 impl TrackIndex {
     fn new(frames: &[TrackFrame]) -> TrackIndex {
-        let mut index = TrackIndex { ids: Vec::new(), points: HashMap::new(), areas: HashMap::new() };
-        for f in frames {
-            let areas: Vec<i64> = if f.a.is_empty() { vec![0; f.t.len()] } else { f.a.clone() };
-            for (&(tid, x, y), a) in f.t.iter().zip(areas) {
-                if !index.points.contains_key(&tid) {
-                    index.ids.push(tid);
+        let mut index = TrackIndex { ids: Vec::new(), places: HashMap::new(), areas: HashMap::new() };
+        for frame in frames {
+            let areas: Vec<i64> = if frame.a.is_empty() { vec![0; frame.t.len()] } else { frame.a.clone() };
+            for (&(track, x, y), area) in frame.t.iter().zip(areas) {
+                if !index.places.contains_key(&track) {
+                    index.ids.push(track);
                 }
-                index.points.entry(tid).or_default().insert(f.i as i64, (x, y));
-                index.areas.entry(tid).or_default().push(a);
+                index.places.entry(track).or_default().insert(frame.i as i64, (x, y));
+                index.areas.entry(track).or_default().insert(frame.i as i64, area);
             }
         }
         index
     }
 
-    fn last(&self, tid: u32) -> (i64, (f64, f64)) {
-        let (&i, &q) = self.points[&tid].last_key_value().unwrap();
-        (i, q)
+    fn first(&self, track: u32) -> i64 {
+        *self.places[&track].first_key_value().unwrap().0
+    }
+
+    fn last(&self, track: u32) -> i64 {
+        *self.places[&track].last_key_value().unwrap().0
+    }
+
+    /// The frame a track was last seen on, and its place there.
+    fn last_place(&self, track: u32) -> (i64, (f64, f64)) {
+        let (&frame, &place) = self.places[&track].last_key_value().unwrap();
+        (frame, place)
+    }
+
+    /// A chain's places (`chain`) by frame; on a frame two of its tracks share, the earlier track's.
+    fn joined(&self, chain: &[u32]) -> Places {
+        let mut places = Places::new();
+        for track in chain {
+            places.extend(self.places[track].iter().map(|(&frame, &place)| (frame, place)));
+        }
+        places
+    }
+
+    /// The track's blob areas near the crosshair (within WHOLE_TARGET_DEG), where the detector sees the target whole.
+    fn near_areas(&self, track: u32) -> Vec<f64> {
+        let places = &self.places[&track];
+        self.areas[&track]
+            .iter()
+            .filter(|&(frame, &area)| area != 0 && hypot(places[frame].0, places[frame].1) < WHOLE_TARGET_DEG)
+            .map(|(_, &area)| area as f64)
+            .collect()
+    }
+
+    /// The run's typical target's blob area: the median of the tracks' median areas near the crosshair (None with fewer
+    /// than MIN_TYPICAL_TRACKS).
+    fn typical_area(&self) -> Option<f64> {
+        let areas: Vec<f64> = self
+            .ids
+            .iter()
+            .map(|&track| self.near_areas(track))
+            .filter(|areas| !areas.is_empty())
+            .map(|areas| median(&areas))
+            .collect();
+        (areas.len() >= MIN_TYPICAL_TRACKS).then(|| median(&areas))
     }
 }
 
@@ -99,141 +300,142 @@ pub struct Appearances {
     pub follows: HashMap<u32, u32>,
 }
 
-/// The camera's turn summed from the first frame, by frame.
-fn turned(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
-    let mut cum = Vec::with_capacity(frames.len().max(1));
-    cum.push((0.0, 0.0));
-    for f in frames.iter().skip(1) {
-        let (x, y) = *cum.last().unwrap();
-        cum.push((x + f.shift.0, y + f.shift.1));
-    }
-    cum
+/// Where each track starts and ends (frame and place), the tracks in the order they start, and the tracks that end on
+/// each frame.
+struct Spans {
+    first: HashMap<u32, (i64, f64, f64)>,
+    last: HashMap<u32, (i64, f64, f64)>,
+    starts: Vec<u32>,
+    ending: HashMap<i64, Vec<u32>>,
 }
 
-/// A target's speed (degrees a frame) where its points `p` end, at frame `e`, over its last 3 frames: over the world
-/// (the camera's turn taken out) and on screen. Zero for both with fewer than 2 points in those frames.
-fn own_speed(p: &BTreeMap<i64, (f64, f64)>, e: i64, cum: &[(f64, f64)]) -> ((f64, f64), (f64, f64)) {
-    let mut w = p.range(e - 3..=e);
-    let (Some((&i0, &(x0, y0))), Some(_)) = (w.next(), w.next()) else { return ((0.0, 0.0), (0.0, 0.0)) };
-    let (x1, y1) = p[&e];
-    let k = (e - i0) as f64;
-    let (c0, c1) = (cum[i0 as usize], cum[e as usize]);
-    ((((x1 - c1.0) - (x0 - c0.0)) / k, ((y1 - c1.1) - (y0 - c0.1)) / k), ((x1 - x0) / k, (y1 - y0) / k))
-}
-
-/// A track that starts within `gap` seconds of another's end, within `radius` degrees of where that one would be now
-/// (its last place moved by the camera's turn since), continues it. Then a track still left alone continues one that
-/// ended up to 3 frames before it starts (or up to 2 after), within `radius` degrees of where that one would be by its
-/// own speed over its last 3 frames, over the world or on screen (with the tracks it continues when it has 3 points or
-/// fewer): a target that moves on its own (Bounce 180's spheres) and fools the camera's turn gets a new track every
-/// frame or two. Not on a crosshair spot (`crosshair_spots`, within 0.2 degrees), where the detector marks the
-/// crosshair every frame.
-pub fn appearances(tracks: &Tracks, gap: f64, radius: f64) -> Appearances {
-    let cum = turned(&tracks.frames);
-    let mut first: HashMap<u32, (i64, f64, f64)> = HashMap::new();
-    let mut last: HashMap<u32, (i64, f64, f64)> = HashMap::new();
-    let mut order = Vec::new();
-    for f in &tracks.frames {
-        for &(tid, x, y) in &f.t {
-            first.entry(tid).or_insert_with(|| {
-                order.push(tid);
-                (f.i as i64, x, y)
-            });
-            last.insert(tid, (f.i as i64, x, y));
-        }
-    }
-    let g = round_frame(gap * tracks.fps).max(1);
-    let mut ending: HashMap<i64, Vec<u32>> = HashMap::new();
-    for &tid in &order {
-        ending.entry(last[&tid].0).or_default().push(tid);
-    }
-    let mut starts = order.clone();
-    starts.sort_by_key(|t| first[t].0);
-    let mut follows: HashMap<u32, u32> = HashMap::new();
-    for &tid in &starts {
-        let (s0, qx, qy) = first[&tid];
-        let mut best: Option<(f64, u32)> = None;
-        // up to 2 frames of overlap: a hit target flashes and is picked up again while its old track still has a
-        // frame or two
-        for e in (s0 - g).max(0)..s0 + 3 {
-            for &prev in ending.get(&e).map(Vec::as_slice).unwrap_or_default() {
-                if follows.contains_key(&prev) || prev == tid || first[&prev].0 >= s0 {
-                    continue;
-                }
-                let (_, x, y) = last[&prev];
-                let (a, b) = (cum[s0 as usize], cum[e as usize]);
-                let d = hypot(qx - (x + a.0 - b.0), qy - (y + a.1 - b.1));
-                if d < radius && best.is_none_or(|(bd, _)| d < bd) {
-                    best = Some((d, prev));
-                }
+impl Spans {
+    fn new(frames: &[TrackFrame]) -> Spans {
+        let (mut first, mut last) = (HashMap::new(), HashMap::new());
+        let mut order = Vec::new();
+        for frame in frames {
+            for &(track, x, y) in &frame.t {
+                first.entry(track).or_insert_with(|| {
+                    order.push(track);
+                    (frame.i as i64, x, y)
+                });
+                last.insert(track, (frame.i as i64, x, y));
             }
         }
-        if let Some((_, prev)) = best {
-            follows.insert(prev, tid);
+        let mut ending: HashMap<i64, Vec<u32>> = HashMap::new();
+        for &track in &order {
+            ending.entry(last[&track].0).or_default().push(track);
+        }
+        let mut starts = order;
+        starts.sort_by_key(|track| first[track].0);
+        Spans { first, last, starts, ending }
+    }
+
+    /// The tracks a track may continue that end from frame `from` to OVERLAP_FRAMES after it starts, with the frame
+    /// each ends on: not continued yet (`follows`), not the track itself, and started before it.
+    fn may_continue<'a>(
+        &'a self,
+        track: u32,
+        from: i64,
+        follows: &'a HashMap<u32, u32>,
+    ) -> impl Iterator<Item = (i64, u32)> + 'a {
+        let start = self.first[&track].0;
+        (from..=start + OVERLAP_FRAMES)
+            .flat_map(move |end| {
+                let tracks = self.ending.get(&end).map(Vec::as_slice).unwrap_or_default();
+                tracks.iter().map(move |&earlier| (end, earlier))
+            })
+            .filter(move |&(_, earlier)| {
+                !follows.contains_key(&earlier) && earlier != track && self.first[&earlier].0 < start
+            })
+    }
+}
+
+/// The first join of `appearances`: a track continues one that ended up to `gap_frames` before it starts, within
+/// `radius` degrees of where that one would be now, its last place moved by the camera's turn since.
+fn follows_by_camera(spans: &Spans, turned: &[(f64, f64)], gap_frames: i64, radius: f64) -> HashMap<u32, u32> {
+    let mut follows = HashMap::new();
+    for &track in &spans.starts {
+        let (start, x, y) = spans.first[&track];
+        let mut best: Option<(f64, u32)> = None;
+        for (end, earlier) in spans.may_continue(track, (start - gap_frames).max(0), &follows) {
+            let (_, last_x, last_y) = spans.last[&earlier];
+            let expected = expected_place((last_x, last_y), turned, end, start, (0.0, 0.0));
+            let distance = hypot(x - expected.0, y - expected.1);
+            if distance < radius && best.is_none_or(|(best_distance, _)| distance < best_distance) {
+                best = Some((distance, earlier));
+            }
+        }
+        if let Some((_, earlier)) = best {
+            follows.insert(earlier, track);
         }
     }
-    let mut before: HashMap<u32, u32> = follows.iter().map(|(&k, &v)| (v, k)).collect();
+    follows
+}
+
+/// The second join of `appearances`: a track still left alone continues one that ended up to SPEED_FRAMES before it
+/// starts, within `radius` degrees of where that one would be by its own speed (`own_speed`, with the tracks it
+/// continues when it is short), over the world or on screen. Not on a crosshair spot. Returns the track each track
+/// continues.
+fn follows_by_own_speed(
+    tracks: &Tracks,
+    spans: &Spans,
+    turned: &[(f64, f64)],
+    radius: f64,
+    follows: &mut HashMap<u32, u32>,
+) -> HashMap<u32, u32> {
+    let mut before: HashMap<u32, u32> = follows.iter().map(|(&earlier, &later)| (later, earlier)).collect();
     let spots = crosshair_spots(&tracks.frames);
-    let on_spot = |x: f64, y: f64| spots.iter().any(|&(a, b)| hypot(x - a, y - b) < 0.2);
-    let points = TrackIndex::new(&tracks.frames).points;
-    for &tid in &starts {
-        let (s0, qx, qy) = first[&tid];
-        if before.contains_key(&tid) || on_spot(qx, qy) {
+    let on_spot = |x: f64, y: f64| spots.iter().any(|&(a, b)| hypot(x - a, y - b) < SPOT_CLEARANCE_DEG);
+    let places = TrackIndex::new(&tracks.frames).places;
+    for &track in &spans.starts {
+        let (start, x, y) = spans.first[&track];
+        if before.contains_key(&track) || on_spot(x, y) {
             continue;
         }
         let mut best: Option<(f64, u32)> = None;
-        for e in (s0 - 3).max(0)..s0 + 3 {
-            for &prev in ending.get(&e).map(Vec::as_slice).unwrap_or_default() {
-                if follows.contains_key(&prev) || prev == tid || first[&prev].0 >= s0 {
-                    continue;
-                }
-                let (_, x, y) = last[&prev];
-                if on_spot(x, y) {
-                    continue;
-                }
-                // a short piece: its speed with the tracks it continues
-                let own = &points[&prev];
-                let joined: BTreeMap<i64, (f64, f64)>;
-                let mut p = own;
-                if own.len() <= 3 && before.contains_key(&prev) {
-                    let mut all = own.clone();
-                    let mut c = prev;
-                    while let Some(&b) = before.get(&c) {
-                        if all.len() > 3 {
-                            break;
-                        }
-                        c = b;
-                        for (&i, &q) in &points[&c] {
-                            all.entry(i).or_insert(q);
-                        }
-                    }
-                    joined = all;
-                    p = &joined;
-                }
-                let ((vx, vy), (sx, sy)) = own_speed(p, e, &cum);
-                let n = (s0 - e) as f64;
-                let (a, b) = (cum[s0 as usize], cum[e as usize]);
-                for (px, py) in [(x + a.0 - b.0 + vx * n, y + a.1 - b.1 + vy * n), (x + sx * n, y + sy * n)] {
-                    let d = hypot(qx - px, qy - py);
-                    if d < radius && best.is_none_or(|(bd, _)| d < bd) {
-                        best = Some((d, prev));
-                    }
+        for (end, earlier) in spans.may_continue(track, (start - SPEED_FRAMES).max(0), follows) {
+            let (_, last_x, last_y) = spans.last[&earlier];
+            if on_spot(last_x, last_y) {
+                continue;
+            }
+            let speed = own_speed(&places_for_speed(&places, &before, earlier), end, turned);
+            let frames = (start - end) as f64;
+            let by_world = expected_place((last_x, last_y), turned, end, start, speed.world);
+            let on_screen = (last_x + speed.screen.0 * frames, last_y + speed.screen.1 * frames);
+            for expected in [by_world, on_screen] {
+                let distance = hypot(x - expected.0, y - expected.1);
+                if distance < radius && best.is_none_or(|(best_distance, _)| distance < best_distance) {
+                    best = Some((distance, earlier));
                 }
             }
         }
-        if let Some((_, prev)) = best {
-            follows.insert(prev, tid);
-            before.insert(tid, prev);
+        if let Some((_, earlier)) = best {
+            follows.insert(earlier, track);
+            before.insert(track, earlier);
         }
     }
-    let mut appeared: HashMap<u32, i64> = HashMap::new();
-    let mut out = Appearances { appeared: Vec::with_capacity(starts.len()), follows };
-    for tid in starts {
-        let at = before.get(&tid).map_or(first[&tid].0, |b| appeared[b]);
-        appeared.insert(tid, at);
-        out.appeared.push((tid, at));
+    before
+}
+
+/// Tracks that are one target picked up again: a track that starts within `gap` seconds of another's end (or up to
+/// OVERLAP_FRAMES before it), within `radius` degrees of where that one would be now, continues it
+/// (`follows_by_camera`); then by the target's own speed (`follows_by_own_speed`): a target that moves on its own
+/// (Bounce 180's spheres) fools the camera's turn and gets a new track every frame or two.
+pub fn appearances(tracks: &Tracks, gap: f64, radius: f64) -> Appearances {
+    let turned = turned(&tracks.frames);
+    let spans = Spans::new(&tracks.frames);
+    let gap_frames = round_frame(gap * tracks.fps).max(1);
+    let mut follows = follows_by_camera(&spans, &turned, gap_frames, radius);
+    let before = follows_by_own_speed(tracks, &spans, &turned, radius, &mut follows);
+    let mut appeared_at: HashMap<u32, i64> = HashMap::new();
+    let mut appeared = Vec::with_capacity(spans.starts.len());
+    for &track in &spans.starts {
+        let at = before.get(&track).map_or(spans.first[&track].0, |earlier| appeared_at[earlier]);
+        appeared_at.insert(track, at);
+        appeared.push((track, at));
     }
-    out
+    Appearances { appeared, follows }
 }
 
 /// The most crosshair spots `crosshair_spots` finds.
@@ -287,11 +489,11 @@ pub fn crosshair_spots(frames: &[TrackFrame]) -> Capped<(f64, f64), SPOTS> {
     let spot_area = ON_SPOT_DEG * ON_SPOT_DEG;
     let ring_area = RING_DEG.1 * RING_DEG.1 - RING_DEG.0 * RING_DEG.0;
     let dense = on_spot as f64 / spot_area >= SPOT_DENSITY * in_ring as f64 / ring_area;
-    let mut out = Capped::new();
+    let mut spots = Capped::new();
     if enough && dense {
-        out.push(center);
+        spots.push(center);
     }
-    out
+    spots
 }
 
 /// A box in a frame: its track, its place and its width and height (degrees).
@@ -324,10 +526,9 @@ pub fn without_crosshair_ends(tracks: &Tracks) -> Cow<'_, Tracks> {
     if widths.is_empty() {
         return Cow::Borrowed(tracks);
     }
-    let crosshair = (crate::statistics::median(&widths), crate::statistics::median(&heights));
-    let crosshair_sized = |(width, height): (f64, f64)| {
-        (width - crosshair.0).abs() <= SAME_SIZE * crosshair.0 && (height - crosshair.1).abs() <= SAME_SIZE * crosshair.1
-    };
+    let crosshair = (median(&widths), median(&heights));
+    let near_size = |size: f64, crosshair_size: f64| (size - crosshair_size).abs() <= SAME_SIZE * crosshair_size;
+    let crosshair_sized = |(width, height): (f64, f64)| near_size(width, crosshair.0) && near_size(height, crosshair.1);
     // each track's last box that is not the crosshair's (its frame, and whether it has the crosshair's size), and end
     let mut last_other: HashMap<u32, (usize, bool)> = HashMap::new();
     let mut end_frame: HashMap<u32, usize> = HashMap::new();
@@ -350,642 +551,681 @@ pub fn without_crosshair_ends(tracks: &Tracks) -> Cow<'_, Tracks> {
     Cow::Owned(keep_points(tracks, |frame, track| cut_after.get(&track).is_none_or(|&last| frame <= last)))
 }
 
+/// The tracks that end at the crosshair (kills seen in the video), by their last frame: with MIN_KILL_TRACK_POINTS
+/// places or more, and ending more than END_MARGIN_FRAMES before the run's last frame.
+fn crosshair_ends(index: &TrackIndex, frame_count: i64) -> Vec<(i64, u32)> {
+    let mut ends: Vec<(i64, u32)> = index
+        .ids
+        .iter()
+        .filter_map(|&track| {
+            let (frame, (x, y)) = index.last_place(track);
+            let long = index.places[&track].len() >= MIN_KILL_TRACK_POINTS;
+            let at_crosshair = hypot(x, y) < AT_CROSSHAIR_DEG;
+            (frame < frame_count - END_MARGIN_FRAMES && at_crosshair && long).then_some((frame, track))
+        })
+        .collect();
+    ends.sort();
+    ends
+}
+
+/// The tracks that never leave a crosshair spot.
+fn spot_tracks(index: &TrackIndex, spots: &[(f64, f64)]) -> HashSet<u32> {
+    if spots.is_empty() {
+        return HashSet::new();
+    }
+    let nearest_spot = |x: f64, y: f64| spots.iter().map(|&(a, b)| hypot(x - a, y - b)).fold(f64::INFINITY, f64::min);
+    index
+        .ids
+        .iter()
+        .copied()
+        .filter(|track| index.places[track].values().all(|&(x, y)| nearest_spot(x, y) < ON_SPOT_DEG))
+        .collect()
+}
+
+/// Whether a kill is confirmed: its target was last seen within AT_CROSSHAIR_DEG of the crosshair, within
+/// CONFIRM_FRAMES of its kill time.
+fn confirmed(flick: &Flick) -> bool {
+    flick.path.last().is_some_and(|&(frame, x, y)| {
+        (frame - flick.stats_frame.unwrap_or(frame)).abs() <= CONFIRM_FRAMES && hypot(x, y) < AT_CROSSHAIR_DEG
+    })
+}
+
 /// The flicks for known kill times (seconds) with the shots each kill took: from the stats file, or from the session
-/// HUD (already on the video's clock: `off` Some(0)).
+/// HUD (already on the video's clock: `offset` Some(0)).
 ///
 /// 1. The video's clock against the kill times' clock: one constant offset, voted from tracks that end at the
-///    crosshair (unless `off` is given).
+///    crosshair (unless `offset` is given).
 /// 2. For each kill, the killed target is the track nearest the crosshair in the last `window` seconds before it.
 /// 3. The flick runs from the previous kill, or from the target's first appearance when it appeared after that kill,
 ///    to this kill.
 pub fn match_times(
     tracks: &Tracks,
-    kt: &[f64],
+    kill_times: &[f64],
     shots: &[i64],
     window: f64,
-    off: Option<f64>,
+    offset: Option<f64>,
 ) -> (Vec<Flick>, MatchInfo) {
     let tracks = &*without_crosshair_ends(tracks);
     let fps = tracks.fps;
     let index = TrackIndex::new(&tracks.frames);
-    let n_frames = tracks.frames.len() as i64;
-    let mut ends: Vec<(i64, u32)> = index
-        .ids
-        .iter()
-        .filter_map(|&tid| {
-            let (i, (x, y)) = index.last(tid);
-            (i < n_frames - 2 && hypot(x, y) < 0.6 && index.points[&tid].len() >= 3).then_some((i, tid))
-        })
-        .collect();
-    ends.sort();
-    let vt: Vec<f64> = ends.iter().map(|e| e.0 as f64 / fps).collect();
-    if kt.is_empty() || (off.is_none() && vt.is_empty()) {
-        let info = MatchInfo {
-            kills_video: ends.len(),
-            kills_stats: Some(kt.len()),
-            matched: 0,
-            confirmed: None,
-            offset: None,
-            fps,
-            source: None,
-        };
-        return (Vec::new(), info);
-    }
-    let before: HashMap<u32, u32> =
-        appearances(tracks, 0.5, 1.0).follows.into_iter().map(|(k, v)| (v, k)).collect();
-    let spots = crosshair_spots(&tracks.frames);
-    let on_spot: HashSet<u32> = index
-        .ids
-        .iter()
-        .copied()
-        .filter(|tid| {
-            !spots.is_empty()
-                && index.points[tid].values().all(|&(x, y)| {
-                    spots.iter().map(|&(a, b)| hypot(x - a, y - b)).fold(f64::INFINITY, f64::min) < 0.1
-                })
-        })
-        .collect();
-    let off = off.unwrap_or_else(|| clock_offset(kt, &vt, fps));
-    let kills = Kills { index: &index, before: &before, on_spot: &on_spot, fps, off, window };
-    let flicks = kills.attach(kt, shots);
-    // confirmed: the target was last seen within 0.6 degrees of the crosshair, within 2 frames of its kill time
-    let confirmed = flicks
-        .iter()
-        .filter(|f| {
-            f.traj.last().is_some_and(|&(i, x, y)| (i - f.stats_frame.unwrap_or(i)).abs() <= 2 && hypot(x, y) < 0.6)
-        })
-        .count();
-    let info = MatchInfo {
+    let ends = crosshair_ends(&index, tracks.frames.len() as i64);
+    let video_times: Vec<f64> = ends.iter().map(|&(frame, _)| frame as f64 / fps).collect();
+    let info = |matched: usize, confirmed: Option<usize>, offset: Option<f64>| MatchInfo {
         kills_video: ends.len(),
-        kills_stats: Some(kt.len()),
-        matched: flicks.len(),
-        confirmed: Some(confirmed),
-        offset: Some(off),
+        kills_stats: Some(kill_times.len()),
+        matched,
+        confirmed,
+        offset,
         fps,
         source: None,
     };
+    if kill_times.is_empty() || (offset.is_none() && video_times.is_empty()) {
+        return (Vec::new(), info(0, None, None));
+    }
+    let joins = appearances(tracks, JOIN_GAP_S, JOIN_RADIUS_DEG).follows;
+    let before: HashMap<u32, u32> = joins.into_iter().map(|(earlier, later)| (later, earlier)).collect();
+    let on_spot = spot_tracks(&index, &crosshair_spots(&tracks.frames));
+    let offset = offset.unwrap_or_else(|| clock_offset(kill_times, &video_times, fps));
+    let kills = Kills { index: &index, before: &before, on_spot: &on_spot, fps, offset, window };
+    let flicks = kills.attach(kill_times, shots);
+    let confirmed_kills = flicks.iter().filter(|flick| confirmed(flick)).count();
+    let info = info(flicks.len(), Some(confirmed_kills), Some(offset));
     (flicks, info)
 }
 
 /// The kill times' offset on the video's clock: the one most kills line up with (tracks ending at the crosshair within
-/// 2.5 frames), refined by the median of how far each that lines up is off.
-fn clock_offset(kt: &[f64], vt: &[f64], fps: f64) -> f64 {
-    // vt is sorted: the nearest is one of the two either side of t, the earlier on a tie, as a scan from the start
-    // finds it
-    let nearest = |t: f64| {
-        let i = vt.partition_point(|&v| v < t);
-        [i.wrapping_sub(1), i]
-            .into_iter()
-            .filter_map(|j| vt.get(j))
-            .fold((f64::INFINITY, 0.0), |best, &v| if (t - v).abs() < best.0 { ((t - v).abs(), v) } else { best })
+/// CLOCK_TOLERANCE_FRAMES), refined by the median of how far each that lines up is off.
+fn clock_offset(kill_times: &[f64], video_times: &[f64], fps: f64) -> f64 {
+    let tolerance = CLOCK_TOLERANCE_FRAMES / fps;
+    // video_times is sorted: the nearest is one of the two either side of the time, the earlier on a tie, as a scan
+    // from the start finds it
+    let nearest = |time: f64| {
+        let at = video_times.partition_point(|&video| video < time);
+        [at.wrapping_sub(1), at].into_iter().filter_map(|i| video_times.get(i)).fold(
+            (f64::INFINITY, 0.0),
+            |best, &video| if (time - video).abs() < best.0 { ((time - video).abs(), video) } else { best },
+        )
     };
     let mut best: Option<(usize, f64)> = None;
-    for &a in vt.iter().take(40) {
-        for &b in kt.iter().take(40) {
-            let off = a - b;
-            let m = kt.iter().filter(|&&t| nearest(t + off).0 < 2.5 / fps).count();
-            if best.is_none_or(|(bm, _)| m > bm) {
-                best = Some((m, off));
+    for &video in video_times.iter().take(CLOCK_VOTES) {
+        for &kill in kill_times.iter().take(CLOCK_VOTES) {
+            let offset = video - kill;
+            let lined_up = kill_times.iter().filter(|&&time| nearest(time + offset).0 < tolerance).count();
+            if best.is_none_or(|(best_lined_up, _)| lined_up > best_lined_up) {
+                best = Some((lined_up, offset));
             }
         }
     }
-    let off = best.unwrap().1;
-    let res: Vec<f64> =
-        kt.iter().map(|&t| nearest(t + off).1 - (t + off)).filter(|r| r.abs() < 2.5 / fps).collect();
-    if res.is_empty() { off } else { off + crate::python::numpy_median(&res) }
+    let offset = best.unwrap().1;
+    let misses: Vec<f64> = kill_times
+        .iter()
+        .map(|&time| nearest(time + offset).1 - (time + offset))
+        .filter(|miss| miss.abs() < tolerance)
+        .collect();
+    if misses.is_empty() { offset } else { offset + crate::python::numpy_median(&misses) }
 }
 
-/// What step 2 and 3 of match_times work from.
+/// What steps 2 and 3 of `match_times` work from: the tracks, the tracks each continues, the tracks on a crosshair
+/// spot, the frame rate, the kill times' offset and the window before a kill (seconds).
 struct Kills<'a> {
     index: &'a TrackIndex,
     before: &'a HashMap<u32, u32>,
     on_spot: &'a HashSet<u32>,
     fps: f64,
-    off: f64,
+    offset: f64,
     window: f64,
 }
 
 impl Kills<'_> {
     /// Each kill's target and flick. A target lost for a few frames and picked up again as a new track keeps its
-    /// earlier tracks (`before`). A track that never leaves a crosshair spot (`on_spot`) is the killed target only
-    /// when no other track is near.
-    fn attach(&self, kt: &[f64], shots: &[i64]) -> Vec<Flick> {
-        let (index, fps) = (self.index, self.fps);
-        let w = round_frame(self.window * fps).max(1);
-        let mut flicks = Vec::with_capacity(kt.len().min(shots.len()));
-        let mut prev: Option<i64> = None;
+    /// earlier tracks (`before`).
+    fn attach(&self, kill_times: &[f64], shots: &[i64]) -> Vec<Flick> {
+        let window = round_frame(self.window * self.fps).max(1);
+        let mut flicks = Vec::with_capacity(kill_times.len().min(shots.len()));
+        let mut previous: Option<i64> = None;
         let mut used: HashSet<u32> = HashSet::new();
-        // review.py reads `last` after its loop over the tracks: the last track looked at, not the one chosen
+        // review.py reads `last` after its loop over the tracks: the last track looked at, not the one chosen, and it
+        // carries over from kill to kill
         let mut last = 0;
-        for (k, (&t, &n_shots)) in kt.iter().zip(shots).enumerate() {
-            let kf = round_frame((t + self.off) * fps);
-            let mut best: Option<(u32, f64)> = None;
-            for &tid in &index.ids {
-                let p = &index.points[&tid];
-                let mut seen = p.range(kf - w..kf + 3).map(|(&i, _)| i).peekable();
-                if seen.peek().is_none() {
-                    continue;
-                }
-                // its frame nearest the crosshair and the kill: a track can go on past the kill and move off
-                let score = |i: i64| hypot(p[&i].0, p[&i].1) + 4.0 * (i - kf).abs() as f64 / fps;
-                last = seen.fold(None, |b: Option<(i64, f64)>, i| {
-                    let s = score(i);
-                    if b.is_none_or(|(_, bs)| s < bs) { Some((i, s)) } else { b }
-                })
-                .unwrap()
-                .0;
-                let d = hypot(p[&last].0, p[&last].1);
-                // a big target can be hit at its rim, its center farther off: up to its blob's radius and 0.25
-                // degrees more
-                let a = index.areas[&tid][p.range(..last).count()] as f64;
-                let r = crate::geometry::degrees((a / std::f64::consts::PI).sqrt() / crate::geometry::K);
-                if d > 1.5f64.max(r + 0.25) {
-                    continue;
-                }
-                let cost = d
-                    + 4.0 * (last.min(kf) - kf).abs() as f64 / fps
-                    + if last >= kf - 2 { 0.0 } else { 0.2 }
-                    + if self.on_spot.contains(&tid) { 1.0 } else { 0.0 };
-                if best.is_none_or(|(_, bc)| cost < bc) {
-                    best = Some((tid, cost));
-                }
+        for (kill, (&time, &kill_shots)) in kill_times.iter().zip(shots).enumerate() {
+            let kill_frame = round_frame((time + self.offset) * self.fps);
+            let mut target = self.nearest_track(kill_frame, window, &mut last);
+            if target.is_none()
+                && let Some((end, track)) = self.hidden_track(kill_frame, window, previous, &used)
+            {
+                (last, target) = (end, Some(track));
             }
-            let mut best_tid = best.map(|b| b.0);
-            if best_tid.is_none() {
-                // held hidden under the crosshair longer than the window: the latest track that ended at the
-                // crosshair since the previous kill, up to 1 s back, not taken by a kill
-                let floor = prev.unwrap_or(-1).max(kf - 4 * w);
-                let back = index
-                    .ids
-                    .iter()
-                    .filter(|tid| !used.contains(tid))
-                    .map(|&tid| (index.last(tid), tid))
-                    .filter(|&((e, (x, y)), _)| floor < e && e < kf - w && hypot(x, y) < 0.6)
-                    .map(|((e, _), tid)| (e, tid))
-                    .max();
-                if let Some((e, tid)) = back {
-                    (last, best_tid) = (e, Some(tid));
-                }
+            if let Some(track) = target {
+                used.insert(track);
+                flicks.push(self.flick(kill + 1, track, kill_frame, kill_shots, previous, last));
             }
-            let Some(tid) = best_tid else {
-                prev = Some(kf);
-                continue;
-            };
-            used.insert(tid);
-            let mut chain = vec![tid];
-            while let Some(&b) = self.before.get(chain.last().unwrap()) {
-                chain.push(b);
-            }
-            let mut p: BTreeMap<i64, (f64, f64)> = BTreeMap::new();
-            for c in &chain {
-                p.extend(index.points[c].iter().map(|(&i, &q)| (i, q)));
-            }
-            let first = *p.first_key_value().unwrap().0;
-            let mut start = prev.unwrap_or_else(|| round_frame(self.off * fps));
-            let spawned = first > start + 2;
-            if spawned {
-                start = first;
-            }
-            let end = *p
-                .iter()
-                .rev()
-                .find(|&(&i, &(x, y))| i <= kf + 2 && (i <= last || hypot(x, y) <= 1.5))
-                .unwrap()
-                .0;
-            let traj: Vec<PathPoint> = p
-                .iter()
-                .filter(|&(&i, _)| start <= i && i <= end)
-                .map(|(&i, &(x, y))| (i, x, y))
-                .collect();
-            // the whole chain's areas: the last track may be half under the crosshair
-            let a: Vec<f64> = chain.iter().flat_map(|c| index.areas[c].iter().map(|&v| v as f64)).collect();
-            flicks.push(Flick {
-                n: k + 1,
-                kill_frame: end,
-                stats_frame: Some(kf),
-                start_frame: start,
-                shots: Some(n_shots),
-                traj,
-                spawned,
-                area: a.iter().any(|&v| v != 0.0).then(|| crate::statistics::median(&a)),
-            });
-            prev = Some(kf);
+            previous = Some(kill_frame);
         }
         flicks
     }
+
+    /// The track nearest the crosshair and the kill: seen from `window` frames before the kill to AFTER_KILL_FRAMES
+    /// after, at its frame nearest both, within MAX_KILL_DISTANCE_DEG (or its blob's radius and RIM_DEG), with costs
+    /// for being early and for never leaving a crosshair spot. `last` is set to the frame picked for each track
+    /// looked at.
+    fn nearest_track(&self, kill_frame: i64, window: i64, last: &mut i64) -> Option<u32> {
+        let (index, fps) = (self.index, self.fps);
+        let mut best: Option<(u32, f64)> = None;
+        for &track in &index.ids {
+            let places = &index.places[&track];
+            let mut seen = places.range(kill_frame - window..=kill_frame + AFTER_KILL_FRAMES).map(|(&frame, _)| frame);
+            let Some(first_seen) = seen.next() else { continue };
+            // its frame nearest the crosshair and the kill: a track can go on past the kill and move off
+            let score = |frame: i64| {
+                hypot(places[&frame].0, places[&frame].1) + DEG_PER_SECOND_OFF * (frame - kill_frame).abs() as f64 / fps
+            };
+            let nearest = seen.fold((first_seen, score(first_seen)), |nearest, frame| {
+                let frame_score = score(frame);
+                if frame_score < nearest.1 { (frame, frame_score) } else { nearest }
+            });
+            *last = nearest.0;
+            let distance = hypot(places[last].0, places[last].1);
+            let radius = blob_radius_deg(index.areas[&track][last] as f64);
+            if distance > MAX_KILL_DISTANCE_DEG.max(radius + RIM_DEG) {
+                continue;
+            }
+            let cost = distance
+                + DEG_PER_SECOND_OFF * ((*last).min(kill_frame) - kill_frame).abs() as f64 / fps
+                + if *last >= kill_frame - EARLY_FRAMES { 0.0 } else { EARLY_COST_DEG }
+                + if self.on_spot.contains(&track) { SPOT_COST_DEG } else { 0.0 };
+            if best.is_none_or(|(_, best_cost)| cost < best_cost) {
+                best = Some((track, cost));
+            }
+        }
+        best.map(|(track, _)| track)
+    }
+
+    /// A target held hidden under the crosshair longer than the window: the latest track that ended at the crosshair
+    /// since the previous kill, up to HIDDEN_WINDOWS windows back, not taken by a kill; its last frame and the track.
+    fn hidden_track(
+        &self,
+        kill_frame: i64,
+        window: i64,
+        previous: Option<i64>,
+        used: &HashSet<u32>,
+    ) -> Option<(i64, u32)> {
+        let floor = previous.unwrap_or(-1).max(kill_frame - HIDDEN_WINDOWS * window);
+        self.index
+            .ids
+            .iter()
+            .filter(|track| !used.contains(track))
+            .map(|&track| (self.index.last_place(track), track))
+            .filter(|&((end, (x, y)), _)| floor < end && end < kill_frame - window && hypot(x, y) < AT_CROSSHAIR_DEG)
+            .map(|((end, _), track)| (end, track))
+            .max()
+    }
+
+    /// The flick of kill `kill_number` to `track`'s target: its path from the previous kill (or from the target's first
+    /// appearance, when it appeared later) to the place it was last seen near the kill (up to `last`, or close).
+    fn flick(
+        &self,
+        kill_number: usize,
+        track: u32,
+        kill_frame: i64,
+        shots: i64,
+        previous: Option<i64>,
+        last: i64,
+    ) -> Flick {
+        let chain = chain(track, self.before);
+        let places = self.index.joined(&chain);
+        let first = *places.first_key_value().unwrap().0;
+        let mut start = previous.unwrap_or_else(|| round_frame(self.offset * self.fps));
+        let spawned = first > start + SPAWN_FRAMES;
+        if spawned {
+            start = first;
+        }
+        let near_the_kill = |&(&frame, &(x, y)): &(&i64, &(f64, f64))| {
+            frame <= kill_frame + AFTER_KILL_FRAMES && (frame <= last || hypot(x, y) <= MAX_KILL_DISTANCE_DEG)
+        };
+        let end = *places.iter().rev().find(near_the_kill).unwrap().0;
+        // the whole chain's areas: the last track may be half under the crosshair
+        let areas: Vec<f64> =
+            chain.iter().flat_map(|earlier| self.index.areas[earlier].values().map(|&area| area as f64)).collect();
+        Flick {
+            kill_number,
+            kill_frame: end,
+            stats_frame: Some(kill_frame),
+            start_frame: start,
+            shots: Some(shots),
+            path: places
+                .iter()
+                .filter(|&(&frame, _)| start <= frame && frame <= end)
+                .map(|(&frame, &(x, y))| (frame, x, y))
+                .collect(),
+            spawned,
+            area_px: areas.iter().any(|&area| area != 0.0).then(|| median(&areas)),
+        }
+    }
 }
 
-/// Tracks that are the crosshair, not a target: they never leave `maxd` degrees of the crosshair, the camera turned
-/// more than `moved` degrees meanwhile, and they did not move with it (a static target shifts by the camera's turn;
-/// more than `share` of the turn left unexplained). A detector can take some crosshairs (Aim Lab's) for a target. Also
-/// tracks of 3 frames or fewer on a crosshair spot (`crosshair_spots`): right after a kill they made the dead target
-/// look picked up again, so its kill was lost or came late.
-pub fn ghosts(frames: &[TrackFrame], maxd: f64, share: f64, moved: f64) -> HashSet<u32> {
-    let cum = turned(frames);
+/// Tracks that are the crosshair, not a target: they never leave `max_distance` degrees of the crosshair, the camera
+/// turned more than `min_turn` degrees meanwhile, and they did not move with it (a static target shifts by the camera's
+/// turn; more than `unexplained_share` of the turn left unexplained). A detector can take some crosshairs (Aim Lab's)
+/// for a target. Also tracks of SHORT_SPOT_TRACK_POINTS or fewer on a crosshair spot (`crosshair_spots`): right after
+/// a kill they made the dead target look picked up again, so its kill was lost or came late.
+pub fn ghosts(frames: &[TrackFrame], max_distance: f64, unexplained_share: f64, min_turn: f64) -> HashSet<u32> {
+    let turned = turned(frames);
     let index = TrackIndex::new(frames);
-    let mut out = HashSet::new();
-    for &tid in &index.ids {
-        let p = &index.points[&tid];
-        if p.len() < 2 || p.values().any(|&(x, y)| hypot(x, y) >= maxd) {
+    let mut ghosts = HashSet::new();
+    for &track in &index.ids {
+        let places = &index.places[&track];
+        if places.len() < 2 || places.values().any(|&(x, y)| hypot(x, y) >= max_distance) {
             continue;
         }
-        let (mut turn, mut left) = (0.0, 0.0);
-        for ((&i, &(xi, yi)), (&j, &(xj, yj))) in p.iter().zip(p.iter().skip(1)) {
-            let (c, d) = (cum[j as usize], cum[i as usize]);
-            let dc = (c.0 - d.0, c.1 - d.1);
-            turn += hypot(dc.0, dc.1);
-            left += hypot(xj - xi - dc.0, yj - yi - dc.1);
+        let (mut turn, mut unexplained) = (0.0, 0.0);
+        for ((&from, &(from_x, from_y)), (&to, &(to_x, to_y))) in places.iter().zip(places.iter().skip(1)) {
+            let (now, then) = (turned[to as usize], turned[from as usize]);
+            let step = (now.0 - then.0, now.1 - then.1);
+            turn += hypot(step.0, step.1);
+            unexplained += hypot(to_x - from_x - step.0, to_y - from_y - step.1);
         }
-        if turn > moved && left > share * turn {
-            out.insert(tid);
+        if turn > min_turn && unexplained > unexplained_share * turn {
+            ghosts.insert(track);
         }
     }
     let spots = crosshair_spots(frames);
     if !spots.is_empty() {
-        for &tid in &index.ids {
-            let p = &index.points[&tid];
-            let on_spot = |&(x, y): &(f64, f64)| spots.iter().any(|&(a, b)| hypot(x - a, y - b) < 0.1);
-            if p.len() <= 3 && p.values().all(on_spot) {
-                out.insert(tid);
+        let on_spot = |&(x, y): &(f64, f64)| spots.iter().any(|&(a, b)| hypot(x - a, y - b) < ON_SPOT_DEG);
+        for &track in &index.ids {
+            let places = &index.places[&track];
+            if places.len() <= SHORT_SPOT_TRACK_POINTS && places.values().all(on_spot) {
+                ghosts.insert(track);
             }
         }
     }
-    out
+    ghosts
 }
 
 /// The tracks without those that are the crosshair (`ghosts`).
 pub fn without_ghosts(tracks: &Tracks) -> Tracks {
-    let gone = ghosts(&tracks.frames, 0.5, 0.5, 0.3);
+    let gone = ghosts(&tracks.frames, GHOST_MAX_DEG, GHOST_UNEXPLAINED_SHARE, GHOST_MIN_TURN_DEG);
     if gone.is_empty() {
         return tracks.clone();
     }
-    keep_points(tracks, |_, tid| !gone.contains(&tid))
+    keep_points(tracks, |_, track| !gone.contains(&track))
 }
 
 /// The tracks with only the points `keep` (frame, track) keeps.
 fn keep_points(tracks: &Tracks, keep: impl Fn(usize, u32) -> bool) -> Tracks {
-    let mut out = tracks.clone();
-    for frame in &mut out.frames {
-        let kept_here: Vec<bool> = frame.t.iter().map(|point| keep(frame.i, point.0)).collect();
-        if !kept_here.contains(&false) {
+    let mut kept = tracks.clone();
+    for frame in &mut kept.frames {
+        let keeps: Vec<bool> = frame.t.iter().map(|point| keep(frame.i, point.0)).collect();
+        if !keeps.contains(&false) {
             continue;
         }
-        kept(&mut frame.t, &kept_here);
-        kept(&mut frame.a, &kept_here);
+        keep_marked(&mut frame.t, &keeps);
+        keep_marked(&mut frame.a, &keeps);
         if let Some(sizes) = frame.wh.as_mut() {
-            kept(sizes, &kept_here);
+            keep_marked(sizes, &keeps);
         }
         if let Some(scores) = frame.s.as_mut() {
-            kept(scores, &kept_here);
+            keep_marked(scores, &keeps);
         }
     }
-    out
+    kept
 }
 
-/// A frame's values for its targets, with only those `keep` keeps (a list of another length is left as it is).
-fn kept<T>(v: &mut Vec<T>, keep: &[bool]) {
-    if v.len() == keep.len() {
-        let mut k = keep.iter();
-        v.retain(|_| *k.next().unwrap());
+/// A frame's values for its targets, with only those `keeps` marks (a list of another length is left as it is).
+fn keep_marked<T>(values: &mut Vec<T>, keeps: &[bool]) {
+    if values.len() == keeps.len() {
+        let mut marks = keeps.iter();
+        values.retain(|_| *marks.next().unwrap());
     }
 }
 
-/// The tracks as the video alone reads them: each track's points and blob areas by frame, and the tracks in the order
-/// they first appear (tracks split off by `repair` come last).
-struct Paths {
-    ids: Vec<u32>,
-    points: HashMap<u32, BTreeMap<i64, (f64, f64)>>,
-    areas: HashMap<u32, BTreeMap<i64, i64>>,
+/// Where the rest of a track goes when `repair` splits it: on with a track that ended the frame before, or a new one.
+enum Heir {
+    Ended(u32),
+    New,
 }
 
-impl Paths {
-    fn new(frames: &[TrackFrame]) -> Paths {
-        let mut paths = Paths { ids: Vec::new(), points: HashMap::new(), areas: HashMap::new() };
-        for f in frames {
-            let areas: Vec<i64> = if f.a.is_empty() { vec![0; f.t.len()] } else { f.a.clone() };
-            for (&(tid, x, y), a) in f.t.iter().zip(areas) {
-                if !paths.points.contains_key(&tid) {
-                    paths.ids.push(tid);
-                }
-                paths.points.entry(tid).or_default().insert(f.i as i64, (x, y));
-                paths.areas.entry(tid).or_default().insert(f.i as i64, a);
-            }
-        }
-        paths
-    }
-
-    fn first(&self, tid: u32) -> i64 {
-        *self.points[&tid].first_key_value().unwrap().0
-    }
-
-    fn last(&self, tid: u32) -> i64 {
-        *self.points[&tid].last_key_value().unwrap().0
-    }
-
-    /// The track's blob areas near the crosshair (within 3 degrees), where the detector sees the target whole.
-    fn near_areas(&self, tid: u32) -> Vec<f64> {
-        let p = &self.points[&tid];
-        self.areas[&tid]
-            .iter()
-            .filter(|&(i, &a)| a != 0 && hypot(p[i].0, p[i].1) < 3.0)
-            .map(|(_, &a)| a as f64)
-            .collect()
-    }
-
+impl TrackIndex {
     /// A kill can fool the camera's turn on a plain wall: with the target at the crosshair gone, the frame's shift
     /// lines up another target with the dead one's place, and the tracker hands the dead target's track on to that
     /// target (its place on screen jumps with the shift) and starts new tracks for the targets that stayed put. A
-    /// track at the crosshair whose place jumps more than `near` with the frame's shift is split there when the shift
-    /// is a spike (`track::spikes`: since review version 3 the tracker repairs most, `link`), or when the jump is more
-    /// than twice `near` and lands within `near` of a track that ended the frame before. Its head ends where the
-    /// target died; its rest continues that track, else becomes a track of its own. Returns the camera's turn summed
-    /// from the first frame, by frame, with each spike replaced by the mean of the frames either side.
+    /// track at the crosshair whose place jumps more than `near` with the frame's shift is split there (`false_turn`).
+    /// Its head ends where the target died; its rest continues that track, else becomes a track of its own. Returns
+    /// the camera's turn summed from the first frame, by frame, with each spike replaced by the mean of the frames
+    /// either side.
     fn repair(&mut self, frames: &[TrackFrame], near: f64) -> Vec<(f64, f64)> {
-        let cum = turned(frames);
-        let n = frames.len();
-        let spike = spikes(&frames.iter().map(|f| f.shift).collect::<Vec<_>>());
-        // the tracks seen on each frame, and those that end on it
-        let mut at: Vec<Vec<u32>> = vec![Vec::new(); n];
-        let mut ends: HashMap<i64, HashSet<u32>> = HashMap::new();
-        for &tid in &self.ids {
-            for &i in self.points[&tid].keys() {
-                at[i as usize].push(tid);
-            }
-            ends.entry(self.last(tid)).or_default().insert(tid);
-        }
-        let mut next = self.ids.iter().max().map_or(0, |m| m + 1);
-        for j in 1..n {
-            let (i, fi, fj) = (j - 1, j as i64 - 1, j as i64);
-            let s = (cum[j].0 - cum[i].0, cum[j].1 - cum[i].1);
-            let mut both: Vec<u32> = at[i].iter().copied().filter(|t| at[j].contains(t)).collect();
-            both.sort_unstable();
-            for t in both {
-                let p = &self.points[&t];
-                let (Some(&(x0, y0)), Some(&(x1, y1))) = (p.get(&fi), p.get(&fj)) else { continue };
-                let jump = hypot(x1 - x0, y1 - y0);
-                if hypot(x0, y0) >= near || jump <= near || hypot(x1 - x0 - s.0, y1 - y0 - s.1) >= near {
+        let turned = turned(frames);
+        let spike = spikes(&frames.iter().map(|frame| frame.shift).collect::<Vec<_>>());
+        let (mut seen_at, mut ends) = self.seen_and_ends(frames.len());
+        let mut next_id = self.ids.iter().max().map_or(0, |id| id + 1);
+        for frame in 1..frames.len() {
+            let shift = (turned[frame].0 - turned[frame - 1].0, turned[frame].1 - turned[frame - 1].1);
+            let mut on_both: Vec<u32> =
+                seen_at[frame - 1].iter().copied().filter(|track| seen_at[frame].contains(track)).collect();
+            on_both.sort_unstable();
+            let frame = frame as i64;
+            for track in on_both {
+                let Some(heir) = self.false_turn(track, frame, shift, spike[frame as usize], near, &ends) else {
                     continue;
-                }
-                let mut ended: Vec<(f64, u32)> = ends
-                    .get(&fi)
-                    .into_iter()
-                    .flatten()
-                    .filter(|&&b| b != t && self.last(b) == fi)
-                    .map(|&b| {
-                        let (bx, by) = self.points[&b][&fi];
-                        (hypot(x1 - bx, y1 - by), b)
-                    })
-                    .filter(|&(d, _)| d < near)
-                    .collect();
-                ended.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-                if !spike[j] && (ended.is_empty() || jump <= 2.0 * near) {
-                    continue;
-                }
-                let rest = self.points.get_mut(&t).unwrap().split_off(&fj);
-                let rest_areas = self.areas.get_mut(&t).unwrap().split_off(&fj);
-                let old_end = *rest.last_key_value().unwrap().0;
-                let b = match ended.first() {
-                    Some(&(_, b)) => {
-                        ends.get_mut(&fi).unwrap().remove(&b);
-                        b
+                };
+                let heir = match heir {
+                    Heir::Ended(ended) => {
+                        ends.get_mut(&(frame - 1)).unwrap().remove(&ended);
+                        ended
                     }
-                    None => {
-                        next += 1;
-                        self.ids.push(next - 1);
-                        next - 1
+                    Heir::New => {
+                        self.ids.push(next_id);
+                        next_id += 1;
+                        next_id - 1
                     }
                 };
-                for &k in rest.keys() {
-                    let here = &mut at[k as usize];
-                    here.retain(|&u| u != t);
-                    here.push(b);
-                }
-                self.points.entry(b).or_default().extend(rest);
-                self.areas.entry(b).or_default().extend(rest_areas);
-                ends.entry(self.last(b)).or_default().insert(b);
-                ends.get_mut(&old_end).unwrap().remove(&t);
-                ends.entry(fi).or_default().insert(t);
+                self.hand_on(track, frame, heir, &mut seen_at, &mut ends);
             }
         }
         if !spike.contains(&true) {
-            return cum;
+            return turned;
         }
-        let mut step: Vec<(f64, f64)> = (0..n)
-            .map(|k| if k == 0 { (0.0, 0.0) } else { (cum[k].0 - cum[k - 1].0, cum[k].1 - cum[k - 1].1) })
+        without_spikes(&turned, &spike)
+    }
+
+    /// The tracks seen on each frame, and those that end on each frame.
+    fn seen_and_ends(&self, frame_count: usize) -> (Vec<Vec<u32>>, HashMap<i64, HashSet<u32>>) {
+        let mut seen_at: Vec<Vec<u32>> = vec![Vec::new(); frame_count];
+        let mut ends: HashMap<i64, HashSet<u32>> = HashMap::new();
+        for &track in &self.ids {
+            for &frame in self.places[&track].keys() {
+                seen_at[frame as usize].push(track);
+            }
+            ends.entry(self.last(track)).or_default().insert(track);
+        }
+        (seen_at, ends)
+    }
+
+    /// Whether `track`'s target died at the crosshair on the frame before `frame`, and the tracker handed its track on
+    /// to another target there: its place jumps more than `near` with the frame's `shift`, and the shift is a spike
+    /// (`track::spikes`: since review version 3 the tracker repairs most, `link`), or the jump is more than
+    /// LONG_JUMP_SHARE times `near` and lands within `near` of a track that ended the frame before. Where its rest
+    /// goes; None when it is not split.
+    fn false_turn(
+        &self,
+        track: u32,
+        frame: i64,
+        shift: (f64, f64),
+        spike: bool,
+        near: f64,
+        ends: &HashMap<i64, HashSet<u32>>,
+    ) -> Option<Heir> {
+        let places = &self.places[&track];
+        let (Some(&(x0, y0)), Some(&(x1, y1))) = (places.get(&(frame - 1)), places.get(&frame)) else { return None };
+        let jump = hypot(x1 - x0, y1 - y0);
+        if hypot(x0, y0) >= near || jump <= near || hypot(x1 - x0 - shift.0, y1 - y0 - shift.1) >= near {
+            return None;
+        }
+        let mut ended: Vec<(f64, u32)> = ends
+            .get(&(frame - 1))
+            .into_iter()
+            .flatten()
+            .filter(|&&other| other != track && self.last(other) == frame - 1)
+            .map(|&other| {
+                let (other_x, other_y) = self.places[&other][&(frame - 1)];
+                (hypot(x1 - other_x, y1 - other_y), other)
+            })
+            .filter(|&(distance, _)| distance < near)
             .collect();
-        for j in (0..n).filter(|&j| spike[j]) {
-            step[j] = ((step[j - 1].0 + step[j + 1].0) / 2.0, (step[j - 1].1 + step[j + 1].1) / 2.0);
+        ended.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        if !spike && (ended.is_empty() || jump <= LONG_JUMP_SHARE * near) {
+            return None;
         }
-        let mut sum = step[0];
-        let mut out = Vec::with_capacity(n);
-        out.push(sum);
-        for v in &step[1..] {
-            sum = (sum.0 + v.0, sum.1 + v.1);
-            out.push(sum);
+        Some(ended.first().map_or(Heir::New, |&(_, other)| Heir::Ended(other)))
+    }
+
+    /// Moves `track`'s places from `frame` on to `heir`, keeping `seen_at` and `ends` up to date.
+    fn hand_on(
+        &mut self,
+        track: u32,
+        frame: i64,
+        heir: u32,
+        seen_at: &mut [Vec<u32>],
+        ends: &mut HashMap<i64, HashSet<u32>>,
+    ) {
+        let rest = self.places.get_mut(&track).unwrap().split_off(&frame);
+        let rest_areas = self.areas.get_mut(&track).unwrap().split_off(&frame);
+        let old_end = *rest.last_key_value().unwrap().0;
+        for &moved in rest.keys() {
+            let here = &mut seen_at[moved as usize];
+            here.retain(|&seen| seen != track);
+            here.push(heir);
         }
-        out
+        self.places.entry(heir).or_default().extend(rest);
+        self.areas.entry(heir).or_default().extend(rest_areas);
+        ends.entry(self.last(heir)).or_default().insert(heir);
+        ends.get_mut(&old_end).unwrap().remove(&track);
+        ends.entry(frame - 1).or_default().insert(track);
     }
 
     /// Tracks that are one target picked up again (`appearances`, for the video alone): a track that starts within
-    /// 0.5 s of another's end (or up to 2 frames before it), within 1 degree of where that one would be now (its last
-    /// place moved by the camera's turn since, and by its own speed over its last 3 frames or not: either will do),
-    /// continues it, unless the target was gone meanwhile. A target hidden under the crosshair stays there: one whose
-    /// place came out from under it (farther than 1.5 x `near`) on 2 or more of the frames it was missing would have
-    /// been seen, so it died. And a target that comes back is where it was and as big: one missing for 3 frames or
-    /// more that comes back more than half its radius `r` from that place (2 frames: 1.5 radii), or less than half or
-    /// more than twice as big (`same_size`), is a new target, such as one that spawned near the dead one. Returns the
-    /// track that continues each track.
-    fn continued(&self, cum: &[(f64, f64)], fps: f64, r: f64, near: f64) -> HashMap<u32, u32> {
-        let g = round_frame(0.5 * fps).max(1);
+    /// JOIN_GAP_S of another's end (or up to OVERLAP_FRAMES before it), within JOIN_RADIUS_DEG of where that one would
+    /// be now (its last place moved by the camera's turn since, and by its own speed over its last frames or not:
+    /// either will do), continues it, unless the target was gone meanwhile. A target hidden under the crosshair stays
+    /// there: one whose place came out from under it (`OUT_FROM_UNDER_SHARE` x `near`) on SEEN_FRAMES or more of the
+    /// frames it was missing would have been seen, so it died. And a target that comes back is where it was and as
+    /// big: one missing for LONG_GAP_FRAMES or more that comes back more than LONG_GAP_RADII of its radius `radius`
+    /// from that place (SHORT_GAP_FRAMES: SHORT_GAP_RADII), or not as big (`same_size`), is a new target, such as one
+    /// that spawned near the dead one. Returns the track that continues each track.
+    fn continued(&self, turned: &[(f64, f64)], fps: f64, radius: f64, near: f64) -> HashMap<u32, u32> {
+        let gap_frames = round_frame(JOIN_GAP_S * fps).max(1);
         let mut ending: HashMap<i64, Vec<u32>> = HashMap::new();
-        for &tid in &self.ids {
-            ending.entry(self.last(tid)).or_default().push(tid);
+        for &track in &self.ids {
+            ending.entry(self.last(track)).or_default().push(track);
         }
         let mut starts = self.ids.clone();
-        starts.sort_by_key(|&t| self.first(t));
+        starts.sort_by_key(|&track| self.first(track));
         let mut follows: HashMap<u32, u32> = HashMap::new();
         let mut before: HashMap<u32, u32> = HashMap::new();
-        for tid in starts {
-            let s0 = self.first(tid);
-            let (qx, qy) = self.points[&tid][&s0];
+        for track in starts {
+            let start = self.first(track);
+            let place = self.places[&track][&start];
+            // whether `earlier`'s target, gone after `end` and moving at `speed`, can be this one back
+            let came_back = |earlier: u32, end: i64, speed: (f64, f64), distance: f64| {
+                let gone_from = self.places[&earlier][&end];
+                let out_from_under = (end + 1..start)
+                    .filter(|&frame| {
+                        let (x, y) = expected_place(gone_from, turned, end, frame, speed);
+                        hypot(x, y) > OUT_FROM_UNDER_SHARE * near
+                    })
+                    .count();
+                let same_place = match start - end {
+                    LONG_GAP_FRAMES.. => distance <= LONG_GAP_RADII * radius && self.same_size(earlier, track),
+                    SHORT_GAP_FRAMES => distance <= SHORT_GAP_RADII * radius,
+                    _ => true,
+                };
+                out_from_under < SEEN_FRAMES && same_place
+            };
             let mut best: Option<(f64, u32)> = None;
-            for e in (s0 - g).max(0)..s0 + 3 {
-                for &prev in ending.get(&e).map(Vec::as_slice).unwrap_or_default() {
-                    if follows.contains_key(&prev) || prev == tid || self.first(prev) >= s0 {
+            for end in (start - gap_frames).max(0)..=start + OVERLAP_FRAMES {
+                for &earlier in ending.get(&end).map(Vec::as_slice).unwrap_or_default() {
+                    if follows.contains_key(&earlier) || earlier == track || self.first(earlier) >= start {
                         continue;
                     }
-                    let (x, y) = self.points[&prev][&e];
-                    let (a, b) = (cum[s0 as usize], cum[e as usize]);
-                    let n = (s0 - e) as f64;
                     // where it would be if it moved on as it did, and if it stood still: either will do
-                    for v in [self.speed(prev, &before, cum, e), (0.0, 0.0)] {
-                        let d = hypot(qx - (x + a.0 - b.0 + v.0 * n), qy - (y + a.1 - b.1 + v.1 * n));
-                        if d >= 1.0 || best.is_some_and(|(bd, _)| d >= bd) {
-                            continue;
-                        }
-                        let seen = (e + 1..s0)
-                            .filter(|&i| {
-                                let (c, k) = (cum[i as usize], (i - e) as f64);
-                                hypot(x + c.0 - b.0 + v.0 * k, y + c.1 - b.1 + v.1 * k) > 1.5 * near
-                            })
-                            .count();
-                        let back = match s0 - e {
-                            3.. => d <= 0.5 * r && self.same_size(prev, tid),
-                            2 => d <= 1.5 * r,
-                            _ => true,
-                        };
-                        if seen < 2 && back {
-                            best = Some((d, prev));
+                    for speed in [self.speed(earlier, &before, turned, end), (0.0, 0.0)] {
+                        let expected = expected_place(self.places[&earlier][&end], turned, end, start, speed);
+                        let distance = hypot(place.0 - expected.0, place.1 - expected.1);
+                        let nearer = best.is_none_or(|(best_distance, _)| distance < best_distance);
+                        if distance < JOIN_RADIUS_DEG && nearer && came_back(earlier, end, speed, distance) {
+                            best = Some((distance, earlier));
                         }
                     }
                 }
             }
-            if let Some((_, prev)) = best {
-                follows.insert(prev, tid);
-                before.insert(tid, prev);
+            if let Some((_, earlier)) = best {
+                follows.insert(earlier, track);
+                before.insert(track, earlier);
             }
         }
         follows
     }
 
-    /// Whether a target came back about as big as it was: the new track's median blob area over its first 3 frames is
-    /// within half and twice the old track's over its last 3 (true when either has no area).
+    /// Whether a target came back about as big as it was: the new track's median blob area over its first SIZE_FRAMES
+    /// frames is within SAME_SIZE_SHARES of the old track's over its last (true when either has no area).
     fn same_size(&self, old: u32, new: u32) -> bool {
-        let a: Capped<f64, 3> = self.areas[&old].values().rev().take(3).map(|&v| v as f64).collect();
-        let b: Capped<f64, 3> = self.areas[&new].values().take(3).map(|&v| v as f64).collect();
-        let (a, b) = (crate::statistics::median(&a), crate::statistics::median(&b));
-        a <= 0.0 || b <= 0.0 || (0.5..=2.0).contains(&(b / a))
+        let old_areas: Capped<f64, SIZE_FRAMES> =
+            self.areas[&old].values().rev().take(SIZE_FRAMES).map(|&area| area as f64).collect();
+        let new_areas: Capped<f64, SIZE_FRAMES> =
+            self.areas[&new].values().take(SIZE_FRAMES).map(|&area| area as f64).collect();
+        let (old_area, new_area) = (median(&old_areas), median(&new_areas));
+        old_area <= 0.0 || new_area <= 0.0 || (SAME_SIZE_SHARES.0..=SAME_SIZE_SHARES.1).contains(&(new_area / old_area))
     }
 
-    /// A target's speed over the world (degrees a frame) where its track ends, at frame `e`: from its points over its
-    /// last 3 frames, with those of the tracks it continues (`before`) when it has 3 points or fewer.
-    fn speed(&self, tid: u32, before: &HashMap<u32, u32>, cum: &[(f64, f64)], e: i64) -> (f64, f64) {
-        const FRAMES: i64 = 3;
-        let own = &self.points[&tid];
-        let joined: BTreeMap<i64, (f64, f64)>;
-        let mut pts = own;
-        if own.len() <= FRAMES as usize && before.contains_key(&tid) {
-            let mut all = own.clone();
-            let mut c = tid;
-            while let Some(&b) = before.get(&c) {
-                if all.len() > FRAMES as usize {
-                    break;
-                }
-                c = b;
-                for (&k, &q) in &self.points[&c] {
-                    all.entry(k).or_insert(q);
-                }
-            }
-            joined = all;
-            pts = &joined;
-        }
-        let mut window = pts.range(e - FRAMES..=e);
-        let (Some((&i0, &(x0, y0))), Some(_)) = (window.next(), window.next()) else { return (0.0, 0.0) };
-        let (x1, y1) = pts[&e];
-        let k = (e - i0) as f64;
-        let (c0, c1) = (cum[i0 as usize], cum[e as usize]);
-        (((x1 - c1.0) - (x0 - c0.0)) / k, ((y1 - c1.1) - (y0 - c0.1)) / k)
+    /// A target's speed over the world (degrees a frame) where its track ends, at frame `end` (`own_speed`, with the
+    /// tracks it continues when it is short).
+    fn speed(&self, track: u32, before: &HashMap<u32, u32>, turned: &[(f64, f64)], end: i64) -> (f64, f64) {
+        own_speed(&places_for_speed(&self.places, before, track), end, turned).world
     }
+}
+
+/// The camera's turn summed from the first frame, with each spike's step replaced by the mean of the steps either
+/// side.
+fn without_spikes(turned: &[(f64, f64)], spike: &[bool]) -> Vec<(f64, f64)> {
+    let count = turned.len();
+    let mut steps: Vec<(f64, f64)> = (0..count)
+        .map(|frame| {
+            if frame == 0 {
+                (0.0, 0.0)
+            } else {
+                (turned[frame].0 - turned[frame - 1].0, turned[frame].1 - turned[frame - 1].1)
+            }
+        })
+        .collect();
+    for frame in (0..count).filter(|&frame| spike[frame]) {
+        steps[frame] =
+            ((steps[frame - 1].0 + steps[frame + 1].0) / 2.0, (steps[frame - 1].1 + steps[frame + 1].1) / 2.0);
+    }
+    let mut sum = steps[0];
+    let mut summed = Vec::with_capacity(count);
+    summed.push(sum);
+    for &(step_x, step_y) in &steps[1..] {
+        sum = (sum.0 + step_x, sum.1 + step_y);
+        summed.push(sum);
+    }
+    summed
+}
+
+/// A track that may be a video kill: its last frame, its distance from the crosshair there, the track, and its chain
+/// (`chain`).
+struct Candidate {
+    end: i64,
+    distance: f64,
+    track: u32,
+    chain: Vec<u32>,
+}
+
+/// The tracks that may be kills, in order of their end, then distance, then id (see `match_video`).
+fn kill_candidates(
+    index: &TrackIndex,
+    follows: &HashMap<u32, u32>,
+    typical_area: Option<f64>,
+    near: f64,
+    frame_count: i64,
+) -> Vec<Candidate> {
+    let before: HashMap<u32, u32> = follows.iter().map(|(&earlier, &later)| (later, earlier)).collect();
+    let mut steady_ends: HashMap<i64, usize> = HashMap::new();
+    for &track in &index.ids {
+        if index.places[&track].len() >= STEADY_TRACK_POINTS && !follows.contains_key(&track) {
+            *steady_ends.entry(index.last(track)).or_default() += 1;
+        }
+    }
+    let ending_together =
+        |end: i64| (end - 1..=end + 1).map(|frame| steady_ends.get(&frame).copied().unwrap_or(0)).sum::<usize>();
+    let mut candidates = Vec::new();
+    for &track in &index.ids {
+        let end = index.last(track);
+        let (x, y) = index.places[&track][&end];
+        let cut_short = end >= frame_count - END_MARGIN_FRAMES;
+        if follows.contains_key(&track) || cut_short || hypot(x, y) >= near || ending_together(end) >= RUN_END_TRACKS {
+            continue;
+        }
+        let chain = chain(track, &before);
+        if chain.iter().map(|earlier| index.places[earlier].len()).sum::<usize>() < MIN_KILL_TRACK_POINTS {
+            continue;
+        }
+        let sizes: Vec<f64> = chain.iter().flat_map(|&earlier| index.near_areas(earlier)).collect();
+        if typical_area.is_some_and(|area| !sizes.is_empty() && median(&sizes) < MIN_TARGET_SHARE * area) {
+            continue;
+        }
+        candidates.push(Candidate { end, distance: hypot(x, y), track, chain });
+    }
+    candidates.sort_by(|a, b| a.end.cmp(&b.end).then(a.distance.total_cmp(&b.distance)).then(a.track.cmp(&b.track)));
+    candidates
+}
+
+/// One kill for candidates within SAME_KILL_FRAMES of each other: the one nearest the crosshair.
+fn one_per_kill(candidates: Vec<Candidate>) -> Vec<Candidate> {
+    let mut kills: Vec<Candidate> = Vec::new();
+    for candidate in candidates {
+        if let Some(kill) = kills.last_mut()
+            && candidate.end - kill.end <= SAME_KILL_FRAMES
+        {
+            if candidate.distance < kill.distance {
+                *kill = candidate;
+            }
+            continue;
+        }
+        kills.push(candidate);
+    }
+    kills
+}
+
+/// The flicks to the video's kills, built as `Kills::flick` builds them, with no shot counts.
+fn video_flicks(index: &TrackIndex, kills: &[Candidate]) -> Vec<Flick> {
+    let mut flicks = Vec::with_capacity(kills.len());
+    let mut previous: Option<i64> = None;
+    for (kill, candidate) in kills.iter().enumerate() {
+        let places = index.joined(&candidate.chain);
+        let first = *places.first_key_value().unwrap().0;
+        let mut start = previous.unwrap_or(first);
+        let spawned = first > start + SPAWN_FRAMES;
+        if spawned {
+            start = first;
+        }
+        let areas = index.near_areas(candidate.track);
+        flicks.push(Flick {
+            kill_number: kill + 1,
+            kill_frame: candidate.end,
+            stats_frame: None,
+            start_frame: start,
+            shots: None,
+            path: places.range(start..=candidate.end).map(|(&frame, &(x, y))| (frame, x, y)).collect(),
+            spawned,
+            area_px: (!areas.is_empty()).then(|| median(&areas)),
+        });
+        previous = Some(candidate.end);
+    }
+    flicks
 }
 
 /// The flicks from the video alone, for a run without a stats file or a readable HUD. A kill is a track that ends near
 /// the crosshair, unless:
-/// - another track continues it (`Paths::continued`: tracking lost the target; it did not die);
+/// - another track continues it (`TrackIndex::continued`: tracking lost the target; it did not die);
 /// - it is the crosshair (`ghosts`);
-/// - three or more steady tracks (5 frames or more, not continued) end within a frame of it (the run ended or
-///   restarted); flickering false detections, such as a game's HUD text, do not count;
-/// - its blob is less than a tenth of the run's typical target (a hit marker or a spark, not a target);
-/// - another kill was found within 3 frames (the same kill twice).
+/// - RUN_END_TRACKS or more steady tracks (STEADY_TRACK_POINTS frames or more, not continued) end within a frame of it
+///   (the run ended or restarted); flickering false detections, such as a game's HUD text, do not count;
+/// - its blob is less than MIN_TARGET_SHARE of the run's typical target (a hit marker or a spark, not a target);
+/// - another kill was found within SAME_KILL_FRAMES (the same kill twice).
 ///
-/// Tracks the camera's turn fooled at a kill are split first (`Paths::repair`). A flick's path joins the pieces of
-/// its target's track. "Near" is the target's radius (from the tracks' median blob area) plus 0.25 degrees, and at
-/// least 0.6. Flicks are built as `match_times` builds them, with no shot counts.
+/// Tracks the camera's turn fooled at a kill are split first (`TrackIndex::repair`). A flick's path joins the pieces of
+/// its target's track. "Near" is the target's radius (from the tracks' median blob area) plus RIM_DEG, and at least
+/// AT_CROSSHAIR_DEG.
 pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
     let tracks = without_ghosts(&without_crosshair_ends(tracks));
     let (fps, frames) = (tracks.fps, &tracks.frames);
-    let mut paths = Paths::new(frames);
-    let areas: Vec<f64> = paths
-        .ids
-        .iter()
-        .map(|&tid| paths.near_areas(tid))
-        .filter(|v| !v.is_empty())
-        .map(|v| crate::statistics::median(&v))
-        .collect();
-    // the run's typical target: its median blob area (None with fewer than 5 tracks) and radius
-    let typical = (areas.len() >= 5).then(|| crate::statistics::median(&areas));
-    let r = typical.map_or(0.43, |a| crate::geometry::degrees((a / std::f64::consts::PI).sqrt() / crate::geometry::K));
-    let near = (r + 0.25).max(0.6);
-    let cum = paths.repair(frames, near);
-    let follows = paths.continued(&cum, fps, r, near);
-    let before: HashMap<u32, u32> = follows.iter().map(|(&k, &v)| (v, k)).collect();
-    let mut ends_at: HashMap<i64, usize> = HashMap::new();
-    for &tid in &paths.ids {
-        if paths.points[&tid].len() >= 5 && !follows.contains_key(&tid) {
-            *ends_at.entry(paths.last(tid)).or_default() += 1;
-        }
-    }
-    let ending = |e: i64| (e - 1..=e + 1).map(|i| ends_at.get(&i).copied().unwrap_or(0)).sum::<usize>();
-    let n = frames.len() as i64;
-    // candidates: (end frame, distance from the crosshair, track, the track and the tracks it continues)
-    let mut cands: Vec<(i64, f64, u32, Vec<u32>)> = Vec::new();
-    for &tid in &paths.ids {
-        let e = paths.last(tid);
-        let (x, y) = paths.points[&tid][&e];
-        if follows.contains_key(&tid) || e >= n - 2 || hypot(x, y) >= near || ending(e) >= 3 {
-            continue;
-        }
-        let mut chain = vec![tid];
-        while let Some(&b) = before.get(chain.last().unwrap()) {
-            chain.push(b);
-        }
-        if chain.iter().map(|c| paths.points[c].len()).sum::<usize>() < 3 {
-            continue;
-        }
-        // a blob less than a tenth of the typical target is no target (a hit marker, a spark)
-        let size: Vec<f64> = chain.iter().flat_map(|&c| paths.near_areas(c)).collect();
-        if typical.is_some_and(|a| !size.is_empty() && crate::statistics::median(&size) < 0.1 * a) {
-            continue;
-        }
-        cands.push((e, hypot(x, y), tid, chain));
-    }
-    cands.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
-    let mut kills: Vec<(i64, f64, u32, Vec<u32>)> = Vec::new();
-    for c in cands {
-        if let Some(k) = kills.last_mut()
-            && c.0 - k.0 <= 3
-        {
-            if c.1 < k.1 {
-                *k = c;
-            }
-            continue;
-        }
-        kills.push(c);
-    }
-    let mut flicks = Vec::with_capacity(kills.len());
-    let mut prev: Option<i64> = None;
-    for (k, (end, _, tid, chain)) in kills.iter().enumerate() {
-        let mut p: BTreeMap<i64, (f64, f64)> = BTreeMap::new();
-        for c in chain {
-            p.extend(paths.points[c].iter().map(|(&i, &q)| (i, q)));
-        }
-        let first = *p.first_key_value().unwrap().0;
-        let mut start = prev.unwrap_or(first);
-        let spawned = first > start + 2;
-        if spawned {
-            start = first;
-        }
-        flicks.push(Flick {
-            n: k + 1,
-            kill_frame: *end,
-            stats_frame: None,
-            start_frame: start,
-            shots: None,
-            traj: p.range(start..=*end).map(|(&i, &(x, y))| (i, x, y)).collect(),
-            spawned,
-            area: Some(paths.near_areas(*tid)).filter(|v| !v.is_empty()).map(|v| crate::statistics::median(&v)),
-        });
-        prev = Some(*end);
-    }
+    let mut index = TrackIndex::new(frames);
+    let typical_area = index.typical_area();
+    let radius = typical_area.map_or(DEFAULT_TARGET_RADIUS_DEG, blob_radius_deg);
+    let near = (radius + RIM_DEG).max(AT_CROSSHAIR_DEG);
+    let turned = index.repair(frames, near);
+    let follows = index.continued(&turned, fps, radius, near);
+    let kills = one_per_kill(kill_candidates(&index, &follows, typical_area, near, frames.len() as i64));
+    let flicks = video_flicks(&index, &kills);
     let info = MatchInfo {
         kills_video: kills.len(),
         kills_stats: None,
@@ -1010,64 +1250,68 @@ mod tests {
         let frames = frames
             .into_iter()
             .enumerate()
-            .map(|(i, (shift, t))| TrackFrame { i, shift, a: vec![40; t.len()], t, wh: None, s: None })
+            .map(|(i, (shift, targets))| {
+                TrackFrame { i, shift, a: vec![40; targets.len()], t: targets, wh: None, s: None }
+            })
             .collect();
         Tracks { fps: 60.0, frames, version: 0 }
     }
 
-    fn kill_frames(t: &Tracks) -> Vec<i64> {
-        match_video(t).0.iter().map(|f| f.kill_frame).collect()
+    fn kill_frames(tracks: &Tracks) -> Vec<i64> {
+        match_video(tracks).0.iter().map(|flick| flick.kill_frame).collect()
     }
 
     #[test]
     fn a_false_turn_at_a_kill_keeps_the_kill() {
         // the target at the crosshair dies on frame 21, and the tracker takes the other target for it, turned there by
         // a one-frame spike; the camera then turns to that target, which dies at the crosshair on frame 31
-        let mut f = Vec::new();
+        let mut frames = Vec::new();
         for _ in 0..=20 {
-            f.push(((0.0, 0.0), vec![(1, 0.05, 0.0), (2, -3.0, -0.5)]));
+            frames.push(((0.0, 0.0), vec![(1, 0.05, 0.0), (2, -3.0, -0.5)]));
         }
-        f.push(((-3.05, -0.5), vec![(1, -3.0, -0.5)]));
-        for k in 1..=10 {
-            f.push(((0.3, 0.05), vec![(1, -3.0 + 0.3 * k as f64, -0.5 + 0.05 * k as f64)]));
+        frames.push(((-3.05, -0.5), vec![(1, -3.0, -0.5)]));
+        for step in 1..=10 {
+            frames.push(((0.3, 0.05), vec![(1, -3.0 + 0.3 * step as f64, -0.5 + 0.05 * step as f64)]));
         }
         for _ in 0..10 {
-            f.push(((0.0, 0.0), vec![]));
+            frames.push(((0.0, 0.0), vec![]));
         }
-        assert_eq!(kill_frames(&tracks(f)), vec![20, 31]);
+        assert_eq!(kill_frames(&tracks(frames)), vec![20, 31]);
     }
 
     #[test]
     fn a_target_back_from_under_the_crosshair_is_no_kill_but_one_spawned_beside_it_is() {
         // hidden under the crosshair for 3 frames and found again where it was: one target, killed on frame 40
-        let mut f = Vec::new();
+        let mut frames = Vec::new();
         for i in 0..=45 {
-            let t = if (21..24).contains(&i) { vec![] } else { vec![(if i < 21 { 1 } else { 2 }, 0.05, 0.0)] };
-            f.push(((0.0, 0.0), if i <= 40 { t } else { vec![] }));
+            let targets = if (21..24).contains(&i) { vec![] } else { vec![(if i < 21 { 1 } else { 2 }, 0.05, 0.0)] };
+            frames.push(((0.0, 0.0), if i <= 40 { targets } else { vec![] }));
         }
-        assert_eq!(kill_frames(&tracks(f)), vec![40]);
+        assert_eq!(kill_frames(&tracks(frames)), vec![40]);
         // killed on frame 20, and the next target spawns 0.4 degrees away on frame 25; the camera turns to it, and it
         // dies at the crosshair on frame 45
-        let mut f = Vec::new();
+        let mut frames = Vec::new();
         for i in 0..=50 {
             let shift = if (31..=38).contains(&i) { (-0.05, 0.0) } else { (0.0, 0.0) };
             let x = 0.5 - 0.05 * (i.clamp(30, 38) - 30) as f64;
-            let t = match i {
+            let targets = match i {
                 ..=20 => vec![(1, 0.1, 0.0)],
                 25..=45 => vec![(2, x, 0.0)],
                 _ => vec![],
             };
-            f.push((shift, t));
+            frames.push((shift, targets));
         }
-        assert_eq!(kill_frames(&tracks(f)), vec![20, 45]);
+        assert_eq!(kill_frames(&tracks(frames)), vec![20, 45]);
     }
 
     #[test]
     fn a_target_that_outruns_the_camera_turn_is_one_track() {
         // the frames' turn is 0, but the target moves 1.3 degrees a frame on its own: one track for 5 frames, then a
         // new track every frame, too far for the camera's turn alone (1 degree), each where the target's speed takes it
-        let f = (0..12usize).map(|i| ((0.0, 0.0), vec![(i.max(4) as u32 - 3, -13.0 + 1.3 * i as f64, 0.5)])).collect();
-        assert_eq!(appearances(&tracks(f), 0.5, 1.0).follows, (1..=7).map(|t| (t, t + 1)).collect());
+        let frames =
+            (0..12usize).map(|i| ((0.0, 0.0), vec![(i.max(4) as u32 - 3, -13.0 + 1.3 * i as f64, 0.5)])).collect();
+        let follows = appearances(&tracks(frames), JOIN_GAP_S, JOIN_RADIUS_DEG).follows;
+        assert_eq!(follows, (1..=7).map(|track| (track, track + 1)).collect());
     }
 
     #[test]
@@ -1077,8 +1321,8 @@ mod tests {
             let frames = (0..20)
                 .map(|i| TrackFrame { i, shift: (0.0, 0.0), t: vec![(1, 1.8, 0.0)], a: vec![area], wh: None, s: None })
                 .collect();
-            let t = Tracks { fps: 60.0, frames, version: 0 };
-            assert_eq!(match_times(&t, &[10.0 / 60.0], &[1], 0.25, Some(0.0)).0.len(), matched);
+            let tracks = Tracks { fps: 60.0, frames, version: 0 };
+            assert_eq!(match_times(&tracks, &[10.0 / 60.0], &[1], 0.25, Some(0.0)).0.len(), matched);
         }
     }
 
