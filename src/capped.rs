@@ -1,4 +1,6 @@
-//! A list of at most N items, kept in an array with its length: a list with a small fixed limit needs no heap.
+//! A list of at most N items, kept in an array with its length: a list with a small fixed limit needs no heap. The
+//! report's small per-kill and per-run lists (matching.rs, measure.rs, summary.rs, tracking.rs, what_if.rs, the camera
+//! and HUD watches) use it; it serializes as a JSON array.
 
 use std::ops::{Deref, DerefMut};
 
@@ -84,8 +86,8 @@ impl<'a, T, const N: usize> IntoIterator for &'a Capped<T, N> {
 }
 
 impl<T: Serialize, const N: usize> Serialize for Capped<T, N> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        (**self).serialize(s)
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (**self).serialize(serializer)
     }
 }
 
@@ -95,12 +97,12 @@ mod tests {
 
     #[test]
     fn holds_up_to_its_limit_in_order() {
-        let mut c: Capped<u32, 3> = [1, 2].into_iter().collect();
-        c.push(3);
-        assert_eq!(*c, [1, 2, 3]);
-        assert_eq!(c.remove(0), 1);
-        assert_eq!(*c, [2, 3]);
-        assert_eq!(c.into_iter().collect::<Vec<_>>(), [2, 3]);
+        let mut list: Capped<u32, 3> = [1, 2].into_iter().collect();
+        list.push(3);
+        assert_eq!(*list, [1, 2, 3]);
+        assert_eq!(list.remove(0), 1);
+        assert_eq!(*list, [2, 3]);
+        assert_eq!(list.into_iter().collect::<Vec<_>>(), [2, 3]);
         assert_eq!(serde_json::to_string(&Capped::<u32, 4>::from_iter([5, 6])).unwrap(), "[5,6]");
     }
 

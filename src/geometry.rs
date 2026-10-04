@@ -1,10 +1,16 @@
 //! The frame's geometry at the size the review works in (1280 x 720): where the crosshair is, and how a pixel maps to
 //! an angle from it (python/retired/review.py: `W`, `H`, `CX`, `CY`, `K`, `to_deg`, `to_px`).
+//!
+//! In: pixels of the 720p frame, or angles from the crosshair. Out: the other one, for every step that places a target
+//! (track.rs, matching.rs, measure.rs, tracking.rs, the camera watch, the area finder, the faint cut-off), and the
+//! KovOBS overlay that a review leaves out by default.
 
 use crate::python::hypot;
 
-/// The frame the review works in, in pixels.
+/// The frame the review works in, in pixels: its width and its height.
+#[expect(clippy::min_ident_chars, reason = "review.py's name, which the core's modules and tests import")]
 pub const W: usize = 1280;
+#[expect(clippy::min_ident_chars, reason = "review.py's name, which the core's modules and tests import")]
 pub const H: usize = 720;
 
 /// The crosshair's center at this size (the red dot, measured).
@@ -13,6 +19,7 @@ pub const CY: f64 = 359.75;
 
 /// The focal length in pixels for a 103 degree horizontal FOV (Overwatch scale): `(W / 2) / tan(51.5 deg)`, as
 /// Python computes it. A literal, so the browser's `tan` (which can differ in the last bit) cannot change it.
+#[expect(clippy::min_ident_chars, reason = "review.py's name, which the core's modules import")]
 pub const K: f64 = 509.0789866674102;
 
 /// The KovOBS overlay at 1280 x 720, the areas excluded by default: session box, timer, clock and FPS, settings box,
@@ -61,9 +68,9 @@ pub fn to_deg(x: f64, y: f64) -> (f64, f64) {
 }
 
 /// The pixel at an angle from the crosshair: the inverse of `to_deg`.
-pub fn to_px(xd: f64, yd: f64) -> (f64, f64) {
-    let x = CX + K * radians(xd).tan();
-    (x, CY - radians(yd).tan() * hypot(K, x - CX))
+pub fn to_px(x_deg: f64, y_deg: f64) -> (f64, f64) {
+    let x = CX + K * radians(x_deg).tan();
+    (x, CY - radians(y_deg).tan() * hypot(K, x - CX))
 }
 
 #[cfg(test)]
@@ -77,8 +84,8 @@ mod tests {
 
     #[test]
     fn to_px_undoes_to_deg() {
-        let (xd, yd) = to_deg(100.0, 600.0);
-        let (x, y) = to_px(xd, yd);
+        let (x_deg, y_deg) = to_deg(100.0, 600.0);
+        let (x, y) = to_px(x_deg, y_deg);
         assert!((x - 100.0).abs() < 1e-9 && (y - 600.0).abs() < 1e-9);
     }
 }
