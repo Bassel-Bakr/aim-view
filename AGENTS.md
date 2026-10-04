@@ -12,8 +12,8 @@ Every command to rebuild the detector is in
 running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing.
 
 It was copied from the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) on 2026-10-02, with its caches and
-training data in `test_out/` (ignored by git). Its `vod/` folder became `python/` here. The planned stack and layout
-are in `README.md` ("Where it's going").
+training data in `test_out/` (ignored by git). Its `vod/` folder became `python/` here. The layout is in `README.md`
+("Layout").
 
 ## Commands
 
