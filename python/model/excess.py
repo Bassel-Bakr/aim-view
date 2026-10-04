@@ -17,44 +17,59 @@ import build_data  # noqa: E402
 import infer  # noqa: E402
 import old_review  # noqa: E402
 
+EDGE_S = 3.0            # seconds left out at each end of a VOD
+MIN_SPAN_END_S = 3.5    # the last sample is at least this far in
+BATCH = 16              # frames a detector call
 
-def frames_at(video, n):
-    fps, dur = old_review.probe(str(video))
+
+def frames_at(video, count):
+    """`count` frames spread over the video (RGB, the review's 1280 x 720 scale)."""
+    _, duration = old_review.probe(str(video))
     out = []
-    for t in np.linspace(3, max(3.5, dur - 3), n):
-        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", "-vf",
-                            f"scale={old_review.W}:{old_review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"], capture_output=True)
-        if len(r.stdout) == old_review.W * old_review.H * 3:
-            out.append(np.frombuffer(r.stdout, np.uint8).reshape(old_review.H, old_review.W, 3))
+    for at in np.linspace(EDGE_S, max(MIN_SPAN_END_S, duration - EDGE_S), count):
+        decoded = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{at:.3f}", "-i", str(video), "-frames:v", "1",
+                                  "-vf", f"scale={old_review.W}:{old_review.H}:flags=area,format=rgb24", "-f",
+                                  "rawvideo", "-"], capture_output=True)
+        if len(decoded.stdout) == old_review.W * old_review.H * 3:
+            out.append(np.frombuffer(decoded.stdout, np.uint8).reshape(old_review.H, old_review.W, 3))
     return np.stack(out)
 
 
+def in_play_area(box):
+    """Whether a detection's center is where the review reads targets (old_review.MASK)."""
+    return old_review.MASK[min(old_review.H - 1, int(box[1])), min(old_review.W - 1, int(box[0]))]
+
+
+def column_name(model):
+    return Path(model).parent.name if Path(model).name == "best.pt" else Path(model).stem
+
+
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("models", nargs="+")
-    ap.add_argument("--vods", nargs="+", required=True)
-    ap.add_argument("--frames", type=int, default=40)
-    a = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("models", nargs="+")
+    parser.add_argument("--vods", nargs="+", required=True)
+    parser.add_argument("--frames", type=int, default=40)
+    args = parser.parse_args()
     counts = build_data.target_counts()
-    dets = [infer.TorchDetector(m) for m in a.models]
-    print(f"{'VOD':48s} {'alive':>5s}  " + "  ".join(f"{Path(m).parent.name if Path(m).name == 'best.pt' else Path(m).stem:>22s}" for m in a.models))
-    for v in a.vods:
-        scen = Path(v).stem.rsplit(" - ", 2)[0]
-        k = counts.get(scen.lower())
-        if not k:
-            print(f"{scen[:48]:48s} no target count")
+    detectors = [infer.TorchDetector(model) for model in args.models]
+    print(f"{'VOD':48s} {'alive':>5s}  " + "  ".join(f"{column_name(model):>22s}" for model in args.models))
+    for video in args.vods:
+        scenario = Path(video).stem.rsplit(" - ", 2)[0]
+        alive = counts.get(scenario.lower())
+        if not alive:
+            print(f"{scenario[:48]:48s} no target count")
             continue
-        fr = frames_at(v, a.frames)
-        fixed = old_review.fixed_map(list(old_review._frames(v, keyframes=True))).astype(np.uint8)
+        frames = frames_at(video, args.frames)
+        fixed = old_review.fixed_map(list(old_review._frames(video, keyframes=True))).astype(np.uint8)
         cells = []
-        for d in dets:
-            n = []
-            for i in range(0, len(fr), 16):
-                for b in d.batch(fr[i:i + 16].copy(), fixed):
-                    n.append(sum(1 for x in b if old_review.MASK[min(old_review.H - 1, int(x[1])), min(old_review.W - 1, int(x[0]))]))
-            n = np.array(n)
-            cells.append(f"{np.mean(n > k):5.0%} over, {np.mean(np.maximum(0, n - k)):5.2f} extra")
-        print(f"{Path(v).stem[:48]:48s} {k:5d}  " + "  ".join(f"{c:>22s}" for c in cells), flush=True)
+        for detector in detectors:
+            found = []
+            for i in range(0, len(frames), BATCH):
+                for boxes in detector.batch(frames[i:i + BATCH].copy(), fixed):
+                    found.append(sum(1 for box in boxes if in_play_area(box)))
+            found = np.array(found)
+            cells.append(f"{np.mean(found > alive):5.0%} over, {np.mean(np.maximum(0, found - alive)):5.2f} extra")
+        print(f"{Path(video).stem[:48]:48s} {alive:5d}  " + "  ".join(f"{cell:>22s}" for cell in cells), flush=True)
 
 
 if __name__ == "__main__":
