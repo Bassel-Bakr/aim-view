@@ -58,7 +58,7 @@ export function fingerprint(text: string): string {
 export function recordingContext(widthPx = 1280, heightPx = 720): RecordingContext {
   const calls: CanvasCall[] = [];
   const state = new Map<string, unknown>(Object.entries(START_STATE));
-  const canvas = { width: widthPx, height: heightPx };
+  const canvas = { width: widthPx, height: heightPx, clientWidth: widthPx, clientHeight: heightPx };
   let lineDash: number[] = [];
   const methods: Record<string, (...values: unknown[]) => unknown> = {
     measureText: (text) => {

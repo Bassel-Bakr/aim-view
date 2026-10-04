@@ -21,30 +21,35 @@ const PERCENTILE = 0.9;
  */
 export function faintScores(frames: readonly TrackFrame[], near: number): FaintScores {
   const seen = new Map<number, number[]>();
-  for (const f of frames) {
-    if (!f.s) continue;
-    f.t.forEach(([id, x, y], k) => {
-      if (Math.hypot(x, y) < near || f.s?.[k] === undefined) return;
-      let v = seen.get(id);
-      if (!v) seen.set(id, (v = []));
-      v.push(f.s[k]);
+  for (const trackFrame of frames) {
+    if (!trackFrame.s) continue;
+    trackFrame.t.forEach(([id, x, y], index) => {
+      if (Math.hypot(x, y) < near || trackFrame.s?.[index] === undefined) return;
+      let trackScores = seen.get(id);
+      if (!trackScores) seen.set(id, (trackScores = []));
+      trackScores.push(trackFrame.s[index]);
     });
   }
   const scores = new Map<number, number>();
   const counts = new Map<number, number>();
-  for (const [id, v] of seen) {
-    if (v.length < LEAST_FRAMES) continue;
-    v.sort((a, b) => a - b);
-    scores.set(id, v[Math.min(v.length - 1, Math.floor(PERCENTILE * (v.length - 1) + 0.5))]);
-    counts.set(id, v.length);
+  for (const [id, trackScores] of seen) {
+    if (trackScores.length < LEAST_FRAMES) continue;
+    trackScores.sort((a, b) => a - b);
+    scores.set(
+      id,
+      trackScores[
+        Math.min(trackScores.length - 1, Math.floor(PERCENTILE * (trackScores.length - 1) + 0.5))
+      ],
+    );
+    counts.set(id, trackScores.length);
   }
   const order = [...scores.keys()].sort((a, b) => (scores.get(a) ?? 0) - (scores.get(b) ?? 0));
-  const total = order.reduce((n, id) => n + (counts.get(id) ?? 0), 0);
-  let acc = 0;
+  const total = order.reduce((sum, id) => sum + (counts.get(id) ?? 0), 0);
+  let framesSoFar = 0;
   let level: number | null = null;
   for (const id of order) {
-    acc += counts.get(id) ?? 0;
-    if (acc >= PERCENTILE * total) {
+    framesSoFar += counts.get(id) ?? 0;
+    if (framesSoFar >= PERCENTILE * total) {
       level = scores.get(id) ?? null;
       break;
     }
@@ -53,27 +58,30 @@ export function faintScores(frames: readonly TrackFrame[], near: number): FaintS
 }
 
 /** The tracks scoring under the cut (the level less the offset). */
-export function tracksUnder(sc: FaintScores, cut: number): Set<number> {
-  return new Set([...sc.scores].filter(([, v]) => v < cut).map(([id]) => id));
+export function tracksUnder(scored: FaintScores, cut: number): Set<number> {
+  return new Set([...scored.scores].filter(([, score]) => score < cut).map(([id]) => id));
 }
 
 /** The frame without the tracks given: each target's place, area, box and score alike. */
-function frameWithout(f: TrackFrame, gone: ReadonlySet<number>): TrackFrame {
-  const keep = f.t.map(([id]) => !gone.has(id));
-  if (keep.every(Boolean)) return f;
-  const pick = <T>(v: readonly T[] | undefined) => v?.filter((_, k) => keep[k]);
+function frameWithout(frame: TrackFrame, gone: ReadonlySet<number>): TrackFrame {
+  const keep = frame.t.map(([id]) => !gone.has(id));
+  if (keep.every(Boolean)) return frame;
+  const kept = (_target: unknown, index: number) => keep[index];
+  const pick = <T>(values: readonly T[] | undefined) => values?.filter(kept);
   return {
-    ...f,
-    t: f.t.filter((_, k) => keep[k]),
-    a: f.a.filter((_, k) => keep[k]),
-    wh: pick(f.wh),
-    s: pick(f.s),
+    ...frame,
+    // eslint-disable-next-line id-length -- the core names TrackFrame's fields (generated/track-frame.ts)
+    t: frame.t.filter(kept),
+    a: frame.a.filter(kept),
+    wh: pick(frame.wh),
+    // eslint-disable-next-line id-length -- the core names TrackFrame's fields (generated/track-frame.ts)
+    s: pick(frame.s),
   };
 }
 
 /** The tracks without those the cut-off leaves out (python/review.py: `without_faint`). */
 export function tracksWithout(tracks: Tracks, gone: ReadonlySet<number>): Tracks {
   return gone.size
-    ? { ...tracks, frames: tracks.frames.map((f) => frameWithout(f, gone)) }
+    ? { ...tracks, frames: tracks.frames.map((frame) => frameWithout(frame, gone)) }
     : tracks;
 }

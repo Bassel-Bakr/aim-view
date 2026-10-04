@@ -36,10 +36,10 @@ export class FaintCutoffPanel {
   protected readonly zipping = signal(false);
   /** How many labels are kept here. */
   protected readonly labelsText = computed(() => {
-    const c = this.labels?.count();
-    if (!c) return '';
-    const crops = `${c.crops.toLocaleString()} crop${c.crops === 1 ? '' : 's'}`;
-    return `Labels kept in this browser: ${crops} from ${c.recordings} recording${c.recordings === 1 ? '' : 's'}`;
+    const count = this.labels?.count();
+    if (!count) return '';
+    const crops = `${count.crops.toLocaleString()} crop${count.crops === 1 ? '' : 's'}`;
+    return `Labels kept in this browser: ${crops} from ${count.recordings} recording${count.recordings === 1 ? '' : 's'}`;
   });
   protected readonly zipFailed = signal<string | null>(null);
   protected readonly lowest = LOWEST;
@@ -91,17 +91,17 @@ export class FaintCutoffPanel {
 
   /** Shows a track in the video: highlighted, at the middle of the frames it is seen in. */
   protected showTrack(id: number): void {
-    const t = this.faint.allTracks();
-    const r = this.review.report.hasValue() ? this.review.report.value() : null;
-    if (!t || !r) return;
+    const tracks = this.faint.allTracks();
+    const report = this.review.report.hasValue() ? this.review.report.value() : null;
+    if (!tracks || !report) return;
     const seen: number[] = [];
-    t.frames.forEach((f, i) => {
-      if (f.t.some(([tid]) => tid === id)) seen.push(i);
+    tracks.frames.forEach((trackFrame, i) => {
+      if (trackFrame.t.some(([tid]) => tid === id)) seen.push(i);
     });
     if (!seen.length) return;
     this.faint.highlight.set(id);
     this.playback.pause();
-    this.playback.seek((seen[Math.floor(seen.length / 2)] + 0.5) / r.fps);
+    this.playback.seek((seen[Math.floor(seen.length / 2)] + 0.5) / report.fps);
   }
 
   protected submitCutoff(): void {
@@ -132,8 +132,8 @@ export class FaintCutoffPanel {
       link.download = this.labels.fileName;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url));
-    } catch (e) {
-      this.zipFailed.set(`Could not make the file: ${errorMessage(e)}`);
+    } catch (error) {
+      this.zipFailed.set(`Could not make the file: ${errorMessage(error)}`);
     } finally {
       this.zipping.set(false);
     }

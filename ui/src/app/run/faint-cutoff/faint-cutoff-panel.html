@@ -71,7 +71,7 @@
           [attr.data-picked]="faint.highlight() === d.id ? '' : null"
           [attr.cx]="d.x"
           [attr.cy]="d.y"
-          [attr.r]="d.r"
+          [attr.r]="d.radius"
           (click)="showTrack(d.id)"
         >
           <title>{{ d.title }}</title>

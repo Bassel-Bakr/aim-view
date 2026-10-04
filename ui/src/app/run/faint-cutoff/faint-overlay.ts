@@ -1,6 +1,6 @@
 import { Report, Tracks } from '../../api';
 import { FaintHover } from '../../services/faint-cutoff';
-import { toPx } from '../track';
+import { Point, toPx } from '../track';
 
 /** How the cut-off draws on the video: its colors, font and sizes, from its tokens (themes/faint.scss). */
 export interface FaintStyle {
@@ -14,18 +14,18 @@ export interface FaintStyle {
   textOut: string;
 }
 
-export function readFaintStyle(el: Element): FaintStyle {
-  const css = getComputedStyle(el);
-  const v = (name: string) => css.getPropertyValue(name).trim();
+export function readFaintStyle(element: Element): FaintStyle {
+  const css = getComputedStyle(element);
+  const token = (name: string) => css.getPropertyValue(name).trim();
   return {
-    font: v('--overlay-font'),
-    ring: v('--overlay-faint-ring'),
-    picked: v('--overlay-faint-picked'),
-    radius: Number(v('--overlay-faint-ring-radius')),
-    labelBg: v('--overlay-faint-label-bg'),
-    hoverBg: v('--overlay-faint-hover-bg'),
-    text: v('--overlay-faint-text'),
-    textOut: v('--overlay-faint-text-out'),
+    font: token('--overlay-font'),
+    ring: token('--overlay-faint-ring'),
+    picked: token('--overlay-faint-picked'),
+    radius: Number(token('--overlay-faint-ring-radius')),
+    labelBg: token('--overlay-faint-label-bg'),
+    hoverBg: token('--overlay-faint-hover-bg'),
+    text: token('--overlay-faint-text'),
+    textOut: token('--overlay-faint-text-out'),
   };
 }
 
@@ -45,6 +45,8 @@ const LABEL_X = 10;
 const LABEL_Y = 16;
 const LABEL_H = 14;
 const LABEL_PAD = 3;
+/** A score's text sits this far above its label's bottom padding, in pixels. */
+const LABEL_TEXT_LIFT = 2;
 const HOVER_X = 12;
 const HOVER_Y = 8;
 const HOVER_H = 18;
@@ -53,8 +55,48 @@ const HOVER_PAD = 5;
 const POINT_RADIUS = 12;
 
 /** A track's score as the strip writes it; – for a track too short to have one. */
-function scoreText(v: number | undefined): string {
-  return v === undefined ? '–' : v.toFixed(2);
+function scoreText(score: number | undefined): string {
+  return score === undefined ? '–' : score.toFixed(2);
+}
+
+/** A ring round a track the cut-off leaves out (dashed) or the one picked in the strip, and its score beside it. */
+function drawTrackMark(
+  context: CanvasRenderingContext2D,
+  style: FaintStyle,
+  layer: FaintLayer,
+  id: number,
+  [x, y]: Point,
+): void {
+  const out = layer.dropped.has(id);
+  const picked = id === layer.highlight;
+  if (out || picked) {
+    context.strokeStyle = picked ? style.picked : style.ring;
+    context.lineWidth = picked ? LINE_PICKED : LINE;
+    context.setLineDash(picked ? [] : DASH);
+    context.beginPath();
+    context.arc(x, y, style.radius, 0, 2 * Math.PI);
+    context.stroke();
+    context.setLineDash([]);
+  }
+  if (layer.showScores || picked) {
+    const text = scoreText(layer.scores.get(id));
+    context.fillStyle = style.labelBg;
+    const labelWidth = context.measureText(text).width + 2 * LABEL_PAD;
+    context.fillRect(x + LABEL_X, y - LABEL_Y, labelWidth, LABEL_H);
+    context.fillStyle = out ? style.textOut : style.text;
+    context.fillText(text, x + LABEL_X + LABEL_PAD, y - LABEL_PAD - LABEL_TEXT_LIFT);
+  }
+}
+
+/** The hovered point's scores beside it: to its right, or to its left where the video has no room for them. */
+function drawHover(context: CanvasRenderingContext2D, style: FaintStyle, hover: FaintHover): void {
+  const width = context.measureText(hover.text).width + 2 * HOVER_PAD;
+  const fitsRight = hover.x + HOVER_X + width <= context.canvas.clientWidth;
+  const x = fitsRight ? hover.x + HOVER_X : hover.x - HOVER_X - width;
+  context.fillStyle = style.hoverBg;
+  context.fillRect(x, hover.y + HOVER_Y, width, HOVER_H);
+  context.fillStyle = style.text;
+  context.fillText(hover.text, x + HOVER_PAD, hover.y + HOVER_Y + HOVER_H - HOVER_PAD);
 }
 
 /**
@@ -63,54 +105,28 @@ function scoreText(v: number | undefined): string {
  * with that frame's own score.
  */
 export function drawFaint(
-  c: CanvasRenderingContext2D,
-  r: Report,
+  context: CanvasRenderingContext2D,
+  report: Report,
   all: Tracks,
   frame: number,
   scale: number,
-  st: FaintStyle,
+  style: FaintStyle,
   layer: FaintLayer,
 ): void {
-  const f = all.frames[frame];
-  if (!f) return;
-  c.font = st.font;
-  c.textBaseline = 'alphabetic';
-  for (const [id, x, y] of f.t) {
-    const [px, py] = toPx(r.geometry, x, y, scale);
-    const out = layer.dropped.has(id);
-    const picked = id === layer.highlight;
-    if (out || picked) {
-      c.strokeStyle = picked ? st.picked : st.ring;
-      c.lineWidth = picked ? LINE_PICKED : LINE;
-      c.setLineDash(picked ? [] : DASH);
-      c.beginPath();
-      c.arc(px, py, st.radius, 0, 2 * Math.PI);
-      c.stroke();
-      c.setLineDash([]);
-    }
-    if (layer.showScores || picked) {
-      const text = scoreText(layer.scores.get(id));
-      c.fillStyle = st.labelBg;
-      c.fillRect(px + LABEL_X, py - LABEL_Y, c.measureText(text).width + 2 * LABEL_PAD, LABEL_H);
-      c.fillStyle = out ? st.textOut : st.text;
-      c.fillText(text, px + LABEL_X + LABEL_PAD, py - LABEL_PAD - 2);
-    }
+  const trackFrame = all.frames[frame];
+  if (!trackFrame) return;
+  context.font = style.font;
+  context.textBaseline = 'alphabetic';
+  for (const [id, x, y] of trackFrame.t) {
+    drawTrackMark(context, style, layer, id, toPx(report.geometry, x, y, scale));
   }
-  const h = layer.hover;
-  if (h && h.frame === frame) {
-    const width = c.measureText(h.text).width + 2 * HOVER_PAD;
-    // to the point's left where the right of the video has no room for it
-    const x = h.x + HOVER_X + width > c.canvas.clientWidth ? h.x - HOVER_X - width : h.x + HOVER_X;
-    c.fillStyle = st.hoverBg;
-    c.fillRect(x, h.y + HOVER_Y, width, HOVER_H);
-    c.fillStyle = st.text;
-    c.fillText(h.text, x + HOVER_PAD, h.y + HOVER_Y + HOVER_H - HOVER_PAD);
-  }
+  const hover = layer.hover;
+  if (hover && hover.frame === frame) drawHover(context, style, hover);
 }
 
 /** The track the mouse points at on the frame shown (within 12 pixels), with its frame's score and its own. */
 export function pointedTrack(
-  r: Report,
+  report: Report,
   all: Tracks,
   frame: number,
   scale: number,
@@ -118,18 +134,19 @@ export function pointedTrack(
   mouseY: number,
   scores: ReadonlyMap<number, number>,
 ): FaintHover | null {
-  const f = all.frames[frame];
-  if (!f) return null;
+  const trackFrame = all.frames[frame];
+  if (!trackFrame) return null;
   let best: FaintHover | null = null;
-  let bestD = Infinity;
-  for (let k = 0; k < f.t.length; k++) {
-    const [id, x, y] = f.t[k];
-    const [px, py] = toPx(r.geometry, x, y, scale);
-    const d = Math.hypot(px - mouseX, py - mouseY);
-    if (d > POINT_RADIUS || d >= bestD) continue;
-    bestD = d;
-    const text = `track ${id} · this frame ${scoreText(f.s?.[k])} · track ${scoreText(scores.get(id))}`;
-    best = { id, x: px, y: py, frame, text };
+  let bestDistancePx = Infinity;
+  for (let index = 0; index < trackFrame.t.length; index++) {
+    const [id, xDeg, yDeg] = trackFrame.t[index];
+    const [x, y] = toPx(report.geometry, xDeg, yDeg, scale);
+    const distancePx = Math.hypot(x - mouseX, y - mouseY);
+    if (distancePx > POINT_RADIUS || distancePx >= bestDistancePx) continue;
+    bestDistancePx = distancePx;
+    const frameScore = scoreText(trackFrame.s?.[index]);
+    const text = `track ${id} · this frame ${frameScore} · track ${scoreText(scores.get(id))}`;
+    best = { id, x, y, frame, text };
   }
   return best;
 }
