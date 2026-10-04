@@ -1,12 +1,4 @@
-import {
-  computed,
-  effect,
-  inject,
-  Injectable,
-  linkedSignal,
-  signal,
-  untracked,
-} from '@angular/core';
+import { computed, effect, inject, Service, linkedSignal, signal, untracked } from '@angular/core';
 import { errorMessage, FaintChoice, FaintSetting, Tracks } from '../api';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
 import {
@@ -58,7 +50,7 @@ interface SavedOf {
  * again with the cut (by the server, or the core in the browser), the overlay, the timeline and a clicking run's
  * fastest paths leave them out at once, and the video shows them dimmed. Submit writes the cut as detector labels.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class FaintCutoff {
   private readonly cutoffs = inject(FaintCutoffs);
   private readonly library = inject(Library);

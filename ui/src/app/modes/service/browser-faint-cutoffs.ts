@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AreaRect, FaintSetting, RecordingAreas, Report, Tracks } from '../../api';
 import { CutoffLabelsStore } from '../../platform/faint-cutoffs';
@@ -71,7 +71,7 @@ function cropFile(c: CutoffCrop, px: CropPixels): Promise<CutoffCropFile> {
  * hand_crops.py does, a worker reads their pixels, and they are kept in this browser (CutoffLabels), which the user
  * downloads as cutoff.zip.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserFaintCutoffs extends ServerFaintCutoffs {
   private readonly client = inject(HttpClient);
   private readonly files = inject(MountedFiles);

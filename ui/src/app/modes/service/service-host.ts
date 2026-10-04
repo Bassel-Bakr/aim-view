@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import {
   ChosenFile,
   FilesOp,
@@ -43,7 +43,7 @@ export interface FilesTask {
  * sends it the service's requests, the page's own file reads and writes in the mounts, and the VODs folder to mount.
  * The interceptor (service-api.ts) sends every /api request through it.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServiceHost {
   private worker: Worker | null = null;
   /** Why the worker stopped (it failed to load, or failed outside a task); null while it runs. */

@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
-import { effect, inject, Injectable, signal } from '@angular/core';
+import { effect, inject, Service, signal } from '@angular/core';
 import { filter, firstValueFrom, lastValueFrom, tap } from 'rxjs';
 import { Job, JobStage, LinkAdded, LinkInfo } from '../../api';
 
@@ -55,7 +55,7 @@ function readServer(): string {
  * downloads it with yt-dlp (/api/link, followed with /api/job), and the finished file is copied from it (/video) into
  * the browser.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserLinks {
   private readonly http = inject(HttpClient);
   /** The server's address, which the user can change; the browser keeps it. */

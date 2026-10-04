@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { FolderAction } from '../../platform/recording-source';
 import { ServerRecordings } from '../http/server-recordings';
@@ -9,7 +9,7 @@ import { DESKTOP_API } from './desktop-api';
  * The desktop app's recordings: the review server's services, answered by the app itself (service/src/library/).
  * The user chooses the VODs folder in the system's folder dialog; videos stream from the app.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class DesktopRecordings extends ServerRecordings {
   private readonly client = inject(HttpClient);
   private readonly choosing = signal(false);

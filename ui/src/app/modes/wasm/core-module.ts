@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 import { AreaRect, TrackFrame, Tracks } from '../../api';
 import { CutoffRow } from '../web-files/cutoff-labels';
 import { Core } from './core';
@@ -54,7 +54,7 @@ type TextCall = (core: Core, ptr: number, len: number) => number;
  * The review core on the page itself, for what the page works out besides the review service: a review's runs joined
  * (the tracking runs in workers) and a cut-off's crops.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class CoreModule {
   private core: Promise<Core> | null = null;
 

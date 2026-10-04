@@ -1,5 +1,5 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { FaintChoice, FaintSetting, Job } from '../../api';
 import { CutoffLabelsStore, FaintCutoffs } from '../../platform/faint-cutoffs';
@@ -9,7 +9,7 @@ import { CutoffLabelsStore, FaintCutoffs } from '../../platform/faint-cutoffs';
  * tracking run's review is measured again with; a submit writes its labels in test_out/vod_model/hand/cutoff/
  * (/api/faint_submit); the queue (/api/faint_queue) and its skips (/api/faint_skip, faint_skipped.json).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerFaintCutoffs implements FaintCutoffs {
   private readonly http = inject(HttpClient);
   readonly labels: CutoffLabelsStore | null = null;

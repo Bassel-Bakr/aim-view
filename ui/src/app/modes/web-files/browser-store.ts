@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 
 const DB = 'aimview';
 const STORE = 'kv';
@@ -10,7 +10,7 @@ export type StoreEntry = [key: string, value: unknown];
  * Values kept in this browser across visits (IndexedDB): what localStorage cannot hold, such as a folder's handle or
  * a copy of the stats files. Where there is no IndexedDB (tests), nothing is kept.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserStore {
   private db: Promise<IDBDatabase | null> | null = null;
 

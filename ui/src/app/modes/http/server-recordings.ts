@@ -1,5 +1,5 @@
 import { HttpClient, HttpEventType, httpResource, HttpResponse } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Service, Signal, signal, WritableSignal } from '@angular/core';
 import { filter, firstValueFrom, lastValueFrom, map, tap } from 'rxjs';
 import { errorMessage, Job, JobStage, LinkAdded, LinkInfo, Recording, Uploaded } from '../../api';
 import {
@@ -42,7 +42,7 @@ const LINK_STAGES: Partial<Record<JobStage, string>> = {
  * (/api/upload): a video that is not an MP4 is remuxed into one in the browser first, so every browser plays it. A
  * link is downloaded by the server (/api/link, followed with /api/job), and listed here until its file is in.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerRecordings implements RecordingSource {
   private readonly http = inject(HttpClient);
   protected readonly list = httpResource<Recording[]>(() => '/api/vods');

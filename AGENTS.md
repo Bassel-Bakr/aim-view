@@ -128,7 +128,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (`recordings/`, `run/`, with each part in its own folder); a service that more than one feature uses goes in
   `services/`, a service only one feature uses stays in that feature. File names follow their class (`stamp-pipe.ts`
   for `StampPipe`), never generic (`utils.ts`, `helpers.ts`). Event handlers are named for what they do
-  (`selectRow`, not `onClick`). `inject()`, `protected` for template-only members, `readonly` for inputs and queries.
+  (`selectRow`, not `onClick`). Services are `@Service()` (Angular 22's), not `@Injectable({ providedIn: 'root' })`.
+  `inject()`, `protected` for template-only members, `readonly` for inputs and queries.
 - **Format and lint** the UI before calling a change done: `bun run format`, then `bun run lint:ui`.
 - **Spelling and style.** Write "center", not "centre". Docs in plain, simple English: short sentences, active voice,
   no arrows.

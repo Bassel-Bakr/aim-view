@@ -1,5 +1,5 @@
 import { HttpClient, httpResource } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Device, ModelList } from '../../api';
 import { ModelCatalog } from '../../platform/model-catalog';
@@ -8,7 +8,7 @@ import { ModelCatalog } from '../../platform/model-catalog';
  * The review server's models (/api/models), and what its reviews use, kept across restarts: the model (/api/model), the
  * device (/api/device: the ones the server can run) and the frames at once, for each device (/api/batch).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerModels implements ModelCatalog {
   private readonly http = inject(HttpClient);
   readonly list = httpResource<ModelList>(() => '/api/models');

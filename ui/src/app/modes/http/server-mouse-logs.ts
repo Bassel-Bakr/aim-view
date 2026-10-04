@@ -1,4 +1,4 @@
-import { Injectable, resource, ResourceRef } from '@angular/core';
+import { Service, resource, ResourceRef } from '@angular/core';
 import { MouseLoggerState, MouseMeasures } from '../../mouse-api';
 import { MouseLogs } from '../../platform/mouse-logs';
 
@@ -6,7 +6,7 @@ const NOT_HERE =
   'The review server reads no mouse logs: use python/mouse_read.py, the browser or the desktop app';
 
 /** The review server has no route for mouse logs (python/mouse_read.py reads them on the command line): none here. */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerMouseLogs implements MouseLogs {
   readonly adds = false;
   readonly logs = false;

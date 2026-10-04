@@ -1,5 +1,5 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AreaBox,
@@ -17,7 +17,7 @@ import { withKindIds } from '../web-files/area-kinds';
  * The review server's areas (python/server.py): each recording's exclude.json, the kinds (area_kinds.json), and the
  * area finder (python/areas.py), which learns from the areas saved there (area_examples.jsonl).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerAreaLabels implements AreaLabels {
   private readonly http = inject(HttpClient);
   readonly finderMissing = null;

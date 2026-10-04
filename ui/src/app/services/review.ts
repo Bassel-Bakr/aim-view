@@ -1,4 +1,4 @@
-import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Service, signal } from '@angular/core';
 import { errorMessage, Job, RunMarks } from '../api';
 import { ReviewEngine } from '../platform/review-engine';
 import { Library } from './library';
@@ -9,7 +9,7 @@ const POLL_MS = 500;
  * The open recording's review, from this mode's ReviewEngine: its report and tracks, and the review job when one runs.
  * A finished job reloads the report (and with it the tracks), and marks the recording reviewed in the list.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class Review {
   private readonly engine = inject(ReviewEngine);
   private readonly library = inject(Library);

@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { errorMessage } from '../../api';
 import { BrowserStore } from '../web-files/browser-store';
@@ -44,7 +44,7 @@ function chosenVideos(files: readonly File[]): ChosenFile[] {
  * visit only. A remembered folder that cannot be found is said so and stays remembered: it may be on a drive that is
  * not connected.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class VodsFolder {
   private readonly store = inject(BrowserStore);
   private readonly host = inject(ServiceHost);

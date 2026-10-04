@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Transfer } from '../../platform/recording-source';
 import { MountedFiles } from './mounted-files';
@@ -40,7 +40,7 @@ function kovaakFiles(files: readonly File[]): ChosenFile[] {
  * since the last copy. The service then reads them again (POST /api/kovaak?changed=1): each run finds its stats file,
  * each scenario its kind, time limit and target count.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class KovaakCopy {
   private readonly files = inject(MountedFiles);
   private readonly http = inject(HttpClient);

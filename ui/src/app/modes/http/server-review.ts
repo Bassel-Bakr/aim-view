@@ -1,5 +1,5 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Job, Report, RunMarks, Tracks } from '../../api';
 import { ReviewEngine } from '../../platform/review-engine';
@@ -15,7 +15,7 @@ function reviewOnly(job: Job): Job {
 }
 
 /** The review server reviews its recordings (python/review.py), with the model picked there. */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerReview implements ReviewEngine {
   private readonly http = inject(HttpClient);
 

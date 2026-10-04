@@ -1,12 +1,4 @@
-import {
-  computed,
-  effect,
-  inject,
-  Injectable,
-  linkedSignal,
-  signal,
-  untracked,
-} from '@angular/core';
+import { computed, effect, inject, Service, linkedSignal, signal, untracked } from '@angular/core';
 import { AreaBox, AreaKind, AreaRect, AreaSource, errorMessage, FoundAreas } from '../../api';
 import { AreaLabels } from '../../platform/area-labels';
 import { LabelQueue } from '../../services/label-queue';
@@ -48,7 +40,7 @@ export function foundNote(r: FoundAreas): string {
  * was tracked with other areas, tracks it again. While the labelling queue is on the open recording, the editor opens
  * with the finder's proposal, and saving moves on to the queue's next recording.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class AreaDraft {
   private readonly labels = inject(AreaLabels);
   private readonly library = inject(Library);

@@ -1,4 +1,4 @@
-import { computed, effect, inject, Injectable, signal, untracked } from '@angular/core';
+import { computed, effect, inject, Service, signal, untracked } from '@angular/core';
 import { errorMessage } from '../api';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
 import { FaintCutoff, FaintNote } from './faint-cutoff';
@@ -11,7 +11,7 @@ import { Review } from './review';
  * the detector's scores were kept is reviewed again (the scores come with the review). Skip leaves one out for good.
  * Opening another recording ends the queue.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class FaintQueue {
   private readonly cutoffs = inject(FaintCutoffs);
   private readonly faint = inject(FaintCutoff);

@@ -1,5 +1,5 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable, resource, ResourceRef } from '@angular/core';
+import { inject, Service, resource, ResourceRef } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { MouseLoggerState, MouseMeasures } from '../../mouse-api';
 import { MouseLogs } from '../../platform/mouse-logs';
@@ -13,7 +13,7 @@ const MOUSE = '/data/mouse';
  * /api/mouse_log), which measures each recording's run from the log that covers it (/api/mouse), as the desktop app
  * does with the logs it writes (DesktopMouseLogs). The browser cannot log the mouse itself.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserMouseLogs implements MouseLogs {
   private readonly http = inject(HttpClient);
   private readonly files = inject(MountedFiles);

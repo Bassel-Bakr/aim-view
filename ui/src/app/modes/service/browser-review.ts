@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AreaBox, errorMessage, Job, JobStage, RunMarks, TimeWindow, Tracks } from '../../api';
 import { ServerReview } from '../http/server-review';
@@ -89,7 +89,7 @@ function workerWindow(w: OrderWindow | null): TimeWindow | null {
  * service, the runs joined by the core (core-module.ts), and the review sent to the service (POST /api/reviewed).
  * Then the area finder reads the recording, once, when the service has nothing found for it.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserReview extends ServerReview {
   private readonly client = inject(HttpClient);
   private readonly files = inject(MountedFiles);

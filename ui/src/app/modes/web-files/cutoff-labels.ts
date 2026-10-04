@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Service, signal } from '@angular/core';
 import { CutoffLabelsCount } from '../../platform/faint-cutoffs';
 import { BrowserStore, StoreEntry } from './browser-store';
 import { zipFile } from './zip-file';
@@ -61,7 +61,7 @@ export function rowLine(row: CutoffRow): string {
  * in the order written (a later submit's rows win, as training reads them), and each crop's .npz. They download as one
  * zip holding checked.jsonl and train/, as the review server's test_out/vod_model/hand/cutoff/ holds them.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class CutoffLabels {
   private readonly store = inject(BrowserStore);
   private readonly rows = signal<readonly CutoffRow[]>([]);

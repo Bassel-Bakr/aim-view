@@ -1,4 +1,4 @@
-import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Service, signal } from '@angular/core';
 import { Recording } from '../api';
 import { RecordingSource } from '../platform/recording-source';
 
@@ -6,7 +6,7 @@ import { RecordingSource } from '../platform/recording-source';
  * The recordings, from wherever this mode keeps them (RecordingSource), and the one that is open. The open one is kept
  * in the URL (?id=) when its id lasts, so a link opens it.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class Library {
   readonly source = inject(RecordingSource);
   readonly all = this.source.recordings;

@@ -1,5 +1,5 @@
 import { HttpClient, HttpEventType, HttpResponse } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { filter, firstValueFrom, lastValueFrom, map, tap } from 'rxjs';
 import { ChosenFile, CopyDone, DirEntry } from './service-messages';
 
@@ -31,7 +31,7 @@ export function recordingPath(id: string): string {
  * The page's own files in the review service's mounts, through the worker's queue (service-api.ts answers /files/):
  * a recording's video to play or review, the area finder's files, a mouse log to forget, KovaaK's folders copied in.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class MountedFiles {
   private readonly http = inject(HttpClient);
 

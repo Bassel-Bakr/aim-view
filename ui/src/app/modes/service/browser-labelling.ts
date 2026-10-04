@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AreaExample, AreaKind } from '../../api';
 import { ExamplesCount, ExamplesLoaded, ExamplesStore } from '../../platform/labelling';
@@ -96,7 +96,7 @@ function asciiJson(text: string): string {
  * downloads them as they are, and loads the review server's files into them: the examples of each recording in a file
  * replace that recording's, and each area type replaces the one with its id (the others stay, after the file's).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserExamples implements ExamplesStore {
   private readonly http = inject(HttpClient);
   private readonly files = inject(MountedFiles);
@@ -195,7 +195,7 @@ export class BrowserExamples implements ExamplesStore {
  * Labelling in browser mode: the review service's queue, skips and other games, as on the review server, and the area
  * finder's training data kept in this browser, to download and to load (BrowserExamples).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserLabelling extends ServerLabelling {
   override readonly examples = inject(BrowserExamples);
 }

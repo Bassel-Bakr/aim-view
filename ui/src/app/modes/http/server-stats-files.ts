@@ -1,5 +1,5 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable, Signal, signal } from '@angular/core';
+import { inject, Service, Signal, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { StatsChange, StatsChoice, StatsPairing, Uploaded } from '../../api';
 import { StatsFiles } from '../../platform/stats-files';
@@ -9,7 +9,7 @@ import { readStats } from '../web-files/stats-csv';
  * The stats files of the review server's recordings: KovaaK's stats files it lists (/api/stats), the user's choice
  * (kept there), and a stats file sent from this computer (/api/upload).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerStatsFiles implements StatsFiles {
   private readonly http = inject(HttpClient);
   readonly searches: Signal<boolean> = signal(true).asReadonly();

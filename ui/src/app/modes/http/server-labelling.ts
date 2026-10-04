@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { NotAimMark } from '../../api';
 import { ExamplesStore, Labelling } from '../../platform/labelling';
@@ -9,7 +9,7 @@ import { RecordingSource } from '../../platform/recording-source';
  * Labelling on the review server: its queue (/api/label_queue), skips (/api/label_skip, label_skipped.json) and other
  * games (/api/not_aim, not_aim_trainer.json). The server writes the area finder's examples itself when areas are saved.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ServerLabelling implements Labelling {
   private readonly http = inject(HttpClient);
   private readonly source = inject(RecordingSource);

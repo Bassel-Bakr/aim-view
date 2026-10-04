@@ -1,4 +1,4 @@
-import { computed, effect, inject, Injectable, signal, untracked } from '@angular/core';
+import { computed, effect, inject, Service, signal, untracked } from '@angular/core';
 import { errorMessage } from '../api';
 import { Labelling } from '../platform/labelling';
 import { Playback } from '../run/playback';
@@ -18,7 +18,7 @@ export interface QueueNote {
  * scenario, each at a frame from the run. The areas editor saves a recording's areas and moves on (next); the user
  * can skip one (it leaves the queue for good) or mark it as another game. Opening another recording ends the queue.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class LabelQueue {
   private readonly labelling = inject(Labelling);
   private readonly library = inject(Library);

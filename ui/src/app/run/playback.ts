@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { Service, signal } from '@angular/core';
 
 /** Called with the time of the frame on screen, in seconds, once per video frame. */
 export type FrameListener = (seconds: number) => void;
@@ -10,7 +10,7 @@ export const RATES = [1, 0.5, 0.25, 0.125];
  * not a signal: what follows it (the overlay, the timeline's playhead, the clock) registers a listener and writes to
  * its canvas or element directly, without change detection.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class Playback {
   readonly paused = signal(true);
   readonly rate = signal(0.25);

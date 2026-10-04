@@ -1,4 +1,4 @@
-import { computed, inject, Injectable } from '@angular/core';
+import { computed, inject, Service } from '@angular/core';
 import { ServerStatsFiles } from '../http/server-stats-files';
 import { BrowserRecordings } from './browser-recordings';
 import { FOLDER_ROLES, KovaakCopy } from './kovaak-copy';
@@ -15,7 +15,7 @@ const ROLE_NAMES = {
  * server does, from the copy of KovaaK's folders kept in this browser. The user chooses those folders as files (Stats
  * folder at the top); the page copies the new or changed files in (KovaakCopy), and the list is read again.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserStatsFiles extends ServerStatsFiles {
   private readonly kovaak = inject(KovaakCopy);
   private readonly recordings = inject(BrowserRecordings);

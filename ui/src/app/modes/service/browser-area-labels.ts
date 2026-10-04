@@ -1,5 +1,5 @@
 import { httpResource, HttpResourceRef } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { AreaBox, AreaKind, FoundAreas, KeptAreas, KindEdit, RecordingAreas } from '../../api';
 import { ServerAreaLabels } from '../http/server-area-labels';
 import { BrowserExamples } from './browser-labelling';
@@ -11,7 +11,7 @@ import { needsFound, PageAreaFinder } from './page-area-finder';
  * service has no found areas for a recording yet (its 409), the page's area finder reads the video first; a review the
  * service starts for areas changed is run by the page (BrowserReview).
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserAreaLabels extends ServerAreaLabels {
   private readonly finder = inject(PageAreaFinder);
   private readonly review = inject(BrowserReview);

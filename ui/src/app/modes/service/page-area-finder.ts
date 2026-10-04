@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { FinderReply, FinderWork } from '../wasm/area-finder-messages';
 import { MountedFiles } from './mounted-files';
@@ -43,7 +43,7 @@ function readFrames(file: Blob): Promise<string> {
  * own when the service has no found areas for it (its 409, need: found), and sends what it found (POST /api/found),
  * which the service keeps. Once a recording: after its review, or when Find areas needs it.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class PageAreaFinder {
   private readonly http = inject(HttpClient);
   private readonly files = inject(MountedFiles);

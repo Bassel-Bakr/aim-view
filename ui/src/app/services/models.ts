@@ -1,4 +1,4 @@
-import { computed, inject, Injectable } from '@angular/core';
+import { computed, inject, Service } from '@angular/core';
 import { Device, ModelList } from '../api';
 import { ModelCatalog } from '../platform/model-catalog';
 
@@ -12,7 +12,7 @@ export const DEVICE_LABELS: Record<Device, string> = {
 };
 
 /** The detector models, and the one new reviews use (the top bar and the run page show it). */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class Models {
   private readonly catalog = inject(ModelCatalog);
   readonly list = this.catalog.list;

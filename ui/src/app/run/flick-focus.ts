@@ -1,4 +1,4 @@
-import { computed, effect, inject, Injectable, signal, untracked } from '@angular/core';
+import { computed, effect, inject, Service, signal, untracked } from '@angular/core';
 import { ClickReport, Flick, isClickReport } from '../api';
 import { Library } from '../services/library';
 import { Playback } from './playback';
@@ -14,7 +14,7 @@ const AFTER_KILL = 1;
  * The flick in focus on a clicking run: the one picked in the list, or, with "follow the video" on, the one on screen.
  * Following runs on every frame but sets the signal only when the flick changes. A replay keeps its flick.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class FlickFocus {
   private readonly playback = inject(Playback);
   private readonly review = inject(Review);

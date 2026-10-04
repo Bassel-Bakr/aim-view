@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Service, signal } from '@angular/core';
 import { errorMessage, LinkInfo, Recording } from '../../api';
 import { FolderAction, Transfer, VideoState } from '../../platform/recording-source';
 import { SentVideo, ServerRecordings } from '../http/server-recordings';
@@ -51,7 +51,7 @@ function linkRow(id: string, name: string): Recording {
  * opens the VODs folder, and downloads links itself (else through the Aim View server on this computer), then adds
  * them as uploads.
  */
-@Injectable({ providedIn: 'root' })
+@Service()
 export class BrowserRecordings extends ServerRecordings {
   private readonly files = inject(MountedFiles);
   private readonly vods = inject(VodsFolder);
