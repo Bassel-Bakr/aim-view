@@ -19,7 +19,14 @@ import { clock } from '../track';
 import { PathCost } from '../fastest-path/path-cost';
 import { FaintCutoff } from '../../services/faint-cutoff';
 import { drawFaint, FaintStyle, pointedTrack, readFaintStyle } from '../faint-cutoff/faint-overlay';
-import { drawClick, drawPaths, drawTrack, OverlayStyle, readOverlayStyle } from './overlay';
+import {
+  drawClick,
+  drawPaths,
+  drawTrack,
+  OverlayStyle,
+  PathFlags,
+  readOverlayStyle,
+} from './overlay';
 
 const OVERLAY_KEY = 'aimview-overlay';
 const FASTEST_KEY = 'aimview-fastest';
@@ -29,6 +36,8 @@ const RATE_LABELS: Record<number, string> = { 1: '1×', 0.5: '½×', 0.25: '¼×
 const FIELDS = 'input, textarea, select, dialog';
 /** These also use Space and the arrows. */
 const KEY_OWNERS = `${FIELDS}, [role=listbox], [role=slider]`;
+/** Before a review gives the video's frame rate, Left and Right step a frame at this rate. */
+const FPS_BEFORE_REVIEW = 60;
 
 /**
  * Calls back with the time of each frame the video shows, through the video's own frame callback; where the browser
@@ -53,14 +62,29 @@ export function everyFrame(video: HTMLVideoElement, shown: (seconds: number) => 
   return () => cancelAnimationFrame(handle);
 }
 
+/**
+ * Sizes the canvas's own pixels to its size on screen (in CSS pixels) at the screen's pixel ratio, so the overlay is
+ * sharp. Returns the ratio.
+ */
+function fitCanvas(canvas: HTMLCanvasElement, widthPx: number, heightPx: number): number {
+  const pixelRatio = devicePixelRatio || 1;
+  const width = Math.round(widthPx * pixelRatio);
+  const height = Math.round(heightPx * pixelRatio);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  return pixelRatio;
+}
+
 /** Where the seek bar marks the run's moments, as shares of the video (0 to 100): kills, or a tracking run's deaths. */
 export function markPositions(report: Report | null, duration: number): number[] {
   if (!report || !(duration > 0)) return [];
   const frames =
     report.mode === 'track'
       ? report.summary.switches.map(([start]) => start)
-      : report.flicks.map((f) => f.kill_frame);
-  return frames.map((f) => (100 * f) / report.fps / duration);
+      : report.flicks.map((flick) => flick.kill_frame);
+  return frames.map((frame) => (100 * frame) / report.fps / duration);
 }
 
 /**
@@ -141,8 +165,8 @@ export class Player {
   private follow(): void {
     const video = this.video().nativeElement;
     this.playback.attach(video);
-    const stop = this.playback.onFrame((t) => this.draw(t));
-    const cancel = everyFrame(video, (t) => this.playback.frame(t));
+    const stop = this.playback.onFrame((seconds) => this.draw(seconds));
+    const cancel = everyFrame(video, (seconds) => this.playback.frame(seconds));
     const resize = new ResizeObserver(() => this.draw(this.playback.time));
     resize.observe(this.canvas().nativeElement);
     this.destroyRef.onDestroy(() => {
@@ -153,49 +177,56 @@ export class Player {
     });
   }
 
-  private draw(t: number): void {
-    this.clockText().nativeElement.textContent = clock(t);
-    if (!this.seeking) this.seekBar().nativeElement.value = String(t);
+  private draw(seconds: number): void {
+    this.clockText().nativeElement.textContent = clock(seconds);
+    if (!this.seeking) this.seekBar().nativeElement.value = String(seconds);
     const canvas = this.canvas().nativeElement;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    const dpr = devicePixelRatio || 1;
-    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
-    }
-    const c = canvas.getContext('2d');
-    if (!c) return;
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.clearRect(0, 0, w, h);
-    const r = this.report();
-    if (!r || this.editing()) return;
+    const widthPx = canvas.clientWidth;
+    const heightPx = canvas.clientHeight;
+    const pixelRatio = fitCanvas(canvas, widthPx, heightPx);
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, widthPx, heightPx);
+    const report = this.report();
+    if (!report || this.editing()) return;
     this.style ??= readOverlayStyle(canvas);
-    const frame = Math.round(t * r.fps);
-    const scale = w / r.geometry.W;
+    const frame = Math.round(seconds * report.fps);
+    const scale = widthPx / report.geometry.W;
+    this.drawReview(context, report, frame, scale, this.style);
+    this.drawCutoff(context, frame, scale);
+  }
+
+  /** A clicking run's paths and its flick, or a tracking run's boxes (overlay.ts). */
+  private drawReview(
+    context: CanvasRenderingContext2D,
+    report: Report,
+    frame: number,
+    scale: number,
+    style: OverlayStyle,
+  ): void {
     const tracks = this.tracks();
-    if (isClickReport(r)) {
+    if (isClickReport(report)) {
       const paths = this.paths.analysis();
-      const show = { fastest: this.showFastest(), mine: this.showMine() };
+      const show: PathFlags = { fastest: this.showFastest(), mine: this.showMine() };
       if (tracks && paths && (show.fastest || show.mine)) {
-        drawPaths(c, r, tracks, frame, scale, this.style, paths, show);
+        drawPaths(context, report, tracks, frame, scale, style, paths, show);
       }
-      if (this.showOverlay()) drawClick(c, r, frame, scale, this.style);
+      if (this.showOverlay()) drawClick(context, report, frame, scale, style);
     } else if (tracks && this.showOverlay()) {
-      drawTrack(c, r, tracks, frame, scale, this.style);
+      drawTrack(context, report, tracks, frame, scale, style);
     }
-    this.drawCutoff(c, frame, scale);
   }
 
   /** What the faint-target cut-off leaves out, dimmed, and the scores when asked for (faint-overlay.ts). */
-  private drawCutoff(c: CanvasRenderingContext2D, frame: number, scale: number): void {
-    const r = this.report();
+  private drawCutoff(context: CanvasRenderingContext2D, frame: number, scale: number): void {
+    const report = this.report();
     const all = this.faint.allTracks();
-    const sc = this.faint.scores();
-    if (!r || !all || !sc || !this.faint.has()) return;
+    const faintScores = this.faint.scores();
+    if (!report || !all || !faintScores || !this.faint.has()) return;
     this.faintStyle ??= readFaintStyle(this.canvas().nativeElement);
-    drawFaint(c, r, all, frame, scale, this.faintStyle, {
-      scores: sc.scores,
+    drawFaint(context, report, all, frame, scale, this.faintStyle, {
+      scores: faintScores.scores,
       dropped: this.faint.dropped(),
       highlight: this.faint.highlight(),
       showScores: this.faint.showScores(),
@@ -204,22 +235,22 @@ export class Player {
   }
 
   /** The track under the mouse, with its scores, for the cut-off. */
-  protected pointAt(e: MouseEvent): void {
-    const r = this.report();
+  protected pointAt(event: MouseEvent): void {
+    const report = this.report();
     const all = this.faint.allTracks();
-    const sc = this.faint.scores();
-    if (!r || !all || !sc || !this.faint.has() || this.editing()) return;
+    const faintScores = this.faint.scores();
+    if (!report || !all || !faintScores || !this.faint.has() || this.editing()) return;
     const box = this.canvas().nativeElement.getBoundingClientRect();
-    const frame = Math.round(this.playback.time * r.fps);
-    const scale = box.width / r.geometry.W;
+    const frame = Math.round(this.playback.time * report.fps);
+    const scale = box.width / report.geometry.W;
     const hover = pointedTrack(
-      r,
+      report,
       all,
       frame,
       scale,
-      e.clientX - box.left,
-      e.clientY - box.top,
-      sc.scores,
+      event.clientX - box.left,
+      event.clientY - box.top,
+      faintScores.scores,
     );
     if ((hover?.text ?? null) !== (this.faint.hover()?.text ?? null)) this.faint.hover.set(hover);
   }
@@ -229,14 +260,15 @@ export class Player {
   }
 
   protected loadedMetadata(): void {
-    const v = this.video().nativeElement;
-    this.playback.duration.set(v.duration);
-    if (v.videoWidth && v.videoHeight) this.aspect.set(`${v.videoWidth} / ${v.videoHeight}`);
+    const video = this.video().nativeElement;
+    this.playback.duration.set(video.duration);
+    if (video.videoWidth && video.videoHeight)
+      this.aspect.set(`${video.videoWidth} / ${video.videoHeight}`);
     if (this.playback.startAt !== null) {
       this.playback.seek(this.playback.startAt);
       this.playback.startAt = null;
     }
-    this.playback.frame(v.currentTime);
+    this.playback.frame(video.currentTime);
   }
 
   protected showSeekedFrame(): void {
@@ -323,46 +355,55 @@ export class Player {
    * where the browser leaves it to the page (always, when the player fills the window). Keys typed into a field, and Space and the arrows used by a list or a
    * slider, are theirs.
    */
-  protected handleKeydown(e: KeyboardEvent): void {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const target = e.target instanceof Element ? e.target : null;
+  protected handleKeydown(event: KeyboardEvent): void {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(FIELDS)) return;
-    if (e.key.toLowerCase() === 'f') {
-      this.toggleFullScreen();
-      return;
-    }
-    if (e.key === 'Escape') {
-      // handled here: the excluded areas editor stays open
-      if (this.full()) {
-        e.preventDefault();
-        this.toggleFullScreen();
-      }
-      return;
-    }
+    if (this.handleFullScreenKey(event)) return;
     if (target?.closest(KEY_OWNERS)) return;
-    const fps = this.report()?.fps ?? 60;
-    if (e.key === ' ') {
-      e.preventDefault();
-      this.playback.toggle();
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault();
-      const forward = e.key === 'ArrowRight';
-      if (e.shiftKey) this.jump(forward);
-      else this.playback.step(forward ? 1 : -1, fps);
+    this.handlePlaybackKey(event);
+  }
+
+  /** F, and Escape: says whether the key was one of them. */
+  private handleFullScreenKey(event: KeyboardEvent): boolean {
+    if (event.key.toLowerCase() === 'f') {
+      this.toggleFullScreen();
+      return true;
     }
+    if (event.key !== 'Escape') return false;
+    // handled here: the excluded areas editor stays open
+    if (this.full()) {
+      event.preventDefault();
+      this.toggleFullScreen();
+    }
+    return true;
+  }
+
+  /** Space, and Left and Right (with Shift, a flick or a death at a time). */
+  private handlePlaybackKey(event: KeyboardEvent): void {
+    if (event.key === ' ') {
+      event.preventDefault();
+      this.playback.toggle();
+      return;
+    }
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const forward = event.key === 'ArrowRight';
+    if (event.shiftKey) this.jump(forward);
+    else this.playback.step(forward ? 1 : -1, this.report()?.fps ?? FPS_BEFORE_REVIEW);
   }
 
   /** The previous or next flick, replayed; a tracking run: the previous or next bot's death. */
   private jump(forward: boolean): void {
-    const r = this.report();
-    if (!r) return;
-    const frame = Math.round(this.playback.time * r.fps);
-    if (r.mode === 'track') {
-      const deaths = r.summary.switches.map(([start]) => start);
+    const report = this.report();
+    if (!report) return;
+    const frame = Math.round(this.playback.time * report.fps);
+    if (report.mode === 'track') {
+      const deaths = report.summary.switches.map(([start]) => start);
       const to = forward
-        ? deaths.find((d) => d > frame)
-        : [...deaths].reverse().find((d) => d < frame);
-      if (to !== undefined) this.playback.seek(to / r.fps);
+        ? deaths.find((death) => death > frame)
+        : [...deaths].reverse().find((death) => death < frame);
+      if (to !== undefined) this.playback.seek(to / report.fps);
       return;
     }
     this.focus.step(forward);

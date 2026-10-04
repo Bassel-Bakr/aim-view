@@ -1,4 +1,4 @@
-import { Flick, Geometry, TrackReport, Tracks } from '../api';
+import { Flick, Geometry, TargetSize, TrackFrame, TrackPoint, TrackReport, Tracks } from '../api';
 import {
   boxes,
   clock,
@@ -10,15 +10,22 @@ import {
   TrackState,
 } from './track';
 
-const G: Geometry = { W: 1280, H: 720, CX: 640, CY: 360, K: 509 };
+// eslint-disable-next-line id-length -- the core names Geometry's fields (generated/geometry.ts)
+const GEOMETRY: Geometry = { W: 1280, H: 720, CX: 640, CY: 360, K: 509 };
+
+/** A frame of tracks: each target's id and place in degrees, and its box's size where the model gave one. */
+function trackFrame(index: number, targets: TrackPoint[], sizes?: TargetSize[]): TrackFrame {
+  // eslint-disable-next-line id-length -- the core names TrackFrame's fields (generated/track-frame.ts)
+  return { i: index, shift: [0, 0], t: targets, a: targets.map(() => 1), wh: sizes };
+}
 
 describe('toPx', () => {
   it('puts the crosshair at the crosshair pixel, scaled', () => {
-    expect(toPx(G, 0, 0, 0.5)).toEqual([320, 180]);
+    expect(toPx(GEOMETRY, 0, 0, 0.5)).toEqual([320, 180]);
   });
 
   it('puts a target to the right and above at a larger x and a smaller y', () => {
-    const [x, y] = toPx(G, 10, 5, 1);
+    const [x, y] = toPx(GEOMETRY, 10, 5, 1);
     expect(x).toBeGreaterThan(640);
     expect(y).toBeLessThan(360);
   });
@@ -42,29 +49,29 @@ describe('flickAt', () => {
 
 describe('boxes and nearest', () => {
   it('finds the crosshair inside a target over it, and the distance to the edge of one beside it', () => {
-    const bs = boxes({
-      i: 0,
-      shift: [0, 0],
-      a: [1, 1],
-      t: [
-        [1, 0.1, 0],
-        [2, 3, 0],
-      ],
-      wh: [
-        [1, 1],
-        [1, 1],
-      ],
-    });
-    expect(bs[0].inside).toBe(true);
-    expect(bs[1].inside).toBe(false);
-    expect(bs[1].out).toBeCloseTo(2.5);
-    expect(nearest(bs)).toBe(bs[0]);
+    const targetBoxes = boxes(
+      trackFrame(
+        0,
+        [
+          [1, 0.1, 0],
+          [2, 3, 0],
+        ],
+        [
+          [1, 1],
+          [1, 1],
+        ],
+      ),
+    );
+    expect(targetBoxes[0].inside).toBe(true);
+    expect(targetBoxes[1].inside).toBe(false);
+    expect(targetBoxes[1].outsideDeg).toBeCloseTo(2.5);
+    expect(nearest(targetBoxes)).toBe(targetBoxes[0]);
   });
 
   it('measures a capsule from its long axis, not its center', () => {
     // 4 deg tall and 0.5 wide, 2 above the crosshair: its axis runs from 0.25 to 3.75 above it
-    const [capsule] = boxes({ i: 0, shift: [0, 0], t: [[1, 0, 2]], a: [1], wh: [[0.5, 4]] });
-    expect(capsule.d).toBeCloseTo(0.25);
+    const [capsule] = boxes(trackFrame(0, [[1, 0, 2]], [[0.5, 4]]));
+    expect(capsule.centerLineDeg).toBeCloseTo(0.25);
   });
 });
 
@@ -77,12 +84,12 @@ describe('timeline', () => {
   const tracks: Tracks = {
     fps: 10,
     frames: [
-      { i: 0, shift: [0, 0], t: [], a: [] },
-      { i: 1, shift: [0, 0], t: [[1, 0, 0]], a: [1], wh: [[1, 1]] },
-      { i: 2, shift: [0, 0], t: [[1, 2, 0]], a: [1], wh: [[1, 1]] },
-      { i: 3, shift: [0, 0], t: [[2, 0, 0]], a: [1], wh: [[1, 1]] },
-      { i: 4, shift: [0, 0], t: [], a: [] },
-      { i: 5, shift: [0, 0], t: [[1, 0, 0]], a: [1], wh: [[1, 1]] },
+      trackFrame(0, []),
+      trackFrame(1, [[1, 0, 0]], [[1, 1]]),
+      trackFrame(2, [[1, 2, 0]], [[1, 1]]),
+      trackFrame(3, [[2, 0, 0]], [[1, 1]]),
+      trackFrame(4, []),
+      trackFrame(5, [[1, 0, 0]], [[1, 1]]),
     ],
   };
 
@@ -95,9 +102,9 @@ describe('timeline', () => {
       TrackState.Switching,
       TrackState.NoBot,
     ]);
-    expect(tl.dist[0]).toBe(0);
-    expect(tl.dist[1]).toBeCloseTo(1.5);
-    expect(Number.isNaN(tl.dist[2])).toBe(true);
+    expect(tl.outsideDeg[0]).toBe(0);
+    expect(tl.outsideDeg[1]).toBeCloseTo(1.5);
+    expect(Number.isNaN(tl.outsideDeg[2])).toBe(true);
     expect(tl.deaths).toEqual([2]);
   });
 

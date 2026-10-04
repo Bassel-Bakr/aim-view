@@ -130,13 +130,13 @@ const plotHeight = (b: ChartBox) => plotBottom(b) - b.top;
 export function onTargetWindows(report: TrackReport, tl: Timeline): OnTargetModel {
   const box = BOX;
   const per = Math.round(WINDOW * tl.fps);
-  const runSeconds = tl.n / tl.fps;
+  const runSeconds = tl.frameCount / tl.fps;
   const x = (seconds: number) =>
     box.left + (plotWidth(box) * seconds) / Math.max(WINDOW, runSeconds);
   const y = (share: number) => plotBottom(box) - plotHeight(box) * share;
   const bars: WindowBar[] = [];
-  for (let k0 = 0; k0 < tl.n; k0 += per) {
-    const k1 = Math.min(tl.n, k0 + per);
+  for (let k0 = 0; k0 < tl.frameCount; k0 += per) {
+    const k1 = Math.min(tl.frameCount, k0 + per);
     if (k1 - k0 < LAST_WINDOW_MIN * tl.fps) break;
     let on = 0;
     let off = 0;
@@ -179,14 +179,14 @@ export function distanceSpread(tracks: Tracks, tl: Timeline): SpreadModel {
   const box = BOX;
   const near: number[] = [];
   const radii: number[] = [];
-  for (let k = 0; k < tl.n; k++) {
+  for (let k = 0; k < tl.frameCount; k++) {
     if (tl.state[k] !== TrackState.On && tl.state[k] !== TrackState.Off) continue;
     const f = tracks.frames[tl.start + k];
     const best = f ? nearest(boxes(f)) : null;
     if (!best) continue;
-    const r = Math.min(best.w, best.h) / 2;
-    if (best.d > 3 * Math.max(r, 0.2)) continue;
-    near.push(best.d);
+    const r = Math.min(best.widthDeg, best.heightDeg) / 2;
+    if (best.centerLineDeg > 3 * Math.max(r, 0.2)) continue;
+    near.push(best.centerLineDeg);
     radii.push(r);
   }
   const r = median(radii);
@@ -322,7 +322,7 @@ export function turnsBack(report: TrackReport, tl: Timeline): TurnsBackModel {
     TURNS_TOP_MIN,
     sorted.length ? sorted[Math.floor(0.98 * (sorted.length - 1))] : 0,
   );
-  const runSeconds = tl.n / tl.fps;
+  const runSeconds = tl.frameCount / tl.fps;
   const x = (seconds: number) =>
     box.left + (plotWidth(box) * seconds) / Math.max(WINDOW, runSeconds);
   const y = (seconds: number) => plotBottom(box) - (plotHeight(box) * Math.min(seconds, top)) / top;

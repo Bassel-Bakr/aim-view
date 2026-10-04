@@ -4,17 +4,18 @@ import { Flick, Geometry, TrackFrame, TrackReport, Tracks } from '../api';
 export type Point = [x: number, y: number];
 
 /** Degrees from the crosshair to canvas pixels, through the camera's projection. */
-export function toPx(g: Geometry, xd: number, yd: number, scale: number): Point {
-  const x = g.CX + g.K * Math.tan((xd * Math.PI) / 180);
-  const y = g.CY - Math.tan((yd * Math.PI) / 180) * Math.hypot(g.K, x - g.CX);
+export function toPx(geometry: Geometry, xDeg: number, yDeg: number, scale: number): Point {
+  const x = geometry.CX + geometry.K * Math.tan((xDeg * Math.PI) / 180);
+  const y =
+    geometry.CY - Math.tan((yDeg * Math.PI) / 180) * Math.hypot(geometry.K, x - geometry.CX);
   return [x * scale, y * scale];
 }
 
 /** The flick on screen at a frame: the latest one to have started by then. */
 export function flickAt(flicks: Flick[], frame: number): Flick | null {
   let at: Flick | null = null;
-  for (const f of flicks)
-    if (f.start_frame <= frame && (!at || f.start_frame > at.start_frame)) at = f;
+  for (const flick of flicks)
+    if (flick.start_frame <= frame && (!at || flick.start_frame > at.start_frame)) at = flick;
   return at;
 }
 
@@ -22,35 +23,40 @@ export function flickAt(flicks: Flick[], frame: number): Flick | null {
 export interface TargetBox {
   x: number;
   y: number;
-  w: number;
-  h: number;
+  widthDeg: number;
+  heightDeg: number;
   /** From the crosshair to the target's center line (a capsule's long axis, a sphere's center). */
-  d: number;
+  centerLineDeg: number;
   /** The crosshair is on it. */
   inside: boolean;
   /** How far outside its edge the crosshair is (0 inside). */
-  out: number;
+  outsideDeg: number;
 }
 
-const DEFAULT_SIZE = 0.6;
-const EDGE = 0.05;
+/** A target's box where the model gave no size, and how far past its edge the crosshair still counts as on it. */
+const DEFAULT_SIZE_DEG = 0.6;
+const EDGE_DEG = 0.05;
 
 /** Each target in a frame as a box. */
-export function boxes(f: TrackFrame): TargetBox[] {
-  return f.t.map(([, x, y], k) => {
-    const [w, h] = f.wh ? f.wh[k] : [DEFAULT_SIZE, DEFAULT_SIZE];
-    const lx = Math.sign(x) * Math.max(0, Math.abs(x) - Math.max(0, w - h) / 2);
-    const ly = Math.sign(y) * Math.max(0, Math.abs(y) - Math.max(0, h - w) / 2);
-    const d = Math.hypot(lx, ly);
-    const inside = Math.abs(x) <= w / 2 + EDGE && Math.abs(y) <= h / 2 + EDGE;
-    return { x, y, w, h, d, inside, out: Math.max(0, d - Math.min(w, h) / 2) };
+export function boxes(frame: TrackFrame): TargetBox[] {
+  return frame.t.map(([, x, y], targetIndex) => {
+    const [widthDeg, heightDeg] = frame.wh
+      ? frame.wh[targetIndex]
+      : [DEFAULT_SIZE_DEG, DEFAULT_SIZE_DEG];
+    const axisX = Math.sign(x) * Math.max(0, Math.abs(x) - Math.max(0, widthDeg - heightDeg) / 2);
+    const axisY = Math.sign(y) * Math.max(0, Math.abs(y) - Math.max(0, heightDeg - widthDeg) / 2);
+    const centerLineDeg = Math.hypot(axisX, axisY);
+    const inside =
+      Math.abs(x) <= widthDeg / 2 + EDGE_DEG && Math.abs(y) <= heightDeg / 2 + EDGE_DEG;
+    const outsideDeg = Math.max(0, centerLineDeg - Math.min(widthDeg, heightDeg) / 2);
+    return { x, y, widthDeg, heightDeg, centerLineDeg, inside, outsideDeg };
   });
 }
 
 /** The box nearest the crosshair, the bot the review follows. */
-export function nearest(bs: TargetBox[]): TargetBox | null {
+export function nearest(targetBoxes: TargetBox[]): TargetBox | null {
   let best: TargetBox | null = null;
-  for (const b of bs) if (!best || b.d < best.d) best = b;
+  for (const box of targetBoxes) if (!best || box.centerLineDeg < best.centerLineDeg) best = box;
   return best;
 }
 
@@ -69,28 +75,33 @@ export enum TrackState {
  */
 export interface Timeline {
   start: number;
-  n: number;
+  frameCount: number;
   fps: number;
   state: Int8Array;
-  dist: Float32Array;
-  cap: number;
+  outsideDeg: Float32Array;
+  capDeg: number;
   deaths: number[];
 }
 
+/** The scale's top: the 98th percentile of the distances off target, kept between half a degree and 5 degrees. */
+const CAP_PERCENTILE = 0.98;
+const MIN_CAP_DEG = 0.5;
+const MAX_CAP_DEG = 5;
+
 export function timeline(report: TrackReport, tracks: Tracks): Timeline {
-  const s = report.summary;
-  const start = s.start ?? 0;
-  const end = Math.min(s.end ?? tracks.frames.length, tracks.frames.length);
-  const n = Math.max(0, end - start);
-  const state = new Int8Array(n);
-  const dist = new Float32Array(n).fill(NaN);
+  const summary = report.summary;
+  const start = summary.start ?? 0;
+  const end = Math.min(summary.end ?? tracks.frames.length, tracks.frames.length);
+  const frameCount = Math.max(0, end - start);
+  const state = new Int8Array(frameCount);
+  const outsideDeg = new Float32Array(frameCount).fill(NaN);
   for (let i = start; i < end; i++) {
-    const f = tracks.frames[i];
-    if (!f) continue;
-    const bs = boxes(f);
-    const best = nearest(bs);
-    const switching = s.switches.some(([a, b]) => i >= a && i < b);
-    const inside = bs.some((b) => b.inside);
+    const trackFrame = tracks.frames[i];
+    if (!trackFrame) continue;
+    const targetBoxes = boxes(trackFrame);
+    const best = nearest(targetBoxes);
+    const switching = summary.switches.some(([a, b]) => i >= a && i < b);
+    const inside = targetBoxes.some((box) => box.inside);
     state[i - start] = switching
       ? TrackState.Switching
       : inside
@@ -98,19 +109,21 @@ export function timeline(report: TrackReport, tracks: Tracks): Timeline {
         : best
           ? TrackState.Off
           : TrackState.NoBot;
-    if (best && !switching) dist[i - start] = inside ? 0 : best.out;
+    if (best && !switching) outsideDeg[i - start] = inside ? 0 : best.outsideDeg;
   }
-  const off = [...dist].filter((v) => v > 0).sort((a, b) => a - b);
-  const p98 = off.length ? off[Math.floor(0.98 * (off.length - 1))] : 0.5;
-  const cap = Math.min(5, Math.max(0.5, p98));
+  const off = [...outsideDeg].filter((distance) => distance > 0).sort((a, b) => a - b);
+  const percentile98 = off.length
+    ? off[Math.floor(CAP_PERCENTILE * (off.length - 1))]
+    : MIN_CAP_DEG;
+  const capDeg = Math.min(MAX_CAP_DEG, Math.max(MIN_CAP_DEG, percentile98));
   return {
     start,
-    n,
+    frameCount,
     fps: report.fps,
     state,
-    dist,
-    cap,
-    deaths: s.switches.map(([d]) => d - start),
+    outsideDeg,
+    capDeg,
+    deaths: summary.switches.map(([death]) => death - start),
   };
 }
 
@@ -122,8 +135,11 @@ export function clock(seconds: number): string {
 const STATE_TEXT = ['no bot seen', 'on target', 'off target', 'switching after a death'];
 
 /** What the timeline says about a moment, for its tooltip and for screen readers. */
-export function describe(tl: Timeline, k: number): string {
-  const d = tl.dist[k];
-  const away = Number.isNaN(d) || d === 0 ? '' : ` · ${d.toFixed(2)}° outside its edge`;
-  return `${clock((tl.start + k) / tl.fps)} · ${STATE_TEXT[tl.state[k]]}${away}`;
+export function describe(run: Timeline, moment: number): string {
+  const outsideDeg = run.outsideDeg[moment];
+  const away =
+    Number.isNaN(outsideDeg) || outsideDeg === 0
+      ? ''
+      : ` · ${outsideDeg.toFixed(2)}° outside its edge`;
+  return `${clock((run.start + moment) / run.fps)} · ${STATE_TEXT[run.state[moment]]}${away}`;
 }

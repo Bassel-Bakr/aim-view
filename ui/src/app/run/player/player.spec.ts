@@ -75,10 +75,10 @@ async function render() {
     target: EventTarget = document,
     init: KeyboardEventInit = {},
   ) => {
-    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
-    target.dispatchEvent(e);
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
     await settle();
-    return e;
+    return event;
   };
   const full = () => document.fullscreenElement === player;
   return { draft, settle, player, button, field, press, change, full };

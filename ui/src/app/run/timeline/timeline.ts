@@ -40,7 +40,9 @@ export class Timeline {
   private readonly tip = viewChild.required<ElementRef<HTMLElement>>('tip');
 
   protected readonly data = computed(() => timeline(this.report(), this.tracks()));
-  protected readonly runSeconds = computed(() => Math.round(this.data().n / this.data().fps));
+  protected readonly runSeconds = computed(() =>
+    Math.round(this.data().frameCount / this.data().fps),
+  );
   private style: TimelineStyle | null = null;
 
   constructor() {
@@ -103,7 +105,10 @@ export class Timeline {
   private frameAt(e: PointerEvent): number {
     const r = this.box().nativeElement.getBoundingClientRect();
     const tl = this.data();
-    return Math.min(tl.n - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * tl.n)));
+    return Math.min(
+      tl.frameCount - 1,
+      Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * tl.frameCount)),
+    );
   }
 
   private seekToPointer(e: PointerEvent): void {
@@ -124,11 +129,11 @@ export class Timeline {
     const tl = this.data();
     const k = t * tl.fps - tl.start;
     const head = this.head().nativeElement;
-    head.hidden = k < 0 || k > tl.n;
-    head.style.left = `${(100 * k) / tl.n}%`;
+    head.hidden = k < 0 || k > tl.frameCount;
+    head.style.left = `${(100 * k) / tl.frameCount}%`;
     if (this.playback.paused()) {
       const box = this.box().nativeElement;
-      const at = Math.min(tl.n - 1, Math.max(0, Math.round(k)));
+      const at = Math.min(tl.frameCount - 1, Math.max(0, Math.round(k)));
       box.setAttribute('aria-valuenow', String(Math.round(at / tl.fps)));
       box.setAttribute('aria-valuetext', describe(tl, at));
     }
@@ -139,7 +144,7 @@ export class Timeline {
     const tl = this.data();
     const now = this.playback.time;
     const start = tl.start / tl.fps;
-    const end = (tl.start + tl.n) / tl.fps;
+    const end = (tl.start + tl.frameCount) / tl.fps;
     const to: Record<string, number> = {
       ArrowRight: now + STEP,
       ArrowUp: now + STEP,

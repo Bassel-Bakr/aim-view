@@ -7,11 +7,11 @@ const FPS = 10;
 /** A timeline of the given states, one per frame. */
 const timeline = (states: TrackState[]): Timeline => ({
   start: 0,
-  n: states.length,
+  frameCount: states.length,
   fps: FPS,
   state: Int8Array.from(states),
-  dist: new Float32Array(states.length),
-  cap: 1,
+  outsideDeg: new Float32Array(states.length),
+  capDeg: 1,
   deaths: [],
 });
 

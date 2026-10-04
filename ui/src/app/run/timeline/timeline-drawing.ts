@@ -46,8 +46,8 @@ function columns(
   each: (k0: number, k1: number, px: number) => void,
 ): void {
   for (let px = 0; px < w; px++) {
-    const k0 = Math.floor((px * tl.n) / w);
-    each(k0, Math.max(k0 + 1, Math.floor(((px + 1) * tl.n) / w)), px);
+    const k0 = Math.floor((px * tl.frameCount) / w);
+    each(k0, Math.max(k0 + 1, Math.floor(((px + 1) * tl.frameCount) / w)), px);
   }
 }
 
@@ -65,14 +65,14 @@ export function drawTimeline(
 ): void {
   const chart = h - TOP - STRIP_GAP - st.strip - AXIS;
   const stripY = TOP + chart + STRIP_GAP;
-  const y = (d: number) => TOP + chart * (1 - Math.min(d, tl.cap) / tl.cap);
+  const y = (d: number) => TOP + chart * (1 - Math.min(d, tl.capDeg) / tl.capDeg);
   c.clearRect(0, 0, w, h);
   c.strokeStyle = st.grid;
   for (const g of [0, 0.5, 1]) {
     c.setLineDash(g ? DASH : []);
     c.beginPath();
-    c.moveTo(0, Math.round(y(g * tl.cap)) + 0.5);
-    c.lineTo(w, Math.round(y(g * tl.cap)) + 0.5);
+    c.moveTo(0, Math.round(y(g * tl.capDeg)) + 0.5);
+    c.lineTo(w, Math.round(y(g * tl.capDeg)) + 0.5);
     c.stroke();
   }
   c.setLineDash([]);
@@ -83,7 +83,7 @@ export function drawTimeline(
     let count = 0;
     let hi = 0;
     for (let k = k0; k < k1; k++) {
-      const d = tl.dist[k];
+      const d = tl.outsideDeg[k];
       if (Number.isNaN(d)) continue;
       sum += d;
       count++;
@@ -121,11 +121,12 @@ export function drawTimeline(
     c.fillRect(px, stripY, 1, st.strip);
   });
   c.fillStyle = st.death;
-  for (const d of tl.deaths) c.fillRect(Math.floor((d / tl.n) * w), stripY - 4, 1.5, st.strip + 4);
+  for (const d of tl.deaths)
+    c.fillRect(Math.floor((d / tl.frameCount) * w), stripY - 4, 1.5, st.strip + 4);
   c.font = st.font;
   c.textBaseline = 'middle';
   for (const [text, ty] of [
-    [`${tl.cap.toFixed(1)}° off`, TOP + LABEL_HEIGHT / 2],
+    [`${tl.capDeg.toFixed(1)}° off`, TOP + LABEL_HEIGHT / 2],
     ['0°: on the bot', TOP + chart - LABEL_HEIGHT / 2],
   ] as const) {
     c.fillStyle = st.labelBg;
@@ -134,7 +135,7 @@ export function drawTimeline(
     c.fillText(text, LABEL_PAD, ty);
   }
   c.textBaseline = 'alphabetic';
-  const seconds = tl.n / tl.fps;
+  const seconds = tl.frameCount / tl.fps;
   const step = seconds > 90 ? 20 : 10;
   for (let t = 0; t <= seconds; t += step) {
     const x = (t / seconds) * w;
