@@ -1,11 +1,25 @@
 //! NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays, deflated): the cut-off's
-//! detector labels (faint.rs) and the area finder's maps (areas.rs), so Python's tools read what the app writes and the
-//! app reads what Python wrote.
+//! detector labels (faint.rs) and the area finder's maps (finder.rs), so Python's tools read what the app writes and
+//! the app reads what Python wrote. In: arrays to save, or a file to read one from. Out: the file, or the array.
 
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
 use zip::write::SimpleFileOptions;
+
+/// What every .npy file starts with.
+const MAGIC: &[u8] = b"\x93NUMPY";
+/// The format the app writes, 1.0 (major, minor): its header's length is a u16.
+const VERSION_1: [u8; 2] = [1, 0];
+/// Where the format's major version is, after the magic.
+const MAJOR_AT: usize = MAGIC.len();
+/// Where the header's length starts, after the version's two bytes.
+const LENGTH_AT: usize = MAJOR_AT + 2;
+/// The bytes before the header: in format 1.0 its length is a u16, in 2.0 and 3.0 a u32.
+const PREAMBLE_BYTES_V1: usize = LENGTH_AT + 2;
+const PREAMBLE_BYTES_V2: usize = LENGTH_AT + 4;
+/// NumPy pads the header with spaces so the data starts at a multiple of this many bytes.
+const HEADER_ALIGN: usize = 64;
 
 /// An array's element type: bytes, or 32-bit floats (little-endian).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,10 +57,11 @@ impl Array {
     }
 
     pub fn f32(shape: &[usize], values: &[f32]) -> Array {
-        Array { dtype: Dtype::F32, shape: shape.to_vec(), data: values.iter().flat_map(|v| v.to_le_bytes()).collect() }
+        let data = values.iter().flat_map(|value| value.to_le_bytes()).collect();
+        Array { dtype: Dtype::F32, shape: shape.to_vec(), data }
     }
 
-    /// The .npy file (format 1.0): the magic, the header (padded to 64 bytes, as NumPy pads it) and the data.
+    /// The .npy file (format 1.0): the magic, the header (padded as NumPy pads it: HEADER_ALIGN) and the data.
     fn npy(&self) -> Vec<u8> {
         let shape = match self.shape.len() {
             0 => "()".to_string(),
@@ -54,12 +69,14 @@ impl Array {
             _ => format!("({})", self.shape.iter().map(usize::to_string).collect::<Vec<_>>().join(", ")),
         };
         let mut header = format!("{{'descr': '{}', 'fortran_order': False, 'shape': {shape}, }}", self.dtype.descr());
-        while (10 + header.len() + 1) % 64 != 0 {
+        // the padding comes before the header's last byte, a newline
+        while !(PREAMBLE_BYTES_V1 + header.len() + 1).is_multiple_of(HEADER_ALIGN) {
             header.push(' ');
         }
         header.push('\n');
-        let mut out = Vec::with_capacity(10 + header.len() + self.data.len());
-        out.extend_from_slice(b"\x93NUMPY\x01\x00");
+        let mut out = Vec::with_capacity(PREAMBLE_BYTES_V1 + header.len() + self.data.len());
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&VERSION_1);
         out.extend_from_slice(&(header.len() as u16).to_le_bytes());
         out.extend_from_slice(header.as_bytes());
         out.extend_from_slice(&self.data);
@@ -68,37 +85,45 @@ impl Array {
 
     /// An array from a .npy file's bytes (format 1.0 to 3.0, C order, bytes or little-endian 32-bit floats).
     fn from_npy(bytes: &[u8]) -> Result<Array, String> {
-        if bytes.len() < 10 || &bytes[..6] != b"\x93NUMPY" {
+        if bytes.len() < PREAMBLE_BYTES_V1 || !bytes.starts_with(MAGIC) {
             return Err("not a .npy array".into());
         }
-        let (len, start) = match bytes[6] {
-            1 => (u16::from_le_bytes([bytes[8], bytes[9]]) as usize, 10),
-            _ if bytes.len() >= 12 => (u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize, 12),
+        let (len, start) = match bytes[MAJOR_AT] {
+            1 => (u16::from_le_bytes([bytes[LENGTH_AT], bytes[LENGTH_AT + 1]]) as usize, PREAMBLE_BYTES_V1),
+            _ if bytes.len() >= PREAMBLE_BYTES_V2 => {
+                let length = [bytes[LENGTH_AT], bytes[LENGTH_AT + 1], bytes[LENGTH_AT + 2], bytes[LENGTH_AT + 3]];
+                (u32::from_le_bytes(length) as usize, PREAMBLE_BYTES_V2)
+            }
             _ => return Err("a .npy header is cut short".into()),
         };
         let header = String::from_utf8_lossy(bytes.get(start..start + len).ok_or("a .npy header is cut short")?);
-        let value = |key: &str| header.split(&format!("'{key}':")).nth(1).map(str::trim).unwrap_or_default().to_string();
+        let value =
+            |key: &str| header.split(&format!("'{key}':")).nth(1).map(str::trim).unwrap_or_default().to_string();
         let dtype = match value("descr") {
-            d if d.starts_with("'|u1'") || d.starts_with("'u1'") => Dtype::U8,
-            d if d.starts_with("'<f4'") => Dtype::F32,
-            d => return Err(format!("a .npy array of {d} is not read here")),
+            descr if descr.starts_with("'|u1'") || descr.starts_with("'u1'") => Dtype::U8,
+            descr if descr.starts_with("'<f4'") => Dtype::F32,
+            descr => return Err(format!("a .npy array of {descr} is not read here")),
         };
         if value("fortran_order").starts_with("True") {
             return Err("a .npy array in Fortran order is not read here".into());
         }
         let shape_text = value("shape");
         let inside = shape_text.trim_start_matches('(').split(')').next().unwrap_or_default();
-        let shape: Vec<usize> = inside.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-        let n = shape.iter().product::<usize>() * dtype.size();
-        let data = bytes.get(start + len..start + len + n).ok_or("a .npy array is cut short")?.to_vec();
+        let shape: Vec<usize> = inside.split(',').filter_map(|dimension| dimension.trim().parse().ok()).collect();
+        let data_bytes = shape.iter().product::<usize>() * dtype.size();
+        let data = bytes.get(start + len..start + len + data_bytes).ok_or("a .npy array is cut short")?.to_vec();
         Ok(Array { dtype, shape, data })
     }
 
     /// The values as floats.
     pub fn floats(&self) -> Vec<f32> {
         match self.dtype {
-            Dtype::U8 => self.data.iter().map(|&v| v as f32).collect(),
-            Dtype::F32 => self.data.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
+            Dtype::U8 => self.data.iter().map(|&value| f32::from(value)).collect(),
+            Dtype::F32 => self
+                .data
+                .chunks_exact(Dtype::F32.size())
+                .map(|value| f32::from_le_bytes([value[0], value[1], value[2], value[3]]))
+                .collect(),
         }
     }
 }
@@ -106,26 +131,27 @@ impl Array {
 /// Writes the arrays as `np.savez_compressed` does (each as "<name>.npy", deflated); a file there is replaced.
 pub fn save(path: &Path, arrays: &[(&str, &Array)]) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        crate::disk::create_dir_all(dir).map_err(|e| e.to_string())?;
+        crate::disk::create_dir_all(dir).map_err(|error| error.to_string())?;
     }
     // made in memory, then written: the same bytes a zip written straight to the file has
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for (name, array) in arrays {
-        zip.start_file(format!("{name}.npy"), options).map_err(|e| e.to_string())?;
-        zip.write_all(&array.npy()).map_err(|e| e.to_string())?;
+        zip.start_file(format!("{name}.npy"), options).map_err(|error| error.to_string())?;
+        zip.write_all(&array.npy()).map_err(|error| error.to_string())?;
     }
-    let bytes = zip.finish().map_err(|e| e.to_string())?.into_inner();
-    crate::disk::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    let bytes = zip.finish().map_err(|error| error.to_string())?.into_inner();
+    crate::disk::write(path, bytes).map_err(|error| format!("{}: {error}", path.display()))
 }
 
 /// One array of a .npz file.
 pub fn load(path: &Path, name: &str) -> Result<Array, String> {
-    let file = crate::disk::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
-    let mut entry = zip.by_name(&format!("{name}.npy")).map_err(|e| format!("{}: {name}: {e}", path.display()))?;
+    let file = crate::disk::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|error| error.to_string())?;
+    let mut entry =
+        zip.by_name(&format!("{name}.npy")).map_err(|error| format!("{}: {name}: {error}", path.display()))?;
     let mut bytes = Vec::new();
-    entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    entry.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
     Array::from_npy(&bytes)
 }
 
@@ -136,14 +162,15 @@ mod tests {
     #[test]
     fn arrays_read_back() {
         let dir = std::env::temp_dir().join(format!("aimview-npz-{}", std::process::id()));
-        let p = dir.join("a.npz");
-        let (img, boxes, none) = (Array::u8(&[2, 3], vec![1, 2, 3, 4, 5, 6]), Array::f32(&[1, 4], &[1.5, 2.0, 3.25, 4.0]), Array::u8(&[], vec![0]));
-        save(&p, &[("rgb", &img), ("boxes", &boxes), ("hidden", &none)]).unwrap();
-        let a = load(&p, "rgb").unwrap();
-        assert_eq!((a.dtype, a.shape.clone(), a.data.clone()), (Dtype::U8, vec![2, 3], vec![1, 2, 3, 4, 5, 6]));
-        assert_eq!(load(&p, "boxes").unwrap().floats(), vec![1.5, 2.0, 3.25, 4.0]);
-        assert_eq!(load(&p, "hidden").unwrap().shape, Vec::<usize>::new());
-        assert_eq!((img.npy().len() - 6) % 64, 0);
+        let file = dir.join("a.npz");
+        let img = Array::u8(&[2, 3], vec![1, 2, 3, 4, 5, 6]);
+        let (boxes, none) = (Array::f32(&[1, 4], &[1.5, 2.0, 3.25, 4.0]), Array::u8(&[], vec![0]));
+        save(&file, &[("rgb", &img), ("boxes", &boxes), ("hidden", &none)]).unwrap();
+        let rgb = load(&file, "rgb").unwrap();
+        assert_eq!((rgb.dtype, rgb.shape.clone(), rgb.data.clone()), (Dtype::U8, vec![2, 3], vec![1, 2, 3, 4, 5, 6]));
+        assert_eq!(load(&file, "boxes").unwrap().floats(), vec![1.5, 2.0, 3.25, 4.0]);
+        assert_eq!(load(&file, "hidden").unwrap().shape, Vec::<usize>::new());
+        assert_eq!((img.npy().len() - 6) % HEADER_ALIGN, 0);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
