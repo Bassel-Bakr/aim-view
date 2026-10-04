@@ -734,7 +734,9 @@ def _attach_kills(pos, area, kt, shots, off, window, fps, ends, before, on_spot=
             # picked up the next target), so the frame 2 after it can be far (a missed kill on the Aim Lab upload)
             last = min(seen, key=lambda i: math.hypot(*p[i]) + 4.0 * abs(i - kf) / fps)
             d = math.hypot(*p[last])
-            if d > 1.5:
+            # a big target can be hit at its rim, its center farther off: up to its blob's radius and 0.25 deg more
+            r = math.degrees(math.sqrt(area[tid][list(p).index(last)] / math.pi) / K)
+            if d > max(1.5, r + 0.25):
                 continue
             cost = d + 4.0 * abs(min(last, kf) - kf) / fps + (0.0 if last >= kf - 2 else 0.2) + (1.0 if tid in on_spot else 0)
             if best_cost is None or cost < best_cost:
@@ -773,26 +775,44 @@ def _attach_kills(pos, area, kt, shots, off, window, fps, ends, before, on_spot=
     return flicks, info
 
 
+def _own_speed(p, e, cum):
+    """A target's speed (deg a frame) where its points p end, at frame e, over its last 3 frames: over the world (the
+    camera's turn taken out) and on screen. (0, 0) for both with fewer than 2 points in those frames."""
+    w = [i for i in p if e - 3 <= i <= e]
+    if len(w) < 2:
+        return (0.0, 0.0), (0.0, 0.0)
+    i0 = min(w)
+    (x0, y0), (x1, y1), k = p[i0], p[e], e - i0
+    return ((((x1 - cum[e][0]) - (x0 - cum[i0][0])) / k, ((y1 - cum[e][1]) - (y0 - cum[i0][1])) / k),
+            ((x1 - x0) / k, (y1 - y0) / k))
+
+
 def appearances(tracks, gap=0.5, radius=1.0):
     """Tracks that are one target picked up again. The tracker can lose a target for a few frames (under the crosshair,
     behind a hit effect) and start a new track for it. A track that starts within `gap` seconds of another's end,
     within `radius` deg of where that one would be now (its last place moved by the camera's turn since), continues
-    it. Returns (appeared, follows): appeared[tid] = the frame the target first appeared on, follows[tid] = the track
-    that continues tid."""
+    it. Then a track still left alone continues one that ended up to 3 frames before it starts (or up to 2 after),
+    within `radius` deg of where that one would be by its own speed over its last 3 frames, over the world or on screen
+    (with the tracks it continues when it has 3 points or fewer): a target that moves on its own (Bounce 180's spheres)
+    and fools the camera's turn gets a new track every frame or two. Not on a crosshair spot (crosshair_spots(), within
+    0.2 deg), where the detector marks the crosshair every frame. Returns (appeared, follows): appeared[tid] = the frame
+    the target first appeared on, follows[tid] = the track that continues tid."""
     fr, fps = tracks["frames"], tracks["fps"]
     cum = np.cumsum([[0.0, 0.0]] + [f.get("shift") or [0.0, 0.0] for f in fr[1:]], axis=0)
-    first, last = {}, {}
+    first, last, pos = {}, {}, {}
     for f in fr:
         for tid, x, y in f["t"]:
             if tid not in first:
                 first[tid] = (f["i"], x, y)
             last[tid] = (f["i"], x, y)
+            pos.setdefault(tid, {})[f["i"]] = (x, y)
     g = max(1, int(round(gap * fps)))
     ending = collections.defaultdict(list)
     for tid, (e, x, y) in last.items():
         ending[e].append(tid)
-    appeared, follows = {}, {}
-    for tid in sorted(first, key=lambda t: first[t][0]):
+    starts = sorted(first, key=lambda t: first[t][0])
+    follows = {}
+    for tid in starts:
         s0, qx, qy = first[tid]
         best = None
         for e in range(max(0, s0 - g), s0 + 3):         # up to 2 frames of overlap: a hit target flashes and is
@@ -805,9 +825,41 @@ def appearances(tracks, gap=0.5, radius=1.0):
                     best = (d, prev)
         if best:
             follows[best[1]] = tid
-            appeared[tid] = appeared[best[1]]
-        else:
-            appeared[tid] = s0
+    before = {v: k for k, v in follows.items()}
+    spots = crosshair_spots(fr)
+    on_spot = lambda x, y: any(math.hypot(x - a, y - b) < 0.2 for a, b in spots)
+    for tid in starts:
+        s0, qx, qy = first[tid]
+        if tid in before or on_spot(qx, qy):
+            continue
+        best = None
+        for e in range(max(0, s0 - 3), s0 + 3):
+            for prev in ending.get(e, ()):
+                if prev in follows or prev == tid or first[prev][0] >= s0:
+                    continue
+                _, x, y = last[prev]
+                if on_spot(x, y):
+                    continue
+                p, c = pos[prev], prev
+                if len(p) <= 3 and c in before:         # a short piece: its speed with the tracks it continues
+                    p = dict(p)
+                    while c in before and len(p) <= 3:
+                        c = before[c]
+                        for i, q in pos[c].items():
+                            p.setdefault(i, q)
+                (vx, vy), (sx, sy) = _own_speed(p, e, cum)
+                n = s0 - e
+                for px, py in ((x + cum[s0][0] - cum[e][0] + vx * n, y + cum[s0][1] - cum[e][1] + vy * n),
+                               (x + sx * n, y + sy * n)):
+                    d = math.hypot(qx - px, qy - py)
+                    if d < radius and (best is None or d < best[0]):
+                        best = (d, prev)
+        if best:
+            follows[best[1]] = tid
+            before[tid] = best[1]
+    appeared = {}
+    for tid in starts:
+        appeared[tid] = appeared[before[tid]] if tid in before else first[tid][0]
     return appeared, follows
 
 

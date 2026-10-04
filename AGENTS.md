@@ -297,9 +297,14 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   through the app's native pipeline by default (--python: the old one).
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
-  Rust prototype in `python/model/rust/` becomes the start of the core's detector); with a stats file, the flick paths
-  and the count of flicks measured could gain from the video-alone finder's repairs (matching.rs `Paths`: a false camera
-  turn at a kill, a target merged with the next): untested; measure on the stats-file runs (Smoothbot Switch Robots:
-  41 flicks for 54 kills); the video-alone benchmark has only 8 switching runs
+  Rust prototype in `python/model/rust/` becomes the start of the core's detector); with a stats file, flicks lost to
+  the tracks: `appearances` now joins a target's pieces by its own speed too (a target that moves on its own, as Bounce
+  180's spheres, got a new track every frame or two), and a kill's target may be its blob's radius plus 0.25 degrees
+  from the crosshair (a big target hit at its rim), so Bounce 180 Sparky Jumbo went from 100 of 107 kills and 87 flicks
+  to 107 and 105, Falling Targets from 51 of 54 and 50 to 54 and 54; left: Smoothbot Switch Robots (43 flicks for 54
+  kills) needs detector work, since its robots are found in pieces (torso, legs, health bars) on a fraction of the
+  frames; and review.py's `_attach_kills` reads `last` from the last track it looked at, not the chosen one (kept in
+  matching.rs for parity; before this fix the chosen one lost 2 Smoothbot flicks); the video-alone benchmark has only
+  8 switching runs
   (VT DriftTS breaks into many tracks);
   python/model/infer.py still uses the fixed threshold, not the model's settings file (the `--python` path).

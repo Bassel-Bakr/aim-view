@@ -108,8 +108,24 @@ fn turned(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
     cum
 }
 
+/// A target's speed (degrees a frame) where its points `p` end, at frame `e`, over its last 3 frames: over the world
+/// (the camera's turn taken out) and on screen. Zero for both with fewer than 2 points in those frames.
+fn own_speed(p: &BTreeMap<i64, (f64, f64)>, e: i64, cum: &[(f64, f64)]) -> ((f64, f64), (f64, f64)) {
+    let mut w = p.range(e - 3..=e);
+    let (Some((&i0, &(x0, y0))), Some(_)) = (w.next(), w.next()) else { return ((0.0, 0.0), (0.0, 0.0)) };
+    let (x1, y1) = p[&e];
+    let k = (e - i0) as f64;
+    let (c0, c1) = (cum[i0 as usize], cum[e as usize]);
+    ((((x1 - c1.0) - (x0 - c0.0)) / k, ((y1 - c1.1) - (y0 - c0.1)) / k), ((x1 - x0) / k, (y1 - y0) / k))
+}
+
 /// A track that starts within `gap` seconds of another's end, within `radius` degrees of where that one would be now
-/// (its last place moved by the camera's turn since), continues it.
+/// (its last place moved by the camera's turn since), continues it. Then a track still left alone continues one that
+/// ended up to 3 frames before it starts (or up to 2 after), within `radius` degrees of where that one would be by its
+/// own speed over its last 3 frames, over the world or on screen (with the tracks it continues when it has 3 points or
+/// fewer): a target that moves on its own (Bounce 180's spheres) and fools the camera's turn gets a new track every
+/// frame or two. Not on a crosshair spot (`crosshair_spots`, within 0.2 degrees), where the detector marks the
+/// crosshair every frame.
 pub fn appearances(tracks: &Tracks, gap: f64, radius: f64) -> Appearances {
     let cum = turned(&tracks.frames);
     let mut first: HashMap<u32, (i64, f64, f64)> = HashMap::new();
@@ -131,16 +147,15 @@ pub fn appearances(tracks: &Tracks, gap: f64, radius: f64) -> Appearances {
     }
     let mut starts = order.clone();
     starts.sort_by_key(|t| first[t].0);
-    let mut appeared: HashMap<u32, i64> = HashMap::new();
-    let mut out = Appearances { appeared: Vec::new(), follows: HashMap::new() };
-    for tid in starts {
+    let mut follows: HashMap<u32, u32> = HashMap::new();
+    for &tid in &starts {
         let (s0, qx, qy) = first[&tid];
         let mut best: Option<(f64, u32)> = None;
         // up to 2 frames of overlap: a hit target flashes and is picked up again while its old track still has a
         // frame or two
         for e in (s0 - g).max(0)..s0 + 3 {
             for &prev in ending.get(&e).map(Vec::as_slice).unwrap_or_default() {
-                if out.follows.contains_key(&prev) || prev == tid || first[&prev].0 >= s0 {
+                if follows.contains_key(&prev) || prev == tid || first[&prev].0 >= s0 {
                     continue;
                 }
                 let (_, x, y) = last[&prev];
@@ -151,13 +166,68 @@ pub fn appearances(tracks: &Tracks, gap: f64, radius: f64) -> Appearances {
                 }
             }
         }
-        let at = match best {
-            Some((_, prev)) => {
-                out.follows.insert(prev, tid);
-                appeared[&prev]
+        if let Some((_, prev)) = best {
+            follows.insert(prev, tid);
+        }
+    }
+    let mut before: HashMap<u32, u32> = follows.iter().map(|(&k, &v)| (v, k)).collect();
+    let spots = crosshair_spots(&tracks.frames);
+    let on_spot = |x: f64, y: f64| spots.iter().any(|&(a, b)| hypot(x - a, y - b) < 0.2);
+    let points = TrackIndex::new(&tracks.frames).points;
+    for &tid in &starts {
+        let (s0, qx, qy) = first[&tid];
+        if before.contains_key(&tid) || on_spot(qx, qy) {
+            continue;
+        }
+        let mut best: Option<(f64, u32)> = None;
+        for e in (s0 - 3).max(0)..s0 + 3 {
+            for &prev in ending.get(&e).map(Vec::as_slice).unwrap_or_default() {
+                if follows.contains_key(&prev) || prev == tid || first[&prev].0 >= s0 {
+                    continue;
+                }
+                let (_, x, y) = last[&prev];
+                if on_spot(x, y) {
+                    continue;
+                }
+                // a short piece: its speed with the tracks it continues
+                let own = &points[&prev];
+                let joined: BTreeMap<i64, (f64, f64)>;
+                let mut p = own;
+                if own.len() <= 3 && before.contains_key(&prev) {
+                    let mut all = own.clone();
+                    let mut c = prev;
+                    while let Some(&b) = before.get(&c) {
+                        if all.len() > 3 {
+                            break;
+                        }
+                        c = b;
+                        for (&i, &q) in &points[&c] {
+                            all.entry(i).or_insert(q);
+                        }
+                    }
+                    joined = all;
+                    p = &joined;
+                }
+                let ((vx, vy), (sx, sy)) = own_speed(p, e, &cum);
+                let n = (s0 - e) as f64;
+                let (a, b) = (cum[s0 as usize], cum[e as usize]);
+                for (px, py) in [(x + a.0 - b.0 + vx * n, y + a.1 - b.1 + vy * n), (x + sx * n, y + sy * n)] {
+                    let d = hypot(qx - px, qy - py);
+                    if d < radius && best.is_none_or(|(bd, _)| d < bd) {
+                        best = Some((d, prev));
+                    }
+                }
             }
-            None => s0,
-        };
+        }
+        if let Some((_, prev)) = best {
+            follows.insert(prev, tid);
+            before.insert(tid, prev);
+        }
+    }
+    let mut appeared: HashMap<u32, i64> = HashMap::new();
+    let mut out = Appearances { appeared: Vec::with_capacity(starts.len()), follows };
+    for tid in starts {
+        let at = before.get(&tid).map_or(first[&tid].0, |b| appeared[b]);
         appeared.insert(tid, at);
         out.appeared.push((tid, at));
     }
@@ -386,7 +456,11 @@ impl Kills<'_> {
                 .unwrap()
                 .0;
                 let d = hypot(p[&last].0, p[&last].1);
-                if d > 1.5 {
+                // a big target can be hit at its rim, its center farther off: up to its blob's radius and 0.25
+                // degrees more
+                let a = index.areas[&tid][p.range(..last).count()] as f64;
+                let r = crate::geometry::degrees((a / std::f64::consts::PI).sqrt() / crate::geometry::K);
+                if d > 1.5f64.max(r + 0.25) {
                     continue;
                 }
                 let cost = d
@@ -939,5 +1013,25 @@ mod tests {
             f.push((shift, t));
         }
         assert_eq!(kill_frames(&tracks(f)), vec![20, 45]);
+    }
+
+    #[test]
+    fn a_target_that_outruns_the_camera_turn_is_one_track() {
+        // the frames' turn is 0, but the target moves 1.3 degrees a frame on its own: one track for 5 frames, then a
+        // new track every frame, too far for the camera's turn alone (1 degree), each where the target's speed takes it
+        let f = (0..12usize).map(|i| ((0.0, 0.0), vec![(i.max(4) as u32 - 3, -13.0 + 1.3 * i as f64, 0.5)])).collect();
+        assert_eq!(appearances(&tracks(f), 0.5, 1.0).follows, (1..=7).map(|t| (t, t + 1)).collect());
+    }
+
+    #[test]
+    fn a_big_target_hit_at_its_rim_is_the_killed_one() {
+        // the kill on frame 10, the target 1.8 degrees off: too far for a small blob, not for one 2 degrees in radius
+        for (area, matched) in [(40, 0), (1000, 1)] {
+            let frames = (0..20)
+                .map(|i| TrackFrame { i, shift: (0.0, 0.0), t: vec![(1, 1.8, 0.0)], a: vec![area], wh: None, s: None })
+                .collect();
+            let t = Tracks { fps: 60.0, frames, version: 0 };
+            assert_eq!(match_times(&t, &[10.0 / 60.0], &[1], 0.25, Some(0.0)).0.len(), matched);
+        }
     }
 }

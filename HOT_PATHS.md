@@ -34,7 +34,7 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 | Stage | Where | Cost | Notes |
 | --- | --- | --- | --- |
 | Link: the view shift | src/track.rs `view_shift` (in `link`, from `Tracker::finish`) | a sorted sweep (survey): 2007_1w6ts_aimlab 20 ms, 10 Sphere Hipfire 24 to 27 ms, av1 1.4 to 2.1 ms; before it, all pairs: 118 to 122, 46 to 49 and 1.2 to 1.6 ms | each pairing is compared only with those within 0.36 degrees in x (a binary search in the pairings sorted by x); grows with clutter |
-| Matching | src/matching.rs `match_times` | 9 ms on av1 before `clock_offset`'s binary search (survey) | `clock_offset`: 40 x 40 offsets, a nearest end per kill by binary search, 1.8 to 2.0 ms on av1 (4 to 5 ms with the linear search before) |
+| Matching | src/matching.rs `match_times` | 9 ms on av1 before `clock_offset`'s binary search (survey); 7.0 ms on av1 with 60 kills after `appearances`' second pass | `clock_offset`: 40 x 40 offsets, a nearest end per kill by binary search, 1.8 to 2.0 ms on av1 (4 to 5 ms with the linear search before). `appearances` (also once more for the report's `appeared`): 3.0 ms on av1, 3.2 on 10 Sphere Hipfire, 6.1 on Bounce 180, 11.1 on Smoothbot Switch Robots; its first pass alone 1.4, 0.5, 4.0 and 7.7 ms |
 | HUD layout median | src/hud.rs, the per-pixel median over the key frames | 17 ms (survey) | a 256-bin histogram measured 11.6 ms |
 | Camera's excluded pixels | src/camera.rs `excluded` | 4 to 7 ms (survey) | |
 | HUD layout and finish | src/hud.rs `HudWatch`: the layout at the first frame, `finish` | 20 to 40 ms each | |
