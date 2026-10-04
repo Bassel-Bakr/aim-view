@@ -149,7 +149,9 @@ impl Frames {
         if let Some(frames) = count {
             command.args(["-frames:v", &frames.to_string()]);
         }
-        Frames::spawn(command.args(["-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]))
+        // every decoded frame as it is: the raw video muxer's default would make the rate constant, doubling the first
+        // frame of a video whose first frame is not at 0 (OBS's H.264 with B-frames starts one frame in)
+        Frames::spawn(command.args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]))
     }
 
     fn spawn(command: &mut Command) -> Result<Frames, String> {
