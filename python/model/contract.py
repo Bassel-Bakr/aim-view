@@ -22,9 +22,9 @@ compares it with full_v3's results on the same data (the limits and their reason
                    place; that is the wall, not the screen, and the acceptance checks judge it.)
   boxes_per_frame  at most 50 boxes in a frame on those recordings: link() compares every pair of boxes in two frames,
                    up to 2,500.
-  box_fit          the boxes fit the targets: centre error (px), and width and height against the val labels (the
+  box_fit          the boxes fit the targets: center error (px), and width and height against the val labels (the
                    target's area, pi/4 x w x h, gives the review's target radius; the box, its on-target test in
-                   tracking); centre error against the held-out hand labels (the user's clicks: true ground truth).
+                   tracking); center error against the held-out hand labels (the user's clicks: true ground truth).
   one_box          one box per target: second boxes inside a found target's box (a capsule cut in two), per target.
   under_crosshair  a target under the crosshair is still found (the review keeps every box within 2 degrees of it,
                    whatever it scores, but only if it is over the threshold): kill-moment labels on the fixed map.
@@ -65,10 +65,26 @@ CACHE = Path("test_out/vod_model/contract")          # camera readings, fixed ma
 HAND = ("test_out/vod_model/hand_data", "test_out/vod_model/hand_data2")   # their test splits: no model trained on them
 KILLS = "data_kills4"                                # the kill-moment crops, among calibrate.VAL
 TURN = 0.5                                           # degrees the room moves between two frames for a turning pair
-NEAR = 24                                            # px from the crosshair's centre where its fixed-map parts start
+NEAR = 24                                            # px from the crosshair's center where its fixed-map parts start
 MAX_BOXES = 50                                       # link(): 2,500 pairings at most
 BANDS = (0.4, 0.5, 0.6, 0.7, 0.8)                    # the calibration's bands over the threshold (and 1.0)
 DRAWS = 400                                          # draws of the val scenarios for full_v3's spread
+SETTINGS_FORMAT = 1
+MAP_AXES, MAP_COLUMNS = 2, 2                         # a score map: a table of [raw, mapped] points
+MIN_MAP_POINTS = 2
+RGB_AXES, FIXED_AXES = 4, 3                          # the inputs: (n, h, w, 3) and (n, h, w)
+SHIFT_PX = 37                                        # the batch's other frames: the frame rolled by multiples of this
+CELL_PX = 4                                          # the score map's cells
+SAMPLE_CELLS = (180, 320)                            # a 720 x 1280 frame's cells
+BATCH_FRAMES = 4                                     # frames the service and the browser send at once
+SAME_OUTPUT = 1e-4                                   # a frame in a batch gives what it gives alone, within this
+FIXED_DIFF, FIXED_SHARE = 30, 0.8                    # the fixed map's rule, as the training crops were made
+CROSSHAIR_DOT_PX = 3                                 # the disc at the crosshair's center the area always holds
+GROW_PX = 2                                          # the crosshair area and the HUD grown by this
+EXAMPLES = 5                                         # screen-fixed examples kept per recording
+CROP_PX = 256
+TINY = 1e-9
+HASH_CHARS = 10
 
 
 def recordings():
@@ -78,36 +94,40 @@ def recordings():
     return list(eval_moving.STATIC)
 
 
+def video_key(video):
+    return hashlib.md5(str(video).encode()).hexdigest()[:HASH_CHARS]
+
+
 # ---- the model with its settings -------------------------------------------------------------------------------------
 def load_settings(model, given=None):
     """The model's settings: the file given, else exports/detector_<name>.json beside its export, else what
     calibrate.py gives (marked as such)."""
     name = calibrate.model_name(model)
-    p = Path(given) if given else calibrate.u8in_of(model).parent / f"detector_{name}.json"
-    if p.is_file():
-        s = json.loads(p.read_text())
-        return s.get("settings", s), str(p)                # a calibration report holds them under "settings"
+    path = Path(given) if given else calibrate.u8in_of(model).parent / f"detector_{name}.json"
+    if path.is_file():
+        saved = json.loads(path.read_text())
+        return saved.get("settings", saved), str(path)     # a calibration report holds them under "settings"
     return calibrate.calibrate(model)[0], "calibrate.py (no settings file yet)"
 
 
-def settings_problems(s, name):
+def settings_problems(settings, name):
     """What the pipeline would refuse in a settings file (src/model.rs, MODEL_FILE.md), or a wrong name or reference."""
     bad = []
-    if s.get("format") != 1:
+    if settings.get("format") != SETTINGS_FORMAT:
         bad.append("format is not 1")
-    if s.get("name") != name:
-        bad.append(f"name {s.get('name')!r} is not {name!r}")
-    if s.get("reference") != infer.BEST:
-        bad.append(f"reference {s.get('reference')!r} is not {infer.BEST!r}")
-    t = s.get("threshold")
-    if not isinstance(t, (int, float)) or not 0 <= t <= 1:
+    if settings.get("name") != name:
+        bad.append(f"name {settings.get('name')!r} is not {name!r}")
+    if settings.get("reference") != infer.BEST:
+        bad.append(f"reference {settings.get('reference')!r} is not {infer.BEST!r}")
+    threshold = settings.get("threshold")
+    if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
         bad.append("threshold is not a number from 0 to 1")
-    m = s.get("score_map")
-    if m is not None:
-        a = np.array(m, np.float64) if isinstance(m, list) else np.zeros((0, 0))
-        if a.ndim != 2 or a.shape[0] < 2 or a.shape[1] != 2:
+    score_map = settings.get("score_map")
+    if score_map is not None:
+        points = np.array(score_map, np.float64) if isinstance(score_map, list) else np.zeros((0, 0))
+        if points.ndim != MAP_AXES or points.shape[0] < MIN_MAP_POINTS or points.shape[1] != MAP_COLUMNS:
             bad.append("score_map is not 2 or more [raw, mapped] points")
-        elif (a < 0).any() or (a > 1).any() or (np.diff(a, axis=0) <= 0).any():
+        elif (points < 0).any() or (points > 1).any() or (np.diff(points, axis=0) <= 0).any():
             bad.append("score_map has a value outside 0 to 1, or a raw or mapped value that does not rise")
     return bad
 
@@ -115,152 +135,209 @@ def settings_problems(s, name):
 class Model:
     """The _u8in export with its settings: boxes (cx, cy, w, h, mapped score) over the threshold."""
 
-    def __init__(self, model, s):
+    def __init__(self, model, settings):
         self.path = calibrate.u8in_of(model)
-        self.sess = calibrate.session(self.path)
-        self.thr, self.map = float(s["threshold"]), s["score_map"]
+        self.session = calibrate.session(self.path)
+        self.threshold, self.score_map = float(settings["threshold"]), settings["score_map"]
 
-    def mapped(self, d, thr=None):
-        """Peaks with their scores mapped, over the threshold (or `thr`)."""
-        d = d.copy()
-        d[:, 4] = calibrate.apply_map(self.map, d[:, 4]).astype(np.float32)
-        return d[d[:, 4] > (self.thr if thr is None else thr)]
+    def mapped(self, peaks, threshold=None):
+        """Peaks with their scores mapped, over the threshold (or `threshold`)."""
+        peaks = peaks.copy()
+        peaks[:, 4] = calibrate.apply_map(self.score_map, peaks[:, 4]).astype(np.float32)
+        return peaks[peaks[:, 4] > (self.threshold if threshold is None else threshold)]
 
     def raw(self, rgb, fixed):
         """rgb (n, 720, 1280, 3) uint8 and one fixed map (720, 1280) -> per frame, its peaks over calibrate.FLOOR with
         their raw scores."""
-        if len(rgb) > 1 and self.sess.get_inputs()[0].shape[0] == 1:      # an export traced for one frame
-            return [d for f in rgb for d in self.raw(f[None], fixed)]
-        n = len(rgb)
-        score, reg = self.sess.run(None, {"rgb": rgb, "fixed": np.broadcast_to(fixed, (n, *fixed.shape)).copy()})
-        return [infer.decode_np(score[k:k + 1], reg[k:k + 1], calibrate.FLOOR) for k in range(n)]
+        if len(rgb) > 1 and self.session.get_inputs()[0].shape[0] == 1:    # an export traced for one frame
+            return [peaks for frame in rgb for peaks in self.raw(frame[None], fixed)]
+        count = len(rgb)
+        score, reg = self.session.run(None, {"rgb": rgb,
+                                             "fixed": np.broadcast_to(fixed, (count, *fixed.shape)).copy()})
+        return [infer.decode_np(score[k:k + 1], reg[k:k + 1], calibrate.FLOOR) for k in range(count)]
 
-    def crops(self, scored, thr=None):
-        """A calibrate.Scored's crops with the mapped scores, only the boxes over the threshold (or `thr`), as a new
-        Scored."""
-        return calibrate.Scored([self.mapped(d, thr) for d in scored.dets], scored.gts, scored.files)
+    def crops(self, scored, threshold=None):
+        """A calibrate.Scored's crops with the mapped scores, only the boxes over the threshold (or `threshold`), as a
+        new Scored."""
+        return calibrate.Scored([self.mapped(peaks, threshold) for peaks in scored.dets], scored.gts, scored.files)
 
 
 # ---- 1. the export's form -------------------------------------------------------------------------------------------
-def check_export(m, s, name):
-    sess = m.sess
-    ins = {i.name: i for i in sess.get_inputs()}
-    outs = {o.name: o for o in sess.get_outputs()}
-    bad = settings_problems(s, name)
-    if set(ins) != {"rgb", "fixed"} or set(outs) != {"score", "reg"}:
-        bad.append(f"inputs {sorted(ins)} and outputs {sorted(outs)}: want rgb, fixed and score, reg")
-        return dict(passed=False, problems=bad)
-    if ins["rgb"].type != "tensor(uint8)" or ins["fixed"].type != "tensor(uint8)" or len(ins["rgb"].shape) != 4 \
-            or len(ins["fixed"].shape) != 3:
+def form_problems(inputs, outputs):
+    """What is wrong with the export's inputs and outputs, and whether checking further makes sense."""
+    if set(inputs) != {"rgb", "fixed"} or set(outputs) != {"score", "reg"}:
+        return [f"inputs {sorted(inputs)} and outputs {sorted(outputs)}: want rgb, fixed and score, reg"], False
+    bad = []
+    if inputs["rgb"].type != "tensor(uint8)" or inputs["fixed"].type != "tensor(uint8)" \
+            or len(inputs["rgb"].shape) != RGB_AXES or len(inputs["fixed"].shape) != FIXED_AXES:
         bad.append("rgb and fixed are not uint8 (n, h, w, 3) and (n, h, w)")
-    if isinstance(ins["rgb"].shape[0], int):
-        bad.append(f"the batch axis is fixed at {ins['rgb'].shape[0]} (export.py --u8in gives a free one)")
-    import bench
-    rgb, fixed = bench.sample()                            # a real 1280 x 720 KovOBS frame
-    score, reg = sess.run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
-    if score.shape != (1, 1, 180, 320) or reg.shape != (1, 4, 180, 320):
+    if isinstance(inputs["rgb"].shape[0], int):
+        bad.append(f"the batch axis is fixed at {inputs['rgb'].shape[0]} (export.py --u8in gives a free one)")
+    return bad, True
+
+
+def output_problems(score, reg):
+    """What is wrong with the outputs for a real frame: their shape, their range, and cells that are not peaks."""
+    bad = []
+    rows, columns = SAMPLE_CELLS
+    if score.shape != (1, 1, rows, columns) or reg.shape != (1, 4, rows, columns):
         bad.append(f"outputs {score.shape} and {reg.shape} for a 720 x 1280 frame: want cells of 4 px")
     if not (np.isfinite(score).all() and np.isfinite(reg).all()) or score.min() < 0 or score.max() > 1:
         bad.append("scores outside 0 to 1, or values that are not finite")
-    s0 = score[0, 0]
-    pad = np.pad(s0, 1)
-    around = np.max([pad[1 + dy:181 + dy, 1 + dx:321 + dx] for dy in (-1, 0, 1) for dx in (-1, 0, 1)], axis=0)
-    if ((s0 > 0) & (s0 < around)).any():
+    cells = score[0, 0]
+    padded = np.pad(cells, 1)
+    around = np.max([padded[1 + dy:rows + 1 + dy, 1 + dx:columns + 1 + dx] for dy in (-1, 0, 1) for dx in (-1, 0, 1)],
+                    axis=0)
+    if ((cells > 0) & (cells < around)).any():
         bad.append("the score map holds cells that are not peaks (the 3 x 3 peak finding is not in the graph)")
+    return bad
+
+
+def batch_difference(session, rgb, fixed, score, reg):
+    """The largest difference between a frame alone and the same frame second in a batch of 4 (others different)."""
+    four = np.stack([np.roll(rgb, SHIFT_PX * k, axis=1) if k != 1 else rgb for k in range(BATCH_FRAMES)])
+    batch_score, batch_reg = session.run(None, {"rgb": four, "fixed": np.repeat(fixed[None].astype(np.uint8),
+                                                                                 BATCH_FRAMES, axis=0)})
+    return float(max(np.abs(batch_score[1] - score[0]).max(), np.abs(batch_reg[1] - reg[0]).max()))
+
+
+def fixed_map_rule():
+    """The fixed map's rule as the core and old_review.py make it."""
+    source = (ROOT / "src" / "fixed.rs").read_text(encoding="utf-8")
+    diff = re.search(r"pub const DIFF: f32 = ([\d.]+);", source)
+    share = re.search(r"pub const SHARE: f64 = ([\d.]+);", source)
+    return dict(core_diff=float(diff[1]) if diff else None, core_share=float(share[1]) if share else None,
+                python_diff=old_review.DIFF)
+
+
+def check_export(model, settings, name):
+    session = model.session
+    inputs = {node.name: node for node in session.get_inputs()}
+    outputs = {node.name: node for node in session.get_outputs()}
+    bad = settings_problems(settings, name)
+    problems, go_on = form_problems(inputs, outputs)
+    bad += problems
+    if not go_on:
+        return dict(passed=False, problems=bad)
+    import bench
+    rgb, fixed = bench.sample()                            # a real 1280 x 720 KovOBS frame
+    score, reg = session.run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
+    bad += output_problems(score, reg)
     batch = None
-    if not isinstance(ins["rgb"].shape[0], int):
-        four = np.stack([np.roll(rgb, 37 * k, axis=1) if k != 1 else rgb for k in range(4)])
-        sb, rb = sess.run(None, {"rgb": four, "fixed": np.repeat(fixed[None].astype(np.uint8), 4, axis=0)})
-        batch = float(max(np.abs(sb[1] - score[0]).max(), np.abs(rb[1] - reg[0]).max()))
-        if batch > 1e-4:
+    if not isinstance(inputs["rgb"].shape[0], int):
+        batch = batch_difference(session, rgb, fixed, score, reg)
+        if batch > SAME_OUTPUT:
             bad.append(f"a frame in a batch of 4 differs from the same frame alone by {batch:.1e}")
-    src = (ROOT / "src" / "fixed.rs").read_text(encoding="utf-8")
-    diff = re.search(r"pub const DIFF: f32 = ([\d.]+);", src)
-    share = re.search(r"pub const SHARE: f64 = ([\d.]+);", src)
-    fixed_map = dict(core_diff=float(diff[1]) if diff else None, core_share=float(share[1]) if share else None,
-                     python_diff=old_review.DIFF)
-    if fixed_map["core_diff"] != 30 or fixed_map["core_share"] != 0.8 or old_review.DIFF != 30:
+    fixed_map = fixed_map_rule()
+    if fixed_map["core_diff"] != FIXED_DIFF or fixed_map["core_share"] != FIXED_SHARE or old_review.DIFF != FIXED_DIFF:
         bad.append(f"the fixed map is not made as the training crops' was (DIFF 30, SHARE 0.8): {fixed_map}")
     return dict(passed=not bad, problems=bad, batch_of_4_largest_difference=batch, fixed_map=fixed_map,
-                peaks_on_sample_frame=int((s0 > m.thr).sum()))
+                peaks_on_sample_frame=int((score[0, 0] > model.threshold).sum()))
 
 
 # ---- 2 to 4. recordings: the crosshair, other screen-fixed boxes, boxes per frame -----------------------------------
 def camera(video):
     """The recording's fixed map (old_review.fixed_map) and the room's move on screen per frame (old_review.camera_motion,
     degrees; NaN where it has no reading), cached in test_out/vod_model/contract/."""
-    st = Path(video).stat()
-    p = CACHE / f"{hashlib.md5(str(video).encode()).hexdigest()[:10]}.npz"
-    if p.is_file():
-        z = np.load(p)
-        if int(z["size"]) == st.st_size and float(z["mtime"]) == st.st_mtime:
-            return z["fixed"], z["room"]
+    stat = Path(video).stat()
+    path = CACHE / f"{video_key(video)}.npz"
+    if path.is_file():
+        cached = np.load(path)
+        if int(cached["size"]) == stat.st_size and float(cached["mtime"]) == stat.st_mtime:
+            return cached["fixed"], cached["room"]
     fixed = old_review.fixed_map(list(old_review._frames(video, keyframes=True)))
-    cam = old_review.camera_motion(video, [], mask=old_review.MASK, fixed=fixed)
-    room = np.array([(c[0], c[1]) if c else (np.nan, np.nan) for c in cam], np.float64).reshape(-1, 2)
+    turns = old_review.camera_motion(video, [], mask=old_review.MASK, fixed=fixed)
+    room = np.array([(turn[0], turn[1]) if turn else (np.nan, np.nan) for turn in turns], np.float64).reshape(-1, 2)
     CACHE.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(p, fixed=fixed, room=room, size=st.st_size, mtime=st.st_mtime)
+    np.savez_compressed(path, fixed=fixed, room=room, size=stat.st_size, mtime=stat.st_mtime)
     return fixed, room
 
 
 def crosshair_area(fixed):
-    """Where the crosshair is: the fixed map's parts within NEAR px of the crosshair's centre, whole, grown by 2 px,
-    and a disc of 3 px at the centre (in case the fixed map misses a dot)."""
-    lab, _ = ndimage.label(fixed)
+    """Where the crosshair is: the fixed map's parts within NEAR px of the crosshair's center, whole, grown by 2 px,
+    and a disc of 3 px at the center (in case the fixed map misses a dot)."""
+    parts, _ = ndimage.label(fixed)
     cx, cy = int(round(old_review.CX)), int(round(old_review.CY))
-    ids = np.unique(lab[cy - NEAR:cy + NEAR + 1, cx - NEAR:cx + NEAR + 1])
-    area = np.isin(lab, ids[ids > 0])
+    ids = np.unique(parts[cy - NEAR:cy + NEAR + 1, cx - NEAR:cx + NEAR + 1])
+    area = np.isin(parts, ids[ids > 0])
     yy, xx = np.mgrid[0:old_review.H, 0:old_review.W]
-    return ndimage.binary_dilation(area, iterations=2) | ((xx - old_review.CX) ** 2 + (yy - old_review.CY) ** 2 <= 9)
+    return ndimage.binary_dilation(area, iterations=GROW_PX) | \
+        ((xx - old_review.CX) ** 2 + (yy - old_review.CY) ** 2 <= CROSSHAIR_DOT_PX ** 2)
 
 
-def peaks_on(m, video, need, batch=4):
+def peaks_on(model, video, need, batch=4):
     """The model's raw peaks on the frames `need` of a recording, cached in test_out/vod_model/contract/ per export
     (its size and time) and recording."""
-    st, ex = Path(video).stat(), m.path.stat()
-    p = CACHE / f"peaks_{m.path.stem}_{hashlib.md5(str(video).encode()).hexdigest()[:10]}.npz"
-    key = np.array([st.st_size, st.st_mtime, ex.st_size, ex.st_mtime])
-    if p.is_file():
-        z = np.load(p)
-        if np.array_equal(z["key"], key) and need <= set(z["frames"].tolist()):
-            rows = z["rows"]
-            return {int(i): rows[rows[:, 0] == i, 1:] for i in z["frames"]}
-    dets, buf, idx = {}, [], []
+    stat, export = Path(video).stat(), model.path.stat()
+    path = CACHE / f"peaks_{model.path.stem}_{video_key(video)}.npz"
+    key = np.array([stat.st_size, stat.st_mtime, export.st_size, export.st_mtime])
+    if path.is_file():
+        cached = np.load(path)
+        if np.array_equal(cached["key"], key) and need <= set(cached["frames"].tolist()):
+            rows = cached["rows"]
+            return {int(i): rows[rows[:, 0] == i, 1:] for i in cached["frames"]}
+    peaks, frames, numbers = {}, [], []
     fixed = camera(video)[0].astype(np.uint8)
-    for i, f in enumerate(old_review.rgb_frames(video)):
+    for i, frame in enumerate(old_review.rgb_frames(video)):
         if i in need:
-            buf.append(f)
-            idx.append(i)
-        if len(buf) == batch:
-            dets.update(zip(idx, m.raw(np.stack(buf), fixed)))
-            buf, idx = [], []
-    if buf:
-        dets.update(zip(idx, m.raw(np.stack(buf), fixed)))
-    rows = np.concatenate([np.c_[np.full(len(d), i), d] for i, d in dets.items()] + [np.zeros((0, 6))])
+            frames.append(frame)
+            numbers.append(i)
+        if len(frames) == batch:
+            peaks.update(zip(numbers, model.raw(np.stack(frames), fixed)))
+            frames, numbers = [], []
+    if frames:
+        peaks.update(zip(numbers, model.raw(np.stack(frames), fixed)))
+    rows = np.concatenate([np.c_[np.full(len(found), i), found] for i, found in peaks.items()] + [np.zeros((0, 6))])
     CACHE.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(p, key=key, frames=np.array(sorted(dets)), rows=rows)
-    return dets
+    np.savez_compressed(path, key=key, frames=np.array(sorted(peaks)), rows=rows)
+    return peaks
 
 
 def moved_with_room(prev, room):
     """Where the boxes of the frame before would be now if they were static targets: moved by the room's turn."""
-    out = [old_review.to_px(*(np.array(old_review.to_deg(float(b[0]), float(b[1]))) + room)) for b in prev]
+    out = [old_review.to_px(*(np.array(old_review.to_deg(float(box[0]), float(box[1]))) + room)) for box in prev]
     return np.array(out, np.float64).reshape(-1, 2)
 
 
-def recording(m, video):
-    fixed, room = camera(video)
-    deg = np.hypot(room[:, 0], room[:, 1])
-    # a turn, not a one-frame jump in the reading (a shot's flash can give one): half as much either side
-    pairs = [i for i in range(1, len(deg) - 1) if deg[i] >= TURN and deg[i - 1] >= TURN / 2 and deg[i + 1] >= TURN / 2]
-    raw = peaks_on(m, video, set(pairs) | {i - 1 for i in pairs})
-    cross = crosshair_area(fixed)
-    hud = ndimage.binary_dilation(fixed, iterations=2) & ~cross     # the fixed map's other parts: HUD, overlay
+def on(mask, box):
+    """Whether a box's center is on a frame mask (clamped into the frame)."""
+    return bool(mask[min(old_review.H - 1, int(box[1])), min(old_review.W - 1, int(box[0]))])
 
-    def boxes(i):                                      # over the threshold, centre where the review reads (KovOBS's
-        d = m.mapped(raw[i])                           # layout)
-        return d[[bool(old_review.MASK[min(old_review.H - 1, max(0, int(b[1]))), min(old_review.W - 1, max(0, int(b[0])))])
-                  for b in d]] if len(d) else d
+
+def fixed_boxes(now, prev, room_turn):
+    """Per box of a frame: whether it stayed put (moved under half the room's move on screen) and no static target of
+    the frame before lands there with the room's turn."""
+    x, y = old_review.to_px(*room_turn)
+    tolerance = math.hypot(x - old_review.CX, y - old_review.CY) / 2     # half the room's move on screen
+    moved = moved_with_room(prev, room_turn)
+    out = []
+    for box in now:
+        stay = len(prev) and np.hypot(prev[:, 0] - box[0], prev[:, 1] - box[1]).min() < tolerance
+        static = len(prev) and np.hypot(moved[:, 0] - box[0], moved[:, 1] - box[1]).min() < tolerance
+        out.append(bool(stay and not static))
+    return out
+
+
+def turning_pairs(room):
+    """The frames where the room turned TURN degrees or more since the frame before, and at least half that either
+    side (a one-frame jump in the reading is a shot's flash)."""
+    deg = np.hypot(room[:, 0], room[:, 1])
+    return deg, [i for i in range(1, len(deg) - 1)
+                 if deg[i] >= TURN and deg[i - 1] >= TURN / 2 and deg[i + 1] >= TURN / 2]
+
+
+def recording(model, video):
+    fixed, room = camera(video)
+    deg, pairs = turning_pairs(room)
+    raw = peaks_on(model, video, set(pairs) | {i - 1 for i in pairs})
+    cross = crosshair_area(fixed)
+    hud = ndimage.binary_dilation(fixed, iterations=GROW_PX) & ~cross   # the fixed map's other parts: HUD, overlay
+
+    def boxes(i):                                      # over the threshold, center where the review reads (KovOBS's
+        found = model.mapped(raw[i])                   # layout)
+        return found[[bool(old_review.MASK[min(old_review.H - 1, max(0, int(box[1]))),
+                                           min(old_review.W - 1, max(0, int(box[0])))]) for box in found]] \
+            if len(found) else found
 
     on_cross = elsewhere = any_cross = wrong = 0
     examples = []
@@ -268,150 +345,160 @@ def recording(m, video):
         now, prev = boxes(i), boxes(i - 1)
         if not len(now):
             continue
-        x, y = old_review.to_px(*room[i])
-        tol = math.hypot(x - old_review.CX, y - old_review.CY) / 2     # half the room's move on screen
-        moved = moved_with_room(prev, room[i])
-        fixed_box = []                                 # stayed put, and no static target of the frame before lands there
-        for b in now:
-            stay = len(prev) and np.hypot(prev[:, 0] - b[0], prev[:, 1] - b[1]).min() < tol
-            static = len(prev) and np.hypot(moved[:, 0] - b[0], moved[:, 1] - b[1]).min() < tol
-            fixed_box.append(bool(stay and not static))
-        at = [bool(cross[min(old_review.H - 1, int(b[1])), min(old_review.W - 1, int(b[0]))]) for b in now]
-        others = [f for f, a in zip(fixed_box, at) if not a]
+        stayed = fixed_boxes(now, prev, room[i])
+        at = [on(cross, box) for box in now]
+        others = [put for put, at_cross in zip(stayed, at) if not at_cross]
         if others and sum(others) > len(others) / 2:   # most targets stayed put: the camera's reading is wrong here
             wrong += 1
             continue
-        on_hud = [bool(hud[min(old_review.H - 1, int(b[1])), min(old_review.W - 1, int(b[0]))]) for b in now]
-        on_cross += any(f and a for f, a in zip(fixed_box, at))
-        elsewhere += any(f and h for f, h in zip(fixed_box, on_hud))
+        on_hud = [on(hud, box) for box in now]
+        on_cross += any(put and at_cross for put, at_cross in zip(stayed, at))
+        elsewhere += any(put and at_hud for put, at_hud in zip(stayed, on_hud))
         any_cross += any(at)
-        if any(f and (a or h) for f, a, h in zip(fixed_box, at, on_hud)) and len(examples) < 5:
-            examples.append(dict(frame=i, room_deg=[round(float(v), 3) for v in room[i]],
-                                 boxes=[[round(float(v), 2) for v in b] for b, f, a, h in zip(now, fixed_box, at, on_hud)
-                                        if f and (a or h)]))
+        screen_fixed = [put and (at_cross or at_hud) for put, at_cross, at_hud in zip(stayed, at, on_hud)]
+        if any(screen_fixed) and len(examples) < EXAMPLES:
+            examples.append(dict(frame=i, room_deg=[round(float(value), 3) for value in room[i]],
+                                 boxes=[[round(float(value), 2) for value in box]
+                                        for box, fixed_box in zip(now, screen_fixed) if fixed_box]))
     counts = np.array([len(boxes(i)) for i in raw])
-    n = len(pairs) - wrong
-    return dict(video=Path(video).name, frames=len(deg), turning_pairs=n, camera_contradicted=wrong,
+    turning = len(pairs) - wrong
+    return dict(video=Path(video).name, frames=len(deg), turning_pairs=turning, camera_contradicted=wrong,
                 crosshair_pixels=int(cross.sum()),
-                crosshair_pairs=on_cross, crosshair_share=round(on_cross / max(1, n), 4),
-                screen_fixed_pairs=elsewhere, screen_fixed_share=round(elsewhere / max(1, n), 4),
-                any_box_on_crosshair_share=round(any_cross / max(1, n), 4),
+                crosshair_pairs=on_cross, crosshair_share=round(on_cross / max(1, turning), 4),
+                screen_fixed_pairs=elsewhere, screen_fixed_share=round(elsewhere / max(1, turning), 4),
+                any_box_on_crosshair_share=round(any_cross / max(1, turning), 4),
                 boxes_max=int(counts.max()) if len(counts) else 0,
                 boxes_p99=float(np.percentile(counts, 99)) if len(counts) else 0.0, screen_fixed_examples=examples)
 
 
 # ---- 5 to 10. crops -------------------------------------------------------------------------------------------------
-# Each number can be weighted per crop (`cw`): a draw of the scenarios weights each crop by how often its scenario was
-# drawn, which gives full_v3's spread.
-def wq(v, w, p):
-    """The weighted p-th percentile of the values v (NaN left out)."""
-    ok = ~np.isnan(v) & (w > 0)
+# Each number can be weighted per crop (`crop_weight`): a draw of the scenarios weights each crop by how often its
+# scenario was drawn, which gives full_v3's spread.
+def weighted_percentile(values, weights, percentile):
+    """The weighted p-th percentile of the values (NaN left out)."""
+    ok = ~np.isnan(values) & (weights > 0)
     if not ok.any():
         return None
-    v, w = v[ok], w[ok]
-    o = np.argsort(v)
-    c = np.cumsum(w[o])
-    return float(v[o][min(len(v) - 1, np.searchsorted(c, p / 100 * c[-1]))])
+    values, weights = values[ok], weights[ok]
+    order = np.argsort(values)
+    cumulative = np.cumsum(weights[order])
+    return float(values[order][min(len(values) - 1, np.searchsorted(cumulative, percentile / 100 * cumulative[-1]))])
 
 
-def box_fit(sc, cw=None):
-    """Over the threshold, the boxes that took a label: centre error (px), IoU, and width and height over the
+def box_fit(scored, crop_weight=None):
+    """Over the threshold, the boxes that took a label: center error (px), IoU, and width and height over the
     label's."""
-    w = (np.ones(len(sc.dets)) if cw is None else cw)[sc.crop] * sc.hit
+    weights = (np.ones(len(scored.dets)) if crop_weight is None else crop_weight)[scored.crop] * scored.hit
 
-    def q(v, p):
-        x = wq(v, w, p)
-        return None if x is None else round(x, 4)
-    return dict(boxes=int(sc.hit.sum()), centre_error_median=q(sc.err, 50), centre_error_p90=q(sc.err, 90),
-                iou_median=q(sc.iou, 50), iou_p10=q(sc.iou, 10), width_ratio_median=q(sc.w_ratio, 50),
-                height_ratio_median=q(sc.h_ratio, 50))
+    def at(values, percentile):
+        value = weighted_percentile(values, weights, percentile)
+        return None if value is None else round(value, 4)
+    return dict(boxes=int(scored.hit.sum()), centre_error_median=at(scored.err, 50),
+                centre_error_p90=at(scored.err, 90), iou_median=at(scored.iou, 50), iou_p10=at(scored.iou, 10),
+                width_ratio_median=at(scored.w_ratio, 50), height_ratio_median=at(scored.h_ratio, 50))
 
 
-def per_crop(sc):
-    """Per crop: targets found, second boxes (boxes that took no label with their centre inside a label another box
+def under_crosshair(fixed_path, truth, took):
+    """On a kill-moment crop: its labels under the crosshair (touching the fixed map), and how many were found."""
+    fixed = np.load(fixed_path)["fixed"]
+    under = found = 0
+    for j, box in enumerate(truth):
+        x0, x1 = int(max(0, box[0] - box[2] / 2)), int(min(CROP_PX, math.ceil(box[0] + box[2] / 2)))
+        y0, y1 = int(max(0, box[1] - box[3] / 2)), int(min(CROP_PX, math.ceil(box[1] + box[3] / 2)))
+        if fixed[y0:y1, x0:x1].any():
+            under += 1
+            found += j in took
+    return under, found
+
+
+def per_crop(scored):
+    """Per crop: targets found, second boxes (boxes that took no label with their center inside a label another box
     took), and on the kill-moment crops the labels under the crosshair (touching the fixed map) and how many of those
     were found; and the crop's kind (KINDS)."""
-    found, extra, under, under_found = (np.zeros(len(sc.dets)) for _ in range(4))
-    for c, (d, g, f) in enumerate(zip(sc.dets, sc.gts, sc.files)):
-        took = calibrate.match(d, g)
-        found[c] = (took >= 0).sum()
-        taken = g[took[took >= 0]]
-        for b in d[took < 0]:
-            extra[c] += bool(len(taken) and ((np.abs(taken[:, 0] - b[0]) <= taken[:, 2] / 2) &
-                                             (np.abs(taken[:, 1] - b[1]) <= taken[:, 3] / 2)).any())
-        if KILLS in str(f) and len(g):
-            fixed = np.load(f)["fixed"]
-            for j, b in enumerate(g):
-                x0, x1 = int(max(0, b[0] - b[2] / 2)), int(min(256, math.ceil(b[0] + b[2] / 2)))
-                y0, y1 = int(max(0, b[1] - b[3] / 2)), int(min(256, math.ceil(b[1] + b[3] / 2)))
-                if fixed[y0:y1, x0:x1].any():
-                    under[c] += 1
-                    under_found[c] += j in took
+    found, extra, under, under_found = (np.zeros(len(scored.dets)) for _ in range(4))
+    for crop, (peaks, truth, file) in enumerate(zip(scored.dets, scored.gts, scored.files)):
+        took = calibrate.match(peaks, truth)
+        found[crop] = (took >= 0).sum()
+        taken = truth[took[took >= 0]]
+        for box in peaks[took < 0]:
+            extra[crop] += bool(len(taken) and ((np.abs(taken[:, 0] - box[0]) <= taken[:, 2] / 2) &
+                                                (np.abs(taken[:, 1] - box[1]) <= taken[:, 3] / 2)).any())
+        if KILLS in str(file) and len(truth):
+            labels_under, labels_found = under_crosshair(file, truth, took)
+            under[crop] += labels_under
+            under_found[crop] += labels_found
     return dict(found=found, extra=extra, under=under, under_found=under_found,
-                kind=np.array([1 if KILLS in str(f) else 2 if "moving" in str(f) else 0 for f in sc.files]))
+                kind=np.array([1 if KILLS in str(file) else 2 if "moving" in str(file) else 0 for file in scored.files]))
 
 
 KINDS = ("static", "kill_moments", "moving")
 
 
-def bands(thr):
-    return [thr] + [b for b in BANDS if b > thr] + [1.0]
+def bands(threshold):
+    return [threshold] + [band for band in BANDS if band > threshold] + [1.0]
 
 
-def crop_checks(sc, pc, edges, cw=None):
+def band_counts(scored, edges):
+    """The boxes scoring in each band (over its lower edge, up to its upper)."""
+    return [int(((scored.score > low) & (scored.score <= high)).sum()) for low, high in zip(edges[:-1], edges[1:])]
+
+
+def crop_checks(scored, per, edges, crop_weight=None):
     """The val numbers of the checks box_fit, one_box, under_crosshair, calibrated and targets_found."""
-    cw = np.ones(len(sc.dets)) if cw is None else cw
+    crop_weight = np.ones(len(scored.dets)) if crop_weight is None else crop_weight
 
     def ratio(a, b):
-        return float((cw * a).sum() / max(1e-9, (cw * b).sum()))
-    w = cw[sc.crop]
+        return float((crop_weight * a).sum() / max(TINY, (crop_weight * b).sum()))
+    weights = crop_weight[scored.crop]
     precision = []
-    for a, b in zip(edges[:-1], edges[1:]):
-        m = (sc.score > a) & (sc.score <= b)
-        precision.append(float((w * m * sc.hit).sum() / max(1e-9, (w * m).sum())))
-    return dict(box_fit=box_fit(sc, cw), one_box=ratio(pc["extra"], pc["found"]),
-                under_crosshair=ratio(pc["under_found"], pc["under"]), band_precision=precision,
-                recall_by_kind={k: ratio(pc["found"] * (pc["kind"] == i), sc.crop_labels * (pc["kind"] == i))
-                                for i, k in enumerate(KINDS)})
+    for low, high in zip(edges[:-1], edges[1:]):
+        in_band = (scored.score > low) & (scored.score <= high)
+        precision.append(float((weights * in_band * scored.hit).sum() / max(TINY, (weights * in_band).sum())))
+    return dict(box_fit=box_fit(scored, crop_weight), one_box=ratio(per["extra"], per["found"]),
+                under_crosshair=ratio(per["under_found"], per["under"]), band_precision=precision,
+                recall_by_kind={kind: ratio(per["found"] * (per["kind"] == i), scored.crop_labels * (per["kind"] == i))
+                                for i, kind in enumerate(KINDS)})
 
 
-def flat(d, pre=""):
+def flat(numbers, prefix=""):
     """A nested dict of numbers as {"a.b": value} (a list's items by index)."""
     out = {}
-    for k, v in (d.items() if isinstance(d, dict) else enumerate(d)):
-        if isinstance(v, (dict, list)):
-            out.update(flat(v, f"{pre}{k}."))
+    for key, value in (numbers.items() if isinstance(numbers, dict) else enumerate(numbers)):
+        if isinstance(value, (dict, list)):
+            out.update(flat(value, f"{prefix}{key}."))
         else:
-            out[f"{pre}{k}"] = v
+            out[f"{prefix}{key}"] = value
     return out
 
 
-def spread(sc, pc, hand, edges, draws=DRAWS, seed=0):
+def spread(scored, per, hand, edges, draws=DRAWS, seed=0):
     """full_v3's standard deviation over draws of the val scenarios (for the hand crops: draws of the crops) of each
     number with a relative limit."""
     rng = np.random.default_rng(seed)
-    rows, hrows = [], []
+    rows, hand_rows = [], []
     for _ in range(draws):
-        draw = np.bincount(rng.integers(0, sc.units, sc.units), minlength=sc.units).astype(float)
-        rows.append(flat(crop_checks(sc, pc, edges, draw[sc.unit])))
-        hdraw = np.bincount(rng.integers(0, len(hand.dets), len(hand.dets)), minlength=len(hand.dets)).astype(float)
-        hrows.append(box_fit(hand, hdraw)["centre_error_median"])
-    sd = {k: round(float(np.std([r[k] for r in rows if r.get(k) is not None])), 4)
-          for k in rows[0] if isinstance(rows[0][k], float)}
-    sd["hand.centre_error_median"] = round(float(np.std([v for v in hrows if v is not None])), 4)
-    return sd
+        draw = np.bincount(rng.integers(0, scored.units, scored.units), minlength=scored.units).astype(float)
+        rows.append(flat(crop_checks(scored, per, edges, draw[scored.unit])))
+        crops = len(hand.dets)
+        hand_draw = np.bincount(rng.integers(0, crops, crops), minlength=crops).astype(float)
+        hand_rows.append(box_fit(hand, hand_draw)["centre_error_median"])
+    deviation = {key: round(float(np.std([row[key] for row in rows if row.get(key) is not None])), 4)
+                 for key in rows[0] if isinstance(rows[0][key], float)}
+    deviation["hand.centre_error_median"] = round(float(np.std([value for value in hand_rows if value is not None])), 4)
+    return deviation
 
 
-def crop_numbers(m, val, hand):
+def crop_numbers(model, val, hand):
     """The model's crop numbers (mapped scores, boxes over the threshold), and what the spread needs."""
-    v, hd = m.crops(val), m.crops(hand)
-    edges = bands(m.thr)
-    pc = per_crop(v)
-    nums = crop_checks(v, pc, edges)
-    nums["band_boxes"] = [int(((v.score > a) & (v.score <= b)).sum()) for a, b in zip(edges[:-1], edges[1:])]
-    nums["hand"] = dict(box_fit(hd), targets=hd.labels, found=int(hd.hit.sum()), false_boxes=int((~hd.hit).sum()))
-    nums["bands"], nums["at_threshold"] = edges, v.at(m.thr)
-    return nums, (v, pc, hd, edges)
+    val_crops, hand_crops = model.crops(val), model.crops(hand)
+    edges = bands(model.threshold)
+    per = per_crop(val_crops)
+    numbers = crop_checks(val_crops, per, edges)
+    numbers["band_boxes"] = band_counts(val_crops, edges)
+    numbers["hand"] = dict(box_fit(hand_crops), targets=hand_crops.labels, found=int(hand_crops.hit.sum()),
+                           false_boxes=int((~hand_crops.hit).sum()))
+    numbers["bands"], numbers["at_threshold"] = edges, val_crops.at(model.threshold)
+    return numbers, (val_crops, per, hand_crops, edges)
 
 
 # ---- the limits ------------------------------------------------------------------------------------------------------
@@ -437,112 +524,139 @@ SHARE_FLOOR = 0.01
 SHARES = ("one_box", "under_crosshair", "band_precision", "recall_by_kind")
 BAND_BOXES = 50                     # a calibration band needs this many boxes for its precision to count
 
+SCREEN_ONE_PAIRS = 2                # or under 2 pairs, on a recording with fewer than 100
+VIDEO_CHARS = 48
+
+
+def recording_rows(report, reference_rows, key):
+    """Each recording's crosshair or screen_fixed share against full_v3's on it."""
+    return [dict(video=row["video"][:VIDEO_CHARS], pairs=row["turning_pairs"], value=row[f"{key}_share"],
+                 reference=ref[f"{key}_share"],
+                 passed=bool(row[f"{key}_share"] - ref[f"{key}_share"]
+                             < max(SCREEN_ONE, SCREEN_ONE_PAIRS / max(1, row["turning_pairs"]))))
+            for row, ref in zip(report, reference_rows)]
+
+
+def screen_check(rows, reference_rows, key):
+    """The crosshair or screen_fixed check: the pairs more than full_v3's, recording by recording (fewer on one
+    recording does not make up for more on another), over all the pairs."""
+    def share(recorded):
+        return sum(row[f"{key}_pairs"] for row in recorded) / max(1, sum(row["turning_pairs"] for row in recorded))
+    per = recording_rows(rows, reference_rows, key)
+    more = sum(max(0.0, row[f"{key}_share"] - ref[f"{key}_share"]) * row["turning_pairs"]
+               for row, ref in zip(rows, reference_rows)) / max(1, sum(row["turning_pairs"] for row in rows))
+    return dict(value=round(share(rows), 4), reference=round(share(reference_rows), 4),
+                more_than_reference=round(more, 4), allowed_gap=SCREEN_ALL, allowed_gap_one_recording=SCREEN_ONE,
+                recordings=per, passed=bool(more <= SCREEN_ALL and all(row["passed"] for row in per)))
+
+
+def relative(flat_reference, spread_of, key, value, worse):
+    """value against full_v3's: worse +1 when larger is worse, -1 when smaller is, 0 either way."""
+    reference = flat_reference[key]
+    gap = max(SDS * spread_of[key], SHARE_FLOOR if key.split(".")[0] in SHARES else 0.0)
+    if value is None:
+        return dict(value=None, reference=reference, allowed_gap=gap, passed=False)
+    difference = value - reference if worse > 0 else reference - value if worse < 0 else abs(value - reference)
+    return dict(value=round(value, 4), reference=round(reference, 4), allowed_gap=round(gap, 4),
+                passed=bool(difference <= gap))
+
 
 def judge(rep, ref, sd, ref_rec):
     """Pass or fail per check: `ref` holds full_v3's numbers on the same crops, `sd` their spread, `ref_rec` its
     results on the same recordings."""
-    out = {}
-    rec = rep["recordings"]
-
-    def share(rows, key):
-        return sum(r[f"{key}_pairs"] for r in rows) / max(1, sum(r["turning_pairs"] for r in rows))
-    for key in ("crosshair", "screen_fixed"):
-        per = [dict(video=r["video"][:48], pairs=r["turning_pairs"], value=r[f"{key}_share"],
-                    reference=f[f"{key}_share"], passed=bool(r[f"{key}_share"] - f[f"{key}_share"] <
-                                                             max(SCREEN_ONE, 2 / max(1, r["turning_pairs"]))))
-               for r, f in zip(rec, ref_rec)]
-        # the pairs more than full_v3's, recording by recording (fewer on one recording does not make up for more on
-        # another), over all the pairs
-        more = sum(max(0.0, r[f"{key}_share"] - f[f"{key}_share"]) * r["turning_pairs"]
-                   for r, f in zip(rec, ref_rec)) / max(1, sum(r["turning_pairs"] for r in rec))
-        out[key] = dict(value=round(share(rec, key), 4), reference=round(share(ref_rec, key), 4),
-                        more_than_reference=round(more, 4), allowed_gap=SCREEN_ALL,
-                        allowed_gap_one_recording=SCREEN_ONE, recordings=per,
-                        passed=bool(more <= SCREEN_ALL and all(p["passed"] for p in per)))
-    most = max(r["boxes_max"] for r in rec)
+    out = {key: screen_check(rep["recordings"], ref_rec, key) for key in ("crosshair", "screen_fixed")}
+    most = max(row["boxes_max"] for row in rep["recordings"])
     out["boxes_per_frame"] = dict(value=most, limit=MAX_BOXES, passed=most <= MAX_BOXES)
-    fr = flat(ref)
+    flat_reference = flat(ref)
 
     def rel(key, value, worse):
-        """value against full_v3's: worse +1 when larger is worse, -1 when smaller is, 0 either way."""
-        r, gap = fr[key], max(SDS * sd[key], SHARE_FLOOR if key.split(".")[0] in SHARES else 0.0)
-        if value is None:
-            return dict(value=None, reference=r, allowed_gap=gap, passed=False)
-        d = value - r if worse > 0 else r - value if worse < 0 else abs(value - r)
-        return dict(value=round(value, 4), reference=round(r, 4), allowed_gap=round(gap, 4), passed=bool(d <= gap))
+        return relative(flat_reference, sd, key, value, worse)
 
-    v = rep["box_fit"]
-    rows = {k: rel(f"box_fit.{k}", v[k], w) for k, w in (("centre_error_median", 1), ("centre_error_p90", 1),
-                                                          ("width_ratio_median", 0), ("height_ratio_median", 0))}
+    fit = rep["box_fit"]
+    rows = {key: rel(f"box_fit.{key}", fit[key], worse)
+            for key, worse in (("centre_error_median", 1), ("centre_error_p90", 1), ("width_ratio_median", 0),
+                               ("height_ratio_median", 0))}
     rows["hand_centre_error_median"] = rel("hand.centre_error_median", rep["hand"]["centre_error_median"], 1)
-    out["box_fit"] = dict(rows, passed=all(x["passed"] for x in rows.values()))
+    out["box_fit"] = dict(rows, passed=all(row["passed"] for row in rows.values()))
     out["one_box"] = rel("one_box", rep["one_box"], 1)
     out["under_crosshair"] = rel("under_crosshair", rep["under_crosshair"], -1)
-    rows = []
-    for k, (a, b) in enumerate(zip(rep["bands"][:-1], rep["bands"][1:])):
-        x = dict(band=[a, b], **rel(f"band_precision.{k}", rep["band_precision"][k], 0), boxes=rep["band_boxes"][k],
-                 reference_boxes=ref["band_boxes"][k])
-        x["passed"] = x["passed"] and x["boxes"] >= BAND_BOXES
-        rows.append(x)
-    out["calibrated"] = dict(bands=rows, passed=all(x["passed"] for x in rows))
-    rows = {k: rel(f"recall_by_kind.{k}", rep["recall_by_kind"][k], -1) for k in KINDS}
-    out["targets_found"] = dict(rows, passed=all(x["passed"] for x in rows.values()))
+    bands_rows = []
+    for k, (low, high) in enumerate(zip(rep["bands"][:-1], rep["bands"][1:])):
+        row = dict(band=[low, high], **rel(f"band_precision.{k}", rep["band_precision"][k], 0),
+                   boxes=rep["band_boxes"][k], reference_boxes=ref["band_boxes"][k])
+        row["passed"] = row["passed"] and row["boxes"] >= BAND_BOXES
+        bands_rows.append(row)
+    out["calibrated"] = dict(bands=bands_rows, passed=all(row["passed"] for row in bands_rows))
+    rows = {kind: rel(f"recall_by_kind.{kind}", rep["recall_by_kind"][kind], -1) for kind in KINDS}
+    out["targets_found"] = dict(rows, passed=all(row["passed"] for row in rows.values()))
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("model")
-    ap.add_argument("--settings", help="a settings file or calibration report [exports/detector_<name>.json beside "
-                    "the export]")
-    ap.add_argument("--report", help="the JSON report [python/model/reports/contract_<name>.json]")
-    ap.add_argument("--vods", nargs="*", help="static recordings for the screen checks [eval_moving.py's static ones]")
-    a = ap.parse_args()
-    name = calibrate.model_name(a.model)
-    s, source = load_settings(a.model, a.settings)
-    m = Model(a.model, s)
-    ref_m = m if name == infer.BEST else Model(infer.BEST, load_settings(infer.BEST)[0])
-    rep = dict(model=name, export_file=str(m.path), settings=s, settings_from=source)
-    print(f"{name}: settings from {source}: threshold {m.thr}, score map {m.map}", flush=True)
-    rep["export"] = check_export(m, s, name)
-    print(f"  export: {'pass' if rep['export']['passed'] else 'FAIL: ' + '; '.join(rep['export']['problems'])}", flush=True)
-
+def crop_part(model, reference):
+    """The crop checks' numbers for the model and full_v3, and full_v3's spread."""
     files, hand_files = calibrate.crop_files(calibrate.VAL, "val"), calibrate.crop_files(HAND, "test")
-    val = calibrate.Scored(*calibrate.peaks(m.sess, files), files)
-    hand = calibrate.Scored(*calibrate.peaks(m.sess, hand_files), hand_files)
-    nums, (_, _, _, edges) = crop_numbers(m, val, hand)
-    rep.update(nums)
-    if ref_m is not m:
-        val = calibrate.Scored(*calibrate.peaks(ref_m.sess, files), files)
-        hand = calibrate.Scored(*calibrate.peaks(ref_m.sess, hand_files), hand_files)
-    ref, (_, _, rhand, _) = crop_numbers(ref_m, val, hand)
+    val = calibrate.Scored(*calibrate.peaks(model.session, files), files)
+    hand = calibrate.Scored(*calibrate.peaks(model.session, hand_files), hand_files)
+    numbers, (_, _, _, edges) = crop_numbers(model, val, hand)
+    if reference is not model:
+        val = calibrate.Scored(*calibrate.peaks(reference.session, files), files)
+        hand = calibrate.Scored(*calibrate.peaks(reference.session, hand_files), hand_files)
+    ref, (_, _, ref_hand, _) = crop_numbers(reference, val, hand)
     # full_v3's bands are those of the model's threshold, from the lower of the two thresholds
-    rb = ref_m.crops(val, min(m.thr, ref_m.thr))
-    rpc = per_crop(rb)
-    ref["band_precision"] = crop_checks(rb, rpc, edges)["band_precision"]
-    ref["band_boxes"] = [int(((rb.score > a) & (rb.score <= b)).sum()) for a, b in zip(edges[:-1], edges[1:])]
-    sd = spread(rb, rpc, rhand, edges)
-    print("  crops done", flush=True)
+    ref_crops = reference.crops(val, min(model.threshold, reference.threshold))
+    ref_per = per_crop(ref_crops)
+    ref["band_precision"] = crop_checks(ref_crops, ref_per, edges)["band_precision"]
+    ref["band_boxes"] = band_counts(ref_crops, edges)
+    return numbers, ref, spread(ref_crops, ref_per, ref_hand, edges)
 
-    rep["recordings"], ref_rec = [], []
-    for v in a.vods or recordings():
-        r = recording(m, v)
-        rep["recordings"].append(r)
-        ref_rec.append(r if ref_m is m else recording(ref_m, v))
-        print(f"  {r['video'][:50]}: {r['turning_pairs']} turning pairs, crosshair {r['crosshair_share']:.2%} "
-              f"(full_v3 {ref_rec[-1]['crosshair_share']:.2%}), elsewhere {r['screen_fixed_share']:.2%}, "
-              f"boxes at most {r['boxes_max']}", flush=True)
+
+def recording_part(model, reference, videos):
+    """The recording checks' rows for the model and full_v3, each printed as it is done."""
+    rows, ref_rows = [], []
+    for video in videos:
+        row = recording(model, video)
+        rows.append(row)
+        ref_rows.append(row if reference is model else recording(reference, video))
+        print(f"  {row['video'][:50]}: {row['turning_pairs']} turning pairs, crosshair {row['crosshair_share']:.2%} "
+              f"(full_v3 {ref_rows[-1]['crosshair_share']:.2%}), elsewhere {row['screen_fixed_share']:.2%}, "
+              f"boxes at most {row['boxes_max']}", flush=True)
+    return rows, ref_rows
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("model")
+    parser.add_argument("--settings", help="a settings file or calibration report [exports/detector_<name>.json beside "
+                        "the export]")
+    parser.add_argument("--report", help="the JSON report [python/model/reports/contract_<name>.json]")
+    parser.add_argument("--vods", nargs="*", help="static recordings for the screen checks [eval_moving.py's static "
+                        "ones]")
+    args = parser.parse_args()
+    name = calibrate.model_name(args.model)
+    settings, source = load_settings(args.model, args.settings)
+    model = Model(args.model, settings)
+    reference = model if name == infer.BEST else Model(infer.BEST, load_settings(infer.BEST)[0])
+    rep = dict(model=name, export_file=str(model.path), settings=settings, settings_from=source)
+    print(f"{name}: settings from {source}: threshold {model.threshold}, score map {model.score_map}", flush=True)
+    rep["export"] = check_export(model, settings, name)
+    export = rep["export"]
+    print(f"  export: {'pass' if export['passed'] else 'FAIL: ' + '; '.join(export['problems'])}", flush=True)
+    numbers, ref, sd = crop_part(model, reference)
+    rep.update(numbers)
+    print("  crops done", flush=True)
+    rep["recordings"], ref_rec = recording_part(model, reference, args.vods or recordings())
     rep["reference"] = dict(model=infer.BEST, **ref, spread=sd,
-                            recordings=[{k: x[k] for k in ("video", "turning_pairs", "crosshair_share",
-                                                           "screen_fixed_share", "boxes_max")} for x in ref_rec])
-    rep["checks"] = dict(export=dict(passed=rep["export"]["passed"], problems=rep["export"]["problems"]),
+                            recordings=[{key: row[key] for key in ("video", "turning_pairs", "crosshair_share",
+                                                                     "screen_fixed_share", "boxes_max")}
+                                        for row in ref_rec])
+    rep["checks"] = dict(export=dict(passed=export["passed"], problems=export["problems"]),
                          **judge(rep, ref, sd, ref_rec))
-    rep["passed"] = all(c["passed"] for c in rep["checks"].values())
-    out = Path(a.report) if a.report else REPORTS / f"contract_{name}.json"
+    rep["passed"] = all(check["passed"] for check in rep["checks"].values())
+    out = Path(args.report) if args.report else REPORTS / f"contract_{name}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     json.dump(rep, open(out, "w"), indent=1, default=float)
-    for k, c in rep["checks"].items():
-        print(f"  {k}: {'pass' if c['passed'] else 'FAIL'}")
+    for key, check in rep["checks"].items():
+        print(f"  {key}: {'pass' if check['passed'] else 'FAIL'}")
     print(f"{name}: {'meets the contract' if rep['passed'] else 'FAILS the contract'}; report {out}")
     sys.exit(0 if rep["passed"] else 1)
 
