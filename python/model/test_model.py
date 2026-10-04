@@ -63,7 +63,7 @@ class Augment(unittest.TestCase):
         image, fixed = torch.full((4, 3, 64, 64), 0.5), torch.zeros(4, 1, 64, 64)
         boxes = torch.tensor([[[30.0, 30.0, 8.0, 8.0]]] * 4)
         before = boxes.clone()
-        image, fixed = train.crosshairs(image, fixed, boxes, torch.tensor([1] * 4), p=1.0, on_target=1.0,
+        image, fixed = train.crosshairs(image, fixed, boxes, torch.tensor([1] * 4), share=1.0, on_target=1.0,
                                         jitter=0.6)
         self.assertTrue(torch.equal(boxes, before))
         for crop in range(4):
@@ -81,7 +81,7 @@ class Augment(unittest.TestCase):
         target_mask[0, 0][(xx - 30) ** 2 + (yy - 30) ** 2 <= TARGET_RADIUS_PX ** 2] = 1
         fixed[0, 0, 28:33, 34:37] = 1                                 # a crosshair touching it
         before = image.clone()
-        out = train.outlines(image.clone(), target_mask, fixed, p=1.0)
+        out = train.outlines(image.clone(), target_mask, fixed, share=1.0)
         changed = (out - before).abs().sum(1)[0] > CHANGED
         self.assertTrue(changed.any())
         self.assertFalse(changed[target_mask[0, 0] > 0].any())        # the target itself is untouched
