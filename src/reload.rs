@@ -9,6 +9,9 @@
 //!
 //! What can't be seen: reloads the player chose (they don't show in the stats), and shots after the last kill. So the
 //! counts are the forced reloads only. Each one counts in full, though the player can aim while it runs: a ceiling.
+//!
+//! In: the weapon's ammo rules (scenario.rs) and each kill's shots and hits (stats_file.rs). Out: the reloads in the
+//! clicking report (review.rs), its summary's time budget (summary.rs) and its what-if (what_if.rs).
 
 use serde::Serialize;
 
@@ -45,9 +48,9 @@ pub fn forced_reloads(rules: &AmmoRules, shots: &[i64]) -> Vec<KillReloads> {
     let mut ammo = rules.magazine;
     shots
         .iter()
-        .map(|&n| {
+        .map(|&kill_shots| {
             let mut kill = KillReloads::default();
-            for _ in 0..n {
+            for _ in 0..kill_shots {
                 if ammo < rules.per_shot {
                     kill.reloads += 1;
                     kill.seconds += if ammo <= 0 { rules.from_empty } else { rules.from_partial };
@@ -63,10 +66,10 @@ pub fn forced_reloads(rules: &AmmoRules, shots: &[i64]) -> Vec<KillReloads> {
 
 /// The run's totals of the kills' forced reloads.
 fn totals(rules: &AmmoRules, kills: &[KillReloads]) -> Reloads {
-    let count = kills.iter().map(|k| k.reloads).sum();
+    let count = kills.iter().map(|kill| kill.reloads).sum();
     Reloads {
         count,
-        seconds: kills.iter().map(|k| k.seconds).sum(),
+        seconds: kills.iter().map(|kill| kill.seconds).sum(),
         score_lost: (rules.score_loss != 0.0).then_some(count as f64 * rules.score_loss),
     }
 }
@@ -74,8 +77,8 @@ fn totals(rules: &AmmoRules, kills: &[KillReloads]) -> Reloads {
 /// What reloading cost the run: from each kill's shots, and its hits (one value a kill) when they are known.
 pub fn reload_cost(rules: &AmmoRules, shots: &[i64], hits: Option<&[i64]>) -> ReloadCost {
     let per_kill = forced_reloads(rules, shots);
-    let clean = hits.map(|h| {
-        let cut: Vec<i64> = shots.iter().zip(h).map(|(&s, &h)| s.min(h)).collect();
+    let clean = hits.map(|hits| {
+        let cut: Vec<i64> = shots.iter().zip(hits).map(|(&kill_shots, &kill_hits)| kill_shots.min(kill_hits)).collect();
         totals(rules, &forced_reloads(rules, &cut))
     });
     ReloadCost { run: totals(rules, &per_kill), per_kill, clean }
@@ -90,8 +93,8 @@ mod tests {
         AmmoRules { magazine: 3, per_shot: 1, on_kill, from_empty: 0.5, from_partial: 0.4, score_loss: 0.0 }
     }
 
-    fn counts(k: &[KillReloads]) -> Vec<i64> {
-        k.iter().map(|k| k.reloads).collect()
+    fn counts(kills: &[KillReloads]) -> Vec<i64> {
+        kills.iter().map(|kill| kill.reloads).collect()
     }
 
     #[test]
@@ -103,13 +106,13 @@ mod tests {
     #[test]
     fn an_empty_magazine_forces_a_reload() {
         // 4 shots: the 4th waits for a reload; 7 shots: the 4th and the 7th
-        let k = forced_reloads(&rules(4), &[4, 1, 7]);
-        assert_eq!(counts(&k), vec![1, 0, 2]);
-        assert_eq!(k[2].seconds, 1.0);
+        let kills = forced_reloads(&rules(4), &[4, 1, 7]);
+        assert_eq!(counts(&kills), vec![1, 0, 2]);
+        assert_eq!(kills[2].seconds, 1.0);
         // a kill that puts back 1. 4 shots: the 4th waits, 2 left, +1 = 3; 2 shots: 1, +1 = 2; 3 shots: the 3rd waits,
         // 2 left, +1 = 3; 2 shots: 1, +1 = 2
-        let k = forced_reloads(&rules(1), &[4, 2, 3, 2]);
-        assert_eq!(counts(&k), vec![1, 0, 1, 0]);
+        let kills = forced_reloads(&rules(1), &[4, 2, 3, 2]);
+        assert_eq!(counts(&kills), vec![1, 0, 1, 0]);
     }
 
     #[test]
@@ -124,11 +127,11 @@ mod tests {
     #[test]
     fn part_used_and_points() {
         // 2 ammo a shot from 3: one shot leaves 1, too few for the next: a reload from part-used
-        let r = AmmoRules { per_shot: 2, score_loss: 25.0, ..rules(0) };
-        let c = reload_cost(&r, &[2, 1], Some(&[1, 1]));
-        assert_eq!(counts(&c.per_kill), vec![1, 1]);
-        assert_eq!(c.run, Reloads { count: 2, seconds: 0.8, score_lost: Some(50.0) });
+        let two_a_shot = AmmoRules { per_shot: 2, score_loss: 25.0, ..rules(0) };
+        let cost = reload_cost(&two_a_shot, &[2, 1], Some(&[1, 1]));
+        assert_eq!(counts(&cost.per_kill), vec![1, 1]);
+        assert_eq!(cost.run, Reloads { count: 2, seconds: 0.8, score_lost: Some(50.0) });
         // without the miss: 1 shot (1 left), then 1 shot waits
-        assert_eq!(c.clean, Some(Reloads { count: 1, seconds: 0.4, score_lost: Some(25.0) }));
+        assert_eq!(cost.clean, Some(Reloads { count: 1, seconds: 0.4, score_lost: Some(25.0) }));
     }
 }
