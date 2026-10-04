@@ -19,6 +19,7 @@ const VOD_NAME = /^(.+) - ([-\d.]+) - (\d{4}\.\d\d\.\d\d-\d\d\.\d\d\.\d\d)\.\w+$
 const STAMP = /^(\d{4})\.(\d\d)\.(\d\d)-(\d\d)\.(\d\d)\.(\d\d)$/;
 /** A stats file and a recording this many seconds apart or less are the same run. */
 const SAME_RUN_S = 5;
+const MS_PER_SECOND = 1000;
 
 /**
  * Reads a stats file: every "key:,value" line, and the kill rows (the first table, up to its blank line; later tables
@@ -44,20 +45,20 @@ export async function readStats(file: File): Promise<StatsCsv | null> {
   return parseStatsCsv(file.name, await file.text());
 }
 
-export function statsSummary(s: StatsCsv): StatsSummary {
-  const num = (key: string): number | null => {
-    const v = Number.parseFloat(s.meta[key] ?? '');
-    return Number.isFinite(v) ? v : null;
+export function statsSummary(stats: StatsCsv): StatsSummary {
+  const metaNumber = (key: string): number | null => {
+    const value = Number.parseFloat(stats.meta[key] ?? '');
+    return Number.isFinite(value) ? value : null;
   };
-  const hits = num('Hit Count');
-  const misses = num('Miss Count');
+  const hits = metaNumber('Hit Count');
+  const misses = metaNumber('Miss Count');
   const shots = (hits ?? 0) + (misses ?? 0);
   return {
-    scenario: s.meta['Scenario'] || null,
-    score: num('Score'),
-    kills: num('Kills') ?? s.killRows,
+    scenario: stats.meta['Scenario'] || null,
+    score: metaNumber('Score'),
+    kills: metaNumber('Kills') ?? stats.killRows,
     accuracy: hits !== null && misses !== null && shots > 0 ? hits / shots : null,
-    stamp: STATS_NAME.exec(s.name)?.[2] ?? null,
+    stamp: STATS_NAME.exec(stats.name)?.[2] ?? null,
   };
 }
 
@@ -69,8 +70,8 @@ export interface VodName {
 }
 
 export function parseVodName(name: string): VodName | null {
-  const m = VOD_NAME.exec(name);
-  return m ? { scenario: m[1], score: Number(m[2]), stamp: m[3] } : null;
+  const match = VOD_NAME.exec(name);
+  return match ? { scenario: match[1], score: Number(match[2]), stamp: match[3] } : null;
 }
 
 /** A video's name of a title and a time stamp, as a recording added from a link is named. */
@@ -81,17 +82,17 @@ export interface TitledName {
 
 /** "<title> - <stamp>.<ext>" (a link's name: the review server names it so): the title and the stamp. */
 export function parseTitledName(name: string): TitledName | null {
-  const m = /^(.+) - (\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2})\.\w+$/.exec(name);
-  return m && stampSeconds(m[2]) !== null ? { title: m[1], stamp: m[2] } : null;
+  const match = /^(.+) - (\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2})\.\w+$/.exec(name);
+  return match && stampSeconds(match[2]) !== null ? { title: match[1], stamp: match[2] } : null;
 }
 
 /** A file-name time stamp as seconds on one clock (both sides use the same one). The year 0026 reads as 2026. */
 export function stampSeconds(stamp: string): number | null {
-  const m = STAMP.exec(stamp);
-  if (!m) return null;
-  const year = Number(m[1].startsWith('00') ? `20${m[1].slice(2)}` : m[1]);
-  const [, , mo, d, h, mi, s] = m.map(Number);
-  return Date.UTC(year, mo - 1, d, h, mi, s) / 1000;
+  const match = STAMP.exec(stamp);
+  if (!match) return null;
+  const year = Number(match[1].startsWith('00') ? `20${match[1].slice(2)}` : match[1]);
+  const [, , month, day, hour, minute, second] = match.map(Number);
+  return Date.UTC(year, month - 1, day, hour, minute, second) / MS_PER_SECOND;
 }
 
 /**
@@ -104,16 +105,16 @@ export function statsForVideo(
   onlyPair: boolean,
 ): StatsCsv | null {
   const vod = parseVodName(video);
-  const t = vod && stampSeconds(vod.stamp);
-  const named = files.find((f) => {
-    const m = STATS_NAME.exec(f.name);
-    const ts = m && stampSeconds(m[2]);
+  const videoSeconds = vod && stampSeconds(vod.stamp);
+  const named = files.find((file) => {
+    const match = STATS_NAME.exec(file.name);
+    const statsSeconds = match && stampSeconds(match[2]);
     return (
       vod !== null &&
-      t !== null &&
-      ts !== null &&
-      m?.[1].toLowerCase() === vod.scenario.toLowerCase() &&
-      Math.abs(ts - t) <= SAME_RUN_S
+      videoSeconds !== null &&
+      statsSeconds !== null &&
+      match?.[1].toLowerCase() === vod.scenario.toLowerCase() &&
+      Math.abs(statsSeconds - videoSeconds) <= SAME_RUN_S
     );
   });
   return named ?? (onlyPair && files.length === 1 ? files[0] : null);

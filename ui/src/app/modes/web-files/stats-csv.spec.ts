@@ -31,10 +31,10 @@ function stats(name: string): StatsCsv {
 
 describe('parseStatsCsv', () => {
   it('reads the key-value lines and counts the kill rows of the first table only', () => {
-    const s = parseStatsCsv(NAME, TEXT);
-    expect(s?.killRows).toBe(2);
-    expect(s?.meta['Score']).toBe('558.461548');
-    expect(s?.meta['Challenge Start']).toBe('16:22:19.708');
+    const parsed = parseStatsCsv(NAME, TEXT);
+    expect(parsed?.killRows).toBe(2);
+    expect(parsed?.meta['Score']).toBe('558.461548');
+    expect(parsed?.meta['Challenge Start']).toBe('16:22:19.708');
   });
 
   it('turns down a file that is not a stats file', () => {
@@ -44,8 +44,8 @@ describe('parseStatsCsv', () => {
 
 describe('statsSummary', () => {
   it('gives the score, kills, accuracy and the time from the name', () => {
-    const s = statsSummary(parseStatsCsv(NAME, TEXT) as StatsCsv);
-    expect(s).toEqual({
+    const summary = statsSummary(parseStatsCsv(NAME, TEXT) as StatsCsv);
+    expect(summary).toEqual({
       scenario: '1wall 2targets xsmall',
       score: 558.461548,
       kills: 66,
@@ -55,10 +55,10 @@ describe('statsSummary', () => {
   });
 
   it('counts the kill rows when the file has no Kills line, and has no accuracy without shots', () => {
-    const s = statsSummary({ name: 'x.csv', meta: { Scenario: 'x' }, killRows: 3, text: '' });
-    expect(s.kills).toBe(3);
-    expect(s.accuracy).toBeNull();
-    expect(s.stamp).toBeNull();
+    const summary = statsSummary({ name: 'x.csv', meta: { Scenario: 'x' }, killRows: 3, text: '' });
+    expect(summary.kills).toBe(3);
+    expect(summary.accuracy).toBeNull();
+    expect(summary.stamp).toBeNull();
   });
 });
 

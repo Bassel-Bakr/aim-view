@@ -18,7 +18,7 @@ export class BlobSink {
   private head: Uint8Array<ArrayBuffer> | null = null;
   private readonly parts: Blob[] = [];
   private end = 0;
-  readonly stream = new WritableStream<StreamTargetChunk>({ write: (c) => this.write(c) });
+  readonly stream = new WritableStream<StreamTargetChunk>({ write: (chunk) => this.write(chunk) });
 
   write({ data, position }: StreamTargetChunk): void {
     if (position === this.end) {
@@ -52,7 +52,7 @@ export async function remuxToMp4(file: Blob, progress: (share: number) => void):
   });
   const conversion = await Conversion.init({ input, output, showWarnings: false });
   if (!conversion.isValid) {
-    const why = conversion.discardedTracks.map((t) => t.reason.replaceAll('_', ' '));
+    const why = conversion.discardedTracks.map((track) => track.reason.replaceAll('_', ' '));
     throw new Error(`no track it can keep (${why.join(', ')})`);
   }
   conversion.onProgress = progress;

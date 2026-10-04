@@ -24,6 +24,7 @@ export class ServerModels implements ModelCatalog {
   }
 
   useBatch(batch: number): Promise<ModelList> {
+    // eslint-disable-next-line id-length -- the API's name for the frame count
     return firstValueFrom(this.http.post<ModelList>('/api/batch', null, { params: { n: batch } }));
   }
 }

@@ -97,7 +97,7 @@ export class BrowserLinks {
   private async readsItself(url: string): Promise<boolean> {
     if (this.direct.has(url)) return true;
     const head = await firstValueFrom(this.http.head(url, { observe: 'response' })).catch(
-      (e: unknown) => (e instanceof HttpErrorResponse && e.status !== 0 ? e : null),
+      (error: unknown) => (error instanceof HttpErrorResponse && error.status !== 0 ? error : null),
     );
     const type = head?.headers.get('content-type') ?? '';
     const reads =
@@ -110,11 +110,11 @@ export class BrowserLinks {
   private async download(url: string, name: string, progress: LinkProgress): Promise<File> {
     const done = await lastValueFrom(
       this.http.get(url, { responseType: 'blob', observe: 'events', reportProgress: true }).pipe(
-        tap((e) => {
-          if (e.type === HttpEventType.DownloadProgress)
-            progress(DOWNLOADING, megabytes(e.loaded), megabytes(e.total ?? 0));
+        tap((event) => {
+          if (event.type === HttpEventType.DownloadProgress)
+            progress(DOWNLOADING, megabytes(event.loaded), megabytes(event.total ?? 0));
         }),
-        filter((e): e is HttpResponse<Blob> => e.type === HttpEventType.Response),
+        filter((event): event is HttpResponse<Blob> => event.type === HttpEventType.Response),
       ),
     );
     const body = done.body ?? new Blob();
@@ -123,14 +123,7 @@ export class BrowserLinks {
 
   /** Follows the server's download until the video is in, then copies it into the browser a range at a time. */
   private async copy(added: LinkAdded, progress: LinkProgress): Promise<File> {
-    for (;;) {
-      const job = await this.ask<Job>('/api/job', undefined, { id: added.id });
-      if (job.stage === 'error') throw new Error(job.error ?? 'the download failed');
-      if (job.stage === 'none' || !job.link) break;
-      const label = SERVER_STAGES[job.stage] ?? DOWNLOADING;
-      progress(label, job.done ?? 0, job.total ?? 0);
-      await new Promise((r) => setTimeout(r, POLL_MS));
-    }
+    await this.downloaded(added, progress);
     const parts: Blob[] = [];
     let at = 0;
     for (;;) {
@@ -145,6 +138,18 @@ export class BrowserLinks {
     return new File(parts, added.saved, { type: 'video/mp4' });
   }
 
+  /** Waits for the server's download of a link, showing how far it is. */
+  private async downloaded(added: LinkAdded, progress: LinkProgress): Promise<void> {
+    for (;;) {
+      const job = await this.ask<Job>('/api/job', undefined, { id: added.id });
+      if (job.stage === 'error') throw new Error(job.error ?? 'the download failed');
+      if (job.stage === 'none' || !job.link) return;
+      const label = SERVER_STAGES[job.stage] ?? DOWNLOADING;
+      progress(label, job.done ?? 0, job.total ?? 0);
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
+  }
+
   /** The server's video from byte `at` on (it answers at most a few megabytes at a time). */
   private range(id: string, at: number): Promise<HttpResponse<Blob>> {
     const url = `${this.base()}/video`;
@@ -155,8 +160,8 @@ export class BrowserLinks {
         responseType: 'blob',
         observe: 'response',
       }),
-    ).catch((e: unknown) => {
-      throw this.plain(e);
+    ).catch((error: unknown) => {
+      throw this.plain(error);
     });
   }
 
@@ -165,14 +170,16 @@ export class BrowserLinks {
     const url = `${this.base()}${path}`;
     const sent =
       body === undefined ? this.http.get<T>(url, { params }) : this.http.post<T>(url, body);
-    return firstValueFrom(sent).catch((e: unknown) => {
-      throw this.plain(e);
+    return firstValueFrom(sent).catch((error: unknown) => {
+      throw this.plain(error);
     });
   }
 
   /** No answer at all means no server: say how to start it. */
-  private plain(e: unknown): unknown {
-    return e instanceof HttpErrorResponse && e.status === 0 ? new Error(NO_LINK_SERVER) : e;
+  private plain(error: unknown): unknown {
+    return error instanceof HttpErrorResponse && error.status === 0
+      ? new Error(NO_LINK_SERVER)
+      : error;
   }
 
   private base(): string {

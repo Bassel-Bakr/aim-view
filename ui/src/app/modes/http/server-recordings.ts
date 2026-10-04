@@ -61,8 +61,10 @@ export class ServerRecordings implements RecordingSource {
       : this.quickList.hasValue()
         ? this.quickList.value()
         : [];
-    const ids = new Set(listed.map((r) => r.id));
-    const coming = [...this.links().values()].map((d) => d.row).filter((r) => !ids.has(r.id));
+    const ids = new Set(listed.map((recording) => recording.id));
+    const coming = [...this.links().values()]
+      .map((link) => link.row)
+      .filter((row) => !ids.has(row.id));
     return [...coming.reverse(), ...listed];
   });
   readonly loading = computed(
@@ -132,12 +134,12 @@ export class ServerRecordings implements RecordingSource {
           total: job.total ?? 0,
         };
         this.setLink(id, { ...link, video });
-        await new Promise((r) => setTimeout(r, POLL_MS));
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       }
       this.setLink(id, { ...link, video: this.ready(id) });
       this.list.reload();
-    } catch (e) {
-      this.setLink(id, { ...link, video: { state: 'not-downloaded', error: errorMessage(e) } });
+    } catch (error) {
+      this.setLink(id, { ...link, video: { state: 'not-downloaded', error: errorMessage(error) } });
     }
   }
 
@@ -154,7 +156,7 @@ export class ServerRecordings implements RecordingSource {
     const videos = files.filter(isVideo);
     const csvs = files.filter(isCsv);
     const read = await Promise.all(csvs.map(readStats));
-    const stats = read.filter((s): s is StatsCsv => s !== null);
+    const stats = read.filter((stats): stats is StatsCsv => stats !== null);
     const ids: string[] = [];
     try {
       for (const video of videos) {
@@ -168,7 +170,7 @@ export class ServerRecordings implements RecordingSource {
       this.sending.set(null);
       this.list.reload();
     }
-    return { ids, notStats: csvs.filter((_, i) => read[i] === null).map((f) => f.name) };
+    return { ids, notStats: csvs.filter((_csv, i) => read[i] === null).map((file) => file.name) };
   }
 
   /** Sends a video, remuxed into MP4 in the browser first when it is not one. */
@@ -180,7 +182,9 @@ export class ServerRecordings implements RecordingSource {
   }
 
   patch(id: string, change: Partial<Recording>): void {
-    this.list.update((list) => list?.map((r) => (r.id === id ? { ...r, ...change } : r)));
+    this.list.update((list) =>
+      list?.map((recording) => (recording.id === id ? { ...recording, ...change } : recording)),
+    );
   }
 
   /** The server's library is the recordings folder itself: it is not cleared from the page. */
@@ -194,12 +198,12 @@ export class ServerRecordings implements RecordingSource {
       this.http
         .post<Uploaded>('/api/upload', body, { params, reportProgress: true, observe: 'events' })
         .pipe(
-          tap((e) => {
-            if (e.type === HttpEventType.UploadProgress)
-              this.show(label, e.total ? e.loaded / e.total : null);
+          tap((event) => {
+            if (event.type === HttpEventType.UploadProgress)
+              this.show(label, event.total ? event.loaded / event.total : null);
           }),
-          filter((e): e is HttpResponse<Uploaded> => e.type === HttpEventType.Response),
-          map((e) => e.body as Uploaded),
+          filter((event): event is HttpResponse<Uploaded> => event.type === HttpEventType.Response),
+          map((response) => response.body as Uploaded),
         ),
     );
   }

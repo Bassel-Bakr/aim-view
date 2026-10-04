@@ -5,8 +5,8 @@ import { Job, Report, RunMarks, Tracks } from '../../api';
 import { ReviewEngine } from '../../platform/review-engine';
 
 /** A window with none of its three marks set is no window. */
-function markedOrNull(m: RunMarks | null): RunMarks | null {
-  return m && (m.start != null || m.end != null || m.length != null) ? m : null;
+function markedOrNull(marks: RunMarks | null): RunMarks | null {
+  return marks && (marks.start != null || marks.end != null || marks.length != null) ? marks : null;
 }
 
 /** A link's download is a job of the recording's too: it is the recording source's to follow, not a review. */
@@ -57,7 +57,7 @@ export class ServerReview implements ReviewEngine {
         const at = id();
         return at === undefined ? undefined : { url: '/api/run', params: { id: at } };
       },
-      { parse: (v) => markedOrNull(v as RunMarks) },
+      { parse: (value) => markedOrNull(value as RunMarks) },
     );
   }
 

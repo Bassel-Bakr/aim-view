@@ -22,7 +22,7 @@ class PartsBlob {
   }
 
   bytes(): number[] {
-    return this.parts.flatMap((p) => (p instanceof PartsBlob ? p.bytes() : [...p]));
+    return this.parts.flatMap((part) => (part instanceof PartsBlob ? part.bytes() : [...part]));
   }
 }
 

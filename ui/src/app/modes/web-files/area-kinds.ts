@@ -39,15 +39,15 @@ export function slug(name: string): string {
 /** A new kind's id: its name's slug, with a number after it when that is taken (`_new_id`). */
 export function newKindId(name: string, kinds: readonly AreaKind[]): string {
   const base = slug(name);
-  const have = new Set(kinds.map((k) => k.id));
+  const have = new Set(kinds.map((kind) => kind.id));
   let out = base;
-  for (let n = 2; have.has(out); n++) out = `${base}_${n}`;
+  for (let copyNumber = 2; have.has(out); copyNumber++) out = `${base}_${copyNumber}`;
   return out;
 }
 
 /** The built-in kinds, with their ids. */
 export function builtInKinds(): AreaKind[] {
-  return BUILT_IN.map((k) => ({ id: slug(k.name), name: k.name, about: k.about }));
+  return BUILT_IN.map((kind) => ({ id: slug(kind.name), name: kind.name, about: kind.about }));
 }
 
 /**
@@ -55,12 +55,12 @@ export function builtInKinds(): AreaKind[] {
  * from its name's slug (a built-in kind the user renamed); unknown: "other".
  */
 export function kindId(value: string, kinds: readonly AreaKind[]): string {
-  if (kinds.some((k) => k.id === value)) return value;
+  if (kinds.some((kind) => kind.id === value)) return value;
   const name = value.toLowerCase();
-  const named = kinds.find((k) => k.name.toLowerCase() === name);
+  const named = kinds.find((kind) => kind.name.toLowerCase() === name);
   if (named) return named.id;
   const id = slug(value);
-  return kinds.some((k) => k.id === id) ? id : OTHER;
+  return kinds.some((kind) => kind.id === id) ? id : OTHER;
 }
 
 /** Areas with their kinds as ids. */
@@ -93,7 +93,9 @@ export function validAreas(boxes: unknown): boxes is AreaBox[] {
       (b: unknown) =>
         Array.isArray(b) &&
         (b.length === 4 || (b.length === 5 && typeof b[4] === 'string')) &&
-        b.slice(0, 4).every((v: unknown) => typeof v === 'number' && Number.isFinite(v)) &&
+        b
+          .slice(0, 4)
+          .every((value: unknown) => typeof value === 'number' && Number.isFinite(value)) &&
         0 <= b[0] &&
         b[0] < b[2] &&
         b[2] <= 1 &&
@@ -109,10 +111,10 @@ export function editKinds(kinds: readonly AreaKind[], edit: KindEdit): AreaKind[
   const name = edit.name.trim().slice(0, 40);
   const about = edit.about.trim().slice(0, 200);
   if (!name) throw new Error('a type needs a name');
-  if (kinds.some((k) => k.name.toLowerCase() === name.toLowerCase() && k.id !== edit.id)) {
+  if (kinds.some((kind) => kind.name.toLowerCase() === name.toLowerCase() && kind.id !== edit.id)) {
     throw new Error(`there is a type called ${name} already`);
   }
   if (edit.id === null) return [...kinds, { id: newKindId(name, kinds), name, about }];
-  if (!kinds.some((k) => k.id === edit.id)) throw new Error(`no type with the id ${edit.id}`);
-  return kinds.map((k) => (k.id === edit.id ? { ...k, name, about } : k));
+  if (!kinds.some((kind) => kind.id === edit.id)) throw new Error(`no type with the id ${edit.id}`);
+  return kinds.map((kind) => (kind.id === edit.id ? { ...kind, name, about } : kind));
 }

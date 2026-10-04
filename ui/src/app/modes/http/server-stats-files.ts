@@ -24,8 +24,9 @@ export class ServerStatsFiles implements StatsFiles {
     return httpResource<StatsPairing>(() => {
       const at = id();
       if (at === undefined) return undefined;
-      const q = query();
-      const params: Record<string, string> = q === null ? { id: at } : { id: at, q };
+      const search = query();
+      const params: Record<string, string> = { id: at };
+      if (search !== null) params['q'] = search;
       return { url: '/api/stats', params };
     });
   }

@@ -24,21 +24,35 @@ const UTF8_NAMES = 0x0800;
 const DOS_TIME = 0;
 const DOS_DATE = (0 << 9) | (1 << 5) | 1;
 
+/** The zip format's record signatures: a local file header, a central directory header, the directory's end. */
+const LOCAL_HEADER = 0x04034b50;
+const CENTRAL_HEADER = 0x02014b50;
+const DIRECTORY_END = 0x06054b50;
+/** CRC-32's polynomial, reversed, and its table of each byte's remainder. */
+const CRC_POLYNOMIAL = 0xedb88320;
+const BYTE_VALUES = 256;
+const BITS_PER_BYTE = 8;
+const BYTE_MASK = 0xff;
+const U16_MASK = 0xffff;
+const U16_BITS = 16;
+const U32_ALL = 0xffffffff;
+
 const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
+  const table = new Uint32Array(BYTE_VALUES);
+  for (let byte = 0; byte < BYTE_VALUES; byte++) {
+    let remainder = byte;
+    for (let bit = 0; bit < BITS_PER_BYTE; bit++)
+      remainder = remainder & 1 ? CRC_POLYNOMIAL ^ (remainder >>> 1) : remainder >>> 1;
+    table[byte] = remainder >>> 0;
   }
-  return t;
+  return table;
 })();
 
 /** The CRC-32 a zip keeps for each file. */
 export function crc32(data: Uint8Array): number {
-  let c = 0xffffffff;
-  for (const b of data) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+  let crc = U32_ALL;
+  for (const byte of data) crc = CRC_TABLE[(crc ^ byte) & BYTE_MASK] ^ (crc >>> BITS_PER_BYTE);
+  return (crc ^ U32_ALL) >>> 0;
 }
 
 /** The bytes compressed as raw deflate, as a zip holds them. */
@@ -53,18 +67,83 @@ async function deflateRaw(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array<Arr
 class Fields {
   private readonly bytes: number[] = [];
 
-  u16(v: number): this {
-    this.bytes.push(v & 0xff, (v >>> 8) & 0xff);
+  u16(value: number): this {
+    this.bytes.push(value & BYTE_MASK, (value >>> BITS_PER_BYTE) & BYTE_MASK);
     return this;
   }
 
-  u32(v: number): this {
-    return this.u16(v & 0xffff).u16(v >>> 16);
+  u32(value: number): this {
+    return this.u16(value & U16_MASK).u16(value >>> U16_BITS);
   }
 
   done(): Uint8Array<ArrayBuffer> {
     return new Uint8Array(this.bytes);
   }
+}
+
+/** An entry's local file header: no extra field. */
+function localHeader(entry: Written): Uint8Array<ArrayBuffer> {
+  return new Fields()
+    .u32(LOCAL_HEADER)
+    .u16(VERSION)
+    .u16(UTF8_NAMES)
+    .u16(entry.method)
+    .u16(DOS_TIME)
+    .u16(DOS_DATE)
+    .u32(entry.crc)
+    .u32(entry.packed)
+    .u32(entry.size)
+    .u16(entry.name.length)
+    .u16(0)
+    .done();
+}
+
+/** An entry's central directory header: no extra field, comment, disk number or attributes. */
+function centralHeader(entry: Written): Uint8Array<ArrayBuffer> {
+  return new Fields()
+    .u32(CENTRAL_HEADER)
+    .u16(VERSION)
+    .u16(VERSION)
+    .u16(UTF8_NAMES)
+    .u16(entry.method)
+    .u16(DOS_TIME)
+    .u16(DOS_DATE)
+    .u32(entry.crc)
+    .u32(entry.packed)
+    .u32(entry.size)
+    .u16(entry.name.length)
+    .u16(0)
+    .u16(0)
+    .u16(0)
+    .u16(0)
+    .u32(0)
+    .u32(entry.offset)
+    .done();
+}
+
+/** The end of the central directory: its entry count, its size and where it starts. */
+function directoryEnd(count: number, size: number, start: number): Uint8Array<ArrayBuffer> {
+  return new Fields()
+    .u32(DIRECTORY_END)
+    .u16(0)
+    .u16(0)
+    .u16(count)
+    .u16(count)
+    .u32(size)
+    .u32(start)
+    .u16(0)
+    .done();
+}
+
+/** The parts one after another. */
+function joined(parts: Uint8Array<ArrayBuffer>[]): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
 }
 
 /**
@@ -75,75 +154,28 @@ export async function zipFile(entries: readonly ZipEntry[]): Promise<Uint8Array<
   const parts: Uint8Array<ArrayBuffer>[] = [];
   const written: Written[] = [];
   let at = 0;
-  for (const e of entries) {
-    const name = new TextEncoder().encode(e.path);
-    const body = e.deflate ? await deflateRaw(e.data) : e.data;
-    const w: Written = {
+  for (const entry of entries) {
+    const name = new TextEncoder().encode(entry.path);
+    const body = entry.deflate ? await deflateRaw(entry.data) : entry.data;
+    const kept: Written = {
       name,
-      method: e.deflate ? DEFLATED : STORED,
-      crc: crc32(e.data),
-      size: e.data.length,
+      method: entry.deflate ? DEFLATED : STORED,
+      crc: crc32(entry.data),
+      size: entry.data.length,
       packed: body.length,
       offset: at,
     };
-    const head = new Fields()
-      .u32(0x04034b50)
-      .u16(VERSION)
-      .u16(UTF8_NAMES)
-      .u16(w.method)
-      .u16(DOS_TIME)
-      .u16(DOS_DATE)
-      .u32(w.crc)
-      .u32(w.packed)
-      .u32(w.size)
-      .u16(name.length)
-      .u16(0)
-      .done();
+    const head = localHeader(kept);
     parts.push(head, name, body);
     at += head.length + name.length + body.length;
-    written.push(w);
+    written.push(kept);
   }
   const start = at;
-  for (const w of written) {
-    const head = new Fields()
-      .u32(0x02014b50)
-      .u16(VERSION)
-      .u16(VERSION)
-      .u16(UTF8_NAMES)
-      .u16(w.method)
-      .u16(DOS_TIME)
-      .u16(DOS_DATE)
-      .u32(w.crc)
-      .u32(w.packed)
-      .u32(w.size)
-      .u16(w.name.length)
-      .u16(0)
-      .u16(0)
-      .u16(0)
-      .u16(0)
-      .u32(0)
-      .u32(w.offset)
-      .done();
-    parts.push(head, w.name);
-    at += head.length + w.name.length;
+  for (const kept of written) {
+    const head = centralHeader(kept);
+    parts.push(head, kept.name);
+    at += head.length + kept.name.length;
   }
-  parts.push(
-    new Fields()
-      .u32(0x06054b50)
-      .u16(0)
-      .u16(0)
-      .u16(written.length)
-      .u16(written.length)
-      .u32(at - start)
-      .u32(start)
-      .u16(0)
-      .done(),
-  );
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let k = 0;
-  for (const p of parts) {
-    out.set(p, k);
-    k += p.length;
-  }
-  return out;
+  parts.push(directoryEnd(written.length, at - start, start));
+  return joined(parts);
 }

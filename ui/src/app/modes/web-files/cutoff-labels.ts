@@ -32,22 +32,22 @@ export interface CutoffCropFile {
 }
 
 /** A number as Python's json.dumps writes a float: 128.0, 0.3 (the labels' numbers lie between 1e-4 and 1e16). */
-function pythonFloat(v: number): string {
-  return Number.isInteger(v) ? v.toFixed(1) : String(v);
+function pythonFloat(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(1) : String(value);
 }
 
 /** A value as Python's json.dumps writes it, floats as floats. */
-function pythonJson(v: unknown): string {
-  if (typeof v === 'number') return pythonFloat(v);
-  if (Array.isArray(v)) return `[${v.map(pythonJson).join(', ')}]`;
-  if (v && typeof v === 'object')
-    return `{${Object.entries(v)
-      .map(([k, x]) => `${JSON.stringify(k)}: ${pythonJson(x)}`)
+function pythonJson(value: unknown): string {
+  if (typeof value === 'number') return pythonFloat(value);
+  if (Array.isArray(value)) return `[${value.map(pythonJson).join(', ')}]`;
+  if (value && typeof value === 'object')
+    return `{${Object.entries(value)
+      .map(([key, field]) => `${JSON.stringify(key)}: ${pythonJson(field)}`)
       .join(', ')}}`;
   // past ASCII as \u escapes, as json.dumps writes it (ensure_ascii)
-  return JSON.stringify(v).replace(
+  return JSON.stringify(value).replace(
     /[\u007f-￿]/g,
-    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
   );
 }
 
@@ -69,8 +69,8 @@ export class CutoffLabels {
   readonly count = computed<CutoffLabelsCount>(() => {
     const rows = this.rows();
     return {
-      crops: new Set(rows.map((r) => r.file)).size,
-      recordings: new Set(rows.map((r) => r.video)).size,
+      crops: new Set(rows.map((row) => row.file)).size,
+      recordings: new Set(rows.map((row) => row.video)).size,
     };
   });
 
@@ -84,7 +84,7 @@ export class CutoffLabels {
   async add(rows: readonly CutoffRow[], crops: readonly CutoffCropFile[]): Promise<void> {
     await this.ready;
     this.rows.update((now) => [...now, ...rows]);
-    const entries: StoreEntry[] = crops.map((c) => [CROP_KEY + c.file, c.npz]);
+    const entries: StoreEntry[] = crops.map((crop) => [CROP_KEY + crop.file, crop.npz]);
     await this.store.setMany([...entries, [ROWS_KEY, this.rows()]]);
   }
 
@@ -92,7 +92,7 @@ export class CutoffLabels {
   async file(): Promise<Blob> {
     await this.ready;
     const rows = this.rows();
-    const names = [...new Set(rows.map((r) => r.file))];
+    const names = [...new Set(rows.map((row) => row.file))];
     const crops = await Promise.all(
       names.map(async (file) => ({
         file,
@@ -102,12 +102,12 @@ export class CutoffLabels {
     const zip = await zipFile([
       {
         path: 'checked.jsonl',
-        data: new TextEncoder().encode(rows.map((r) => `${rowLine(r)}\n`).join('')),
+        data: new TextEncoder().encode(rows.map((row) => `${rowLine(row)}\n`).join('')),
         deflate: true,
       },
       ...crops
-        .filter((c): c is CutoffCropFile => !!c.npz)
-        .map((c) => ({ path: c.file, data: c.npz, deflate: false })),
+        .filter((crop): crop is CutoffCropFile => !!crop.npz)
+        .map((crop) => ({ path: crop.file, data: crop.npz, deflate: false })),
     ]);
     return new Blob([zip], { type: 'application/zip' });
   }
