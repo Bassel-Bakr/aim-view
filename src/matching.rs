@@ -321,8 +321,14 @@ pub fn match_times(
 /// The kill times' offset on the video's clock: the one most kills line up with (tracks ending at the crosshair within
 /// 2.5 frames), refined by the median of how far each that lines up is off.
 fn clock_offset(kt: &[f64], vt: &[f64], fps: f64) -> f64 {
+    // vt is sorted: the nearest is one of the two either side of t, the earlier on a tie, as a scan from the start
+    // finds it
     let nearest = |t: f64| {
-        vt.iter().copied().fold((f64::INFINITY, 0.0), |best, v| if (t - v).abs() < best.0 { ((t - v).abs(), v) } else { best })
+        let i = vt.partition_point(|&v| v < t);
+        [i.wrapping_sub(1), i]
+            .into_iter()
+            .filter_map(|j| vt.get(j))
+            .fold((f64::INFINITY, 0.0), |best, &v| if (t - v).abs() < best.0 { ((t - v).abs(), v) } else { best })
     };
     let mut best: Option<(usize, f64)> = None;
     for &a in vt.iter().take(40) {
