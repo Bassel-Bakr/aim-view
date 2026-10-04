@@ -16,7 +16,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,19 +43,6 @@ def command():
         return [str(TOOL)]
     raise RuntimeError(f"no cargo on the PATH and no {TOOL} (cargo build --release -p aimview-service "
                        "--bin aimview-tool)")
-
-
-def in_parallel(calls, at_once):
-    """Each call (a function of no arguments, such as a review: a process of its own) run `at_once` at a time. Yields
-    (the call's index, its result) as each ends; a call's error is raised in its turn, and the calls not started then
-    are dropped."""
-    pool = ThreadPoolExecutor(max_workers=max(1, at_once))
-    try:
-        futures = {pool.submit(call): index for index, call in enumerate(calls)}
-        for future in as_completed(futures):
-            yield futures[future], future.result()
-    finally:
-        pool.shutdown(cancel_futures=True)
 
 
 def run(*args):

@@ -24,17 +24,15 @@ The limits (each against the best model's number, kind by kind):
     so the run is the finest unit there.
 
 The tracks are reused where the scripts keep them (moving_<name>_native.pkl; video_alone/<name>/), and a cache made
-before the export or a changed settings file stops the gate. The recordings not in them are tracked --jobs at a time:
-each review is a process of its own, so the tracks do not depend on how many run together. The four report recordings
-are reviewed again (eval_vods.py keeps nothing), unless this gate reviewed them with the same export, settings and
-review program before.
+before the export or a changed settings file stops the gate. The four report recordings are reviewed again
+(eval_vods.py keeps nothing), unless this gate reviewed them with the same export, settings and review program before.
 Every review runs one copy of the review program, built once at the start (test_out/vod_model/accept/<name>/bin/), so
 both models are reviewed by the same code even while the source changes. No script's result file is written.
 
 On a pass, --list adds the model to models.json (so `bun run assets` ships it), unless it is there already. It never
 edits models.json on a fail and never changes the default model: it prints the lines to change for that.
 Writes python/model/reports/accept_<name>.json; exits 1 on a fail.
-Usage: python python/model/accept.py <name> [--list] [--jobs 2]
+Usage: python python/model/accept.py <name> [--list]
 """
 import argparse
 import hashlib
@@ -70,7 +68,6 @@ CLICKING = ("static", "dynamic", "switching")
 TOLERANCE = 3                                   # eval_video_alone.py's frames between a video kill and its stats kill
 PLAIN_THRESHOLD = 0.3                           # what the pipeline took without a settings file (with no score map)
 NAME_CHARS = 60                                 # a recording's name in the progress lines
-REVIEWS_AT_ONCE = 2                             # recordings tracked at once (each review a process of its own)
 
 
 def say(*parts):
@@ -188,10 +185,9 @@ def failures(check, where=""):
     return out
 
 
-def moving(model, pick, lib, program, at_once):
+def moving(model, pick, lib, program):
     """eval_moving.py's numbers on every recording, from its track cache (the recordings not in it tracked and added,
-    as eval_moving does, `at_once` at a time): {video: [kind, matched, stats kills, measured]} or, tracking, [kind, on
-    target, accuracy]."""
+    as eval_moving does): {video: [kind, matched, stats kills, measured]} or, tracking, [kind, on target, accuracy]."""
     cache = EVAL / f"moving_{model.name}_native.pkl"
     tracks = {}
     if cache.exists():
@@ -200,21 +196,17 @@ def moving(model, pick, lib, program, at_once):
             sys.exit(f"{cache.relative_to(ROOT)} is older than {', '.join(stale)}: move it to a retired/ folder and "
                      "run again to track with this model")
         tracks = pickle.load(open(cache, "rb"))
-    facts, counts = lib.scenario_facts(), lib.target_counts()
-    todo = [video for videos in pick.values() for video, _ in videos if video not in tracks]
-
-    def review(video):
-        return lib.review_video(video, str(model.export), cap=counts.get(scenario_of(video)), quiet=True)["tracks"]
-
-    if todo:
-        say(f"moving: tracking {len(todo)} recordings with {model.name}, {at_once} at a time")
-    for at, video_tracks in aimview_tools.in_parallel([lambda video=video: review(video) for video in todo], at_once):
-        say(f"moving: tracked {Path(todo[at]).stem[:NAME_CHARS]} with {model.name}")
-        tracks[todo[at]] = video_tracks
-        partial = cache.with_suffix(".pkl.tmp")
-        pickle.dump(tracks, open(partial, "wb"))
-        os.replace(partial, cache)
-    fresh = [Path(video).name for video in todo]
+    facts, counts, fresh = lib.scenario_facts(), lib.target_counts(), []
+    for videos in pick.values():
+        for video, _ in videos:
+            if video not in tracks:
+                say(f"moving: tracking {Path(video).stem[:NAME_CHARS]} with {model.name}")
+                tracks[video] = lib.review_video(video, str(model.export), cap=counts.get(scenario_of(video)),
+                                                 quiet=True)["tracks"]
+                fresh.append(Path(video).name)
+                partial = cache.with_suffix(".pkl.tmp")
+                pickle.dump(tracks, open(partial, "wb"))
+                os.replace(partial, cache)
     out = {}
     for kind, videos in pick.items():
         for video, stats in videos:
@@ -246,7 +238,7 @@ def report_runs(model, lib, programs):
     return out, True
 
 
-def video_alone(model, program, at_once):
+def video_alone(model, program):
     """eval_video_alone.py's runs scored with the video-alone finder: {run: {set, kind, truth, video, found}}, the runs
     left out, and the runs tracked now. The tracks come from its cache (runs tracked with another export are tracked
     again there, as the script does)."""
@@ -266,17 +258,17 @@ def video_alone(model, program, at_once):
                      f"python python/model/eval_video_alone.py {model.name} --retrack first")
     if todo:
         say(f"video alone: tracking {len(todo)} runs with {model.name}")
-    eval_video_alone.track_all(runs, model.name, model.export, False, at_once)
+    eval_video_alone.track_all(runs, model.name, model.export, False)
     per_run, left_out = eval_video_alone.score(runs, cache, program, TOLERANCE)
     keep = ("set", "kind", "truth", "video", "found")
     return {run_id: {field: result[field] for field in keep} for run_id, result in per_run.items()}, left_out, todo
 
 
-def evaluate(model, pick, lib, scorer, programs, at_once):
+def evaluate(model, pick, lib, scorer, programs):
     started = time.time()
-    moving_results, moving_fresh = moving(model, pick, lib, scorer, at_once)
+    moving_results, moving_fresh = moving(model, pick, lib, scorer)
     report_results, report_fresh = report_runs(model, lib, programs)
-    alone, alone_left_out, alone_fresh = video_alone(model, scorer, at_once)
+    alone, alone_left_out, alone_fresh = video_alone(model, scorer)
     return dict(moving=moving_results, report=report_results, video_alone=alone, video_alone_left_out=alone_left_out,
                 fresh=dict(moving_tracked=moving_fresh, report_reviewed=report_fresh,
                            video_alone_tracked=len(alone_fresh)),
@@ -458,8 +450,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("name", help="the model: python/model/exports/detector_<name>_u8in.onnx and detector_<name>.json")
     parser.add_argument("--list", action="store_true", help="on a pass, add the model to models.json")
-    parser.add_argument("--jobs", type=int, default=REVIEWS_AT_ONCE,
-                        help=f"recordings reviewed at once [{REVIEWS_AT_ONCE}]: the results do not depend on it")
     args = parser.parse_args()
     best = best_model()
     model, best_one = Model(args.name), Model(best)
@@ -468,8 +458,8 @@ def main():
     scorer, programs = pin_programs(model.name)
     lib = eval_vods.library()
     pick = eval_moving.picks(lib)
-    cand = evaluate(model, pick, lib, scorer, programs, args.jobs)
-    base = cand if best_one.name == model.name else evaluate(best_one, pick, lib, scorer, programs, args.jobs)
+    cand = evaluate(model, pick, lib, scorer, programs)
+    base = cand if best_one.name == model.name else evaluate(best_one, pick, lib, scorer, programs)
     rows = judge(cand, base, con)
     passed = all(check["passed"] for check in rows)
     say_checks(rows, con, best)

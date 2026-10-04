@@ -164,9 +164,9 @@ def file_hash(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def track_all(runs, name, model, retrack, at_once=1):
-    """Tracks the runs not tracked yet with this model file (all of them with retrack), `at_once` at a time. Each run's
-    model.json, written when its tracking is done, says which file tracked it."""
+def track_all(runs, name, model, retrack):
+    """Tracks the runs not tracked yet with this model file (all of them with retrack). Each run's model.json, written
+    when its tracking is done, says which file tracked it."""
     cache = EVAL / "video_alone" / name
     digest = file_hash(model)
 
@@ -179,17 +179,12 @@ def track_all(runs, name, model, retrack, at_once=1):
     if not todo:
         return cache
     lib = aimview_tools.Library()
-
-    def track(run):
+    for i, run in enumerate(todo, 1):
         started, folder = time.time(), cache / slug(run["id"])
         lib.review_video(str(lib.resolve(run["id"])), str(model), str(folder), stats=str(run["stats_file"]),
                          areas=AREAS, quiet=True)
         (folder / "model.json").write_text(json.dumps(dict(model=str(model), sha256=digest)))
-        return time.time() - started
-
-    calls = [lambda run=run: track(run) for run in todo]
-    for done, (at, seconds) in enumerate(aimview_tools.in_parallel(calls, at_once), 1):
-        print(f"tracked {done}/{len(todo)} in {seconds:5.1f} s: {todo[at]['id']}", flush=True)
+        print(f"tracked {i}/{len(todo)} in {time.time() - started:5.1f} s: {run['id']}", flush=True)
     return cache
 
 
