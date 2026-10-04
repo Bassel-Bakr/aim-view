@@ -169,7 +169,7 @@ pub fn review_clicks(
     let mut ms = measure(&flicks, tracks, r);
     if let Some(c) = &cost {
         for m in &mut ms {
-            if let Some(k) = m.n.checked_sub(1).and_then(|i| c.per_kill.get(i)) {
+            if let Some(k) = m.kill_number.checked_sub(1).and_then(|i| c.per_kill.get(i)) {
                 (m.reloads, m.reload_time) = (Some(k.reloads), Some(k.seconds));
             }
         }

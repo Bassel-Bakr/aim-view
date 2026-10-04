@@ -36,7 +36,7 @@ export interface Measure {
   dwell: number | null;
   past: number;
   /**
-   * Corrections: bursts of movement after the main flick.
+   * Corrections (`corr` in the JSON): bursts of movement after the main flick.
    */
   corr: number;
   click_speed: number;

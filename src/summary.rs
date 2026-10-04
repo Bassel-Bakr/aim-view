@@ -175,7 +175,7 @@ fn share(ms: &[&Measure], pass: impl Fn(&Measure) -> bool) -> f64 {
 /// Fitts' law fitted to the run's kills by least squares (t = a + b log2(1 + D / W)): the predicted time of a flick
 /// by its distance, or None with too few kills.
 fn fitts(ms: &[Measure], w: f64) -> Option<impl Fn(f64) -> f64> {
-    let pts: Vec<(f64, f64)> = ms.iter().filter(|m| m.d0 != 0.0).map(|m| ((1.0 + m.d0 / w).log2(), m.total)).collect();
+    let pts: Vec<(f64, f64)> = ms.iter().filter(|m| m.start_distance_deg != 0.0).map(|m| ((1.0 + m.start_distance_deg / w).log2(), m.total)).collect();
     if pts.len() < 3 || w <= 0.0 {
         return None;
     }
@@ -204,8 +204,8 @@ pub fn summarize(
     let miss = number(meta, "Miss Count")?;
     let held: Vec<&Measure> = ms.iter().filter(|m| m.hold.is_some_and(|h| h != 0.0)).collect();
     let still_of = |pass: &dyn Fn(&Measure) -> bool| med(ms.iter().filter(|m| pass(m) && m.still.is_some()).map(|m| m.still));
-    let short: Vec<f64> = ms.iter().filter(|m| m.end_left > r && m.d0 > 2.0).map(|m| m.end_left / m.d0).collect();
-    let mid: Vec<&Measure> = ms.iter().filter(|m| (10.0..25.0).contains(&m.d0)).collect();
+    let short: Vec<f64> = ms.iter().filter(|m| m.end_left > r && m.start_distance_deg > 2.0).map(|m| m.end_left / m.start_distance_deg).collect();
+    let mid: Vec<&Measure> = ms.iter().filter(|m| (10.0..25.0).contains(&m.start_distance_deg)).collect();
     let parts: Vec<[f64; 5]> = ms.iter().filter_map(|m| m.parts).collect();
     let fit = fitts(ms, 2.0 * r);
     let totals: Vec<f64> = ms.iter().map(|m| m.total).collect();
@@ -259,7 +259,7 @@ pub fn summarize(
         by_distance: DISTANCES
             .iter()
             .filter_map(|&(lo, hi)| {
-                let g: Vec<&Measure> = ms.iter().filter(|m| lo as f64 <= m.d0 && m.d0 < hi as f64).collect();
+                let g: Vec<&Measure> = ms.iter().filter(|m| lo as f64 <= m.start_distance_deg && m.start_distance_deg < hi as f64).collect();
                 (!g.is_empty()).then(|| DistanceGroup {
                     lo,
                     hi,
@@ -277,15 +277,15 @@ pub fn summarize(
             .enumerate()
             .filter_map(|(k, &name)| {
                 let g: Vec<&Measure> =
-                    ms.iter().filter(|m| ((m.dir.rem_euclid(360.0) / 45.0).round_ties_even() as usize) % 8 == k).collect();
+                    ms.iter().filter(|m| ((m.direction_deg.rem_euclid(360.0) / 45.0).round_ties_even() as usize) % 8 == k).collect();
                 (!g.is_empty()).then(|| DirectionGroup {
                     name,
                     n: g.len(),
                     interval: med(g.iter().map(|m| Some(m.total))),
-                    distance: med(g.iter().map(|m| Some(m.d0))),
+                    distance: med(g.iter().map(|m| Some(m.start_distance_deg))),
                     short: share(&g, |m| m.end_left > r),
                     past: share(&g, |m| m.end_left < -r),
-                    beyond: fit.as_ref().and_then(|f| med(g.iter().map(|m| Some(m.total - f(m.d0))))),
+                    beyond: fit.as_ref().and_then(|f| med(g.iter().map(|m| Some(m.total - f(m.start_distance_deg))))),
                 })
             })
             .collect(),

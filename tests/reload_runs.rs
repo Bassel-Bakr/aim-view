@@ -53,7 +53,7 @@ fn forced_reloads_on_real_runs() {
         eprintln!("{scenario} ({} kills, {} measured): {rules:?}", s.kills, s.measured);
         eprintln!("  forced reloads: {reloads:?}");
         for m in got.flicks.iter().filter(|m| m.reloads.is_some_and(|n| n > 0)) {
-            eprintln!("  kill {}: {:?} shots, {:?} reloads, {:?} s", m.n, m.shots, m.reloads, m.reload_time);
+            eprintln!("  kill {}: {:?} shots, {:?} reloads, {:?} s", m.kill_number, m.shots, m.reloads, m.reload_time);
         }
         let line = s.what_if.iter().find(|w| w.what.starts_with("Reload"));
         if let Some(w) = line {

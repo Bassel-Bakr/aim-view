@@ -219,13 +219,13 @@ fn best_ten(ms: &[Measure], fps: f64, rate: f64, total: f64) -> Option<Saving> {
 
 /// A flick's way covered and time: from the start to where the flick ended (its speed is the one over the other).
 fn covered(m: &Measure) -> Option<(f64, f64)> {
-    let w = m.d0 - m.end_left;
+    let w = m.start_distance_deg - m.end_left;
     m.flick.filter(|&f| f > 0.0 && w > 0.0).map(|f| (w, f))
 }
 
 /// The measures in each distance group (summary.rs: `DISTANCES`) that have a flick speed.
 fn by_distance(ms: &[Measure]) -> [Vec<(f64, f64)>; DISTANCES.len()] {
-    DISTANCES.map(|(lo, hi)| ms.iter().filter(|m| lo as f64 <= m.d0 && m.d0 < hi as f64).filter_map(covered).collect())
+    DISTANCES.map(|(lo, hi)| ms.iter().filter(|m| lo as f64 <= m.start_distance_deg && m.start_distance_deg < hi as f64).filter_map(covered).collect())
 }
 
 /// Each flick at the speed of the fastest quarter (the 75th percentile) of its distance group's flicks.
@@ -258,7 +258,7 @@ fn direction(ms: &[Measure]) -> Option<Saving> {
     for &(lo, hi) in DISTANCES.iter() {
         let g: Vec<(&Measure, (f64, f64))> = ms
             .iter()
-            .filter(|m| lo as f64 <= m.d0 && m.d0 < hi as f64)
+            .filter(|m| lo as f64 <= m.start_distance_deg && m.start_distance_deg < hi as f64)
             .filter_map(|m| covered(m).map(|c| (m, c)))
             .collect();
         if g.len() < 3 {
@@ -266,7 +266,7 @@ fn direction(ms: &[Measure]) -> Option<Saving> {
         }
         let mid = median(&g.iter().map(|&(_, (w, f))| w / f).collect::<Vec<_>>());
         for (m, (w, f)) in g {
-            let k = ((m.dir.rem_euclid(360.0) / 45.0).round_ties_even() as usize) % 8;
+            let k = ((m.direction_deg.rem_euclid(360.0) / 45.0).round_ties_even() as usize) % 8;
             groups[k].push((w / f / mid, f));
         }
     }
@@ -287,7 +287,7 @@ fn direction(ms: &[Measure]) -> Option<Saving> {
 /// The kills with more than the median count of micros, their settle time cut to the median settle time of the
 /// others.
 fn fewer_micros(ms: &[Measure]) -> Option<Saving> {
-    let g: Vec<(f64, f64)> = ms.iter().filter_map(|m| m.settle.map(|s| (m.corr as f64, s))).collect();
+    let g: Vec<(f64, f64)> = ms.iter().filter_map(|m| m.settle.map(|s| (m.corrections as f64, s))).collect();
     if g.len() < 4 {
         return None;
     }
@@ -300,7 +300,7 @@ fn fewer_micros(ms: &[Measure]) -> Option<Saving> {
 
 /// The settle time after flicks that ended on the target (neither short nor past) and were still corrected.
 fn smaller_micros(ms: &[Measure], r: f64) -> Option<Saving> {
-    let t: Vec<f64> = ms.iter().filter(|m| m.end_left.abs() <= r && m.corr > 0).filter_map(|m| m.settle).collect();
+    let t: Vec<f64> = ms.iter().filter(|m| m.end_left.abs() <= r && m.corrections > 0).filter_map(|m| m.settle).collect();
     (!t.is_empty()).then(|| Saving {
         line: Line::SmallerMicros,
         seconds: t.iter().sum(),
@@ -317,7 +317,7 @@ fn miss(ms: &[Measure], hits_per_kill: Option<f64>, points: Option<f64>) -> Opti
     };
     let (mut seconds, mut misses) = (0.0, 0);
     for &(lo, hi) in DISTANCES.iter() {
-        let g: Vec<&Measure> = ms.iter().filter(|m| lo as f64 <= m.d0 && m.d0 < hi as f64).collect();
+        let g: Vec<&Measure> = ms.iter().filter(|m| lo as f64 <= m.start_distance_deg && m.start_distance_deg < hi as f64).collect();
         let clean: Vec<f64> = g.iter().filter(|m| m.shots == Some(base)).map(|m| m.total).collect();
         if clean.len() < 3 {
             continue;
@@ -425,10 +425,10 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     fn flick(d0: f64, dir: f64, total: f64, react: f64, fl: f64, end_left: f64, corr: usize, settle: f64, still: f64, shots: i64) -> Measure {
         Measure {
-            n: 0,
+            kill_number: 0,
             shots: Some(shots),
-            d0,
-            dir,
+            start_distance_deg: d0,
+            direction_deg: dir,
             total,
             react: Some(react),
             flick: Some(fl),
@@ -438,7 +438,7 @@ mod tests {
             arrive: Some(react + fl + 0.05),
             dwell: None,
             past: 0.0,
-            corr,
+            corrections: corr,
             click_speed: 0.0,
             click_off: 0.0,
             click_off_xy: (0.0, 0.0),
