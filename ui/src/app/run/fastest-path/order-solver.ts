@@ -16,26 +16,29 @@ const DEFAULT_B = 0.1;
 
 export function fitFitts(flicks: Flick[], radius: number): Fitts {
   const widthDeg = 2 * radius;
-  const pts = flicks
-    .filter((m) => m.total != null && m.D0 > 0)
-    .map((m) => [Math.log2(1 + m.D0 / widthDeg), m.total]);
-  const n = pts.length;
-  if (n < MIN_FIT) return { a: 0, b: DEFAULT_B, widthDeg };
-  const mx = pts.reduce((s, p) => s + p[0], 0) / n;
-  const my = pts.reduce((s, p) => s + p[1], 0) / n;
-  const sxy = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0);
-  const sxx = pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
-  const b = sxx > 0 && sxy > 0 ? sxy / sxx : DEFAULT_B;
-  return { a: my - b * mx, b, widthDeg };
+  const samples = flicks
+    .filter((kill) => kill.total != null && kill.D0 > 0)
+    .map((kill) => [Math.log2(1 + kill.D0 / widthDeg), kill.total]);
+  const count = samples.length;
+  if (count < MIN_FIT) return { a: 0, b: DEFAULT_B, widthDeg };
+  const meanUnits = samples.reduce((sum, sample) => sum + sample[0], 0) / count;
+  const meanSeconds = samples.reduce((sum, sample) => sum + sample[1], 0) / count;
+  const sumProducts = samples.reduce(
+    (sum, sample) => sum + (sample[0] - meanUnits) * (sample[1] - meanSeconds),
+    0,
+  );
+  const sumSquares = samples.reduce((sum, sample) => sum + (sample[0] - meanUnits) ** 2, 0);
+  const b = sumSquares > 0 && sumProducts > 0 ? sumProducts / sumSquares : DEFAULT_B;
+  return { a: meanSeconds - b * meanUnits, b, widthDeg };
 }
 
 /**
- * For a set of targets: best[mask * n + j], the least cost to visit every target in mask starting at j, and next[...]
+ * For a set of targets: best[mask * targetCount + j], the least cost to visit every target in mask starting at j, and next[...]
  * the target after j. It depends only on the targets' places relative to each other, which hold while the view moves.
  */
 interface OrderTable {
-  n: number;
-  full: number;
+  targetCount: number;
+  fullMask: number;
   best: Float64Array;
   next: Int8Array;
 }
@@ -47,12 +50,12 @@ interface CachedTable {
   table: OrderTable;
 }
 
-/** The best orders through a set: the targets (in the table's order), from[j] (the whole set's cost when j goes first), and j0 the best first. */
+/** The best orders through a set: the targets (in the table's order), from[j] (the whole set's cost when j goes first), and bestFirst, the best j. */
 export interface Solution {
-  pts: TrackPoint[];
+  targets: TrackPoint[];
   table: OrderTable;
   from: number[];
-  j0: number;
+  bestFirst: number;
 }
 
 /** The fastest order through the targets, and its predicted time in seconds. */
@@ -74,85 +77,91 @@ export class OrderSolver {
   constructor(readonly fitts: Fitts) {}
 
   /** From the crosshair to a target, in log units. */
-  costFromCrosshair(p: TrackPoint): number {
-    return Math.log2(1 + Math.hypot(p[1], p[2]) / this.fitts.widthDeg);
+  costFromCrosshair(target: TrackPoint): number {
+    return Math.log2(1 + Math.hypot(target[1], target[2]) / this.fitts.widthDeg);
   }
 
   /** From one target to another, in log units. */
-  cost(p: TrackPoint, q: TrackPoint): number {
-    return Math.log2(1 + Math.hypot(p[1] - q[1], p[2] - q[2]) / this.fitts.widthDeg);
+  cost(from: TrackPoint, to: TrackPoint): number {
+    return Math.log2(1 + Math.hypot(from[1] - to[1], from[2] - to[2]) / this.fitts.widthDeg);
   }
 
   /** The time for n flicks of so many log units in all. */
-  seconds(n: number, units: number): number {
-    return n * this.fitts.a + this.fitts.b * units;
+  seconds(flickCount: number, units: number): number {
+    return flickCount * this.fitts.a + this.fitts.b * units;
   }
 
   /** The log units of a path from the crosshair through the targets in order. */
   pathUnits(order: TrackPoint[]): number {
     return order.reduce(
-      (u, p, i) => u + (i ? this.cost(order[i - 1], p) : this.costFromCrosshair(p)),
+      (units, target, i) =>
+        units + (i ? this.cost(order[i - 1], target) : this.costFromCrosshair(target)),
       0,
     );
   }
 
   solve(targets: TrackPoint[]): Solution | null {
     if (!targets.length) return null;
-    const ts =
+    const candidates =
       targets.length > MAX_TARGETS
         ? [...targets]
-            .sort((p, q) => this.costFromCrosshair(p) - this.costFromCrosshair(q))
+            .sort((a, b) => this.costFromCrosshair(a) - this.costFromCrosshair(b))
             .slice(0, MAX_TARGETS)
         : targets;
-    const key = ts
-      .map((t) => t[0])
+    const key = candidates
+      .map((target) => target[0])
       .sort((a, b) => a - b)
       .join(',');
     if (this.cache?.key !== key)
-      this.cache = { key, ids: ts.map((t) => t[0]), table: this.table(ts) };
+      this.cache = {
+        key,
+        ids: candidates.map((target) => target[0]),
+        table: this.table(candidates),
+      };
     const { ids, table } = this.cache;
-    const byId = new Map(ts.map((t) => [t[0], t]));
-    const pts = ids.map((i) => byId.get(i) as TrackPoint);
-    const from = pts.map(
-      (p, j) => this.costFromCrosshair(p) + table.best[table.full * table.n + j],
+    const byId = new Map(candidates.map((target) => [target[0], target]));
+    const inTableOrder = ids.map((id) => byId.get(id) as TrackPoint);
+    const from = inTableOrder.map(
+      (target, j) =>
+        this.costFromCrosshair(target) + table.best[table.fullMask * table.targetCount + j],
     );
-    return { pts, table, from, j0: from.indexOf(Math.min(...from)) };
+    return { targets: inTableOrder, table, from, bestFirst: from.indexOf(Math.min(...from)) };
   }
 
   fastestOrder(targets: TrackPoint[]): FastestOrder | null {
-    const sol = this.solve(targets);
-    if (!sol) return null;
-    const { pts, table } = sol;
+    const solution = this.solve(targets);
+    if (!solution) return null;
+    const { targets: inTableOrder, table } = solution;
     const order: TrackPoint[] = [];
-    for (let mask = table.full, j = sol.j0; j >= 0;) {
-      order.push(pts[j]);
-      const k = table.next[mask * table.n + j];
+    for (let mask = table.fullMask, j = solution.bestFirst; j >= 0;) {
+      order.push(inTableOrder[j]);
+      const after = table.next[mask * table.targetCount + j];
       mask ^= 1 << j;
-      j = k;
+      j = after;
     }
-    return { order, seconds: this.seconds(order.length, sol.from[sol.j0]) };
+    return { order, seconds: this.seconds(order.length, solution.from[solution.bestFirst]) };
   }
 
-  private table(ts: TrackPoint[]): OrderTable {
-    const n = ts.length;
-    const full = (1 << n) - 1;
-    const best = new Float64Array((full + 1) * n).fill(Infinity);
-    const next = new Int8Array((full + 1) * n).fill(-1);
-    for (let j = 0; j < n; j++) best[(1 << j) * n + j] = 0;
-    for (let mask = 1; mask <= full; mask++) {
-      for (let j = 0; j < n; j++) {
+  private table(targets: TrackPoint[]): OrderTable {
+    const count = targets.length;
+    const fullMask = (1 << count) - 1;
+    const best = new Float64Array((fullMask + 1) * count).fill(Infinity);
+    const next = new Int8Array((fullMask + 1) * count).fill(-1);
+    for (let j = 0; j < count; j++) best[(1 << j) * count + j] = 0;
+    for (let mask = 1; mask <= fullMask; mask++) {
+      for (let j = 0; j < count; j++) {
         if (!(mask & (1 << j)) || mask === 1 << j) continue;
         const rest = mask ^ (1 << j);
-        for (let k = 0; k < n; k++) {
-          if (!(rest & (1 << k))) continue;
-          const v = this.cost(ts[j], ts[k]) + best[rest * n + k];
-          if (v < best[mask * n + j]) {
-            best[mask * n + j] = v;
-            next[mask * n + j] = k;
+        for (let after = 0; after < count; after++) {
+          if (!(rest & (1 << after))) continue;
+          const cost = this.cost(targets[j], targets[after]) + best[rest * count + after];
+          if (cost < best[mask * count + j]) {
+            best[mask * count + j] = cost;
+            next[mask * count + j] = after;
           }
         }
       }
     }
-    return { n, full, best, next };
+    return { targetCount: count, fullMask, best, next };
   }
 }

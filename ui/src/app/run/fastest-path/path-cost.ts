@@ -14,8 +14,8 @@ export class PathCost {
   private readonly faint = inject(FaintCutoff);
 
   readonly analysis = computed<PathAnalysis | null>(() => {
-    const r = this.review.report.hasValue() ? this.review.report.value() : null;
-    const t = this.faint.tracks();
-    return isClickReport(r) && t ? analysePaths(r, t) : null;
+    const report = this.review.report.hasValue() ? this.review.report.value() : null;
+    const tracks = this.faint.tracks();
+    return isClickReport(report) && tracks ? analysePaths(report, tracks) : null;
   });
 }

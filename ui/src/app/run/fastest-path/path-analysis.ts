@@ -37,115 +37,153 @@ const SAME_PLACE = 0.05;
 const LEAD_IN_KILLS = 2;
 const DEFAULT_KILL = 0.5;
 
-/** The last frame a target may first show on and still count as a choice for flick m. */
-export function newCut(m: Flick, fps: number): number {
-  return m.start_frame + (m.react ?? 0) * fps - (NEW_MS / 1000) * fps;
+/** The last frame a target may first show on and still count as a choice for the flick. */
+export function newCut(flick: Flick, fps: number): number {
+  return flick.start_frame + (flick.react ?? 0) * fps - (NEW_MS / 1000) * fps;
 }
 
 /** The run's first and last frames: the first flick's start (or the user's mark) and the last kill (or the user's end). */
 type RunFrames = [firstStart: number, lastKill: number];
 
-function runFrames(r: ClickReport): RunFrames {
-  let lastKill = Math.max(...r.flicks.map((m) => m.kill_frame));
-  const first = r.flicks.reduce((a, b) => (b.kill_frame < a.kill_frame ? b : a));
-  const leadIn = Math.round(LEAD_IN_KILLS * (r.summary.median_interval || DEFAULT_KILL) * r.fps);
+function runFrames(report: ClickReport): RunFrames {
+  let lastKill = Math.max(...report.flicks.map((flick) => flick.kill_frame));
+  const first = report.flicks.reduce((a, b) => (b.kill_frame < a.kill_frame ? b : a));
+  const leadIn = Math.round(
+    LEAD_IN_KILLS * (report.summary.median_interval || DEFAULT_KILL) * report.fps,
+  );
   let firstStart =
-    r.summary.info.source === 'stats'
+    report.summary.info.source === 'stats'
       ? first.start_frame
       : Math.max(first.start_frame, first.kill_frame - leadIn);
-  if (r.run?.start != null) firstStart = Math.round(r.run.start * r.fps);
-  if (r.run?.end != null) lastKill = Math.round(r.run.end * r.fps);
+  if (report.run?.start != null) firstStart = Math.round(report.run.start * report.fps);
+  if (report.run?.end != null) lastKill = Math.round(report.run.end * report.fps);
   return [firstStart, lastKill];
 }
 
-export function analysePaths(r: ClickReport, tracks: Tracks): PathAnalysis | null {
-  if (!r.flicks.length) return null;
-  const solver = new OrderSolver(fitFitts(r.flicks, r.summary.radius));
+/** When each target (by its track's id) first showed: from the report where it says, else from the tracks. */
+function firstSeenFrames(report: ClickReport, tracks: Tracks): Map<number, number> {
   const firstSeen = new Map<number, number>();
-  if (r.appeared) for (const [k, v] of Object.entries(r.appeared)) firstSeen.set(Number(k), v);
-  else
-    tracks.frames.forEach((f, i) =>
-      f.t.forEach((t) => firstSeen.has(t[0]) || firstSeen.set(t[0], i)),
+  if (report.appeared) {
+    for (const [id, frame] of Object.entries(report.appeared)) firstSeen.set(Number(id), frame);
+  } else {
+    tracks.frames.forEach((trackFrame, i) =>
+      trackFrame.t.forEach((target) => firstSeen.has(target[0]) || firstSeen.set(target[0], i)),
     );
+  }
+  return firstSeen;
+}
+
+/** Which kill each track was (by the track's id), and each kill's track (by its kill number). */
+interface KillTracks {
+  killOf: Map<number, Flick>;
+  trackOf: Map<number, number>;
+}
+
+/** A kill's track is the one its path ends on. */
+function killTracks(report: ClickReport, tracks: Tracks): KillTracks {
   const killOf = new Map<number, Flick>();
   const trackOf = new Map<number, number>();
-  for (const m of r.flicks) {
-    const path = r.paths[String(m.kill_number)];
-    const p = path?.[path.length - 1];
+  for (const flick of report.flicks) {
+    const path = report.paths[String(flick.kill_number)];
+    const last = path?.[path.length - 1];
     const hit =
-      p &&
-      tracks.frames[p[0]]?.t.find(
-        (t) => Math.abs(t[1] - p[1]) < SAME_PLACE && Math.abs(t[2] - p[2]) < SAME_PLACE,
+      last &&
+      tracks.frames[last[0]]?.t.find(
+        (target) =>
+          Math.abs(target[1] - last[1]) < SAME_PLACE && Math.abs(target[2] - last[2]) < SAME_PLACE,
       );
     if (hit) {
-      killOf.set(hit[0], m);
-      trackOf.set(m.kill_number, hit[0]);
+      killOf.set(hit[0], flick);
+      trackOf.set(flick.kill_number, hit[0]);
     }
   }
+  return { killOf, trackOf };
+}
+
+/** What every kill's pick is measured against: the run, its tracks, when each target showed, and the solver. */
+interface PickInputs {
+  report: ClickReport;
+  tracks: Tracks;
+  firstSeen: Map<number, number>;
+  solver: OrderSolver;
+}
+
+/** How a kill's pick of its target (track id) went; null where the tracks cannot tell. */
+function killPick(flick: Flick, id: number, inputs: PickInputs): KillPick | null {
+  const { report, tracks, firstSeen, solver } = inputs;
+  const cut = newCut(flick, report.fps);
+  // a target with no known first frame is never taken for a new one, and never offered as a choice
+  if ((firstSeen.get(id) ?? -Infinity) > cut) {
+    return { cost: 0, best: false, choices: 0, spawned: true };
+  }
+  // the target just killed can linger a frame under the crosshair, and new targets were not options
+  const choices = (tracks.frames[flick.start_frame + PICK_FRAME]?.t ?? []).filter(
+    (target: TrackPoint) =>
+      target[0] === id ||
+      (Math.hypot(target[1], target[2]) > report.summary.radius &&
+        (firstSeen.get(target[0]) ?? Infinity) <= cut),
+  );
+  if (!choices.some((target) => target[0] === id)) return null;
+  if (choices.length === 1) return { cost: 0, best: true, choices: 1, spawned: false };
+  const solution = solver.solve(choices);
+  const j = solution ? solution.targets.findIndex((target) => target[0] === id) : -1;
+  if (!solution || j < 0) return null;
+  return {
+    cost: solver.fitts.b * (solution.from[j] - solution.from[solution.bestFirst]),
+    best: j === solution.bestFirst,
+    choices: choices.length,
+    spawned: false,
+  };
+}
+
+export function analysePaths(report: ClickReport, tracks: Tracks): PathAnalysis | null {
+  if (!report.flicks.length) return null;
+  const solver = new OrderSolver(fitFitts(report.flicks, report.summary.radius));
+  const firstSeen = firstSeenFrames(report, tracks);
+  const { killOf, trackOf } = killTracks(report, tracks);
+  const inputs: PickInputs = { report, tracks, firstSeen, solver };
   const picks = new Map<number, KillPick>();
-  for (const m of r.flicks) {
-    const id = trackOf.get(m.kill_number);
+  for (const flick of report.flicks) {
+    const id = trackOf.get(flick.kill_number);
     if (id == null) continue;
-    const cut = newCut(m, r.fps);
-    // a target with no known first frame is never taken for a new one, and never offered as a choice
-    if ((firstSeen.get(id) ?? -Infinity) > cut) {
-      picks.set(m.kill_number, { cost: 0, best: false, choices: 0, spawned: true });
-      continue;
-    }
-    // the target just killed can linger a frame under the crosshair, and new targets were not options
-    const ts = (tracks.frames[m.start_frame + PICK_FRAME]?.t ?? []).filter(
-      (t: TrackPoint) =>
-        t[0] === id ||
-        (Math.hypot(t[1], t[2]) > r.summary.radius && (firstSeen.get(t[0]) ?? Infinity) <= cut),
-    );
-    if (!ts.some((t) => t[0] === id)) continue;
-    if (ts.length === 1) {
-      picks.set(m.kill_number, { cost: 0, best: true, choices: 1, spawned: false });
-      continue;
-    }
-    const sol = solver.solve(ts);
-    const j = sol ? sol.pts.findIndex((p) => p[0] === id) : -1;
-    if (!sol || j < 0) continue;
-    picks.set(m.kill_number, {
-      cost: solver.fitts.b * (sol.from[j] - sol.from[sol.j0]),
-      best: j === sol.j0,
-      choices: ts.length,
-      spawned: false,
-    });
+    const pick = killPick(flick, id, inputs);
+    if (pick) picks.set(flick.kill_number, pick);
   }
   const all = [...picks.values()];
-  const withChoice = all.filter((x) => x.choices > 1);
-  const [firstStart, lastKill] = runFrames(r);
+  const withChoice = all.filter((pick) => pick.choices > 1);
+  const [firstStart, lastKill] = runFrames(report);
   return {
     solver,
     picks,
     killOf,
     firstSeen,
-    total: all.reduce((s, x) => s + x.cost, 0),
-    share: withChoice.length ? withChoice.filter((x) => x.best).length / withChoice.length : null,
+    total: all.reduce((sum, pick) => sum + pick.cost, 0),
+    share: withChoice.length
+      ? withChoice.filter((pick) => pick.best).length / withChoice.length
+      : null,
     firstStart,
     lastKill,
   };
 }
 
 /** A kill's pick in words: fastest, only one, spawn (a new target), or the time it cost. "…" while the tracks load. */
-export function pickText(a: PathAnalysis | null, n: number): string {
-  if (!a) return '…';
-  const o = a.picks.get(n);
-  if (!o) return '–';
-  if (o.spawned) return 'spawn';
-  if (o.choices === 1) return 'only one';
-  return o.best ? 'fastest' : `+${Math.round(1000 * o.cost)} ms`;
+export function pickText(analysis: PathAnalysis | null, killNumber: number): string {
+  if (!analysis) return '…';
+  const pick = analysis.picks.get(killNumber);
+  if (!pick) return '–';
+  if (pick.spawned) return 'spawn';
+  if (pick.choices === 1) return 'only one';
+  return pick.best ? 'fastest' : `+${Math.round(1000 * pick.cost)} ms`;
 }
 
 /**
  * Time lost to picks, as shots: at the run's pace (shots from the first flick to the last kill), the time the best picks
  * would have saved, in shots (kills without a stats file). An estimate: it assumes the pace holds.
  */
-export function extraShots(a: PathAnalysis, r: ClickReport, seconds: number): number {
-  const start = Math.min(...r.flicks.map((m) => m.start_frame));
-  const span = (a.lastKill - start) / r.fps;
-  const count = r.summary.shots ?? r.summary.kills;
+export function extraShots(analysis: PathAnalysis, report: ClickReport, seconds: number): number {
+  const start = Math.min(...report.flicks.map((flick) => flick.start_frame));
+  const span = (analysis.lastKill - start) / report.fps;
+  const count = report.summary.shots ?? report.summary.kills;
   return span > 0 && count ? (seconds * count) / span : 0;
 }
 
@@ -167,29 +205,32 @@ export interface Pathing {
 const FLAG_SHARE = 0.05;
 const COSTLIEST = 3;
 
-export function pathing(a: PathAnalysis | null, r: ClickReport): Pathing | null {
-  if (!a) return null;
-  const picks = [...a.picks.entries()].filter(([, o]) => o.choices > 1);
+export function pathing(analysis: PathAnalysis | null, report: ClickReport): Pathing | null {
+  if (!analysis) return null;
+  const picks = [...analysis.picks.entries()].filter(([, pick]) => pick.choices > 1);
   if (!picks.length) return null;
-  const lost = picks.reduce((t, [, o]) => t + o.cost, 0);
+  const lost = picks.reduce((sum, [, pick]) => sum + pick.cost, 0);
   const per = lost / picks.length;
-  const median = r.summary.median_interval;
+  const median = report.summary.median_interval;
   const share = median ? per / median : 0;
-  const unit = r.summary.shots == null ? 'kills' : 'shots';
-  const byN = new Map(r.flicks.map((m) => [m.kill_number, m]));
+  const unit = report.summary.shots == null ? 'kills' : 'shots';
+  const byKillNumber = new Map(report.flicks.map((flick) => [flick.kill_number, flick]));
   const costliest = picks
-    .filter(([, o]) => !o.best)
-    .sort((x, y) => y[1].cost - x[1].cost)
+    .filter(([, pick]) => !pick.best)
+    .sort((a, b) => b[1].cost - a[1].cost)
     .slice(0, COSTLIEST)
-    .map(([n, o]) => ({ flick: byN.get(n) as Flick, cost: `+${formatMs(o.cost)}` }));
+    .map(([killNumber, pick]) => ({
+      flick: byKillNumber.get(killNumber) as Flick,
+      cost: `+${formatMs(pick.cost)}`,
+    }));
   return {
     issue: {
       title: 'Pathing',
       flag: share >= FLAG_SHARE ? 'attention' : 'fine',
       value:
-        `The fastest next target in ${formatPercent(a.share)} of ${picks.length} picks; the others cost about ` +
+        `The fastest next target in ${formatPercent(analysis.share)} of ${picks.length} picks; the others cost about ` +
         `${formatMs(lost)} in all, ${formatMs(per)} a kill (${formatPercent(share)} of the median TTK). With the best ` +
-        `picks, about ${extraShots(a, r, lost).toFixed(1)} more ${unit} at your pace`,
+        `picks, about ${extraShots(analysis, report, lost).toFixed(1)} more ${unit} at your pace`,
       why:
         "Predicted from Fitts' law fitted to this run, for the targets on screen at each pick; targets that appeared " +
         `less than ${NEW_MS} ms before you started moving are left out, since reacting to them costs time of its own. ` +
