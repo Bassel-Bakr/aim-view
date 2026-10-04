@@ -1,5 +1,5 @@
 //! `fixed::FixedMap` against Python's `fixed_map` on a real recording's key frames (keys.yuv: YUV 4:2:0 at 1280 x
-//! 720, as ffmpeg gave them to Python), to the bit (fixed.npy). Fixtures from tests/fixtures.py.
+//! 720, as ffmpeg gave them to Python), to the bit (fixed.npy). Fixtures from python/retired/tests/fixtures.py.
 
 use std::fs;
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ fn fixed_map_matches_python() {
         .unwrap_or_default();
     let dirs: Vec<PathBuf> = dirs.into_iter().filter(|d| d.join("keys.yuv").exists()).collect();
     if dirs.is_empty() {
-        eprintln!("no key frames in test_out/parity: run python tests/fixtures.py <video>");
+        eprintln!("no key frames in test_out/parity: frozen (python/retired/tests/fixtures.py made them)");
         return;
     }
     for dir in dirs {

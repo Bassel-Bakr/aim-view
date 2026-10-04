@@ -2,7 +2,7 @@
 one is.
 
 Finding: anything that stays put on screen while the view moves stands out from the wall behind it in nearly every
-frame (review.contrast), the way the crosshair and HUD do in review.fixed_map. The run's key frames are used (or 90
+frame (old_review.contrast), the way the crosshair and HUD do in old_review.fixed_map. The run's key frames are used (or 90
 frames spread over it, when it has few); pixels that stand out in 80% of them or more are fixed, and fixed pixels a few pixels apart are grouped into
 one area. A webcam is found by its border: its content changes, but its edge against the game stays. The crosshair,
 the fixed spot at the centre, is never an area.
@@ -19,6 +19,7 @@ Naming, in two steps (the user's plan, 2026-10-02):
 import json
 import math
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -26,7 +27,9 @@ import numpy as np
 from scipy import ndimage
 
 import hud
-import review
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "model"))
+import old_review  # noqa: E402
 
 N_SAMPLES = 90                       # frames sampled over the run when it has few key frames
 FIXED = 0.8                          # a pixel standing out in this share of them is fixed
@@ -39,20 +42,20 @@ def sample(video, n=N_SAMPLES, min_keys=24):
     """Frames spread over the run, YUV 4:2:0 at 1280 x 720 (review's format): the key frames when there are min_keys
     or more (33 on a 66 s KovOBS run, decoded in 0.1 s), else n frames from decoding the whole run (9 s on a 1440p
     120 fps AV1 run)."""
-    keys = list(review._frames(str(video), keyframes=True))
+    keys = list(old_review._frames(str(video), keyframes=True))
     if len(keys) >= min_keys:
         return keys
-    fps, dur = review.probe(str(video))
+    fps, dur = old_review.probe(str(video))
     p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(video), "-vf",
-                          f"fps={n / max(1.0, dur - 1):.5f},scale={review.W}:{review.H}:flags=area,format=yuv420p",
+                          f"fps={n / max(1.0, dur - 1):.5f},scale={old_review.W}:{old_review.H}:flags=area,format=yuv420p",
                           "-f", "rawvideo", "-"], stdout=subprocess.PIPE, bufsize=0)
-    return list(review._read(p, review.FRAME))
+    return list(old_review._read(p, old_review.FRAME))
 
 
 def features(box, stand, change):
     """What an area looks like, for the learner: where it is and how big (shares of the frame), how much of it is
     fixed, how much it changes over the run, how many text rows it has."""
-    x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (review.W, review.H, review.W, review.H)))
+    x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (old_review.W, old_review.H, old_review.W, old_review.H)))
     st, ch = stand[y0:y1, x0:x1], change[y0:y1, x0:x1]
     fixed = st >= FIXED
     rows = len(review_rows(fixed[:, 6:-6] if fixed.shape[1] > 16 else fixed))   # inside a box's border
@@ -107,8 +110,8 @@ def analyse(video, with_maps=False):
     """The found areas: [dict(box=[x0, y0, x1, y1] shares, feat=[...], rule=kind)]; with_maps: also the stand-out and
     change maps they came from (to describe any area the user draws)."""
     fr = sample(video)
-    stand = np.mean([review.contrast(f) > review.DIFF for f in fr], axis=0)
-    ys = [np.frombuffer(f, np.uint8)[:review.W * review.H].reshape(review.H, review.W).astype(np.int16) for f in fr]
+    stand = np.mean([old_review.contrast(f) > old_review.DIFF for f in fr], axis=0)
+    ys = [np.frombuffer(f, np.uint8)[:old_review.W * old_review.H].reshape(old_review.H, old_review.W).astype(np.int16) for f in fr]
     change = np.mean([np.abs(a - b) for a, b in zip(ys, ys[1:])], axis=0)
     fixed = stand >= FIXED
     if fixed.mean() > 0.15:                             # the view hardly moved (a probe run): the room itself stays
@@ -119,23 +122,23 @@ def analyse(video, with_maps=False):
     if lay:
         rows, x0, x1, _ = lay
         sx, sy = hud.BOX[2] / hud.BW, hud.BOX[3] / hud.BH
-        pad = 8 / review.W                              # the box's own border, round the rows hud.layout reads
+        pad = 8 / old_review.W                              # the box's own border, round the rows hud.layout reads
         session_box = [max(0.0, x0 * sx - pad), max(0.0, (rows[0][0] - 8) * sy - pad), x1 * sx + pad,
                        (rows[-1][1] + 8) * sy + pad]
     grown = ndimage.binary_dilation(ndimage.binary_closing(fixed, iterations=GAP), iterations=GAP // 2)
     if session_box:                                     # cut out, so a clock beside it is an area of its own
-        a, b, c, d = (int(round(v * s)) for v, s in zip(session_box, (review.W, review.H, review.W, review.H)))
+        a, b, c, d = (int(round(v * s)) for v, s in zip(session_box, (old_review.W, old_review.H, old_review.W, old_review.H)))
         grown[max(0, b - 4):d + 4, max(0, a - 4):c + 4] = False
     lab, n = ndimage.label(grown)
     band = hud.AIM_BAND
     aim_cols = [(hud.AIM_POINTS, "Session stats"), (hud.AIM_TIME, "Timer")]
-    yb0, yb1 = int(band[1] * review.H), int(band[3] * review.H)
+    yb0, yb1 = int(band[1] * old_review.H), int(band[3] * old_review.H)
     sxa = (band[2] - band[0]) / hud.AIM_SIZE[0]
     if fixed[yb0:yb1].any():
         aim = []
         for (c0, c1), kind in aim_cols:
             b = [band[0] + c0 * sxa, band[1], band[0] + c1 * sxa, band[3]]
-            xa, xb = int(b[0] * review.W), int(b[2] * review.W)
+            xa, xb = int(b[0] * old_review.W), int(b[2] * old_review.W)
             if stand[yb0:yb1, xa:xb].max() >= FIXED:
                 aim.append((b, kind))
         aim = aim if len(aim) == 2 else None
@@ -147,9 +150,9 @@ def analyse(video, with_maps=False):
         y0, y1, x0, x1 = s[0].start, s[0].stop, s[1].start, s[1].stop
         if (x1 - x0) * (y1 - y0) < 80 or min(x1 - x0, y1 - y0) < 7 or not fixed[y0:y1, x0:x1].any():
             continue                                    # too small, or a sliver of a box's border
-        if x0 <= review.CX <= x1 and y0 <= review.CY <= y1 and (x1 - x0) < 120:
+        if x0 <= old_review.CX <= x1 and y0 <= old_review.CY <= y1 and (x1 - x0) < 120:
             continue                                    # the crosshair: never an area
-        boxes.append([x0 / review.W, y0 / review.H, x1 / review.W, y1 / review.H])
+        boxes.append([x0 / old_review.W, y0 / old_review.H, x1 / old_review.W, y1 / old_review.H])
     if session_box:                                     # the session box as found by hud.layout, whole
         boxes = [b for b in boxes if _inside(b, session_box) < 0.6] + [session_box]
     # an area mostly inside a bigger one (text inside a box, a webcam's details) is part of it
@@ -166,7 +169,7 @@ def analyse(video, with_maps=False):
 def zoomed(box, ys, size=16):
     """A magnified copy of the screen round the crosshair (a crosshair zoom): over the sampled frames, the area's
     picture follows the centre's, scaled down by some zoom. True when one zoom correlates 0.8 or more."""
-    x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (review.W, review.H, review.W, review.H)))
+    x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (old_review.W, old_review.H, old_review.W, old_review.H)))
     w, h = x1 - x0, y1 - y0
     if w < 24 or h < 24 or len(ys) < 10:
         return False
@@ -174,7 +177,7 @@ def zoomed(box, ys, size=16):
     small = lambda a: np.asarray(Image.fromarray(a.astype(np.uint8)).resize((size, size), Image.BILINEAR), np.float32)
     area = np.stack([small(y[y0:y1, x0:x1]) for y in ys]).ravel()
     area = (area - area.mean()) / (area.std() + 1e-6)
-    cx, cy = int(review.CX), int(review.CY)
+    cx, cy = int(old_review.CX), int(old_review.CY)
     for zoom in (1.5, 2, 3, 4, 6, 8):
         hw, hh = max(4, int(w / zoom / 2)), max(4, int(h / zoom / 2))
         if cx - hw < 0 or cy - hh < 0:
@@ -354,7 +357,7 @@ if __name__ == "__main__":
                 break
         for i, vid in enumerate(picked):
             found = find(str(lib.resolve(vid)), lib.cache_dir(vid), aimview_tools.AREA_EXAMPLES)[1]  # noqa
-            n = learn(aimview_tools.AREA_EXAMPLES, "kovobs:" + vid, found, review.OVERLAY_SHARES)
+            n = learn(aimview_tools.AREA_EXAMPLES, "kovobs:" + vid, found, old_review.OVERLAY_SHARES)
             print(f"[{i + 1}/{len(picked)}] {vid[:60]}: {n} examples", flush=True)
     sure, acc, n, wrong = check(aimview_tools.AREA_EXAMPLES)
     print(f"leave one recording out, {n} examples: the learner names {sure:.0%}, {acc:.0%} of those right; "

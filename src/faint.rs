@@ -1,4 +1,4 @@
-//! The faint-target cut-off (python/review.py: `faint_scores`, `without_faint`; python/model/hand_crops.py:
+//! The faint-target cut-off (python/retired/review.py: `faint_scores`, `without_faint`; python/model/hand_crops.py:
 //! `cutoff_crops`): each track's score, the recording's level, the tracks the user's cut-off leaves out, and the
 //! detector labels a submitted cut-off gives.
 

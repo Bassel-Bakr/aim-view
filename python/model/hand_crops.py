@@ -26,7 +26,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 CROP = 256
 
@@ -39,11 +39,11 @@ def cutoff_crops(video, frames, fps, start, end, exclude, offset, out, per=20, n
     crops that miss every exclude area (shares of the frame), and none holding a track too short to have a score
     (away from the crosshair). Up to `per` crops round a left-out track and `per` round a kept one, from frames spread
     over the run. Returns the number of crops."""
-    q, _, level = review.faint_scores(frames, near)        # near=0 for tracking runs (review.without_faint)
+    q, _, level = old_review.faint_scores(frames, near)        # near=0 for tracking runs (old_review.without_faint)
     if level is None:
         return 0
     cut = level - offset
-    W, H = review.W, review.H
+    W, H = old_review.W, old_review.H
     ex = [(b[0] * W, b[1] * H, b[2] * W, b[3] * H) for b in exclude]
     stem = f"{Path(video).stem[:40]}_{hashlib.md5(Path(video).name.encode()).hexdigest()[:6]}".replace(" ", "_")
     Path(out, "train").mkdir(parents=True, exist_ok=True)
@@ -52,9 +52,9 @@ def cutoff_crops(video, frames, fps, start, end, exclude, offset, out, per=20, n
     rows = []
 
     def box_px(x, y, w, h):
-        cx, cy = review.to_px(x, y)
-        x0, y0 = review.to_px(x - w / 2, y + h / 2)
-        x1, y1 = review.to_px(x + w / 2, y - h / 2)
+        cx, cy = old_review.to_px(x, y)
+        x0, y0 = old_review.to_px(x - w / 2, y + h / 2)
+        x1, y1 = old_review.to_px(x + w / 2, y - h / 2)
         return cx, cy, abs(x1 - x0), abs(y1 - y0)
 
     for kind in ("left out", "kept"):
@@ -75,7 +75,7 @@ def cutoff_crops(video, frames, fps, start, end, exclude, offset, out, per=20, n
             if any(t[0] not in q and math.hypot(t[1], t[2]) >= near for _, t in inside):
                 continue                                # a track too short to judge
             if fixed is None:
-                fixed = review.fixed_map(list(review._frames(video, keyframes=True))).astype(np.uint8)
+                fixed = old_review.fixed_map(list(old_review._frames(video, keyframes=True))).astype(np.uint8)
             raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{i / fps:.3f}", "-i", video, "-frames:v", "1", "-vf",
                                   f"scale={W}:{H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
                                  capture_output=True).stdout
@@ -153,28 +153,28 @@ def main():
     rnd = random.Random(1)
     n = 0
     for v in a.vods:
-        fps, dur = review.probe(v)
-        count = review.target_counts().get(Path(v).stem.rsplit(" - ", 2)[0].lower())
-        fixed = review.fixed_map(list(review._frames(v, keyframes=True))).astype(np.uint8)
+        fps, dur = old_review.probe(v)
+        count = old_review.target_counts().get(Path(v).stem.rsplit(" - ", 2)[0].lower())
+        fixed = old_review.fixed_map(list(old_review._frames(v, keyframes=True))).astype(np.uint8)
         step = (dur - 4.0) / a.per_vod
         raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", "2", "-i", v, "-t", f"{dur - 4.0:.2f}", "-vf",
-                              f"fps=1/{step:.4f},scale={review.W}:{review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
+                              f"fps=1/{step:.4f},scale={old_review.W}:{old_review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
                              capture_output=True).stdout
-        frames = np.frombuffer(raw, np.uint8).reshape(-1, review.H, review.W, 3)
+        frames = np.frombuffer(raw, np.uint8).reshape(-1, old_review.H, old_review.W, 3)
         for i, rgb in enumerate(frames):
             d = det(rgb, fixed)
             at_cross = a.centre == "crosshair" or (a.centre == "mixed" and i % 2 == 0)
             if not len(d) and not at_cross:
                 continue
-            # what the review keeps (review.track_model's cap): near the crosshair, then the most confident others
-            dist = [math.hypot(*review.to_deg(float(b[0]), float(b[1]))) for b in d]
+            # what the review keeps (old_review.track_model's cap): near the crosshair, then the most confident others
+            dist = [math.hypot(*old_review.to_deg(float(b[0]), float(b[1]))) for b in d]
             near = [b for b, r in zip(d, dist) if r < 2.0]
             rest = sorted((b for b, r in zip(d, dist) if r >= 2.0), key=lambda b: -b[4])
             keep = near + rest[:max(0, count - len(near))] + [b for b in rest[max(0, count - len(near)):][:1] if b[4] >= 0.5] \
                 if count else list(d)
-            c = (review.CX, review.CY) if at_cross else min(d, key=lambda b: b[4])   # or the least sure find
-            x0 = int(np.clip(c[0] - CROP // 2 + rnd.randint(-48, 48), 0, review.W - CROP))
-            y0 = int(np.clip(c[1] - CROP // 2 + rnd.randint(-48, 48), 0, review.H - CROP))
+            c = (old_review.CX, old_review.CY) if at_cross else min(d, key=lambda b: b[4])   # or the least sure find
+            x0 = int(np.clip(c[0] - CROP // 2 + rnd.randint(-48, 48), 0, old_review.W - CROP))
+            y0 = int(np.clip(c[1] - CROP // 2 + rnd.randint(-48, 48), 0, old_review.H - CROP))
             bb = np.array([[b[0] - x0, b[1] - y0, b[2], b[3]] for b in keep
                            if x0 <= b[0] < x0 + CROP and y0 <= b[1] < y0 + CROP], np.float32).reshape(-1, 4)
             yy, xx = np.mgrid[0:CROP, 0:CROP]

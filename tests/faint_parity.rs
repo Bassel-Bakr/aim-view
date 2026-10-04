@@ -1,4 +1,4 @@
-//! The faint-target cut-off (src/faint.rs, review.rs) against Python's: tests/fixtures.py --faint writes
+//! The faint-target cut-off (src/faint.rs, review.rs) against Python's: python/retired/tests/fixtures.py --faint writes
 //! test_out/parity/<case>/faint/<offset>/report.json (a tracking review with the cut-off on) and
 //! test_out/parity/faint/<recording>.json (the scores, the cut and the labels of every recording the user set a
 //! cut-off for). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative).

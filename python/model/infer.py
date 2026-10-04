@@ -104,18 +104,18 @@ class TorchDetector:
 
 
 def main():
-    import review
+    import old_review
     ap = argparse.ArgumentParser()
     ap.add_argument("model")
     ap.add_argument("video")
     ap.add_argument("--frames", type=int, default=120)
     a = ap.parse_args()
     det = TorchDetector(a.model) if a.model.endswith(".pt") else OnnxDetector(a.model)
-    keys = list(review._frames(a.video, keyframes=True))
-    fixed = review.fixed_map(keys).astype(np.uint8)
+    keys = list(old_review._frames(a.video, keyframes=True))
+    fixed = old_review.fixed_map(keys).astype(np.uint8)
     t = time.perf_counter()
     n = 0
-    for k, rgb in enumerate(review.rgb_frames(a.video)):
+    for k, rgb in enumerate(old_review.rgb_frames(a.video)):
         if k >= a.frames:
             break
         d = det(rgb, fixed)

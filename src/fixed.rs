@@ -1,5 +1,5 @@
 //! The fixed map: the pixels that stay put on screen while the view moves (crosshair, HUD text, a gun model), found in
-//! the recording's key frames. It is the detector model's 4th input (python/review.py: `contrast`, `_blur_up`,
+//! the recording's key frames. It is the detector model's 4th input (python/retired/review.py: `contrast`, `_blur_up`,
 //! `fixed_map`). The arithmetic is NumPy's and SciPy's, float32 where they keep float32, so the map is the same bit
 //! for bit.
 

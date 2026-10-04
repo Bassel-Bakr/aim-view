@@ -1,5 +1,9 @@
 # VOD review
 
+This describes the old Python pipeline, which retired on 2026-10-04: `python/review.py` and the step scripts below are
+now in `python/retired/`, and the app's review is the Rust core (`src/`). The parts the training scripts still use are
+frozen in `python/model/old_review.py`. The rules below remain the core's, which began as a port of this pipeline.
+
 These scripts measure a KovaaK's static clicking run from its KovOBS recording. They track every target frame by
 frame, match the kills with the run's stats file, and measure each flick. The last script turns the measures into a
 short manim video. They were first used on 2026-09-30, on the user's 143 run in 1w4ts Voltaic.

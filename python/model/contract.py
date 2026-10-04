@@ -1,6 +1,6 @@
 """The contract a detector model must meet before the review uses it (REPRODUCE.md, "After a training run").
 
-The review (src/, python/review.py) relies on things about the detector's output that no training metric states. Each
+The review (src/) relies on things about the detector's output that no training metric states. Each
 check measures one of them on the model's _u8in export (the graph the app runs) with its settings file
 (exports/detector_<name>.json: the threshold and score map; calibrate.py's output when there is no file yet), and
 compares it with full_v3's results on the same data (the limits and their reasons are at "the limits" below):
@@ -10,10 +10,10 @@ compares it with full_v3's results on the same data (the limits and their reason
                    "score" (n, 1, h/4, w/4) holding only the peaks, from 0 to 1, and "reg" (n, 4, h/4, w/4), finite; a
                    frame in a batch of 4 gives what it gives alone; a settings file the pipeline accepts; the fixed map
                    (the model's 4th input) made as the training crops' was (DIFF 30, SHARE 0.8, in src/fixed.rs and
-                   python/review.py alike). Pass or fail, no limit.
+                   old_review.py alike). Pass or fail, no limit.
   crosshair        the crosshair is not a target. On the static recordings of eval_moving.py: the frames where the
                    room moved 0.5 degrees or more since the frame before, and at least half that either side (the
-                   camera's turn, read from the video by review.camera_motion; a one-frame jump is a shot's flash), with
+                   camera's turn, read from the video by old_review.camera_motion; a one-frame jump is a shot's flash), with
                    a box on the fixed map's crosshair that stayed put (moved under half the room's move, and no box of
                    the frame before moved there with the room). A static target moves with the room; only something
                    fixed to the screen stays. A frame where most boxes stayed put is left out: the reading is wrong.
@@ -58,7 +58,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import calibrate  # noqa: E402
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 REPORTS = HERE / "reports"
 CACHE = Path("test_out/vod_model/contract")          # camera readings, fixed maps, and each export's peaks
@@ -178,8 +178,8 @@ def check_export(m, s, name):
     diff = re.search(r"pub const DIFF: f32 = ([\d.]+);", src)
     share = re.search(r"pub const SHARE: f64 = ([\d.]+);", src)
     fixed_map = dict(core_diff=float(diff[1]) if diff else None, core_share=float(share[1]) if share else None,
-                     python_diff=review.DIFF)
-    if fixed_map["core_diff"] != 30 or fixed_map["core_share"] != 0.8 or review.DIFF != 30:
+                     python_diff=old_review.DIFF)
+    if fixed_map["core_diff"] != 30 or fixed_map["core_share"] != 0.8 or old_review.DIFF != 30:
         bad.append(f"the fixed map is not made as the training crops' was (DIFF 30, SHARE 0.8): {fixed_map}")
     return dict(passed=not bad, problems=bad, batch_of_4_largest_difference=batch, fixed_map=fixed_map,
                 peaks_on_sample_frame=int((s0 > m.thr).sum()))
@@ -187,7 +187,7 @@ def check_export(m, s, name):
 
 # ---- 2 to 4. recordings: the crosshair, other screen-fixed boxes, boxes per frame -----------------------------------
 def camera(video):
-    """The recording's fixed map (review.fixed_map) and the room's move on screen per frame (review.camera_motion,
+    """The recording's fixed map (old_review.fixed_map) and the room's move on screen per frame (old_review.camera_motion,
     degrees; NaN where it has no reading), cached in test_out/vod_model/contract/."""
     st = Path(video).stat()
     p = CACHE / f"{hashlib.md5(str(video).encode()).hexdigest()[:10]}.npz"
@@ -195,8 +195,8 @@ def camera(video):
         z = np.load(p)
         if int(z["size"]) == st.st_size and float(z["mtime"]) == st.st_mtime:
             return z["fixed"], z["room"]
-    fixed = review.fixed_map(list(review._frames(video, keyframes=True)))
-    cam = review.camera_motion(video, [], mask=review.MASK, fixed=fixed)
+    fixed = old_review.fixed_map(list(old_review._frames(video, keyframes=True)))
+    cam = old_review.camera_motion(video, [], mask=old_review.MASK, fixed=fixed)
     room = np.array([(c[0], c[1]) if c else (np.nan, np.nan) for c in cam], np.float64).reshape(-1, 2)
     CACHE.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(p, fixed=fixed, room=room, size=st.st_size, mtime=st.st_mtime)
@@ -207,11 +207,11 @@ def crosshair_area(fixed):
     """Where the crosshair is: the fixed map's parts within NEAR px of the crosshair's centre, whole, grown by 2 px,
     and a disc of 3 px at the centre (in case the fixed map misses a dot)."""
     lab, _ = ndimage.label(fixed)
-    cx, cy = int(round(review.CX)), int(round(review.CY))
+    cx, cy = int(round(old_review.CX)), int(round(old_review.CY))
     ids = np.unique(lab[cy - NEAR:cy + NEAR + 1, cx - NEAR:cx + NEAR + 1])
     area = np.isin(lab, ids[ids > 0])
-    yy, xx = np.mgrid[0:review.H, 0:review.W]
-    return ndimage.binary_dilation(area, iterations=2) | ((xx - review.CX) ** 2 + (yy - review.CY) ** 2 <= 9)
+    yy, xx = np.mgrid[0:old_review.H, 0:old_review.W]
+    return ndimage.binary_dilation(area, iterations=2) | ((xx - old_review.CX) ** 2 + (yy - old_review.CY) ** 2 <= 9)
 
 
 def peaks_on(m, video, need, batch=4):
@@ -227,7 +227,7 @@ def peaks_on(m, video, need, batch=4):
             return {int(i): rows[rows[:, 0] == i, 1:] for i in z["frames"]}
     dets, buf, idx = {}, [], []
     fixed = camera(video)[0].astype(np.uint8)
-    for i, f in enumerate(review.rgb_frames(video)):
+    for i, f in enumerate(old_review.rgb_frames(video)):
         if i in need:
             buf.append(f)
             idx.append(i)
@@ -244,7 +244,7 @@ def peaks_on(m, video, need, batch=4):
 
 def moved_with_room(prev, room):
     """Where the boxes of the frame before would be now if they were static targets: moved by the room's turn."""
-    out = [review.to_px(*(np.array(review.to_deg(float(b[0]), float(b[1]))) + room)) for b in prev]
+    out = [old_review.to_px(*(np.array(old_review.to_deg(float(b[0]), float(b[1]))) + room)) for b in prev]
     return np.array(out, np.float64).reshape(-1, 2)
 
 
@@ -259,7 +259,7 @@ def recording(m, video):
 
     def boxes(i):                                      # over the threshold, centre where the review reads (KovOBS's
         d = m.mapped(raw[i])                           # layout)
-        return d[[bool(review.MASK[min(review.H - 1, max(0, int(b[1]))), min(review.W - 1, max(0, int(b[0])))])
+        return d[[bool(old_review.MASK[min(old_review.H - 1, max(0, int(b[1]))), min(old_review.W - 1, max(0, int(b[0])))])
                   for b in d]] if len(d) else d
 
     on_cross = elsewhere = any_cross = wrong = 0
@@ -268,20 +268,20 @@ def recording(m, video):
         now, prev = boxes(i), boxes(i - 1)
         if not len(now):
             continue
-        x, y = review.to_px(*room[i])
-        tol = math.hypot(x - review.CX, y - review.CY) / 2     # half the room's move on screen
+        x, y = old_review.to_px(*room[i])
+        tol = math.hypot(x - old_review.CX, y - old_review.CY) / 2     # half the room's move on screen
         moved = moved_with_room(prev, room[i])
         fixed_box = []                                 # stayed put, and no static target of the frame before lands there
         for b in now:
             stay = len(prev) and np.hypot(prev[:, 0] - b[0], prev[:, 1] - b[1]).min() < tol
             static = len(prev) and np.hypot(moved[:, 0] - b[0], moved[:, 1] - b[1]).min() < tol
             fixed_box.append(bool(stay and not static))
-        at = [bool(cross[min(review.H - 1, int(b[1])), min(review.W - 1, int(b[0]))]) for b in now]
+        at = [bool(cross[min(old_review.H - 1, int(b[1])), min(old_review.W - 1, int(b[0]))]) for b in now]
         others = [f for f, a in zip(fixed_box, at) if not a]
         if others and sum(others) > len(others) / 2:   # most targets stayed put: the camera's reading is wrong here
             wrong += 1
             continue
-        on_hud = [bool(hud[min(review.H - 1, int(b[1])), min(review.W - 1, int(b[0]))]) for b in now]
+        on_hud = [bool(hud[min(old_review.H - 1, int(b[1])), min(old_review.W - 1, int(b[0]))]) for b in now]
         on_cross += any(f and a for f, a in zip(fixed_box, at))
         elsewhere += any(f and h for f, h in zip(fixed_box, on_hud))
         any_cross += any(at)

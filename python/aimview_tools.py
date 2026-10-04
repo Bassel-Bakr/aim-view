@@ -8,8 +8,8 @@ call (a build takes about a minute, and waits while another release build runs);
 target/release/aimview-tool runs.
 
 What the scripts use: Library (list, resolve, cache_dir, stats_for, stats_of, review_video), NAME, STATS_DEFAULT and
-AREA_EXAMPLES (areas.py, model/build_kills.py, model/eval_vods.py, model/eval_moving.py, tests/find_popups.py,
-tests/fixtures.py).
+AREA_EXAMPLES (areas.py, model/build_kills.py, model/eval_vods.py, model/eval_moving.py; once also the retired
+python/retired/tests/ scripts).
 """
 import json
 import os

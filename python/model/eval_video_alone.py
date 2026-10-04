@@ -48,7 +48,7 @@ sys.path.insert(0, str(HERE.parent))
 import aimview_tools  # noqa: E402
 import eval_vods  # noqa: E402
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 RUNS = HERE / "video_alone_runs.json"
 EVAL = ROOT / "test_out" / "vod_model" / "eval"
@@ -56,7 +56,7 @@ SETS = ("dev", "held")
 KINDS = ("static", "dynamic", "switching")
 # KovOBS's areas as the review service gives them (service/src/areas.rs: kovobs_areas): each kind by its id
 AREAS = [[x0, y0, x1, y1, re.sub(r"[^a-z0-9]+", "_", kind.lower()).strip("_")]
-         for x0, y0, x1, y1, kind in review.OVERLAY_SHARES]
+         for x0, y0, x1, y1, kind in old_review.OVERLAY_SHARES]
 TRACKED = ("tracks.json", "readings.json", "hud.json")
 
 
@@ -93,6 +93,12 @@ def core_review(program, folder, video, stats):
                    hud=json.loads((folder / "hud.json").read_bytes()) if stats else None,
                    run=None, tracking=False, limit=None, camera=readings["camera"], countdown=readings["countdown"],
                    faint=None)
+    return request_report(program, request)
+
+
+def request_report(program, request):
+    """The report the core works out for a review request (src/review.rs `ReviewRequest`, as JSON), with `program`
+    (`review_program`)."""
     with tempfile.TemporaryDirectory() as tmp:
         f = Path(tmp) / "request.json"
         f.write_text(json.dumps(request))
@@ -111,7 +117,7 @@ def micros(s):
 def truth_frames(stats, offset, fps, n):
     """Every kill in the stats file on the video's clock (frames), inside the video. A bot that died without a hit (a
     timer bot such as flick pressure's "Dumbbell") is no kill the player made."""
-    meta, rows = review.load_stats(str(stats))
+    meta, rows = old_review.load_stats(str(stats))
     t0 = micros(meta["Challenge Start"])
     kf = [round(((micros(r[1]) - t0) / 1e6 + offset) * fps) for r in rows if not (len(r) > 6 and r[6].strip() == "0")]
     return sorted(k for k in kf if 0 <= k < n)
@@ -120,7 +126,7 @@ def truth_frames(stats, offset, fps, n):
 def challenge(stats, offset, fps):
     """The challenge on the video's clock (frames): from its start (the stats file's Challenge Start) to its end (the
     time in the stats file's name, to the second, plus a second)."""
-    meta, _ = review.load_stats(str(stats))
+    meta, _ = old_review.load_stats(str(stats))
     t0 = micros(meta["Challenge Start"]) / 1e6
     hh, mm, ss = re.search(r"-(\d\d)\.(\d\d)\.(\d\d) Stats\.csv$", stats.name).groups()
     t1 = int(hh) * 3600 + int(mm) * 60 + int(ss)

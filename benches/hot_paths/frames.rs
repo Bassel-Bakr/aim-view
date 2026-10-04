@@ -70,7 +70,8 @@ pub fn camera(c: &mut Criterion) {
     if let Some(fixed) = &fixed {
         let keep = Mask::without(&overlay_shares());
         g.bench_function("excluded", |b| b.iter(|| excluded(keep.kept(), black_box(fixed))));
-        // flower's frames as the camera reads them (720p luma): pairs of frames in a row, from tests/fixtures.py
+        // flower's frames as the camera reads them (720p luma): pairs of frames in a row, from
+        // python/retired/tests/fixtures.py
         let gray = inputs::bytes(bench, &format!("{dir}/review/gray.raw"));
         let stored: Option<serde_json::Value> = inputs::json(bench, &format!("{dir}/review/gray.json"));
         let tracks: Option<Tracks> = inputs::json(bench, &format!("{dir}/review/tracks.json"));

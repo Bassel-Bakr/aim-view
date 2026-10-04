@@ -13,7 +13,7 @@ use serde_json::Value;
 fn scenario_facts_match_python() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity/scenarios.json");
     let Ok(text) = fs::read_to_string(&path) else {
-        eprintln!("no {}: run python tests/fixtures.py --scenarios", path.display());
+        eprintln!("no {}: the fixtures are frozen (python/retired/tests/fixtures.py made them)", path.display());
         return;
     };
     let fixture: Value = serde_json::from_str(&text).unwrap();

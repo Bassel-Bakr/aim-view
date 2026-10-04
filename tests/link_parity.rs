@@ -1,4 +1,4 @@
-//! `track::link` against Python's `link` on real recordings: the fixtures tests/fixtures.py writes to
+//! `track::link` against Python's `link` on real recordings: the fixtures python/retired/tests/fixtures.py writes to
 //! test_out/parity/<name>/ (dets.json: link's input, frames.json: its output). Every value must be equal, to the bit.
 
 use std::fs;
@@ -32,7 +32,7 @@ fn spot(row: &Value) -> Spot {
 fn link_matches_python() {
     let dirs = fixtures();
     if dirs.is_empty() {
-        eprintln!("no fixtures in test_out/parity: run python tests/fixtures.py <video>");
+        eprintln!("no fixtures in test_out/parity: they are frozen (python/retired/tests/fixtures.py made them)");
         return;
     }
     for dir in dirs {

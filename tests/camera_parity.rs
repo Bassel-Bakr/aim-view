@@ -1,7 +1,7 @@
-//! The camera's readings (src/camera.rs) against Python's camera_motion on the same gray frames: tests/fixtures.py
-//! --review writes sample frame pairs (gray.raw, gray.json) and every frame's reading (camera.json), and the
-//! countdown-teal counts (teal.json, checked in the browser). The FFTs differ in rounding (rustfft against SciPy's
-//! pocketfft, both in single precision), so readings must agree within 0.001 degrees.
+//! The camera's readings (src/camera.rs) against Python's camera_motion on the same gray frames:
+//! python/retired/tests/fixtures.py --review writes sample frame pairs (gray.raw, gray.json) and every frame's reading
+//! (camera.json), and the countdown-teal counts (teal.json, checked in the browser). The FFTs differ in rounding
+//! (rustfft against SciPy's pocketfft, both in single precision), so readings must agree within 0.001 degrees.
 
 use std::fs;
 use std::path::PathBuf;

@@ -22,7 +22,7 @@ python python/model/build_data.py --vods "E:/OBS/KovOBS" --per-folder 4
 ```
 
 This takes the 4 newest recordings of every static scenario (530 VODs), decodes only their key frames, labels the
-targets with the hand-written detector in `python/review.py`, keeps only VODs whose labels look steady, and saves
+targets with the hand-written detector in `python/model/old_review.py`, keeps only VODs whose labels look steady, and saves
 256 × 256 crops with their boxes. Splits are by scenario folder (a stable hash; the four end-to-end VODs' folders are
 always in test). The last build wrote its crops over about 3 minutes, on 14 processes (one per logical core, less 2).
 

@@ -27,11 +27,11 @@ def sample():
     """A real frame and its fixed map, cached."""
     if not SAMPLE.exists():
         import build_data
-        import review
+        import old_review
         yuv = build_data.keyframes(VIDEO, "yuv420p")
         rgb = build_data.keyframes(VIDEO, "rgb24")
         np.savez(SAMPLE, rgb=np.frombuffer(rgb[10], np.uint8).reshape(720, 1280, 3),
-                 fixed=review.fixed_map(yuv).astype(np.uint8))
+                 fixed=old_review.fixed_map(yuv).astype(np.uint8))
     z = np.load(SAMPLE)
     for name in ("rgb", "fixed"):                       # raw copies for the browser benchmark
         raw = SAMPLE.with_name(f"bench_frame_{name}.bin")

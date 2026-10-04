@@ -1,5 +1,5 @@
-//! Where the benches' inputs are: the parity fixtures (test_out/parity/, from tests/fixtures.py) and the native
-//! review's kept outputs (test_out/baselines/4b7ddc4/native/).
+//! Where the benches' inputs are: the parity fixtures (test_out/parity/, from python/retired/tests/fixtures.py) and the
+//! native review's kept outputs (test_out/baselines/4b7ddc4/native/).
 
 use std::path::PathBuf;
 

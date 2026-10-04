@@ -57,7 +57,7 @@ import eval_moving  # noqa: E402
 import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 EXPORTS = HERE / "exports"
 MODELS = HERE / "models.json"
@@ -171,7 +171,7 @@ def failures(c, where=""):
     return out
 
 
-def moving(m, pick, lib):
+def moving(m, pick, lib, program):
     """eval_moving.py's numbers on every recording, from its track cache (the recordings not in it tracked and added,
     as eval_moving does): {video: [kind, matched, stats kills, measured]} or, tracking, [kind, on target, accuracy]."""
     cache = EVAL / f"moving_{m.name}_native.pkl"
@@ -182,7 +182,7 @@ def moving(m, pick, lib):
             sys.exit(f"{cache.relative_to(ROOT)} is older than {', '.join(stale)}: move it to a retired/ folder and "
                      "run again to track with this model")
         tracks = pickle.load(open(cache, "rb"))
-    facts, counts, fresh = review.scenario_facts(), review.target_counts(), []
+    facts, counts, fresh = old_review.scenario_facts(), old_review.target_counts(), []
     for vs in pick.values():
         for v, _ in vs:
             if v not in tracks:
@@ -196,15 +196,8 @@ def moving(m, pick, lib):
     out = {}
     for kind, vs in pick.items():
         for v, st in vs:
-            tr, (meta, rows) = tracks[v], review.load_stats(st)
-            if kind == "tracking":
-                h, mi = float(meta.get("Hit Count", 0)), float(meta.get("Miss Count", 0))
-                lim = facts.get(Path(v).stem.rsplit(" - ", 2)[0].lower(), (None, None))[1]
-                out[Path(v).name] = [kind, review.track_summary(tr, {}, lim)["on_target"] or 0.0, h / max(1.0, h + mi)]
-            else:
-                fl, info = review.match(tr, st)
-                out[Path(v).name] = [kind, info["matched"], len(rows),
-                                     len(review.measure(fl, tr["fps"], review.target_radius(fl)))]
+            limit = facts.get(Path(v).stem.rsplit(" - ", 2)[0].lower(), (None, None))[1]
+            out[Path(v).name] = list(eval_moving.core_numbers(program, kind, tracks[v], v, st, limit))
     return out, fresh
 
 
@@ -258,7 +251,7 @@ def video_alone(m, program):
 
 def evaluate(m, pick, lib, scorer, programs):
     t = time.time()
-    mv, mv_fresh = moving(m, pick, lib)
+    mv, mv_fresh = moving(m, pick, lib, scorer)
     vd, vd_fresh = report_runs(m, lib, programs)
     va, va_left, va_fresh = video_alone(m, scorer)
     return dict(moving=mv, report=vd, video_alone=va, video_alone_left_out=va_left,

@@ -1,5 +1,5 @@
 //! The frame's geometry at the size the review works in (1280 x 720): where the crosshair is, and how a pixel maps to
-//! an angle from it (python/review.py: `W`, `H`, `CX`, `CY`, `K`, `to_deg`, `to_px`).
+//! an angle from it (python/retired/review.py: `W`, `H`, `CX`, `CY`, `K`, `to_deg`, `to_px`).
 
 use crate::python::hypot;
 
@@ -16,8 +16,8 @@ pub const CY: f64 = 359.75;
 pub const K: f64 = 509.0789866674102;
 
 /// The KovOBS overlay at 1280 x 720, the areas excluded by default: session box, timer, clock and FPS, settings box,
-/// gun and title, the scenario's name (any length), crosshair zoom and hand cam, version number (python/review.py:
-/// `OVERLAY`). Pixels: x0, y0, x1, y1.
+/// gun and title, the scenario's name (any length), crosshair zoom and hand cam, version number
+/// (python/retired/review.py: `OVERLAY`). Pixels: x0, y0, x1, y1.
 pub const OVERLAY: [[u32; 4]; 8] = [
     [0, 0, 205, 150],
     [590, 0, 690, 60],

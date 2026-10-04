@@ -1,6 +1,6 @@
-//! What a scenario file (.sce) says about a run (python/review.py: `scenario_facts`, `target_counts`): its kind, its
-//! time limit, how many targets are alive at once, and the player's weapon's ammo rules. Read from the file's part
-//! before "[Map Data]".
+//! What a scenario file (.sce) says about a run (python/retired/review.py: `scenario_facts`, `target_counts`): its
+//! kind, its time limit, how many targets are alive at once, and the player's weapon's ammo rules. Read from the file's
+//! part before "[Map Data]".
 
 use serde::{Deserialize, Serialize};
 

@@ -53,7 +53,7 @@ JavaScript package (the core's WebAssembly build).
 
 | Path | What it holds |
 | --- | --- |
-| `python/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
+| `python/retired/review.py` | The old Python review pipeline (retired 2026-10-04: the Rust core in `src/` is the review). The parity tests compare with its stored outputs in `test_out/parity/`; the training scripts use its frozen parts, `python/model/old_review.py`. |
 | `service/`, `server/` | The review API in Rust (shared by every server) and the HTTP server (port 8770). The service's `aimview-tool` gives Python's scripts the library and the native review (`python/aimview_tools.py`). |
 | `python/retired/app/` | The old web page (plain HTML, CSS and JavaScript), retired: the Angular app in `ui/` does what it did. |
 | `python/hud.py`, `python/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |

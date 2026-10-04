@@ -355,8 +355,8 @@ pub fn review_tracking(
 }
 
 /// The user's run window (start, end, length in seconds, any of them null) as the first frame and the length in
-/// seconds, or (None, limit) where it says nothing (python/review.py: `run_window`). Two of the three settle the third;
-/// a start or an end alone takes the length given (the stats file's or the scenario's).
+/// seconds, or (None, limit) where it says nothing (python/retired/review.py: `run_window`). Two of the three settle
+/// the third; a start or an end alone takes the length given (the stats file's or the scenario's).
 pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (Option<i64>, Option<f64>) {
     let get = |k: &str| marks.get(k).and_then(serde_json::Value::as_f64);
     let (a, b) = (get("start"), get("end"));
@@ -452,7 +452,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// python/review.py's run_window: two marks settle the third; one takes the length given.
+    /// python/retired/review.py's run_window: two marks settle the third; one takes the length given.
     #[test]
     fn the_run_window_as_python_reads_it() {
         let w = |m: serde_json::Value, limit| run_window(&m, 60.0, limit);

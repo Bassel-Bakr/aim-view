@@ -1,11 +1,12 @@
-//! Excluded areas that only sometimes show (a "Last kill" pop-up) are excluded only while they show (python/review.py:
-//! `AreaWatch`). Every other frame, each area's stand-out pattern is kept, small: the pixels that differ from their
-//! neighbours, as text and boxes do and a plain wall does not. After the run, an area is a pop-up when it is off for
-//! 30% of the run or more, comes and goes 3 times or more (the results screen covering it once at the end is not),
-//! and looks the same whenever it is on; it is then excluded in its on frames and 4 frames either side. Any other
-//! area (the session box, a webcam) is excluded all the time. An area the user named the challenge's end screen
-//! (`END_SCREEN`) shows once or twice, at the end or between runs, and covers most of the frame: it is excluded only
-//! while it shows, however few its episodes (excluded all the time, it hid the whole run: VT FlyTS, 0 of 5 kills).
+//! Excluded areas that only sometimes show (a "Last kill" pop-up) are excluded only while they show
+//! (python/retired/review.py: `AreaWatch`). Every other frame, each area's stand-out pattern is kept, small: the pixels
+//! that differ from their neighbours, as text and boxes do and a plain wall does not. After the run, an area is a
+//! pop-up when it is off for 30% of the run or more, comes and goes 3 times or more (the results screen covering it
+//! once at the end is not), and looks the same whenever it is on; it is then excluded in its on frames and 4 frames
+//! either side. Any other area (the session box, a webcam) is excluded all the time. An area the user named the
+//! challenge's end screen (`END_SCREEN`) shows once or twice, at the end or between runs, and covers most of the frame:
+//! it is excluded only while it shows, however few its episodes (excluded all the time, it hid the whole run: VT FlyTS,
+//! 0 of 5 kills).
 
 use serde::{Deserialize, Serialize};
 

@@ -31,7 +31,7 @@ const NONE: &str = "none";
 /// One change to area_examples.jsonl at a time (the finder learns in the background).
 static EXAMPLES: Mutex<()> = Mutex::new(());
 
-/// The kinds an area can be, built in (python/review.py: EXCLUDE_KINDS), and what each is (python/server.py:
+/// The kinds an area can be, built in (python/retired/review.py: EXCLUDE_KINDS), and what each is (python/server.py:
 /// KIND_ABOUT).
 const BUILT_IN: [(&str, &str); 11] = [
     ("Session stats", "KovaaK's SESSION box (kills, accuracy, damage), or a game's score and accuracy boxes"),
@@ -47,7 +47,8 @@ const BUILT_IN: [(&str, &str); 11] = [
     ("Other", "anything else that is not the game"),
 ];
 
-/// What each of KovOBS's areas is (python/review.py: OVERLAY_KINDS), in the order of aimview::geometry::OVERLAY.
+/// What each of KovOBS's areas is (python/retired/review.py: OVERLAY_KINDS), in the order of
+/// aimview::geometry::OVERLAY.
 const OVERLAY_KINDS: [&str; 8] = ["Session stats", "Timer", "Clock", "Settings", "Weapon", "Scenario name", "Webcam", "Version"];
 
 /// A kind of area: its id never changes; its name and what it is can.
@@ -78,7 +79,7 @@ struct Example {
     rest: Map<String, Value>,
 }
 
-/// KovOBS's layout with each area's kind by name (python/review.py: OVERLAY_SHARES).
+/// KovOBS's layout with each area's kind by name (python/retired/review.py: OVERLAY_SHARES).
 fn overlay_shares() -> Vec<Value> {
     aimview::geometry::overlay_shares().iter().zip(OVERLAY_KINDS).map(|(b, kind)| json!([b[0], b[1], b[2], b[3], kind])).collect()
 }

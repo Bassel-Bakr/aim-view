@@ -1,8 +1,8 @@
-//! The clicking review (src/review.rs) against Python's on the same tracks: tests/fixtures.py --review writes
-//! test_out/parity/<case>/review/ (tracks.json, flicks.json, measures.json, report.json). Everything that is not a
-//! number must be equal; numbers within 1e-9 of Python's (relative), since the core uses plain floating point. The
+//! The clicking review (src/review.rs) against Python's on the same tracks: python/retired/tests/fixtures.py --review
+//! writes test_out/parity/<case>/review/ (tracks.json, flicks.json, measures.json, report.json). Everything that is not
+//! a number must be equal; numbers within 1e-9 of Python's (relative), since the core uses plain floating point. The
 //! checks are compared by their issue number, flag and numbers, not their words: the core words them in the app's terms
-//! (TTK, micros, confirmation), python/review.py in its own.
+//! (TTK, micros, confirmation), python/retired/review.py in its own.
 
 use std::fs;
 use std::path::PathBuf;

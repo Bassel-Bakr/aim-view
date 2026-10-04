@@ -2,7 +2,7 @@
 
 The key-frame dataset (build_data.py) almost never catches a kill. Here, for each static VOD with a stats file:
 1. the video's clock is lined up with the stats file's: the first seconds are decoded, tracked with the model, and the
-   first kills matched (review.match_times votes the offset, to the frame);
+   first kills matched (old_review.match_times votes the offset, to the frame);
 2. about 10 kills spread over the run are picked, and only the third of a second before each is decoded (seeking to
    the key frame before it);
 3. those frames are labelled with the model's detections. The killed target keeps its label even where the model lost
@@ -34,7 +34,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import build_data  # noqa: E402
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 import aimview_tools  # noqa: E402
 
 CROP = 256
@@ -46,20 +46,20 @@ GPU = threading.Lock()
 def decode(video, t0, t1):
     """Frames from t0 to t1 seconds, RGB 1280 x 720 (ffmpeg's own conversion, as in training and in the review)."""
     p = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{max(0.0, t0):.4f}", "-i", str(video), "-t", f"{t1 - max(0.0, t0):.4f}",
-                        "-vf", f"scale={review.W}:{review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
+                        "-vf", f"scale={old_review.W}:{old_review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
                        capture_output=True)
-    n = len(p.stdout) // (review.W * review.H * 3)
-    return np.frombuffer(p.stdout[:n * review.W * review.H * 3], np.uint8).reshape(n, review.H, review.W, 3)
+    n = len(p.stdout) // (old_review.W * old_review.H * 3)
+    return np.frombuffer(p.stdout[:n * old_review.W * old_review.H * 3], np.uint8).reshape(n, old_review.H, old_review.W, 3)
 
 
 def detect_stream(det, video, t1, fixed):
     """The model's boxes for every frame from the start to t1 seconds, decoded and detected 16 frames at a time (the
     frames are not kept: a captured pipe of 10 s of 720p RGB is 3.3 GB and took 32 s)."""
-    size = review.W * review.H * 3
+    size = old_review.W * old_review.H * 3
     p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(video), "-t", f"{t1:.4f}", "-vf",
-                          f"scale={review.W}:{review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
+                          f"scale={old_review.W}:{old_review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"],
                          stdout=subprocess.PIPE, bufsize=0)
-    buf, out = np.empty((16, review.H, review.W, 3), np.uint8), []
+    buf, out = np.empty((16, old_review.H, old_review.W, 3), np.uint8), []
     try:
         while True:
             n = 0
@@ -86,43 +86,43 @@ def detect(det, frames, fixed):
         with GPU:
             ds = det.batch(frames[i:i + 16], fixed)
         for d in ds:
-            keep = [b for b in d if review.MASK[min(review.H - 1, max(0, int(b[1]))), min(review.W - 1, max(0, int(b[0])))]]
+            keep = [b for b in d if old_review.MASK[min(old_review.H - 1, max(0, int(b[1]))), min(old_review.W - 1, max(0, int(b[0])))]]
             out.append(np.array(keep, np.float32).reshape(-1, 5))
     return out
 
 
 def tracks_of(boxes, start):
-    """Link per-frame boxes into tracks (review.link), frames numbered from `start`."""
-    rows = [[(*review.to_deg(float(b[0]), float(b[1])), int(round(math.pi / 4 * b[2] * b[3]))) for b in d] for d in boxes]
-    frames = review.link(rows)
+    """Link per-frame boxes into tracks (old_review.link), frames numbered from `start`."""
+    rows = [[(*old_review.to_deg(float(b[0]), float(b[1])), int(round(math.pi / 4 * b[2] * b[3]))) for b in d] for d in boxes]
+    frames = old_review.link(rows)
     for k, f in enumerate(frames):
         f["i"] = start + k
     return frames
 
 
 def to_px(xd, yd):
-    x = review.CX + review.K * math.tan(math.radians(xd))
-    return x, review.CY - math.tan(math.radians(yd)) * math.hypot(review.K, x - review.CX)
+    x = old_review.CX + old_review.K * math.tan(math.radians(xd))
+    return x, old_review.CY - math.tan(math.radians(yd)) * math.hypot(old_review.K, x - old_review.CX)
 
 
 def one(job, det):
     folder, video, stats, split, out, seed = job
     count = COUNTS.get(folder.lower())
     row = dict(folder=folder, file=Path(video).name, size=Path(video).stat().st_size, split=split, kept=False, crops=0)
-    fps, dur = review.probe(video)
-    meta, srows = review.load_stats(stats)
-    t0 = review.datetime.strptime(meta["Challenge Start"], "%H:%M:%S.%f")
-    kt = [(review.datetime.strptime(r[1], "%H:%M:%S.%f") - t0).total_seconds() for r in srows]
+    fps, dur = old_review.probe(video)
+    meta, srows = old_review.load_stats(stats)
+    t0 = old_review.datetime.strptime(meta["Challenge Start"], "%H:%M:%S.%f")
+    kt = [(old_review.datetime.strptime(r[1], "%H:%M:%S.%f") - t0).total_seconds() for r in srows]
     if len(kt) < 8:
         return dict(row, reason="too few kills")
-    fixed = review.fixed_map(list(review._frames(video, keyframes=True))).astype(np.uint8)
+    fixed = old_review.fixed_map(list(old_review._frames(video, keyframes=True))).astype(np.uint8)
     # 1. the offset, from the first kills (the offsets seen so far are 0.4 to 2.2 s)
     first = [t for t in kt if t < 10][:6]
     if len(first) < 3:
         first = kt[:4]
     end = min(dur, first[-1] + 3.0)
     tr = dict(fps=fps, frames=tracks_of(detect_stream(det, video, end, fixed), 0))
-    fl, info = review.match_times(tr, first, [1] * len(first))
+    fl, info = old_review.match_times(tr, first, [1] * len(first))
     if info.get("offset") is None or info.get("confirmed", 0) < max(2, (len(first) + 1) // 2):
         return dict(row, reason=f"no clock offset ({info.get('confirmed')} of {len(first)} first kills lined up)")
     off = info["offset"]
@@ -133,7 +133,7 @@ def one(job, det):
     picks = sorted(rnd.sample(usable, min(KILLS, len(usable))))
     back = [max(1, round(b * fps / 120)) for b in BACK]
     L, W = max(back) + int(0.1 * fps), int(0.25 * fps)
-    rx, ry = review.CX, review.CY
+    rx, ry = old_review.CX, old_review.CY
     stem = hashlib.md5(video.encode()).hexdigest()[:10]
     d = Path(out) / split
     n, hidden = 0, 0
@@ -197,8 +197,8 @@ def one(job, det):
                 # small_v4 to v6 the crosshair as a target
                 r = max(1.5, 0.5 * w)
                 R = int(3 * r) + 2
-                ya, yb = max(0, int(cy) - R), min(review.H, int(cy) + R + 1)
-                xa, xb = max(0, int(cx) - R), min(review.W, int(cx) + R + 1)
+                ya, yb = max(0, int(cy) - R), min(old_review.H, int(cy) + R + 1)
+                xa, xb = max(0, int(cx) - R), min(old_review.W, int(cx) + R + 1)
                 yy, xx = np.mgrid[ya:yb, xa:xb]
                 d2 = (xx - cx) ** 2 + (yy - cy) ** 2
                 free = fixed[ya:yb, xa:xb] == 0
@@ -214,8 +214,8 @@ def one(job, det):
                           key=lambda b: -b[4])
             others = [b[:4] for b in (rest[:max(0, count - 1)] if count else [b for b in rest if b[4] >= 0.6])]
             labels = [np.array([cx, cy, w, h], np.float32)] + others
-            x0 = int(np.clip(rx - CROP // 2 + rnd.randint(-48, 48), 0, review.W - CROP))
-            y0 = int(np.clip(ry - CROP // 2 + rnd.randint(-48, 48), 0, review.H - CROP))
+            x0 = int(np.clip(rx - CROP // 2 + rnd.randint(-48, 48), 0, old_review.W - CROP))
+            y0 = int(np.clip(ry - CROP // 2 + rnd.randint(-48, 48), 0, old_review.H - CROP))
             bb = np.array([[b[0] - x0, b[1] - y0, b[2], b[3]] for b in labels
                            if x0 <= b[0] < x0 + CROP and y0 <= b[1] < y0 + CROP], np.float32).reshape(-1, 4)
             yy, xx = np.mgrid[0:CROP, 0:CROP]

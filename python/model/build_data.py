@@ -2,8 +2,8 @@
 
 Real frames, automatically labelled: for every static scenario (every target's MaxSpeed is 0 in its .sce file) it takes
 up to --per-folder of the newest recordings, decodes their key frames only (one every ~2 s; a fraction of a second per
-VOD), finds the screen's fixed parts (review.fixed_map) and labels the targets with the hand-written detector in
-review.py. A VOD is kept only when its labels look trustworthy: targets found in most frames with a steady count.
+VOD), finds the screen's fixed parts (old_review.fixed_map) and labels the targets with the hand-written detector in
+old_review.py. A VOD is kept only when its labels look trustworthy: targets found in most frames with a steady count.
 Frames whose count is off are skipped.
 
 Splits are by scenario folder (no scenario is in two splits): a stable hash puts 10% in val and 10% in test, and the
@@ -35,9 +35,9 @@ import numpy as np
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import review  # noqa: E402
+import old_review  # noqa: E402
 
-W, H, FRAME = review.W, review.H, review.FRAME
+W, H, FRAME = old_review.W, old_review.H, old_review.FRAME
 CROP = 256
 SCEN = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\Saved\SaveGames\Scenarios"
 WORKSHOP = r"C:\Program Files (x86)\Steam\steamapps\workshop\content\824270"
@@ -60,8 +60,8 @@ def static_scenarios():
 
 
 def target_counts():
-    """Targets alive at once per scenario (lower-case name): review.target_counts."""
-    return review.target_counts()
+    """Targets alive at once per scenario (lower-case name): old_review.target_counts."""
+    return old_review.target_counts()
 
 
 def split_of(folder):
@@ -81,15 +81,15 @@ def keyframes(video, fmt):
 
 def labels(yuv, mask, cross):
     """The hand-written detector's targets in one frame: (target pixel mask, [(cx, cy, w, h)])."""
-    found = review.detect(yuv, mask, cross)
+    found = old_review.detect(yuv, mask, cross)
     tmask = np.zeros((H, W), np.uint8)
     boxes = []
     if not found:
         return tmask, boxes
-    blobs, _ = ndimage.label(review.contrast(yuv) > review.DIFF)
+    blobs, _ = ndimage.label(old_review.contrast(yuv) > old_review.DIFF)
     objs = ndimage.find_objects(blobs)
     for xd, yd, area in found:
-        x, y = review.to_px(xd, yd)
+        x, y = old_review.to_px(xd, yd)
         yi, xi = min(H - 1, max(0, int(round(y)))), min(W - 1, max(0, int(round(x))))
         win = blobs[max(0, yi - 2):yi + 3, max(0, xi - 2):xi + 3]
         ids = [i for i in np.unique(win) if i]
@@ -114,7 +114,7 @@ def dark_labels(rgb, mask, fixed):
     """The targets in a frame of a dark_scene: blobs dark in every channel (max of R, G, B under 70), at least 6 px,
     filling a third of their box, no more than 2.5 times wider than tall (a health bar is wider) and up to 25 times
     taller (a thin capsule), under 400 px a side. A blob mostly on the fixed parts is the crosshair or HUD. Unlike
-    review.detect, a big sphere, a capsule and a target held under the crosshair (tracking) are all found."""
+    old_review.detect, a big sphere, a capsule and a target held under the crosshair (tracking) are all found."""
     lab, n = ndimage.label((rgb.max(axis=2) < 70) & mask)
     tmask = np.zeros((H, W), np.uint8)
     boxes = []
@@ -183,8 +183,8 @@ def one(job):
     row["keyframes"] = len(yuvs)
     if len(yuvs) < 8 or len(yuvs) != len(rgbs):
         return dict(row, reason="too few key frames")
-    fixed = review.fixed_map(yuvs).astype(np.uint8)
-    mask, _, cross = review.screen_mask(yuvs)
+    fixed = old_review.fixed_map(yuvs).astype(np.uint8)
+    mask, _, cross = old_review.screen_mask(yuvs)
     if (dark or other) and dark_scene(rgbs, mask) != dark:
         return dict(row, reason="not dark targets on light walls" if dark else "dark targets on light walls")
     if model:
@@ -208,7 +208,7 @@ def one(job):
         if abs(len(boxes) - med) > max(1, 0.25 * med):
             continue
         img = np.frombuffer(rgb, np.uint8).reshape(H, W, 3)
-        spots = [(int(review.CX), int(review.CY))]
+        spots = [(int(old_review.CX), int(old_review.CY))]
         if boxes:
             b = rnd.choice(boxes)
             spots.append((int(b[0]) + rnd.randint(-90, 90), int(b[1]) + rnd.randint(-90, 90)))
@@ -233,7 +233,7 @@ def main():
     ap.add_argument("--out", default="test_out/vod_model/data")
     ap.add_argument("--per-folder", type=int, default=4, help="the newest recordings of each scenario (0: every one)")
     ap.add_argument("--kinds", default="static", help="scenario kinds, comma separated: static, dynamic, tracking, "
-                    "switching (review.scenario_kinds; static alone keeps the MaxSpeed rule the first datasets used)")
+                    "switching (old_review.scenario_kinds; static alone keeps the MaxSpeed rule the first datasets used)")
     scene = ap.add_mutually_exclusive_group()
     scene.add_argument("--dark", action="store_true", help="label with dark_labels (recordings of dark targets on light "
                        "walls only) instead of the hand-written detector")
@@ -249,8 +249,8 @@ def main():
     if kinds == {"static"}:
         static = static_scenarios()
     else:
-        static = {n for n, k in review.scenario_kinds().items() if k in kinds}
-    counts = review.target_counts()
+        static = {n for n, k in old_review.scenario_kinds().items() if k in kinds}
+    counts = old_review.target_counts()
     skip = check_runs() if a.skip_checks else set()
     jobs, skipped = [], []
     for folder in sorted(p for p in Path(a.vods).iterdir() if p.is_dir()):

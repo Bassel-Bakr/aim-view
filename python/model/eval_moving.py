@@ -5,14 +5,13 @@
 - dynamic, switching, tracking: the newest recording with a stats file of the first 6 folders of each kind (12 for
   tracking) in the test split (build_data.split_of), never trained on.
 
-Clicking kinds (static, dynamic, switching): kills matched to a target and flicks measured (review.match, measure).
-Tracking: the review's time on the target (review.track_summary) against the stats file's accuracy, hits over hits
-and misses: the game's own measure of the same thing.
+Clicking kinds (static, dynamic, switching): kills matched to a target and flicks measured. Tracking: the review's
+time on the target against the stats file's accuracy, hits over hits and misses: the game's own measure of the same
+thing. All from the core's review of the tracks (`core_numbers`: examples/review.rs, as the app's report works them out).
 The tracks come from the app's native review (the review service's aimview-tool, through python/aimview_tools.py: the
-model's _u8in export, see eval_vods.u8in, and the app's areas for each recording); with --python, from
-review.track_model as before. They are cached per model name in test_out/vod_model/eval/moving_<name>_native.pkl
-(--python: moving_<name>.pkl).
-Usage: python python/model/eval_moving.py name=model [name=model ...] [--python]
+model's _u8in export, see eval_vods.u8in, and the app's areas for each recording). They are cached per model name in
+test_out/vod_model/eval/moving_<name>_native.pkl.
+Usage: python python/model/eval_moving.py name=model [name=model ...]
 """
 import glob
 import os
@@ -25,9 +24,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import build_data  # noqa: E402
+import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
-import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 PER = {"dynamic": 6, "switching": 6, "tracking": 12}
 KOVOBS = r"E:\OBS\KovOBS"
@@ -44,7 +43,7 @@ def stats_of(v):
 
 
 def picks():
-    kinds = review.scenario_kinds()
+    kinds = old_review.scenario_kinds()
     out = {"static": [(v, str(stats_of(v))) for v in STATIC if stats_of(v)],
            "dynamic": [], "switching": [], "tracking": []}
     for d in sorted(Path(KOVOBS).iterdir()):
@@ -59,41 +58,46 @@ def picks():
     return out
 
 
+def core_numbers(program, kind, tracks, video, stats, limit):
+    """A recording's numbers from the core's review of its tracks, as the app's report works them out. Clicking kinds:
+    (kind, kills matched, the stats file's kills, flicks measured), with the stats file. Tracking: (kind, the review's
+    time on the bot, the stats file's accuracy), without the stats file, over the scenario's time limit `limit`."""
+    meta, rows = old_review.load_stats(stats)
+    tracking = kind == "tracking"
+    request = dict(tracks=tracks, statsText="" if tracking else Path(stats).read_bytes().decode("utf-8", "replace"),
+                   video=Path(video).name, stats="" if tracking else Path(stats).name, hud=None, run=None,
+                   tracking=tracking, limit=limit if tracking else None, camera=[], countdown=[], faint=None)
+    report = eval_video_alone.request_report(program, request)
+    if tracking:
+        hits, misses = float(meta.get("Hit Count", 0)), float(meta.get("Miss Count", 0))
+        return kind, report["summary"]["on_target"] or 0.0, hits / max(1.0, hits + misses)
+    return kind, report["summary"]["info"]["matched"], len(rows), report["summary"]["measured"]
+
+
 def main():
-    python = "--python" in sys.argv[1:]
-    lib = None if python else eval_vods.library()
+    lib = eval_vods.library()
+    program = eval_video_alone.review_program()
     pick = picks()
-    facts = review.scenario_facts()
-    counts = review.target_counts()
+    facts = old_review.scenario_facts()
+    counts = old_review.target_counts()
     res = {}
     os.makedirs("test_out/vod_model/eval", exist_ok=True)
-    for arg in [x for x in sys.argv[1:] if x != "--python"]:
+    for arg in sys.argv[1:]:
         name, path = arg.split("=", 1)
-        model = None if python else str(eval_vods.u8in(path))
-        cache = f"test_out/vod_model/eval/moving_{name}{'' if python else '_native'}.pkl"
+        model = str(eval_vods.u8in(path))
+        cache = f"test_out/vod_model/eval/moving_{name}_native.pkl"
         tracks = pickle.load(open(cache, "rb")) if os.path.exists(cache) else {}
-        det = None
         for vs in pick.values():
             for v, _ in vs:
                 if v not in tracks:
                     cap = counts.get(Path(v).stem.rsplit(" - ", 2)[0].lower())
-                    if python:
-                        det = det or infer.TorchDetector(path)
-                        tracks[v] = review.track_model(v, det, cap=cap)
-                    else:
-                        tracks[v] = lib.review_video(v, model, cap=cap)["tracks"]
+                    tracks[v] = lib.review_video(v, model, cap=cap)["tracks"]
                     pickle.dump(tracks, open(cache, "wb"))
         out = {}
         for kind, vs in pick.items():
             for v, st in vs:
-                tr, (meta, rows) = tracks[v], review.load_stats(st)
-                if kind == "tracking":
-                    h, m = float(meta.get("Hit Count", 0)), float(meta.get("Miss Count", 0))
-                    lim = facts.get(Path(v).stem.rsplit(" - ", 2)[0].lower(), (None, None))[1]
-                    out[v] = (kind, review.track_summary(tr, {}, lim)["on_target"] or 0.0, h / max(1.0, h + m))
-                else:
-                    fl, info = review.match(tr, st)
-                    out[v] = (kind, info["matched"], len(rows), len(review.measure(fl, tr["fps"], review.target_radius(fl))))
+                limit = facts.get(Path(v).stem.rsplit(" - ", 2)[0].lower(), (None, None))[1]
+                out[v] = core_numbers(program, kind, tracks[v], v, st, limit)
         res[name] = out
     names = list(res)
     print("recording".ljust(44), "  ".join(n.rjust(14) for n in names))

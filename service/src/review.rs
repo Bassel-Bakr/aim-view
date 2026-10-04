@@ -222,7 +222,7 @@ pub(crate) fn key_frames(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u
     })
 }
 
-/// The fixed map from the key frames (as python/review.py builds it), each key frame also handed to `key` as
+/// The fixed map from the key frames (as python/retired/review.py builds it), each key frame also handed to `key` as
 /// `key_frames` does.
 #[cfg(feature = "native")]
 pub(crate) fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8], &[u8])) -> Result<Vec<u8>, String> {

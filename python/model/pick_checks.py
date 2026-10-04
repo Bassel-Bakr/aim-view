@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     data, out = Path(a.data), Path(a.out)
     if out.exists() and any(out.iterdir()):
         sys.exit(f"{out} is not empty")
-    kinds = review.scenario_kinds()
+    kinds = old_review.scenario_kinds()
     rec = {}
     for line in open(data / "manifest.jsonl", encoding="utf-8"):
         r = json.loads(line)

@@ -3,9 +3,11 @@
 Aim View reviews aim trainer recordings. The review core is Rust (`src/`), the shared service that answers the review
 API is `service/` (the desktop app and the Rust server serve it; Python's scripts reach it through its `aimview-tool`),
 the UI is Angular (`ui/`), and
-`python/model/` trains the target detector. `python/review.py` is the old Python pipeline, kept as the parity tests'
-reference. Read `README.md` first, then `python/README.md` (how the review works) and
-`python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
+`python/model/` trains the target detector. The old Python pipeline retired on 2026-10-04 (`python/retired/review.py`):
+the parity tests compare with its stored outputs (`test_out/parity/`, frozen), and the training scripts use its frozen
+parts (`python/model/old_review.py`), so a change to the review is made once, in Rust. Read `README.md` first, then
+`python/README.md` (how the review works) and `python/model/MODEL_STATUS.md` (the detector's results and limits).
+Every command to rebuild the detector is in
 `python/model/REPRODUCE.md`. Every benchmark, its baseline and when to rerun it are in `BENCH.md`: check it before
 running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing.
 
@@ -23,8 +25,9 @@ cargo run -q --release -p aimview-service --bin aimview-tool -- help   # the lib
                                                # scripts, JSON on stdout (python/aimview_tools.py runs it)
 python python/model/test_model.py              # the detector's tests
 python python/model/eval_vods.py <model>       # static runs against their stats files (the app's native review of the
-                                               # model's _u8in export; --python: python/review.py with a .pt or .onnx)
-python python/model/eval_moving.py name=<model> ...      # every scenario kind against the stats files (--python too)
+                                               # model's _u8in export)
+python python/model/eval_moving.py name=<model> ...      # every scenario kind against the stats files (the core's
+                                               # numbers on the native review's tracks)
 python python/model/eval_video_alone.py [model]  # the video-alone kill finder on 48 runs against their stats files
                                                # (tracks kept per model; --retrack after a change to the tracking)
 python python/model/accept.py <name> [--list]  # the acceptance gate: the contract and the three checks above against
@@ -43,8 +46,8 @@ cargo clippy --workspace --all-targets         # the Rust lints (Cargo.toml, cli
 python -m ruff check python                    # the Python lints (ruff.toml)
 cargo test --profile quick                     # the Rust core, checked against Python's results (test_out/parity/)
                                                # (--release gives the same results; its builds take 40 s, quick's 3 s)
-python tests/fixtures.py <video> [--areas exclude.json]   # Python's results stage by stage, for those checks
-python tests/fixtures.py --faint                          # the faint-target cut-off in Python (--test faint_parity)
+python scripts/extract_module.py <src.py> <out.py> <name> ...   # copies a module's definitions and what they use,
+                                               # verbatim (how old_review.py was made)
 bun run assets                                 # the core as WebAssembly, the models and the area finder's data,
                                                # into ui/generated/ (--no-data: without the data; see below)
 bun run types                                  # the UI's types of the JSON the Rust structs write (ts-rs), into
@@ -149,7 +152,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (`selectRow`, not `onClick`). Services are `@Service()` (Angular 22's), not `@Injectable({ providedIn: 'root' })`.
   `inject()`, `protected` for template-only members, `readonly` for inputs and queries.
 - **Format and lint** the UI before calling a change done: `bun run format`, then `bun run lint:ui`.
-- **Readable code.** The Rust core began as a line-for-line port of `python/review.py` and kept its short NumPy-style
+- **Readable code.** The Rust core began as a line-for-line port of the old Python review
+  (`python/retired/review.py`) and kept its short NumPy-style
   names; code is now written for the next person who reads it. Names say what a thing is, with its unit where it has
   one (`shift_deg`, `kill_frame`, `radius_px`). Single letters only for loop counters (`i`, `j`), coordinates (`x`,
   `y`) and a comparison's two sides (`a`, `b`). Short forms only from GLOSSARY.md, which names every domain
@@ -302,7 +306,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   scenario folders, the models, the device: DirectML, CUDA behind the `cuda` feature, or the CPU). Two servers serve
   it: the desktop app over its own protocol, and server/ (aimview-server: HTTP, the server-mode UI build, a token for
   anything beyond this machine). Python's scripts (areas.py, model/build_kills.py, eval_vods.py,
-  eval_moving.py, tests/find_popups.py, tests/fixtures.py) use it through its command-line tool, aimview-tool
+  eval_moving.py) use it through its command-line tool, aimview-tool
   (service/src/bin/: `recordings`, `lookup`, `review`, JSON on stdout), which python/aimview_tools.py runs (cargo run
   --release, so a Rust change is built first). The Python bindings and the thin Python server over them retired
   (retired/python-bindings/, python/retired/server_thin.py; the old Python server is python/retired/server.py); the
@@ -314,7 +318,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (desktop/src/protocol.rs over a custom protocol, to the service: no network port, nothing outside the app reaches
   it; the service's library: the VODs folder chosen in the system's dialog, KovaaK's stats files and scenarios read from disk, the models it ships, each
   recording's reviews in the app's data folder, the report worked out by the core as the browser does). The review
-  runs natively (service/src/review.rs): ffmpeg's frames through a pipe (the video's own YUV, as python/review.py reads them), the
+  runs natively (service/src/review.rs): ffmpeg's frames through a pipe (the video's own YUV, as the old Python review read them), the
   core, ONNX Runtime with DirectML (1.84 ms a frame for full_v3; the CPU when there is no GPU), split into two runs
   as in the browser. av1: 12.7 s in the app (the browser 16 s), 20 frames apart from Python's (GPU noise), the same 66
   kills. `cargo run -p aimview-service --release --example track -- <video> <model> <out>` reviews without the app.
@@ -322,7 +326,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   review downloads them into the app's local data folder (service/src/
   ffmpeg.rs, ffmpeg-sidecar), from BtbN's GPL build, which has dav1d (gyan.dev's essentials build decodes AV1 with
   libaom: 2.5 times slower, and it ignores `-skip_frame nokey`, so the fixed map decodes each key frame on its own;
-  python/review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). The installer ships what
+  old_review.py still uses `-skip_frame` and would break the same way on such an ffmpeg). The installer ships what
   the review needs beside the exe (desktop/installer-hooks.nsh): DirectML.dll (the ort crate's, newer than Windows'
   own) and the VC++ runtime ONNX Runtime loads (msvcp140, msvcp140_1, vcruntime140, vcruntime140_1; desktop/build.rs
   copies them from the newest Visual Studio). ONNX Runtime is linked into the exe. Checked: installed silently into
@@ -330,7 +334,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 - The Angular app does everything the old page did, the player's full screen (F, Escape) included; the old page
   retired to `python/retired/app/` (2026-10-04), and the Rust server no longer serves it. Server mode stays (a stronger
   machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review
-  through the app's native pipeline by default (--python: the old one).
+  through the app's native pipeline, and the gate's numbers come from the core (the old Python review retired).
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
   dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
   Rust prototype in `python/model/rust/` becomes the start of the core's detector); with a stats file, flicks lost to
@@ -345,4 +349,5 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (VT DriftTS breaks into many tracks); a target as big as the crosshair's box hidden under it (1wall 2targets xsmall
   valorant): the stats file's clock is 9 frames late there (the HUD shows) and the video alone finds none of its kills
   (the benchmark's own clock hides it);
-  python/model/infer.py still uses the fixed threshold, not the model's settings file (the `--python` path).
+  python/model/infer.py's detectors (old_review.track_model, for hand_crops.py) still use the fixed threshold, not the
+  model's settings file.

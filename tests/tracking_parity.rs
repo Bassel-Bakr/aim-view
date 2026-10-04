@@ -1,6 +1,6 @@
 //! The tracking review (src/tracking.rs, src/review.rs) against Python's on the same tracks and camera readings:
-//! tests/fixtures.py --review writes test_out/parity/<case>/review/ (tracks.json, camera.json, teal.json,
-//! report.json). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative).
+//! python/retired/tests/fixtures.py --review writes test_out/parity/<case>/review/ (tracks.json, camera.json,
+//! teal.json, report.json). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative).
 
 use std::fs;
 use std::path::PathBuf;
@@ -12,8 +12,9 @@ use aimview::tracking::CameraReading;
 mod common;
 use common::{Diff, compare, read};
 
-/// flower_crosshair (tests/fixtures.py --crosshair): flower's tracks with the valorant run's crosshair boxes (av1's,
-/// from its fast turns) put into its run, so the tracking review leaves out a detector's boxes on the crosshair.
+/// flower_crosshair (python/retired/tests/fixtures.py --crosshair): flower's tracks with the valorant run's crosshair
+/// boxes (av1's, from its fast turns) put into its run, so the tracking review leaves out a detector's boxes on the
+/// crosshair.
 const CASES: [&str; 6] = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol", "flower_crosshair"];
 
 #[test]

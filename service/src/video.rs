@@ -1,6 +1,6 @@
 //! A recording's frames from ffmpeg (ffmpeg.rs: the app's own copy), as Python's review decodes them
-//! (python/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts them to
-//! the same bytes. ffprobe gives the frames' times, the key frames and the colours.
+//! (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts
+//! them to the same bytes. ffprobe gives the frames' times, the key frames and the colours.
 
 use std::io::Read;
 use std::path::Path;

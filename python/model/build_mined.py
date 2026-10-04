@@ -10,9 +10,9 @@ the camera's turn (readings.json: phase correlation over the whole frame; the tr
 fools, only as a second opinion) give four rules, each kept only inside the run (from the stats file's start, else the
 end of KovaaK's countdown, to the run's length; half a second in from each end). A chain is the tracks appearances()
 joins (one target picked up again); a verified chain is a target for sure: one a clicking run's matched kills
-(review.match) end, or in a tracking run one held near the crosshair a fifth of the time (a cloud, a name tag or a wall
+(old_review.match) end, or in a tracking run one held near the crosshair a fifth of the time (a cloud, a name tag or a wall
 seam the model boxes steadily is neither).
-- kill: a kill of a dynamic or switching run, matched as the core matches them (review.match: the clock offset voted
+- kill: a kill of a dynamic or switching run, matched as the core matches them (old_review.match: the clock offset voted
   from the kills, the killed target's chain). In the third of a second before the kill (up to 2 frames before it), a
   frame where the killed target has no box (under the crosshair, faint, merged): its place comes from its own track,
   between two frames where it was seen (up to 0.06 s apart) or up to 0.05 s past the last one by its own speed over
@@ -78,9 +78,9 @@ import aimview_tools  # noqa: E402
 import build_data  # noqa: E402
 import eval_moving  # noqa: E402
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
-W, H, CROP = review.W, review.H, 256
+W, H, CROP = old_review.W, old_review.H, 256
 MODEL = HERE / "exports" / "detector_full_v3_u8in.onnx"
 THRESHOLD = 0.3                              # full_v3's, in its settings file
 RULES = ("kill", "gap", "false_static", "false_lone")
@@ -92,10 +92,10 @@ PER_RUN = dict(kill=80, gap=40, false_static=12, false_lone=20)   # crops per re
 def px_size(x, y, wd, hd):
     """A box's width and height in pixels from its size in degrees at (x, y) (track.rs keep's inverse, to first
     order)."""
-    xa, _ = review.to_px(x - wd / 2, y)
-    xb, _ = review.to_px(x + wd / 2, y)
-    _, ya = review.to_px(x, y + hd / 2)
-    _, yb = review.to_px(x, y - hd / 2)
+    xa, _ = old_review.to_px(x - wd / 2, y)
+    xb, _ = old_review.to_px(x + wd / 2, y)
+    _, ya = old_review.to_px(x, y + hd / 2)
+    _, yb = old_review.to_px(x, y - hd / 2)
     return xb - xa, yb - ya
 
 
@@ -178,9 +178,9 @@ class Run:
         self.cam = cam
         self.shift = np.array([f.get("shift") or (0.0, 0.0) for f in fr], float).reshape(-1, 2)   # the tracks' own
         self.cum = np.cumsum(cam, axis=0)
-        self.mask = review.mask_of(self.tr.get("areas") or review.OVERLAY_SHARES)
+        self.mask = old_review.mask_of(self.tr.get("areas") or old_review.OVERLAY_SHARES)
         self.far = ndimage.binary_erosion(self.mask, iterations=24)   # 24 px or more from the excluded areas
-        _, self.follows = review.appearances(self.tr)
+        _, self.follows = old_review.appearances(self.tr)
         before = {v: k for k, v in self.follows.items()}
         self.root, self.chain = {}, collections.defaultdict(set)
         for tid, p in self.pos.items():
@@ -190,15 +190,15 @@ class Run:
             self.root[tid] = r
             self.chain[r] |= set(p)
         self.span = {r: (min(c), max(c)) for r, c in self.chain.items()}
-        self.spots = review.crosshair_spots(fr)      # where the model marks the crosshair itself
+        self.spots = old_review.crosshair_spots(fr)      # where the model marks the crosshair itself
         self.kind, self.stats = kind, stats
-        self.meta, self.rows = review.load_stats(stats)
+        self.meta, self.rows = old_review.load_stats(stats)
         self.flicks, self.info = [], {}
         on = [i for i, c in enumerate(rd.get("countdown") or []) if c]
         countdown = (on[-1] + 1) / self.fps if on else None
         start, self.start_from, self.clock = None, None, False
         if kind != "tracking" and self.rows:
-            self.flicks, self.info = review.match(self.tr, stats)
+            self.flicks, self.info = old_review.match(self.tr, stats)
             i = self.info
             if i.get("offset") is not None and i["matched"] >= 0.8 * len(self.rows):
                 start, self.start_from = float(i["offset"]), "kills"
@@ -214,7 +214,7 @@ class Run:
                 self.flicks = []
         if start is None and countdown is not None:
             start, self.start_from = countdown, "countdown"
-        length = review.stats_length(stats)
+        length = old_review.stats_length(stats)
         self.window = None
         if start is not None and length:
             lo, hi = int(round((start + 0.5) * self.fps)), min(self.n - 1, int(round((start + length - 0.5) * self.fps)))
@@ -281,7 +281,7 @@ class Run:
         return sum(k in self.chain[r] for k in range(lo, hi + 1)) >= need * (hi - lo + 1)
 
     def placeable(self, x, y):
-        cx, cy = review.to_px(x, y)
+        cx, cy = old_review.to_px(x, y)
         return 8 <= cx < W - 8 and 8 <= cy < H - 8 and self.mask[int(cy), int(cx)]
 
 
@@ -401,7 +401,7 @@ def gap_places(run):
 def static_places(run):
     """The false_static rule: (frame, x, y, wd, hd, first frame, last frame, why), up to 3 frames per spot on screen.
     Only in a static scenario (no target can move: a box that stays put on screen while the view turns is no target) or
-    on a spot where the model marks the crosshair (review.crosshair_spots): in a moving one, every target strafing
+    on a spot where the model marks the crosshair (old_review.crosshair_spots): in a moving one, every target strafing
     alike stays put on screen while the player follows one of them."""
     fps, out = run.fps, []
     lo, hi = run.window
@@ -470,7 +470,7 @@ def lone_places(run, single):
         (i, (x, y)), = run.pos[tid].items()
         if not run.inside(i - 3) or not run.inside(i + 3) or math.hypot(x, y) < 2.0 or not run.placeable(x, y):
             continue
-        cx, cy = review.to_px(x, y)
+        cx, cy = old_review.to_px(x, y)
         if not run.far[int(cy), int(cx)]:                    # a target going into an excluded area shows by bits
             continue
         if not run.cam_ok[i - 2:i + 4].all() or abs(run.cam[i - 2:i + 4]).max() > 0.5:
@@ -538,7 +538,7 @@ def lined_up(run, boxes):
             j = i + off
             if not 0 <= j < run.n or not run.P[j] or abs(run.cam[i]).max() < 0.03:
                 continue
-            got = [review.to_deg(b[0], b[1]) for b in bs]
+            got = [old_review.to_deg(b[0], b[1]) for b in bs]
             for _, x, y, *_ in run.P[j]:
                 tot += 1
                 hit += any(math.hypot(x - gx, y - gy) < 0.15 for gx, gy in got)
@@ -581,7 +581,7 @@ def mine(job, folder, det, out):
     yuvs = build_data.keyframes(video, "yuv420p")
     if len(yuvs) < 3:
         return dict(row, reason="too few key frames")
-    fixed = review.fixed_map(yuvs).astype(np.uint8)
+    fixed = old_review.fixed_map(yuvs).astype(np.uint8)
     row["decode_s"] = round(time.time() - t0, 1)
     boxes = {i: det(frames[i], fixed, THRESHOLD) for i in sorted(frames)}
     line = lined_up(run, boxes)
@@ -597,12 +597,12 @@ def mine(job, folder, det, out):
         for i, x, y, wd, hd, w, h, a, ax, ay, why in places[r]:
             if i not in frames or a not in frames:
                 continue
-            cx, cy = review.to_px(x, y)
+            cx, cy = old_review.to_px(x, y)
             # the export run again on the CPU can find the target itself (a score near the threshold): its box,
             # about where and as big as the placed one, confirms the place and is left out of the boxes round it
             same = lambda b: math.hypot(b[0] - cx, b[1] - cy) < 0.3 * max(w, h) + 1 and 0.6 < b[2] * b[3] / (w * h) < 1.67
             cpu = [b for b in boxes[i] if same(b)]
-            others = [b[:4] for b in boxes[i] if not same(b)] + [(*review.to_px(px, py), *px_size(px, py, a2, b2))
+            others = [b[:4] for b in boxes[i] if not same(b)] + [(*old_review.to_px(px, py), *px_size(px, py, a2, b2))
                                                                  for _, px, py, a2, b2, _ in run.P[i]]
             touch = lambda o: abs(o[0] - cx) < (o[2] + w) / 2 + 2 and abs(o[1] - cy) < (o[3] + h) / 2 + 2
             if any(touch(o) for o in others):
@@ -611,7 +611,7 @@ def mine(job, folder, det, out):
                 #                                      on its body, two targets merged): which is which is not clear
             if cpu:
                 why += " (the export on the CPU finds it at " + f"{max(b[4] for b in cpu):.2f})"
-            ref = shows(frames[a], fixed, *review.to_px(ax, ay), w, h)
+            ref = shows(frames[a], fixed, *old_review.to_px(ax, ay), w, h)
             if ref is None or shows(frames[i], fixed, cx, cy, w, h, ref) is None:
                 drop[f"{r}: does not show" if ref is not None else f"{r}: not clear where seen"] += 1
                 continue
@@ -619,7 +619,7 @@ def mine(job, folder, det, out):
     for i, x, y, wd, hd, f0, f1, why in places["false_static"]:
         if not {i, f0, f1} <= set(frames):
             continue
-        cx, cy = review.to_px(x, y)
+        cx, cy = old_review.to_px(x, y)
         w, h = px_size(x, y, wd, hd)
         # the image there the same as where it was first and last seen, while the view turned: nothing in the
         # world (a target behind it, or come by) shows there
@@ -633,12 +633,12 @@ def mine(job, folder, det, out):
     for i, x, y, wd, hd, why in places["false_lone"]:
         if not set(range(i - 3, i + 4)) <= set(frames):
             continue
-        cx, cy = review.to_px(x, y)
+        cx, cy = old_review.to_px(x, y)
         w, h = px_size(x, y, wd, hd)
         clear = True
         for j in (i - 3, i - 2, i - 1, i + 1, i + 2, i + 3):   # the export on the CPU, the excluded areas too
             t = run.cum[j] - run.cum[i]
-            for px, py in ((cx, cy), review.to_px(x + t[0], y + t[1])):
+            for px, py in ((cx, cy), old_review.to_px(x + t[0], y + t[1])):
                 if any(math.hypot(b[0] - px, b[1] - py) < max(24.0, 4 * max(w, h)) for b in boxes[j]):
                     clear = False
         if not clear:
@@ -651,7 +651,7 @@ def mine(job, folder, det, out):
         diffs = []
         for j, reach in ((i - 3, 64), (i - 1, 48), (i + 1, 48), (i + 3, 64)):
             t = run.cum[j] - run.cum[i]
-            diffs.append(best_match(tpl, frames[j], *review.to_px(x + t[0], y + t[1]), half, reach))
+            diffs.append(best_match(tpl, frames[j], *old_review.to_px(x + t[0], y + t[1]), half, reach))
         if any(d is None or d < 20 for d in diffs):
             drop["false_lone: like a patch beside"] += 1
             continue                                 # something like it is there in the frames either side
@@ -663,7 +663,7 @@ def mine(job, folder, det, out):
     for i in sorted(set(fixes) | set(falses)):
         base = []
         for tid, x, y, wd, hd, s in run.P[i]:        # the review's boxes, with the export's own place and size
-            cx, cy = review.to_px(x, y)
+            cx, cy = old_review.to_px(x, y)
             m = [b for b in boxes[i] if math.hypot(b[0] - cx, b[1] - cy) < 2.0]
             b = min(m, key=lambda b: math.hypot(b[0] - cx, b[1] - cy)) if m else (cx, cy, *px_size(x, y, wd, hd), s)
             base.append((tuple(float(v) for v in b[:5]), run.trusted(tid, i, x, y)))
@@ -702,7 +702,7 @@ def mine(job, folder, det, out):
 def jobs_of(lib, per_folder, vods):
     """The recordings to mine, in order: dynamic and switching folders in turn, then tracking, then static (each kind's
     folders in a fixed shuffle)."""
-    kinds, counts, facts = review.scenario_kinds(), review.target_counts(), review.scenario_facts()
+    kinds, counts, facts = old_review.scenario_kinds(), old_review.target_counts(), old_review.scenario_facts()
     skip = build_data.check_runs()
     by_folder = collections.defaultdict(list)
     for r in lib.recordings:                         # newest first

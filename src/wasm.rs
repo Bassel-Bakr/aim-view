@@ -434,7 +434,7 @@ pub unsafe extern "C" fn cutoff_crops(request: *const u8, len: usize) -> *mut u8
 
 /// A camera watch for a recording (src/camera.rs), its tiles kept clear of the recording's excluded areas and of the
 /// fixed map: `areas_len` boxes as shares of the frame, [x0, y0, x1, y1] each (f64), KovOBS's layout when there are
-/// none (python/review.py's camera mask); `fixed`: 1280 * 720 bytes, 1 fixed.
+/// none (python/retired/review.py's camera mask); `fixed`: 1280 * 720 bytes, 1 fixed.
 ///
 /// # Safety
 /// `areas` must point to `4 * areas_len` f64s; `fixed` must hold 1280 * 720 bytes.

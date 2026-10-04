@@ -1,7 +1,7 @@
-//! `track::keep` against Python's `keep` (python/review.py, `track_model`) on real recordings: the detector's raw boxes
-//! per frame (raw.json) must give the same targets (dets.json), to the bit, with the recording's excluded areas and
-//! target count (meta.json), and the frames where a pop-up area is off kept again (`reopen`, with the pop-ups Python
-//! found, meta.json's `showing`). Fixtures from tests/fixtures.py, in test_out/parity/<name>/.
+//! `track::keep` against Python's `keep` (python/retired/review.py, `track_model`) on real recordings: the detector's
+//! raw boxes per frame (raw.json) must give the same targets (dets.json), to the bit, with the recording's excluded
+//! areas and target count (meta.json), and the frames where a pop-up area is off kept again (`reopen`, with the pop-ups
+//! Python found, meta.json's `showing`). Fixtures from python/retired/tests/fixtures.py, in test_out/parity/<name>/.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ fn keep_matches_python() {
         .unwrap_or_default();
     let dirs: Vec<PathBuf> = dirs.into_iter().filter(|d| d.join("raw.json").exists()).collect();
     if dirs.is_empty() {
-        eprintln!("no fixtures in test_out/parity: run python tests/fixtures.py <video>");
+        eprintln!("no fixtures in test_out/parity: they are frozen (python/retired/tests/fixtures.py made them)");
         return;
     }
     for dir in dirs {

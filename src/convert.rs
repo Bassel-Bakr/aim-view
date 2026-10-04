@@ -1,8 +1,8 @@
-//! A decoded frame (YUV 4:2:0, any size) as ffmpeg 8.1 gives it to the review: `scale=1280:720:flags=area` to
-//! `rgb24` (the detector's input) or `yuv420p` (the fixed map's), byte for byte as the ffmpeg CLI does on x86-64
-//! (python/review.py: `rgb_frames`, `_frames`). The model was trained on these exact bytes: GPU colour conversion once
-//! changed detections at the crosshair. Every step mirrors libswscale's integer code (utils.c `initFilter`,
-//! hscale.c, output.c, yuv2rgb.c, and the x86 kernels where ffmpeg uses them).
+//! A decoded frame (YUV 4:2:0, any size) as ffmpeg 8.1 gives it to the review: `scale=1280:720:flags=area` to `rgb24`
+//! (the detector's input) or `yuv420p` (the fixed map's), byte for byte as the ffmpeg CLI does on x86-64
+//! (python/retired/review.py: `rgb_frames`, `_frames`). The model was trained on these exact bytes: GPU colour
+//! conversion once changed detections at the crosshair. Every step mirrors libswscale's integer code (utils.c
+//! `initFilter`, hscale.c, output.c, yuv2rgb.c, and the x86 kernels where ffmpeg uses them).
 //!
 //! Things vf_scale does in 8.1 that this depends on: the flags are exactly SWS_AREA; the matrix and range come from
 //! the frame's tags; chroma is taken as center-sited whatever the tag says (vf_scale overwrites it with its

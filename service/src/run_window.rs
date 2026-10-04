@@ -65,8 +65,8 @@ impl RunMarks {
         crate::disk::write(path, serde_json::to_vec(self).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
     }
 
-    /// The part of the video to track (python/review.py's run_window, in seconds, with a margin): start and end, or one
-    /// of them and the length (else the scenario's `limit`); None for the whole video.
+    /// The part of the video to track (python/retired/review.py's run_window, in seconds, with a margin): start and
+    /// end, or one of them and the length (else the scenario's `limit`); None for the whole video.
     pub fn tracked(&self, limit: Option<f64>) -> Option<TimeWindow> {
         let length = self.length.filter(|&l| l != 0.0).or(limit.filter(|&l| l != 0.0));
         let (start, end) = match (self.start, self.end, length) {

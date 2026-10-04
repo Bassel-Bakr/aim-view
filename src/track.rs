@@ -1,5 +1,5 @@
-//! Tracking: the detector's boxes kept or dropped per frame (python/review.py: `track_model`'s `keep`), and the targets
-//! of each frame given ids that follow them from frame to frame (`link`).
+//! Tracking: the detector's boxes kept or dropped per frame (python/retired/review.py: `track_model`'s `keep`), and the
+//! targets of each frame given ids that follow them from frame to frame (`link`).
 
 use serde::{Deserialize, Serialize};
 
@@ -27,7 +27,7 @@ impl Mask {
         &self.0[..]
     }
 
-    /// Everywhere but the boxes, given as shares of the frame [x0, y0, x1, y1] (python/review.py: `mask_of`).
+    /// Everywhere but the boxes, given as shares of the frame [x0, y0, x1, y1] (python/retired/review.py: `mask_of`).
     pub fn without(boxes: &[[f64; 4]]) -> Mask {
         let mut m: Box<[bool; W * H]> = vec![true; W * H].try_into().unwrap();
         let at = |share: f64, size: usize| ((share * size as f64).round_ties_even() as usize).min(size);
@@ -108,7 +108,7 @@ pub struct Spot {
 
 /// The excluded areas a frame's targets are kept from, as shares of the frame, with the pop-ups among them: for each
 /// area, None when it is excluded all the time, else whether it is excluded in each frame (popup::AreaWatch).
-/// Frames where a pop-up is off are kept again with only the areas still on (python/review.py: `reopen`).
+/// Frames where a pop-up is off are kept again with only the areas still on (python/retired/review.py: `reopen`).
 pub fn reopen(
     raw: &[Vec<RawBox>],
     kept: &mut [Vec<Spot>],

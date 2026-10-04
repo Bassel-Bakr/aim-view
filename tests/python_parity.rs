@@ -1,5 +1,5 @@
 //! `python::hypot` against CPython's `math.hypot` on 20,000 random pairs and a few edge cases, to the bit
-//! (test_out/parity/hypot.json: [x, y, math.hypot(x, y)] rows, made by tests/fixtures.py's hypot cases).
+//! (test_out/parity/hypot.json: [x, y, math.hypot(x, y)] rows, made by python/retired/tests/fixtures.py's hypot cases).
 
 use std::fs;
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn hypot_matches_cpython() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity/hypot.json");
     let Ok(text) = fs::read_to_string(&path) else {
-        eprintln!("no {}: run python tests/fixtures.py --hypot", path.display());
+        eprintln!("no {}: the fixtures are frozen (python/retired/tests/fixtures.py made them)", path.display());
         return;
     };
     let rows: Vec<[f64; 3]> = serde_json::from_str(&text).unwrap();
@@ -23,7 +23,7 @@ fn hypot_matches_cpython() {
 fn kovobs_overlay_matches_python() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity/overlay.json");
     let Ok(text) = fs::read_to_string(&path) else {
-        eprintln!("no {}: run python tests/fixtures.py --hypot", path.display());
+        eprintln!("no {}: the fixtures are frozen (python/retired/tests/fixtures.py made them)", path.display());
         return;
     };
     let want: Vec<[f64; 4]> = serde_json::from_str(&text).unwrap();

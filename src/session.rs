@@ -246,8 +246,8 @@ impl Review {
         tracker
     }
 
-    /// The camera watch, its tiles kept clear of the areas (KovOBS's layout when there are none, as python/review.py
-    /// does) and of the fixed map.
+    /// The camera watch, its tiles kept clear of the areas (KovOBS's layout when there are none, as
+    /// python/retired/review.py does) and of the fixed map.
     fn camera(&self, fixed: &[u8]) -> CameraWatch {
         let rects = if self.setup.areas.is_empty() { crate::geometry::overlay_shares().to_vec() } else { self.rects() };
         CameraWatch::new(&excluded(Mask::without(&rects).kept(), fixed))

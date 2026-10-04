@@ -15,17 +15,17 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import build_data  # noqa: E402
 import infer  # noqa: E402
-import review  # noqa: E402
+import old_review  # noqa: E402
 
 
 def frames_at(video, n):
-    fps, dur = review.probe(str(video))
+    fps, dur = old_review.probe(str(video))
     out = []
     for t in np.linspace(3, max(3.5, dur - 3), n):
         r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", "-vf",
-                            f"scale={review.W}:{review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"], capture_output=True)
-        if len(r.stdout) == review.W * review.H * 3:
-            out.append(np.frombuffer(r.stdout, np.uint8).reshape(review.H, review.W, 3))
+                            f"scale={old_review.W}:{old_review.H}:flags=area,format=rgb24", "-f", "rawvideo", "-"], capture_output=True)
+        if len(r.stdout) == old_review.W * old_review.H * 3:
+            out.append(np.frombuffer(r.stdout, np.uint8).reshape(old_review.H, old_review.W, 3))
     return np.stack(out)
 
 
@@ -45,13 +45,13 @@ def main():
             print(f"{scen[:48]:48s} no target count")
             continue
         fr = frames_at(v, a.frames)
-        fixed = review.fixed_map(list(review._frames(v, keyframes=True))).astype(np.uint8)
+        fixed = old_review.fixed_map(list(old_review._frames(v, keyframes=True))).astype(np.uint8)
         cells = []
         for d in dets:
             n = []
             for i in range(0, len(fr), 16):
                 for b in d.batch(fr[i:i + 16].copy(), fixed):
-                    n.append(sum(1 for x in b if review.MASK[min(review.H - 1, int(x[1])), min(review.W - 1, int(x[0]))]))
+                    n.append(sum(1 for x in b if old_review.MASK[min(old_review.H - 1, int(x[1])), min(old_review.W - 1, int(x[0]))]))
             n = np.array(n)
             cells.append(f"{np.mean(n > k):5.0%} over, {np.mean(np.maximum(0, n - k)):5.2f} extra")
         print(f"{Path(v).stem[:48]:48s} {k:5d}  " + "  ".join(f"{c:>22s}" for c in cells), flush=True)
