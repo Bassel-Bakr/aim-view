@@ -4,8 +4,10 @@ Where a review spends its time, stage by stage, with how often each stage runs a
 optimizing anything, and update a row when a change or a measurement moves it. The benchmarks that time these, and
 their baselines, are in `BENCH.md`.
 
-The numbers are for av1 (2560x1440, about 6,000 frames at 60 fps, 25 key frames) unless a row says otherwise. The ones
-marked "survey" come from a scratch bench at 9eef1f4 on 2026-10-04, run while another build was going (about ±30%).
+The numbers are for av1 (2560x1440, about 6,000 frames at 60 fps, 25 key frames) unless a row says otherwise. A name
+in backticks after a number is its criterion bench (`cargo bench --bench hot_paths -- <name>`): medians at 9cbcbf7,
+or at 326eb95 for matching and the report (BENCH.md, "Function benchmarks"; runs differ by up to about 10%). Numbers
+marked "survey" come from a scratch bench at 9eef1f4 run while another build was going (about ±30%).
 
 ## Every frame (about 6,000 a review)
 
@@ -15,31 +17,34 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 | Stage | Where | Cost a frame | Notes |
 | --- | --- | --- | --- |
 | Decode | ffmpeg through a pipe (service/src/review.rs); Mediabunny and the browser's software decoder (modes/wasm/review.worker.ts) | browser: about 2.3 ms for one decoder (430 frames a second) | the browser's limit, which is why runs are split |
-| Convert to 720p RGB and YUV | src/convert.rs | 2:1: 0.29 ms native (AVX2), 0.93 ms browser (SIMD); other sizes through swscale's pipeline: 1080p 3.3 ms native | byte-equal to ffmpeg; filters of 1 to 4 taps, nothing to gain from a transform |
+| Convert to 720p RGB and YUV | src/convert.rs | 2:1 native: RGB 0.32 ms `convert/rgb24_2560`, luma 0.56 ms `convert/luma_2560`; 1080p through swscale's pipeline: RGB 5.5 ms `convert/rgb24_1920`, luma 2.8 ms `convert/luma_1920`; browser 2:1 RGB 0.93 ms (SIMD) | byte-equal to ffmpeg; filters of 1 to 4 taps, nothing to gain from a transform; the 2:1 luma costs about twice the RGB |
 | Detector | ONNX Runtime (service/src/detector.rs); onnxruntime-web (review.worker.ts) | full_v3: 1.84 ms native (DirectML); in the browser the whole pipeline runs at about 2.6 ms a frame (380 frames a second, WebGPU, 4 frames a call) | the biggest single cost; on the CPU the browser takes about 32 ms a frame (31 frames a second) |
-| Keep and pop-up areas | src/track.rs `keep`, src/popup.rs | no time kept | |
-| Camera watch | src/camera.rs `CameraWatch::add`, `reading` | 0.95 ms (survey), of which the FFTs are 0.14 ms | its own thread or worker: off the critical path (about 2.9 s a run against about 6 s) |
-| Countdown test | src/camera.rs `countdown_showing` | no time kept; 3 times a frame, 84 samples | |
-| HUD watch | src/hud.rs `HudWatch::add` | 0.19 ms at 2560x1440 (SCS 4L), 0.33 ms on a busy HUD (vox), 0.31 ms at 1080p (scaling and the range table) | its own thread or worker; the whole av1 review with it: 15.6 s in the browser, 11.0 s natively |
+| Keep | src/track.rs `keep` | 0.6 µs (3.8 ms for all 6,038 frames, `track/keep_av1`) | |
+| Pop-up areas | src/popup.rs `AreaWatch::add` | 0.33 ms on a frame it looks at, every second frame (`popup/add_look`) | |
+| Camera watch | src/camera.rs `CameraWatch::add`, `reading` | 1.04 ms `camera/add` (the FFTs about 0.14 ms of it, survey); `reading` 0.3 µs `camera/reading` | its own thread or worker: off the critical path (about 2.9 s a run against about 6 s) |
+| Countdown test | src/camera.rs `countdown_showing` | 1.3 µs `camera/countdown_showing`, 3 times a frame | |
+| HUD watch | src/hud.rs `HudWatch::add` | 0.21 ms at 2560x1440 `hud/add_2560`, 0.32 ms at 1080p `hud/add_1920` (scaling and the range table); an earlier measure gave 0.33 ms on a busy HUD (vox) | its own thread or worker; the whole av1 review with it: 15.6 s in the browser, 11.0 s natively |
 
 ## Every key frame (25 on av1)
 
 | Stage | Where | Cost | Notes |
 | --- | --- | --- | --- |
-| Contrast map for the fixed map | src/fixed.rs `contrast`, `walls`; `FixedMap::add` | 2.9 ms a key frame (survey, reading each pixel's block directly; 4.9 ms before, with full-size upsampled walls) | bit-equal to Python's |
-| The same contrast for the area finder | src/areas.rs `AreaFinder::add`, `add_contrast` | natively none: the review shares the fixed map's (service/src/review.rs); the browser's area finder computes its own in its worker | an earlier measure of the whole `add`: 4.8 to 12.5 ms a frame natively, median 5.6, before both changes |
+| Contrast map | src/fixed.rs `contrast`, `walls` | 2.8 ms `fixed/contrast` (4.9 ms before each pixel read its block's wall, survey) | bit-equal to Python's; natively computed once a key frame and shared by the fixed map and the area finder (service/src/review.rs); the browser's area finder computes its own in its worker |
+| The fixed map's count | src/fixed.rs `FixedMap::add` | 4.8 ms with the contrast `fixed/add` (through the 25 key frames, so it pays their memory traffic) | |
+| The HUD's key frames | src/hud.rs | 34 ms for the 25 key frames and the layout `hud/keys_2560` | |
 
 ## Once a review
 
 | Stage | Where | Cost | Notes |
 | --- | --- | --- | --- |
-| Link: the view shift | src/track.rs `view_shift` (in `link`, from `Tracker::finish`) | a sorted sweep (survey): 2007_1w6ts_aimlab 20 ms, 10 Sphere Hipfire 24 to 27 ms, av1 1.4 to 2.1 ms; before it, all pairs: 118 to 122, 46 to 49 and 1.2 to 1.6 ms | each pairing is compared only with those within 0.36 degrees in x (a binary search in the pairings sorted by x); grows with clutter |
-| Matching | src/matching.rs `match_times` | 9 ms on av1 before `clock_offset`'s binary search (survey); 7.0 ms on av1 with 60 kills after `appearances`' second pass | `clock_offset`: 40 x 40 offsets, a nearest end per kill by binary search, 1.8 to 2.0 ms on av1 (4 to 5 ms with the linear search before). `appearances` (also once more for the report's `appeared`): 3.0 ms on av1, 3.2 on 10 Sphere Hipfire, 6.1 on Bounce 180, 11.1 on Smoothbot Switch Robots; its first pass alone 1.4, 0.5, 4.0 and 7.7 ms |
-| HUD layout median | src/hud.rs, the per-pixel median over the key frames | 17 ms (survey) | a 256-bin histogram measured 11.6 ms |
-| Camera's excluded pixels | src/camera.rs `excluded` | 4 to 7 ms (survey) | |
-| HUD layout and finish | src/hud.rs `HudWatch`: the layout at the first frame, `finish` | 20 to 40 ms each | |
-| Area finder's finish | src/areas.rs `AreaFinder::finish` | 52 to 133 ms natively, median 81 | |
-| Measuring and the report | src/review.rs, measure.rs, summary.rs (the service's report request) | av1 (66 kills): 283 ms in the desktop app, from the request to the report; 251 ms in the browser for a saved review (before the one backend) | |
+| Link | src/track.rs `link` (from `Tracker::finish`) | av1 21 ms `track/link_av1`; 2007_1w6ts_aimlab 60 ms `track/link_2007_1w6ts_aimlab`; 10 Sphere Hipfire 69 ms `track/link_10_sphere_hipfire` | the view shift is about 2 ms of av1's link since its sorted sweep (each pairing compared only with those within 0.36 degrees in x; survey: 20 ms on the Aim Lab run against 120 ms before), so the rest of `link` costs most; grows with clutter |
+| Matching | src/matching.rs `match_times`, `match_video` | `match_times` 8.2 ms `matching/match_times_av1`; `match_video` 8.5 ms `matching/match_video_av1` | `clock_offset`: 40 x 40 offsets, a nearest end per kill by binary search, 1.8 to 2.0 ms on av1 (4 to 5 ms with the linear search before, survey). `appearances` (also once more for the report's `appeared`): 3.0 ms on av1, 3.2 on 10 Sphere Hipfire, 6.1 on Bounce 180, 11.1 on Smoothbot Switch Robots; its first pass alone 1.4, 0.5, 4.0 and 7.7 ms |
+| Measure | src/measure.rs | 0.48 ms `measure/measure_av1` | |
+| The report | src/review.rs, summary.rs | with the stats file 13.1 ms `report/clicks_av1`; from the HUD 12.5 ms `report/hud_av1`; the service's request, JSON in and out, 17.4 ms `report/json_av1`; a tracking run 2.1 ms `report/tracking_flower` | the desktop app's whole report request on av1 (66 kills) took 283 ms, the browser's for a saved review 251 ms (before the one backend): mostly reading the files and the request, not the work |
+| HUD layout median | src/hud.rs, the per-pixel median over the key frames | 17 ms (survey) | a 256-bin histogram measured 11.6 ms; inside `hud/keys_2560` |
+| HUD finish | src/hud.rs `HudWatch::finish` | 20 to 40 ms (an earlier measure) | |
+| Camera's excluded pixels | src/camera.rs `excluded` | 4.4 ms `camera/excluded` | |
+| Area finder's finish | src/areas.rs `AreaFinder::finish` | 49 ms `areas/finish_av1` (52 to 133 ms natively in an earlier measure, median 81) | |
 
 ## Per request (the review service)
 

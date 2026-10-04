@@ -72,7 +72,9 @@ The hot paths (`HOT_PATHS.md`) timed one function at a time with criterion, on r
 Runs of the same code differ by up to about 10% on this machine (more on the cluttered links), so criterion reports a
 change only beyond 5%, and a change under 10% needs a second run before it counts.
 
-Baseline: commit 9cbcbf7 (2026-10-04), `test_out/baselines/criterion/` (each bench's `9cbcbf7/` folder).
+Baseline: commit 9cbcbf7 (2026-10-04), `test_out/baselines/criterion/` (each bench's `9cbcbf7/` folder). The
+matching and report benches were saved again at 326eb95, after b8c56ef changed the matching (their `326eb95/`
+folders): compare those with `--baseline 326eb95`.
 
 | Bench | What one call does | Median |
 | --- | --- | --- |
@@ -95,10 +97,10 @@ Baseline: commit 9cbcbf7 (2026-10-04), `test_out/baselines/criterion/` (each ben
 | `hud/add_1920` | `HudWatch::add`: one frame of the 1080p upload | 317 µs |
 | `popup/add_look` | `AreaWatch::add`, a frame it looks at (every second frame), av1's areas | 330 µs |
 | `areas/finish_av1` | `AreaFinder::finish` on av1's 25 key frames | 48.6 ms |
-| `matching/match_times_av1` | `matching::match_times`: av1's 66 kills from the stats file (with `clock_offset`) | 9.20 ms |
-| `matching/match_video_av1` | `matching::match_video`: av1's kills from the video alone | 12.4 ms |
+| `matching/match_times_av1` | `matching::match_times`: av1's 66 kills from the stats file (with `clock_offset`) | 9.20 ms; 8.17 ms at 326eb95 |
+| `matching/match_video_av1` | `matching::match_video`: av1's kills from the video alone | 12.4 ms; 8.53 ms at 326eb95 |
 | `measure/measure_av1` | `measure::measure`: av1's matched flicks | 482 µs |
-| `report/clicks_av1` | `review::review_clicks` with the stats file: matching, measures, summary and checks | 14.5 ms |
-| `report/hud_av1` | `review::review_clicks` without it: the kills from the HUD's reading | 13.0 ms |
-| `report/json_av1` | `review::review_json`: the service's report request for av1, JSON in and out | 21.6 ms |
-| `report/tracking_flower` | `review::review_tracking`: flower with its stats file and camera readings | 3.40 ms |
+| `report/clicks_av1` | `review::review_clicks` with the stats file: matching, measures, summary and checks | 14.5 ms; 13.1 ms at 326eb95 |
+| `report/hud_av1` | `review::review_clicks` without it: the kills from the HUD's reading | 13.0 ms; 12.5 ms at 326eb95 |
+| `report/json_av1` | `review::review_json`: the service's report request for av1, JSON in and out | 21.6 ms; 17.4 ms at 326eb95 |
+| `report/tracking_flower` | `review::review_tracking`: flower with its stats file and camera readings | 3.40 ms; 2.14 ms at 326eb95 |
