@@ -31,8 +31,8 @@ const SUMMARY = {
 
 describe('click stats', () => {
   it("shows the whole run's numbers", () => {
-    const s = runStats(SUMMARY, { share: 0.8, total: 1.234, extra: 2.04 });
-    expect(s.map((x) => `${x.label}: ${x.value}`)).toEqual([
+    const stats = runStats(SUMMARY, { share: 0.8, total: 1.234, extra: 2.04 });
+    expect(stats.map((x) => `${x.label}: ${x.value}`)).toEqual([
       'Score: 889.26',
       'Kills: 98',
       'Misses: 3',
@@ -61,9 +61,11 @@ describe('click stats', () => {
     expect(killsPerMinute(flicks, 60)).toBe(18);
     expect(killsPerMinute(flicks.slice(0, 1), 60)).toBeNull();
   });
+});
 
+describe('click stats', () => {
   it("shows a kill's numbers with the run's medians under them", () => {
-    const m = {
+    const flick = {
       D0: 12.34,
       direction_deg: 90,
       total: 0.5,
@@ -76,18 +78,18 @@ describe('click stats', () => {
       shots: 2,
       parts: [0.1, 0.2, 0.12, 0.08, 0.05],
     } as Flick;
-    const s = killStats(m, SUMMARY, '+40 ms');
-    expect(s[0].value).toBe('12.3°');
-    expect(s[1].value).toBe('↑');
-    expect(s[2]).toEqual({ label: 'TTK', value: '500 ms', detail: 'run 425 ms' });
-    expect(s[5]).toMatchObject({ label: 'Flick landed', value: 'underflick 1.2°' });
-    expect(s[10]).toMatchObject({ label: 'Pathing', value: '+40 ms' });
-    expect(s[11]).toMatchObject({
+    const stats = killStats(flick, SUMMARY, '+40 ms');
+    expect(stats[0].value).toBe('12.3°');
+    expect(stats[1].value).toBe('↑');
+    expect(stats[2]).toEqual({ label: 'TTK', value: '500 ms', detail: 'run 425 ms' });
+    expect(stats[5]).toMatchObject({ label: 'Flick landed', value: 'underflick 1.2°' });
+    expect(stats[10]).toMatchObject({ label: 'Pathing', value: '+40 ms' });
+    expect(stats[11]).toMatchObject({
       label: 'Micro',
       value: '200 ms',
       title: '120 ms onto the target, 80 ms settling',
     });
-    expect(s).toHaveLength(16);
+    expect(stats).toHaveLength(16);
   });
 
   it('adds the forced reloads to the run and to each kill in a scenario whose magazine runs out', () => {
@@ -132,7 +134,9 @@ describe('click stats', () => {
         .map((x) => x.value),
     ).toEqual(['…', '…', '…']);
   });
+});
 
+describe('click stats', () => {
   it('says where the kills came from and what was measured', () => {
     expect(sourceNote(SUMMARY)).toBe(
       '98 of 98 kills matched with the stats file · 96 flicks measured · target radius 0.45° · 1.5 cm/360',
@@ -150,15 +154,19 @@ describe('click stats', () => {
   it('labels the bands and the time beyond the distance', () => {
     expect(
       distanceRows([
+        // eslint-disable-next-line id-length -- the core names DistanceBand's fields (generated/distance-group.ts)
         { lo: 60, hi: 90, n: 2, interval: 1, react: 0.1, short: 0.5, past: 0, still: 0.2 },
       ])[0].band,
     ).toBe('60° and over');
-    const [d] = directionRows([
+    const [row] = directionRows([
+      // eslint-disable-next-line id-length -- the core names DirectionBand's fields (generated/direction-group.ts)
       { name: 'up-left', n: 3, interval: 0.4, distance: 9.87, short: 0, past: 0, beyond: -0.012 },
     ]);
-    expect(d).toMatchObject({ toward: '↖ up-left', distance: '9.9°', beyond: '−12 ms' });
+    expect(row).toMatchObject({ toward: '↖ up-left', distance: '9.9°', beyond: '−12 ms' });
   });
+});
 
+describe('click stats', () => {
   it('shows a run from the video alone (no score, shots, misses or accuracy) with dashes', () => {
     // python/review.py's summarize without a stats file: the meta has only the scenario
     const video = {
@@ -182,12 +190,14 @@ describe('click stats', () => {
     expect(shown).toContain('Accuracy: –');
     expect(shown).toContain('Misses: –');
     expect(shown).toContain('More kills with the best path: ≈ 0.0');
-    expect(tiles.find((t) => t.label === 'Kills')?.note).toBe('');
-    const text = [...shown, ...tiles.map((t) => t.note), sourceNote(video)].join(' ');
+    expect(tiles.find((tile) => tile.label === 'Kills')?.note).toBe('');
+    const text = [...shown, ...tiles.map((tile) => tile.note), sourceNote(video)].join(' ');
     expect(text).not.toMatch(/NaN|undefined|null/);
     expect(sourceNote(video)).toContain('40 kills found in the video alone');
   });
+});
 
+describe('click stats', () => {
   it('groups the what-if lines under Pace, Flicks and Micros, each biggest first', () => {
     const line = (group: ClickWhatIf['group'], what: string, kills: number): ClickWhatIf => ({
       group,
@@ -196,28 +206,30 @@ describe('click stats', () => {
       score: null,
       how: 'h',
     });
-    const t = clickWhatIf([
+    const table = clickWhatIf([
       line('micros', 'Settle sooner', 6),
       line('flicks', 'Stop on the target', 4.25),
       line('pace', 'Start sooner', 3),
       line('flicks', 'Go straight there', 12.4),
     ]);
-    expect(t.columns).toEqual(['Kills']);
-    expect(t.groups.map((g) => g.name)).toEqual(['Pace', 'Flicks', 'Micros']);
-    expect(t.groups[1].lines.map((l) => [l.what, ...l.gains])).toEqual([
+    expect(table.columns).toEqual(['Kills']);
+    expect(table.groups.map((group) => group.name)).toEqual(['Pace', 'Flicks', 'Micros']);
+    expect(
+      table.groups[1].lines.map((whatIfLine) => [whatIfLine.what, ...whatIfLine.gains]),
+    ).toEqual([
       ['Go straight there', '+12 kills'],
       ['Stop on the target', '+4.3 kills'],
     ]);
   });
 
   it('adds the score column when a line knows its score, and leaves out empty groups', () => {
-    const t = clickWhatIf([
+    const table = clickWhatIf([
       { group: 'flicks', what: 'a', kills: 2, score: 31.5, how: 'h' },
       { group: 'flicks', what: 'b', kills: 1, score: null, how: 'h' },
     ]);
-    expect(t.columns).toEqual(['Kills', 'Score']);
-    expect(t.groups.map((g) => g.name)).toEqual(['Flicks']);
-    expect(t.groups[0].lines.map((l) => l.gains)).toEqual([
+    expect(table.columns).toEqual(['Kills', 'Score']);
+    expect(table.groups.map((group) => group.name)).toEqual(['Flicks']);
+    expect(table.groups[0].lines.map((line) => line.gains)).toEqual([
       ['+2.0 kills', '+32 score'],
       ['+1.0 kills', ''],
     ]);

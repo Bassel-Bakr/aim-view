@@ -39,8 +39,8 @@ const RELOAD_STEP = 4;
 export type KillSteps = [reaction: number, flick: number, micro: number, confirmation: number];
 
 /** A kill's five parts as its four steps: onto the target and settling make the micro. */
-export function killSteps(p: KillParts): KillSteps {
-  return [p[0], p[1], p[2] + p[3], p[4]];
+export function killSteps(parts: KillParts): KillSteps {
+  return [parts[0], parts[1], parts[2] + parts[3], parts[4]];
 }
 
 /**
@@ -55,10 +55,10 @@ interface ReloadShare {
   fromMicro: number;
 }
 
-function reloadShare(p: KillParts, reload: number): ReloadShare {
-  const s = killSteps(p);
-  const fromConfirmation = Math.min(reload, s[CONFIRMATION]);
-  const fromMicro = Math.min(reload - fromConfirmation, s[MICRO]);
+function reloadShare(parts: KillParts, reload: number): ReloadShare {
+  const steps = killSteps(parts);
+  const fromConfirmation = Math.min(reload, steps[CONFIRMATION]);
+  const fromMicro = Math.min(reload - fromConfirmation, steps[MICRO]);
   return { reload, shown: fromConfirmation + fromMicro, fromConfirmation, fromMicro };
 }
 
@@ -68,16 +68,22 @@ function shownSteps(reload: number | null): KillStep[] {
 }
 
 /** A kill's time in the steps shown, in seconds: the four, or five with the reload taken out of the others. */
-function shownTimes(p: KillParts, reload: number | null): number[] {
-  const s = killSteps(p);
-  if (reload == null) return s;
-  const r = reloadShare(p, reload);
-  return [s[0], s[1], s[MICRO] - r.fromMicro, s[CONFIRMATION] - r.fromConfirmation, r.shown];
+function shownTimes(parts: KillParts, reload: number | null): number[] {
+  const steps = killSteps(parts);
+  if (reload == null) return steps;
+  const share = reloadShare(parts, reload);
+  return [
+    steps[0],
+    steps[1],
+    steps[MICRO] - share.fromMicro,
+    steps[CONFIRMATION] - share.fromConfirmation,
+    share.shown,
+  ];
 }
 
 /** A kill's micro (onto the target, then settling), in seconds; null when its steps were not found. */
-export function micro(m: Flick): number | null {
-  return m.parts ? m.parts[2] + m.parts[3] : null;
+export function micro(flick: Flick): number | null {
+  return flick.parts ? flick.parts[2] + flick.parts[3] : null;
 }
 
 /** The micro's two parts in words: "120 ms onto the target, 80 ms settling". */
@@ -92,16 +98,16 @@ export function microSplit(parts: KillParts): string {
  */
 function stepTitle(parts: KillParts, i: number, reload: number | null): string {
   const title = `${shownSteps(reload)[i].label} ${formatMs(shownTimes(parts, reload)[i])}`;
-  const r = reload == null ? null : reloadShare(parts, reload);
+  const share = reload == null ? null : reloadShare(parts, reload);
   const under = (taken: number) => (taken > 0 ? `, less ${formatMs(taken)} under the reload` : '');
-  if (i === MICRO) return `${title}: ${microSplit(parts)}${under(r?.fromMicro ?? 0)}`;
-  if (r && i === CONFIRMATION && r.fromConfirmation > 0)
-    return `${title}: ${formatMs(killSteps(parts)[CONFIRMATION])}${under(r.fromConfirmation)}`;
-  if (r && i === RELOAD_STEP) {
+  if (i === MICRO) return `${title}: ${microSplit(parts)}${under(share?.fromMicro ?? 0)}`;
+  if (share && i === CONFIRMATION && share.fromConfirmation > 0)
+    return `${title}: ${formatMs(killSteps(parts)[CONFIRMATION])}${under(share.fromConfirmation)}`;
+  if (share && i === RELOAD_STEP) {
     const time =
-      r.shown < r.reload
-        ? `${formatMs(r.reload)}, ${formatMs(r.shown)} of it shown`
-        : formatMs(r.shown);
+      share.shown < share.reload
+        ? `${formatMs(share.reload)}, ${formatMs(share.shown)} of it shown`
+        : formatMs(share.shown);
     return `Reload ${time} (taken from the confirmation and micro it overlapped)`;
   }
   return title;
@@ -144,7 +150,7 @@ export interface Budget {
 /** A step is named inside its bar when it fills at least this share of it. */
 const LABEL_SHARE = 0.12;
 
-const sum = (p: KillParts) => p.reduce((a, b) => a + b, 0);
+const sum = (parts: KillParts) => parts.reduce((a, b) => a + b, 0);
 
 /** A kill's parts and its forced reload's time (null: the scenario's magazine never runs out, no reload step). */
 interface KillTime {
@@ -166,11 +172,14 @@ function bar(
     width,
     thin,
     hidden,
-    segments: shownTimes(parts, reload).map((v, i) => ({
+    segments: shownTimes(parts, reload).map((seconds, i) => ({
       color: steps[i].color,
-      grow: total ? v / total : 0,
+      grow: total ? seconds / total : 0,
       title: stepTitle(parts, i, reload),
-      text: !thin && total && v / total > LABEL_SHARE ? `${steps[i].label} ${formatMs(v)}` : '',
+      text:
+        !thin && total && seconds / total > LABEL_SHARE
+          ? `${steps[i].label} ${formatMs(seconds)}`
+          : '',
     })),
   };
 }
@@ -182,9 +191,9 @@ function legend(
 ): BudgetLegendItem[] {
   const steps = shownSteps(kill.reload);
   const averages = average && shownTimes(average.parts, average.reload);
-  return shownTimes(kill.parts, kill.reload).map((v, i) => ({
+  return shownTimes(kill.parts, kill.reload).map((seconds, i) => ({
     color: steps[i].color,
-    text: `${steps[i].label} ${formatMs(v)}`,
+    text: `${steps[i].label} ${formatMs(seconds)}`,
     title: stepTitle(kill.parts, i, kill.reload),
     average: averages ? `(avg ${formatMs(averages[i])})` : null,
     averageHidden,
@@ -195,10 +204,12 @@ function legend(
  * The average kill's forced reload time, over the kills whose steps were found (as the summary's budget averages
  * them); null when the scenario's magazine never runs out (the report has no reloads).
  */
-export function averageReload(s: ClickSummary, flicks: Flick[]): number | null {
-  if (!s.reloads) return null;
-  const split = flicks.filter((f) => f.parts);
-  return split.length ? split.reduce((t, f) => t + (f.reload_time ?? 0), 0) / split.length : 0;
+export function averageReload(summary: ClickSummary, flicks: Flick[]): number | null {
+  if (!summary.reloads) return null;
+  const split = flicks.filter((flick) => flick.parts);
+  return split.length
+    ? split.reduce((total, flick) => total + (flick.reload_time ?? 0), 0) / split.length
+    : 0;
 }
 
 /**

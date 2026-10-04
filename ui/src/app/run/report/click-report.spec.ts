@@ -46,7 +46,8 @@ describe('ClickReport', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const heading = () => el.querySelector('section')?.textContent;
-    const titles = () => [...el.querySelectorAll('h3')].map((h) => h.textContent);
+    const titles = () =>
+      [...el.querySelectorAll('h3')].map((titleElement) => titleElement.textContent);
     expect(heading()).toContain('Whole run');
     expect(titles()).toContain('The run at a glance');
 

@@ -50,33 +50,35 @@ export function killsPerMinute(flicks: Flick[], fps: number): number | null {
 
 /** The run's median of one of the flicks' measures, leaving out the flicks without it. */
 function runMedian(flicks: Flick[], measure: (m: Flick) => number | null): number | null {
-  return median(flicks.map(measure).filter((v): v is number => v != null));
+  return median(flicks.map(measure).filter((value): value is number => value != null));
 }
 
 /**
  * The run's forced reloads: how many, their time, and its share of the run (from the first flick to the last kill).
  * Reloads the player chose don't show in the stats.
  */
-function reloadsCard(r: Reloads, flicks: Flick[], fps: number): Stat {
+function reloadsCard(reloads: Reloads, flicks: Flick[], fps: number): Stat {
   const span =
     flicks.length >= 2 ? (flicks[flicks.length - 1].kill_frame - flicks[0].start_frame) / fps : 0;
-  const share = span > 0 ? ` · ${formatPercent(r.seconds / span)} of the run` : '';
-  const points = r.score_lost ? ` They took ${formatCount(r.score_lost)} points off.` : '';
+  const share = span > 0 ? ` · ${formatPercent(reloads.seconds / span)} of the run` : '';
+  const points = reloads.score_lost
+    ? ` They took ${formatCount(reloads.score_lost)} points off.`
+    : '';
   return {
     label: 'Reloads',
-    value: formatCount(r.count),
-    detail: `${formatSeconds(r.seconds)}${share}`,
+    value: formatCount(reloads.count),
+    detail: `${formatSeconds(reloads.seconds)}${share}`,
     title: `Reloads an empty magazine forced; reloads you chose don't show in the stats.${points}`,
   };
 }
 
 /** A kill's forced reload: its time, or none. */
-function reloadCard(m: Flick): Stat {
-  const n = m.reloads ?? 0;
+function reloadCard(flick: Flick): Stat {
+  const count = flick.reloads ?? 0;
   return {
     label: 'Reload',
-    value: n ? formatMs(m.reload_time) : 'none',
-    detail: n > 1 ? `${n} forced reloads` : n ? 'forced by an empty magazine' : '',
+    value: count ? formatMs(flick.reload_time) : 'none',
+    detail: count > 1 ? `${count} forced reloads` : count ? 'forced by an empty magazine' : '',
   };
 }
 
@@ -85,20 +87,24 @@ function reloadCard(m: Flick): Stat {
  * has, so the rows stay put when a kill is picked. In a scenario whose magazine runs out, both add the reloads.
  */
 export function runStats(
-  s: ClickSummary,
+  summary: ClickSummary,
   paths: PathSummary | null,
   flicks: Flick[] = [],
   fps = 60,
 ): Stat[] {
   const pace = killsPerMinute(flicks, fps);
   return [
-    { label: 'Score', value: formatCount(s.score), detail: '' },
-    { label: 'Kills', value: formatCount(s.kills), detail: '' },
-    { label: 'Misses', value: formatCount(s.misses), detail: '' },
-    { label: 'Median TTK', value: formatMs(s.median_interval), detail: 'time to kill' },
-    { label: 'Confirmation', value: formatMs(s.still), detail: 'still before the click' },
-    { label: 'Flick speed', value: formatSpeed(s.peak), detail: '' },
-    { label: 'Game FPS', value: s.fps_avg ? String(Math.round(s.fps_avg)) : '–', detail: '' },
+    { label: 'Score', value: formatCount(summary.score), detail: '' },
+    { label: 'Kills', value: formatCount(summary.kills), detail: '' },
+    { label: 'Misses', value: formatCount(summary.misses), detail: '' },
+    { label: 'Median TTK', value: formatMs(summary.median_interval), detail: 'time to kill' },
+    { label: 'Confirmation', value: formatMs(summary.still), detail: 'still before the click' },
+    { label: 'Flick speed', value: formatSpeed(summary.peak), detail: '' },
+    {
+      label: 'Game FPS',
+      value: summary.fps_avg ? String(Math.round(summary.fps_avg)) : '–',
+      detail: '',
+    },
     {
       label: 'Fastest next target',
       value: paths ? formatPercent(paths.share) : LOADING,
@@ -106,82 +112,86 @@ export function runStats(
     },
     { label: 'Pathing in all', value: paths ? formatMs(paths.total) : LOADING, detail: '' },
     {
-      label: `More ${s.shots == null ? 'kills' : 'shots'} with the best path`,
+      label: `More ${summary.shots == null ? 'kills' : 'shots'} with the best path`,
       value: paths ? `≈ ${paths.extra.toFixed(1)}` : LOADING,
       detail: 'at your pace',
     },
-    { label: 'Accuracy', value: formatPercent(s.accuracy), detail: '' },
-    { label: 'Reaction', value: formatMs(s.react), detail: 'median' },
-    { label: 'Flick', value: formatMs(s.flick), detail: 'median' },
-    { label: 'Click on the move', value: formatSpeed(s.click_speed), detail: 'median' },
-    { label: 'Click off center', value: formatDegrees(s.click_off), detail: 'median' },
+    { label: 'Accuracy', value: formatPercent(summary.accuracy), detail: '' },
+    { label: 'Reaction', value: formatMs(summary.react), detail: 'median' },
+    { label: 'Flick', value: formatMs(summary.flick), detail: 'median' },
+    { label: 'Click on the move', value: formatSpeed(summary.click_speed), detail: 'median' },
+    { label: 'Click off center', value: formatDegrees(summary.click_off), detail: 'median' },
     {
       label: 'Kills a minute',
       value: pace == null ? '–' : pace.toFixed(1),
       detail: 'first flick to last kill',
     },
-    ...(s.reloads ? [reloadsCard(s.reloads, flicks, fps)] : []),
+    ...(summary.reloads ? [reloadsCard(summary.reloads, flicks, fps)] : []),
   ];
 }
 
 /** One kill's cards, each with the run's median under it where there is one. */
 export function killStats(
-  m: Flick,
-  s: ClickSummary,
+  flick: Flick,
+  summary: ClickSummary,
   pathCost: string,
   flicks: Flick[] = [],
 ): Stat[] {
-  const run = (v: string) => `run ${v}`;
-  const micros = runMedian(flicks, (f) => f.corrections);
+  const run = (value: string) => `run ${value}`;
+  const micros = runMedian(flicks, (other) => other.corrections);
   return [
-    { label: 'Distance', value: `${m.D0.toFixed(1)}°`, detail: '' },
-    { label: 'Toward', value: arrow(m.direction_deg), detail: '' },
-    { label: 'TTK', value: formatMs(m.total), detail: run(formatMs(s.median_interval)) },
-    { label: 'Reaction', value: formatMs(m.react), detail: run(formatMs(s.react)) },
-    { label: 'Flick', value: formatMs(m.flick), detail: run(formatMs(s.flick)) },
-    { label: 'Flick landed', value: formatEnded(m.end_left, s.radius), detail: '' },
-    { label: 'Confirmation', value: formatMs(m.still), detail: run(formatMs(s.still)) },
-    { label: 'Flick speed', value: formatSpeed(m.peak), detail: run(formatSpeed(s.peak)) },
+    { label: 'Distance', value: `${flick.D0.toFixed(1)}°`, detail: '' },
+    { label: 'Toward', value: arrow(flick.direction_deg), detail: '' },
+    { label: 'TTK', value: formatMs(flick.total), detail: run(formatMs(summary.median_interval)) },
+    { label: 'Reaction', value: formatMs(flick.react), detail: run(formatMs(summary.react)) },
+    { label: 'Flick', value: formatMs(flick.flick), detail: run(formatMs(summary.flick)) },
+    { label: 'Flick landed', value: formatEnded(flick.end_left, summary.radius), detail: '' },
+    { label: 'Confirmation', value: formatMs(flick.still), detail: run(formatMs(summary.still)) },
+    {
+      label: 'Flick speed',
+      value: formatSpeed(flick.peak),
+      detail: run(formatSpeed(summary.peak)),
+    },
     {
       label: 'Click on the move',
-      value: formatSpeed(m.click_speed),
-      detail: run(formatSpeed(s.click_speed)),
+      value: formatSpeed(flick.click_speed),
+      detail: run(formatSpeed(summary.click_speed)),
     },
-    { label: 'Shots', value: formatCount(m.shots), detail: '' },
+    { label: 'Shots', value: formatCount(flick.shots), detail: '' },
     { label: 'Pathing', value: pathCost, detail: 'against the fastest pick' },
     {
       label: 'Micro',
-      value: formatMs(micro(m)),
+      value: formatMs(micro(flick)),
       detail: run(formatMs(runMedian(flicks, micro))),
-      title: m.parts ? microSplit(m.parts) : undefined,
+      title: flick.parts ? microSplit(flick.parts) : undefined,
     },
     {
       label: 'Click off center',
-      value: formatDegrees(m.click_off),
-      detail: run(formatDegrees(s.click_off)),
+      value: formatDegrees(flick.click_off),
+      detail: run(formatDegrees(summary.click_off)),
     },
     {
       label: 'Micros',
-      value: formatCount(m.corrections),
+      value: formatCount(flick.corrections),
       detail: micros == null ? '' : run(String(micros)),
     },
     {
       label: 'Went past by',
-      value: formatDegrees(Math.max(0, m.past - s.radius)),
+      value: formatDegrees(Math.max(0, flick.past - summary.radius)),
       detail: 'past the far edge',
     },
     {
       label: 'Spawn',
-      value: m.spawned ? 'yes' : 'no',
+      value: flick.spawned ? 'yes' : 'no',
       detail: 'it appeared after the flick began',
     },
-    ...(s.reloads ? [reloadCard(m)] : []),
+    ...(summary.reloads ? [reloadCard(flick)] : []),
   ];
 }
 
 /** Where the run's kills came from, and what was measured. */
-export function sourceNote(s: ClickSummary): string {
-  const { source, matched, kills_stats: counted } = s.info;
+export function sourceNote(summary: ClickSummary): string {
+  const { source, matched, kills_stats: counted } = summary.info;
   let from: string;
   if (source === 'video') {
     from =
@@ -197,8 +207,8 @@ export function sourceNote(s: ClickSummary): string {
   } else {
     from = `${matched} of ${counted} kills matched with the stats file`;
   }
-  const sens = s.sens ? ` · ${s.sens}` : '';
-  return `${from} · ${s.measured} flicks measured · target radius ${s.radius.toFixed(2)}°${sens}`;
+  const sens = summary.sens ? ` · ${summary.sens}` : '';
+  return `${from} · ${summary.measured} flicks measured · target radius ${summary.radius.toFixed(2)}°${sens}`;
 }
 
 /**
@@ -222,15 +232,19 @@ const ISSUE_PACE = 49;
 
 /** The run in six numbers, above the video; a tile is flagged when the review flags its check. */
 export function runHeadline(
-  s: ClickSummary,
+  summary: ClickSummary,
   issues: Issue[],
   flicks: Flick[] = [],
   fps = 60,
 ): HeadlineTile[] {
-  const flagged = (n: number) => issues.some((i) => i.issue === n && i.flag === 'attention');
+  const flagged = (issueNumber: number) =>
+    issues.some((i) => i.issue === issueNumber && i.flag === 'attention');
   const pace = killsPerMinute(flicks, fps);
-  const { matched, kills_stats: counted } = s.info;
-  const stillShare = s.still != null && s.median_interval ? s.still / s.median_interval : null;
+  const { matched, kills_stats: counted } = summary.info;
+  const stillShare =
+    summary.still != null && summary.median_interval
+      ? summary.still / summary.median_interval
+      : null;
   const tile = (label: string, value: string, note: string, issue = 0): HeadlineTile => ({
     label,
     value,
@@ -240,31 +254,31 @@ export function runHeadline(
     why: '',
   });
   return [
-    tile('Score', formatCount(s.score), s.sens ?? ''),
+    tile('Score', formatCount(summary.score), summary.sens ?? ''),
     tile(
       'Kills',
-      formatCount(s.kills),
+      formatCount(summary.kills),
       matched != null && counted != null ? `${matched} of ${counted} found in the video` : '',
     ),
     tile(
       'Accuracy',
-      formatPercent(s.accuracy),
-      s.misses == null ? '' : `${formatCount(s.misses)} misses`,
+      formatPercent(summary.accuracy),
+      summary.misses == null ? '' : `${formatCount(summary.misses)} misses`,
       ISSUE_MISSES,
     ),
     tile(
       'Median TTK',
-      formatMs(s.median_interval),
+      formatMs(summary.median_interval),
       pace == null ? '' : `${pace.toFixed(1)} kills a minute`,
       ISSUE_PACE,
     ),
     tile(
       'Confirmation',
-      formatMs(s.still),
+      formatMs(summary.still),
       stillShare == null ? '' : `${formatPercent(stillShare)} of a kill`,
       ISSUE_WAITING,
     ),
-    tile('Reaction', formatMs(s.react), 'after each kill, median', ISSUE_START),
+    tile('Reaction', formatMs(summary.react), 'after each kill, median', ISSUE_START),
   ];
 }
 
@@ -279,10 +293,10 @@ export interface DistanceBar {
 
 export function distanceBars(bands: DistanceBand[]): DistanceBar[] {
   const longest = Math.max(...bands.map((b) => b.interval ?? 0));
-  return distanceRows(bands).map((r, i) => ({
-    band: bands[i].hi === OPEN_BAND ? `${bands[i].lo}°+` : r.band,
-    kill: r.kill,
-    short: r.short,
+  return distanceRows(bands).map((row, i) => ({
+    band: bands[i].hi === OPEN_BAND ? `${bands[i].lo}°+` : row.band,
+    kill: row.kill,
+    short: row.short,
     share: longest > 0 ? (bands[i].interval ?? 0) / longest : 0,
   }));
 }
@@ -354,8 +368,8 @@ const WHAT_IF_GROUPS: WhatIfHeading[] = [
 ];
 
 /** A gain with its sign: one decimal under 10, whole numbers from there. */
-function plus(n: number): string {
-  return `+${Math.abs(n) < 9.95 ? n.toFixed(1) : n.toFixed(0)}`;
+function plus(gain: number): string {
+  return `+${Math.abs(gain) < 9.95 ? gain.toFixed(1) : gain.toFixed(0)}`;
 }
 
 /**
@@ -363,21 +377,21 @@ function plus(n: number): string {
  * and Micros, each group biggest first. A group with no lines is left out, and so is the table on reports that lack
  * the lines (older cores).
  */
-export function clickWhatIf(w: ClickWhatIf[] | undefined): WhatIfTable {
-  const lines = w ?? [];
-  const score = lines.some((l) => l.score !== null);
+export function clickWhatIf(whatIfs: ClickWhatIf[] | undefined): WhatIfTable {
+  const lines = whatIfs ?? [];
+  const score = lines.some((line) => line.score !== null);
   const groups = WHAT_IF_GROUPS.map(([group, name]) => ({
     name,
     lines: lines
-      .filter((l) => l.group === group)
+      .filter((line) => line.group === group)
       .sort((a, b) => b.kills - a.kills)
-      .map((l) => ({
-        what: l.what,
+      .map((line) => ({
+        what: line.what,
         gains: score
-          ? [`${plus(l.kills)} kills`, l.score === null ? '' : `${plus(l.score)} score`]
-          : [`${plus(l.kills)} kills`],
-        how: l.how,
+          ? [`${plus(line.kills)} kills`, line.score === null ? '' : `${plus(line.score)} score`]
+          : [`${plus(line.kills)} kills`],
+        how: line.how,
       })),
-  })).filter((g) => g.lines.length);
+  })).filter((group) => group.lines.length);
   return { columns: score ? ['Kills', 'Score'] : ['Kills'], groups };
 }

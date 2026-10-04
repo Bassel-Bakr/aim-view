@@ -40,11 +40,16 @@ export class ClickReport {
       : null;
   });
   protected readonly stats = computed(() => {
-    const m = this.picked();
-    const s = this.report().summary;
-    return m
-      ? killStats(m, s, pickText(this.paths.analysis(), m.kill_number), this.report().flicks)
-      : runStats(s, this.pathSummary(), this.report().flicks, this.report().fps);
+    const flick = this.picked();
+    const summary = this.report().summary;
+    return flick
+      ? killStats(
+          flick,
+          summary,
+          pickText(this.paths.analysis(), flick.kill_number),
+          this.report().flicks,
+        )
+      : runStats(summary, this.pathSummary(), this.report().flicks, this.report().fps);
   });
   protected readonly source = computed(() => sourceNote(this.report().summary));
   protected readonly byDistance = computed(() => distanceRows(this.report().summary.by_distance));
