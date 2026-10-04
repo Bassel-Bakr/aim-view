@@ -11,6 +11,7 @@ use rustfft::num_complex::Complex32;
 use rustfft::{Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
 
+use crate::capped::Capped;
 use crate::geometry::{CX, CY, H, K, W, degrees, radians};
 use crate::track::TrackFrame;
 use crate::tracking::CameraReading;
@@ -133,18 +134,19 @@ fn vertex(a: f32, b: f32, m: f32) -> f32 {
 
 /// A frame's camera reading from its tiles' shifts: the tiles allowed (`ok`) that agree with their median.
 fn agreed(shifts: &TileShifts, ok: &[bool; TILES]) -> CameraReading {
-    let sh: Vec<(f32, f32)> = (0..TILES).filter(|&k| ok[k]).filter_map(|k| shifts[k]).collect();
+    let sh: Capped<(f32, f32), TILES> = (0..TILES).filter(|&k| ok[k]).filter_map(|k| shifts[k]).collect();
     if sh.len() < 3 {
         return None;
     }
-    let m = (median_f32(&mut sh.iter().map(|s| s.0).collect::<Vec<_>>()), median_f32(&mut sh.iter().map(|s| s.1).collect::<Vec<_>>()));
-    let agree: Vec<&(f32, f32)> = sh.iter().filter(|s| (s.0 - m.0).hypot(s.1 - m.1) < 0.1).collect();
+    let part = |v: &[(f32, f32)], f: fn(&(f32, f32)) -> f32| v.iter().map(f).collect::<Capped<f32, TILES>>();
+    let m = (median_f32(&mut part(&sh, |s| s.0)), median_f32(&mut part(&sh, |s| s.1)));
+    let agree: Capped<(f32, f32), TILES> = sh.iter().filter(|s| (s.0 - m.0).hypot(s.1 - m.1) < 0.1).copied().collect();
     if agree.len() < 3 {
         return None;
     }
     let n = agree.len() as f32;
-    let mx = sum_f32(&agree.iter().map(|s| s.0).collect::<Vec<_>>()) / n;
-    let my = sum_f32(&agree.iter().map(|s| s.1).collect::<Vec<_>>()) / n;
+    let mx = sum_f32(&part(&agree, |s| s.0)) / n;
+    let my = sum_f32(&part(&agree, |s| s.1)) / n;
     Some((mx as f64, my as f64, agree.len()))
 }
 
@@ -343,8 +345,8 @@ impl CameraWatch {
                 if i == 0 {
                     return None;
                 }
-                let near: Vec<&TrackFrame> = if i < frames.len() { vec![&frames[i - 1], &frames[i]] } else { vec![] };
-                self.reading(&self.shifts[i], &near)
+                let near: &[&TrackFrame] = if i < frames.len() { &[&frames[i - 1], &frames[i]] } else { &[] };
+                self.reading(&self.shifts[i], near)
             })
             .collect()
     }

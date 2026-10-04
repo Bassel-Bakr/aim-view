@@ -16,6 +16,8 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
+use crate::capped::Capped;
+
 /// Where KovaaK's box can be, as shares of the frame (x0, y0, x1, y1): it grows to fit its widest number. The region
 /// is scaled to BW x BH (a 2560 x 1440 frame's pixels).
 pub(crate) const BOX: [f64; 4] = [0.0, 0.0, 900.0 / 2560.0, 330.0 / 1440.0];
@@ -618,7 +620,7 @@ fn aim_glyphs(band: &[u8], (c0, c1): (usize, usize)) -> Vec<Cut> {
 // ---- what each frame keeps ------------------------------------------------------------------------------------------
 
 /// A stored glyph: its image's index, and its ink's height and width.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Glyph {
     image: u32,
     h: u16,
@@ -669,7 +671,7 @@ impl Store {
 
     /// One frame's glyphs in a row: the row's line before when they are the same glyphs, else a new line, whose
     /// glyphs reuse the images of the row's `recent` glyphs they are the same as (a number changes a digit at a time).
-    fn push(&mut self, row: usize, cuts: Vec<Cut>, recent: &mut Vec<Glyph>) {
+    fn push(&mut self, row: usize, cuts: Vec<Cut>, recent: &mut Capped<Glyph, RECENT>) {
         let last = self.rows[row].last().map_or(0, |r| r.0);
         let same = |s: &Store| {
             let l = &s.lines[last as usize];
@@ -841,7 +843,7 @@ pub struct HudWatch {
     region: Scale,
     aim: Scale,
     /// The key frames' box regions (BW x BH), every `key_step`-th of the `keys_seen`.
-    keys: Vec<Box<[u8]>>,
+    keys: Capped<Box<[u8]>, { KEYS + 1 }>,
     keys_seen: usize,
     key_step: usize,
     /// KovaaK's box: None until worked out (at the first frame), then Some(None) when there is none.
@@ -851,7 +853,7 @@ pub struct HudWatch {
     frames: usize,
     store: Store,
     /// Each row's latest new glyphs, whose images a new line can reuse.
-    recent: [Vec<Glyph>; ROWS],
+    recent: [Capped<Glyph, RECENT>; ROWS],
 }
 
 impl HudWatch {
@@ -867,7 +869,7 @@ impl HudWatch {
             lut,
             region: Scale::new(width, height, BOX, (BW, BH), Filter::Area),
             aim: Scale::new(width, height, AIM_BAND, (AW, AH), Filter::Cubic),
-            keys: Vec::new(),
+            keys: Capped::new(),
             keys_seen: 0,
             key_step: 1,
             layout: None,
@@ -1158,7 +1160,7 @@ fn learn_digits(runs: &[&[i32]], shapes: usize) -> Option<Vec<Option<u8>>> {
     }
     let after = |s: i32| next.iter().find(|e| e.0 == s).map(|e| e.1);
     let mut digits = vec![None; shapes];
-    let (mut s, mut seen) = (z, vec![z]);
+    let (mut s, mut seen) = (z, Capped::<i32, 10>::from_iter([z]));
     digits[z as usize] = Some(0);
     for d in 1..10 {
         s = after(s)?;
@@ -1633,7 +1635,7 @@ mod tests {
             accuracy: Row { y0: 30, y1: 50, start: None },
         };
         let mut store = Store::default();
-        let mut recent: [Vec<Glyph>; ROWS] = Default::default();
+        let mut recent: [Capped<Glyph, RECENT>; ROWS] = Default::default();
         for f in frames {
             let kills = (f / 10).min(40) as i64;
             let (hits, shots) = acc(f, kills);

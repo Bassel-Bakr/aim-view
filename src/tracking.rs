@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::capped::Capped;
 use crate::faint::picked;
 use crate::geometry::{K, degrees};
 use crate::optional_fields::OptionalFields;
@@ -546,7 +547,7 @@ pub fn countdown_end(showing: &[bool], fps: f64, until: f64) -> Option<usize> {
 /// Where a detector marks the crosshair in a tracking run: the points its box sits on (degrees from the crosshair),
 /// and the box's width and height (degrees).
 struct CrosshairBox {
-    points: Vec<(f64, f64)>,
+    points: Capped<(f64, f64), 3>,
     size: (f64, f64),
 }
 
@@ -581,7 +582,7 @@ fn crosshair_box(frames: &[TrackFrame]) -> Option<CrosshairBox> {
     let mean = |v: &[&(f64, f64, f64, f64)], f: fn(&(f64, f64, f64, f64)) -> f64| {
         v.iter().map(|&q| f(q)).sum::<f64>() / v.len() as f64
     };
-    let (mut out, mut size): (Vec<(f64, f64)>, (f64, f64)) = (Vec::new(), (0.0, 0.0));
+    let (mut out, mut size): (Capped<(f64, f64), 3>, (f64, f64)) = (Capped::new(), (0.0, 0.0));
     for _ in 0..3 {
         // each bin with its 8 neighbours (wrapping round, as np.roll does), the first largest; after the first point,
         // only bins within 0.3 degrees of it

@@ -7,11 +7,13 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::capped::Capped;
 use crate::faint::{FaintSetting, without_faint};
 use crate::geometry::{CX, CY, H, K, W};
 use crate::hud::{HudGame, HudReading};
 use crate::matching::{
     appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
+    SPOTS,
 };
 use crate::measure::{choices, measure, target_radius, Measure};
 use crate::reload::reload_cost;
@@ -50,7 +52,7 @@ pub struct Report {
     pub geometry: Geometry,
     pub appeared: BTreeMap<String, i64>,
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::CrosshairSpot>"))]
-    pub crosshair: Vec<(f64, f64)>,
+    pub crosshair: Capped<(f64, f64), SPOTS>,
     /// The user's run marks as given ({start, end, length}: the service's RunMarks).
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub run: Option<serde_json::Value>,
@@ -78,7 +80,7 @@ pub enum KillTimes<'a> {
 /// freely, so either can be missing.
 fn name_parts(video: &str) -> (String, Option<String>) {
     let stem = std::path::Path::new(video).file_stem().map_or(Cow::Borrowed(video), |s| s.to_string_lossy());
-    let mut parts: Vec<&str> = stem.rsplitn(3, " - ").collect();
+    let mut parts: Capped<&str, 3> = stem.rsplitn(3, " - ").collect();
     parts.reverse();
     let score = parts.get(1).and_then(|s| {
         let s = s.trim_start();
@@ -248,7 +250,7 @@ pub struct TrackReport {
     pub geometry: Geometry,
     pub appeared: BTreeMap<String, i64>,
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::CrosshairSpot>"))]
-    pub crosshair: Vec<(f64, f64)>,
+    pub crosshair: Capped<(f64, f64), SPOTS>,
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub run: Option<serde_json::Value>,
     pub limit: Option<f64>,
@@ -341,7 +343,7 @@ pub fn review_tracking(
         fps,
         geometry: Geometry { W, H, CX, CY, K },
         appeared: BTreeMap::new(),
-        crosshair: Vec::new(),
+        crosshair: Capped::new(),
         run,
         limit,
         outdated: false,

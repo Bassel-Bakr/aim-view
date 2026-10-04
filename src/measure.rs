@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::capped::Capped;
 use crate::geometry::{degrees, K};
 use crate::matching::Flick;
 use crate::python::{hypot, numpy_percentile, round};
@@ -119,7 +120,7 @@ fn speed_curve(start: i64, end: i64, camera: &[f64], fr: &[i64], sp: &[f64]) -> 
     };
     let v = (start..=last)
         .map(|f| {
-            let near: Vec<f64> = (f - 1..=f + 1).filter(|&g| g >= 0).filter_map(raw).collect();
+            let near: Capped<f64, 3> = (f - 1..=f + 1).filter(|&g| g >= 0).filter_map(raw).collect();
             round(mean(&near), 1)
         })
         .collect();

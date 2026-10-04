@@ -3,6 +3,7 @@
 
 pub mod areas;
 pub mod camera;
+pub mod capped;
 pub mod convert;
 pub mod detect;
 pub mod faint;

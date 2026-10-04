@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::capped::Capped;
 use crate::matching::{KillSource, MatchInfo};
 use crate::measure::{flick_profile, Choice, FlickProfile, Measure};
 use crate::optional_fields::OptionalFields;
@@ -46,7 +47,7 @@ pub struct Pace {
 }
 
 /// Flicks of one distance range (degrees).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DistanceGroup {
     pub lo: u32,
@@ -60,7 +61,7 @@ pub struct DistanceGroup {
 }
 
 /// Flicks of one direction (a 45-degree sector), with the median time each took beyond what its distance predicts.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DirectionGroup {
     #[cfg_attr(feature = "ts", ts(as = "Direction"))]
@@ -111,8 +112,10 @@ pub struct Summary {
     pub mid_short_cost: Option<f64>,
     #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::KillParts>"))]
     pub budget: Option<[f64; 5]>,
-    pub by_distance: Vec<DistanceGroup>,
-    pub by_direction: Vec<DirectionGroup>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<DistanceGroup>"))]
+    pub by_distance: Capped<DistanceGroup, { DISTANCES.len() }>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<DirectionGroup>"))]
+    pub by_direction: Capped<DirectionGroup, { DIRECTIONS.len() }>,
     pub nearest_chosen: Option<f64>,
     pub extra_when_not_nearest: Option<f64>,
     #[serde(flatten)]

@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 
+use crate::capped::Capped;
 use crate::measure::Measure;
 use crate::reload::ReloadCost;
 use crate::statistics::median;
@@ -271,7 +272,7 @@ fn direction(ms: &[Measure]) -> Option<Saving> {
     }
     let n: usize = groups.iter().map(Vec::len).sum();
     let need = (0.05 * n as f64).ceil().max(3.0) as usize;
-    let speeds: Vec<(usize, f64)> = (0..groups.len())
+    let speeds: Capped<(usize, f64), { DIRECTIONS.len() }> = (0..groups.len())
         .filter(|&k| groups[k].len() >= need)
         .map(|k| (k, median(&groups[k].iter().map(|p| p.0).collect::<Vec<_>>())))
         .collect();

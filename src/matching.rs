@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::capped::Capped;
 use crate::python::hypot;
 use crate::track::{TrackFrame, Tracks, spikes};
 
@@ -167,10 +168,13 @@ fn bin(edges: &[f64], v: f64) -> usize {
     edges.partition_point(|&e| e <= v) - 1
 }
 
+/// The most crosshair spots `crosshair_spots` finds.
+pub const SPOTS: usize = 3;
+
 /// Fixed screen spots where the detector marks the crosshair: detections near the crosshair while the camera turns (no
 /// target stays put on screen then) that pile up on one point, at least 2% of the turning frames within 0.015 degrees
-/// and most of what lies within 0.1 degrees of it. At most 3.
-pub fn crosshair_spots(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
+/// and most of what lies within 0.1 degrees of it. At most SPOTS.
+pub fn crosshair_spots(frames: &[TrackFrame]) -> Capped<(f64, f64), SPOTS> {
     const NEAR: f64 = 0.5;
     const STEP: f64 = 0.01;
     let turning: Vec<&TrackFrame> = frames.iter().filter(|f| hypot(f.shift.0, f.shift.1) > 0.1).collect();
@@ -179,7 +183,7 @@ pub fn crosshair_spots(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
         .flat_map(|f| f.t.iter().map(|&(_, x, y)| (x, y)))
         .filter(|&(x, y)| hypot(x, y) < NEAR)
         .collect();
-    let mut out = Vec::new();
+    let mut out = Capped::new();
     if p.len() < 30 {
         return out;
     }
@@ -193,7 +197,7 @@ pub fn crosshair_spots(frames: &[TrackFrame]) -> Vec<(f64, f64)> {
     }
     let within = |c: (f64, f64), r: f64| p.iter().filter(move |&&(x, y)| (x - c.0).hypot(y - c.1) < r);
     let centers: Vec<f64> = (0..n).map(|k| -NEAR + (k as f64 + 0.5) * STEP).collect();
-    for _ in 0..3 {
+    for _ in 0..SPOTS {
         // each bin with its 8 neighbours (wrapping round, as np.roll does), the first largest
         let mut best = (0, 0, f64::NEG_INFINITY);
         for i in 0..n {
@@ -718,8 +722,8 @@ impl Paths {
     /// Whether a target came back about as big as it was: the new track's median blob area over its first 3 frames is
     /// within half and twice the old track's over its last 3 (true when either has no area).
     fn same_size(&self, old: u32, new: u32) -> bool {
-        let a: Vec<f64> = self.areas[&old].values().rev().take(3).map(|&v| v as f64).collect();
-        let b: Vec<f64> = self.areas[&new].values().take(3).map(|&v| v as f64).collect();
+        let a: Capped<f64, 3> = self.areas[&old].values().rev().take(3).map(|&v| v as f64).collect();
+        let b: Capped<f64, 3> = self.areas[&new].values().take(3).map(|&v| v as f64).collect();
         let (a, b) = (crate::statistics::median(&a), crate::statistics::median(&b));
         a <= 0.0 || b <= 0.0 || (0.5..=2.0).contains(&(b / a))
     }
