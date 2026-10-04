@@ -232,13 +232,16 @@ def check_parity(model, files):
     (dets,) = cpu_session(files["embed"]).run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
     want = infer.decode_np(score, reg, CHECK_THRESHOLD)
     got = dets[0][dets[0][:, 4] > CHECK_THRESHOLD]
-    if len(got) != len(want) or np.abs(by_x(got) - by_x(want)).max() > SAME_REG:
+    if len(got) != len(want) or (len(got) and np.abs(by_x(got) - by_x(want)).max() > SAME_REG):
         raise SystemExit("the embed export does not match")
     print(f"embed graph: the same {len(got)} detections over 0.3")
     if files["fp16"].exists():
         _, half_reg = cpu_session(files["fp16"]).run(None, {"x": frame.numpy()})
-        print(f"fp16 against fp32 on a real frame: max |reg| diff where a target is "
-              f"{np.abs(half_reg - reg)[:, :, score[0, 0] > CHECK_THRESHOLD].max():.3f}")
+        at_targets = np.abs(half_reg - reg)[:, :, score[0, 0] > CHECK_THRESHOLD]
+        if at_targets.size:
+            print(f"fp16 against fp32 on a real frame: max |reg| diff where a target is {at_targets.max():.3f}")
+        else:
+            print("fp16 against fp32: no target over 0.3 on the frame to compare")
 
 
 def main():

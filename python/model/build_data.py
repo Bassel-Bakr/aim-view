@@ -35,6 +35,7 @@ import numpy as np
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import aimview_tools  # noqa: E402
 import old_review  # noqa: E402
 
 WIDTH, HEIGHT, FRAME_BYTES = old_review.W, old_review.H, old_review.FRAME
@@ -180,11 +181,12 @@ def model_labels(model, rgb, mask, fixed):
     return target_mask, boxes
 
 
-def check_runs():
+def check_runs(lib):
     """The recordings the stats-file checks use (eval_vods.py, eval_moving.py and eval_video_alone.py, held-out runs
-    too), as (folder, file): training on them would make the checks less independent."""
+    too), as (folder, file): training on them would make the checks less independent. lib: an aimview_tools.Library,
+    for the scenarios' kinds."""
     import eval_moving                                    # it imports this module: loaded here, not at the top
-    runs = list(eval_moving.STATIC) + [video for videos in eval_moving.picks().values() for video, _ in videos]
+    runs = list(eval_moving.STATIC) + [video for videos in eval_moving.picks(lib).values() for video, _ in videos]
     out = {(Path(video).parent.name, Path(video).name) for video in runs}
     alone = json.loads((Path(__file__).resolve().parent / "video_alone_runs.json").read_text(encoding="utf-8"))
     return out | {tuple(run["id"].split("/", 1)) for run in alone}
@@ -316,11 +318,11 @@ def main():
         scenarios = static_scenarios()
     else:
         scenarios = {name for name, kind in old_review.scenario_kinds().items() if kind in kinds}
-    skip = check_runs() if args.skip_checks else set()
+    skip = check_runs(aimview_tools.Library(args.vods)) if args.skip_checks else set()
     jobs, skipped = jobs_of(args, scenarios, old_review.target_counts(), skip)
     # incremental: a VOD already in the manifest (same file, same size) keeps its row and its crops
     old = old_rows(Path(args.out) / "manifest.jsonl")
-    rows, todo = skipped, []
+    rows, todo = list(skipped), []
     for job in jobs:
         row = old.get((job[0], Path(job[1]).name))
         if row and row.get("size") == Path(job[1]).stat().st_size:

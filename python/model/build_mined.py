@@ -966,7 +966,7 @@ def jobs_of(lib, per_folder, vods):
     """The recordings to mine, in order: dynamic and switching folders in turn, then tracking, then static (each kind's
     folders in a fixed shuffle)."""
     kinds, counts, facts = old_review.scenario_kinds(), old_review.target_counts(), old_review.scenario_facts()
-    skip = build_data.check_runs()
+    skip = build_data.check_runs(lib)
     by_folder = collections.defaultdict(list)
     for recording in lib.recordings:                 # newest first
         files = lib.by_id[recording["id"]]
