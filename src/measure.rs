@@ -28,6 +28,9 @@ pub struct Measure {
     /// How far along the way to the target was left when the main flick ended (below 0: past it).
     pub end_left: f64,
     pub end_off: f64,
+    /// When the crosshair reached the target, from the flick's start: the first point of its path inside the target's
+    /// circle, the path straight between two frames up to 2 frames apart, so it can fall between two frames (a fast
+    /// flick can pass through the target between them). Dwell, settle and hold run from it.
     pub arrive: Option<f64>,
     pub dwell: Option<f64>,
     pub past: f64,
@@ -127,6 +130,34 @@ fn speed_curve(start: i64, end: i64, camera: &[f64], fr: &[i64], sp: &[f64]) -> 
     SpeedCurve { v, end: len as usize }
 }
 
+/// Where the crosshair reaches the target: the first point of its path `d` inside the target's circle (radius `r`),
+/// the path straight between two frames up to 2 frames apart. A fast flick can pass through the target between them.
+/// Across a longer gap the target was not seen, and the first frame inside the circle counts. The first frame at or
+/// after it (an index into the path) and its time in frames from the path's first frame (a fraction of a frame between
+/// two); none when the path never reaches it.
+fn arrival(fr: &[i64], d: &[(f64, f64)], r: f64) -> Option<(usize, f64)> {
+    if hypot(d[0].0, d[0].1) < r {
+        return Some((0, 0.0));
+    }
+    (1..d.len()).find_map(|i| {
+        let ((ax, ay), (bx, by)) = (d[i - 1], d[i]);
+        let t = if fr[i] - fr[i - 1] <= 2 {
+            let (ex, ey) = (bx - ax, by - ay);
+            let a = ex * ex + ey * ey;
+            let b = 2.0 * (ax * ex + ay * ey);
+            let c = ax * ax + ay * ay - r * r;
+            let disc = b * b - 4.0 * a * c;
+            (a > 0.0 && disc > 0.0).then(|| (-b - disc.sqrt()) / (2.0 * a))
+        } else {
+            None
+        };
+        (hypot(bx, by) < r || t.is_some_and(|t| (0.0..=1.0).contains(&t))).then(|| {
+            let t = t.map_or(1.0, |t| t.clamp(0.0, 1.0));
+            (i, (fr[i - 1] - fr[0]) as f64 + t * (fr[i] - fr[i - 1]) as f64)
+        })
+    })
+}
+
 fn measure_one(f: &Flick, fps: f64, r: f64, camera: &[f64]) -> Option<Measure> {
     let tr = &f.traj;
     if tr.len() < 4 || tr[0].0 > f.start_frame + 2 {
@@ -149,7 +180,8 @@ fn measure_one(f: &Flick, fps: f64, r: f64, camera: &[f64]) -> Option<Measure> {
     let peak_i = (0..sp.len()).fold(0, |b, i| if sp[i] > sp[b] { i } else { b });
     // the main flick ends at the first frame after the peak where the speed falls below 15% of the peak
     let end_i = (peak_i..sp.len()).find(|&i| sp[i] < 0.15 * sp[peak_i]).unwrap_or(sp.len() - 1);
-    let arr = (0..d.len()).find(|&i| hypot(d[i].0, d[i].1) < r);
+    let arrived = arrival(&fr, &d, r);
+    let arr = arrived.map(|a| a.0);
     let past = -along[mv.unwrap_or(0)..].iter().copied().fold(f64::INFINITY, f64::min);
     // corrections: separate bursts of movement after the main flick (speed above 8 deg/s again)
     let (mut bursts, mut moving) = (0, false);
@@ -161,9 +193,10 @@ fn measure_one(f: &Flick, fps: f64, r: f64, camera: &[f64]) -> Option<Measure> {
         }
     }
     // holding: after the first contact, how often the crosshair slipped off the target and for how long (with a
-    // little hysteresis, so a crosshair on the edge does not count as slipping off every frame)
+    // little hysteresis, so a crosshair on the edge does not count as slipping off every frame). From the arrival's
+    // frame: one that passed through the target before it is off it there
     let (mut breaks, mut off, mut inside) = (0, 0.0, true);
-    for i in arr.unwrap_or(k) + 1..=k {
+    for i in arr.map_or(k + 1, |a| a.max(1))..=k {
         let dr = hypot(d[i].0, d[i].1);
         if inside && dr > 1.15 * r {
             (breaks, inside) = (breaks + 1, false);
@@ -190,7 +223,9 @@ fn measure_one(f: &Flick, fps: f64, r: f64, camera: &[f64]) -> Option<Measure> {
     let total = secs(0, k);
     let react = mv.map(|m| secs(0, m));
     let flick = mv.filter(|&m| end_i > m).map(|m| secs(m, end_i));
-    let arrive = arr.map(|a| secs(0, a));
+    // the times from the arrival, which can fall between two frames
+    let since_arrival = |b: usize| arrived.map(|(_, at)| ((fr[b] - fr[0]) as f64 - at) / fps);
+    let arrive = arrived.map(|(_, at)| at / fps);
     let parts = match (react, flick, arrive, settle) {
         (Some(re), Some(fl), Some(ar), Some(se)) => {
             let mut b = [re, (re + fl).min(ar), ar, secs(0, se)];
@@ -212,18 +247,18 @@ fn measure_one(f: &Flick, fps: f64, r: f64, camera: &[f64]) -> Option<Measure> {
         end_left: along[end_i],
         end_off: hypot(d[end_i].0, d[end_i].1),
         arrive,
-        dwell: arr.map(|a| secs(a, k)),
+        dwell: since_arrival(k),
         past,
         corr: bursts,
         click_speed: sp[k],
         click_off: hypot(d[k].0, d[k].1),
         click_off_xy: d[k],
-        settle: arr.zip(settle).map(|(a, s)| secs(a, s)),
+        settle: settle.and_then(since_arrival),
         still: settle.map(|s| secs(s, k)),
         start_frame: f.start_frame,
         kill_frame: f.kill_frame,
         spawned: f.spawned,
-        hold: arr.map(|a| secs(a, k)),
+        hold: since_arrival(k),
         breaks,
         off,
         parts,
@@ -378,5 +413,17 @@ mod tests {
         assert_eq!((p.p25[5], p.p75[5]), (p.mean[5], p.mean[5]));
         // the peak at frame 2 of 6; the braking from the last frame at 90% (3) to the first under 15% (7, after the end)
         assert_eq!((p.peak_at, p.braking), (0.333, 0.667));
+    }
+
+    #[test]
+    fn a_flick_reaches_the_target_where_its_path_enters_the_circle() {
+        let r = 0.5;
+        // 1 degree a frame onto the target: inside from frame 2, its path entering the circle at frame 1.5
+        assert_eq!(arrival(&[0, 1, 2], &[(2.0, 0.0), (1.0, 0.0), (0.0, 0.0)], r), Some((2, 1.5)));
+        // through the target between frames 1 and 2, from 1 degree before it to 1 past it: there at frame 1.25
+        assert_eq!(arrival(&[0, 1, 2, 3], &[(3.0, 0.0), (1.0, 0.0), (-1.0, 0.0), (0.0, 0.0)], r), Some((2, 1.25)));
+        // across a gap of 3 frames the path is not taken as straight: the first frame inside
+        assert_eq!(arrival(&[0, 1, 4], &[(3.0, 0.0), (1.0, 0.0), (0.0, 0.0)], r), Some((2, 4.0)));
+        assert_eq!(arrival(&[0, 1], &[(3.0, 0.0), (1.0, 0.0)], r), None);
     }
 }

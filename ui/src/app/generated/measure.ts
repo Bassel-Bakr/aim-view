@@ -27,6 +27,11 @@ export interface Measure {
    */
   end_left: number;
   end_off: number;
+  /**
+   * When the crosshair reached the target, from the flick's start: the first point of its path inside the target's
+   * circle, the path straight between two frames up to 2 frames apart, so it can fall between two frames (a fast
+   * flick can pass through the target between them). Dwell, settle and hold run from it.
+   */
   arrive: number | null;
   dwell: number | null;
   past: number;

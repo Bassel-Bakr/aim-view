@@ -1002,6 +1002,31 @@ def target_radius(flicks, default=0.43):
 
 
 # ---- 3. measure -----------------------------------------------------------------------------------------------------
+def _arrival(fr, d, R):
+    """Where the crosshair reaches the target: the first point of its path inside the target's circle (radius R), the
+    path straight between two frames up to 2 frames apart. A fast flick can pass through the target between them.
+    Across a longer gap the target was not seen, and the first frame inside the circle counts. Returns (arr, at): arr
+    the first frame at or after it (an index into the path), at its time in frames from the path's first frame (a
+    fraction of a frame between two); (None, None) when the path never reaches it."""
+    if math.hypot(*d[0]) < R:
+        return 0, 0.0
+    for i in range(1, len(d)):
+        (ax, ay), (bx, by) = d[i - 1], d[i]
+        t = None
+        if fr[i] - fr[i - 1] <= 2:
+            ex, ey = bx - ax, by - ay
+            a = ex * ex + ey * ey
+            b = 2 * (ax * ex + ay * ey)
+            c = ax * ax + ay * ay - R * R
+            disc = b * b - 4 * a * c
+            if a > 0 and disc > 0:
+                t = (-b - math.sqrt(disc)) / (2 * a)
+        if math.hypot(bx, by) < R or (t is not None and 0 <= t <= 1):
+            t = 1.0 if t is None else min(max(t, 0.0), 1.0)
+            return i, fr[i - 1] - fr[0] + t * (fr[i] - fr[i - 1])
+    return None, None
+
+
 def measure(flicks, fps, R):
     """Per-flick measures (the keys measure.py has always written, plus settle, still and the time parts)."""
     out = []
@@ -1021,7 +1046,7 @@ def measure(flicks, fps, R):
         peak_i = max(range(len(sp)), key=lambda i: sp[i])
         # the main flick ends at the first frame after the peak where the speed falls below 15% of the peak
         end_i = next((i for i in range(peak_i, len(sp)) if sp[i] < 0.15 * sp[peak_i]), len(sp) - 1)
-        arr = next((i for i in range(len(d)) if math.hypot(*d[i]) < R), None)
+        arr, at = _arrival(fr, d, R)
         past = -min(along[(mv or 0):])
         # corrections: separate bursts of movement after the main flick (speed above 8 deg/s again)
         bursts, moving = 0, False
@@ -1032,9 +1057,10 @@ def measure(flicks, fps, R):
                 moving = False
         k = len(d) - 1
         # holding: after the first contact, how often the crosshair slipped off the target and for how long (with a
-        # little hysteresis, so a crosshair sitting on the edge does not count as slipping off every frame)
+        # little hysteresis, so a crosshair sitting on the edge does not count as slipping off every frame). From the
+        # arrival's frame: one that passed through the target before it is off it there
         breaks, off, inside = 0, 0.0, True
-        for i in range((arr if arr is not None else k) + 1, k + 1):
+        for i in range(max(arr, 1) if arr is not None else k + 1, k + 1):
             r = math.hypot(*d[i])
             if inside and r > 1.15 * R:
                 breaks, inside = breaks + 1, False
@@ -1052,13 +1078,13 @@ def measure(flicks, fps, R):
                  react=(fr[mv] - fr[0]) / fps if mv is not None else None,
                  flick=(fr[end_i] - fr[mv]) / fps if mv is not None and end_i > mv else None,
                  peak=sp[peak_i], end_left=along[end_i], end_off=math.hypot(*d[end_i]),
-                 arrive=(fr[arr] - fr[0]) / fps if arr is not None else None,
-                 dwell=(fr[k] - fr[arr]) / fps if arr is not None else None,
+                 arrive=at / fps if arr is not None else None,
+                 dwell=(fr[k] - fr[0] - at) / fps if arr is not None else None,
                  past=past, corr=bursts, click_speed=sp[k], click_off=math.hypot(*d[k]), click_off_xy=d[k],
-                 settle=(fr[settle] - fr[arr]) / fps if settle is not None else None,
+                 settle=(fr[settle] - fr[0] - at) / fps if settle is not None else None,
                  still=(fr[k] - fr[settle]) / fps if settle is not None else None,
                  start_frame=f["start_frame"], kill_frame=f["kill_frame"], spawned=f.get("spawned", False),
-                 hold=(fr[k] - fr[arr]) / fps if arr is not None else None, breaks=breaks, off=off)
+                 hold=(fr[k] - fr[0] - at) / fps if arr is not None else None, breaks=breaks, off=off)
         if m["react"] is not None and m["flick"] is not None and m["arrive"] is not None and settle is not None:
             b = sorted([m["react"], min(m["react"] + m["flick"], m["arrive"]), m["arrive"], (fr[settle] - fr[0]) / fps])
             b = [0.0] + [min(x, total) for x in b] + [total]
