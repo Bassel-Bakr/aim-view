@@ -19,6 +19,29 @@ pub enum Matrix {
 }
 
 impl Matrix {
+    /// The matrix by the number the browser gives it (ui/src/app/modes/wasm/core.ts: `matrixNumber`): 0 BT.709,
+    /// 1 BT.601 (also unspecified), 2 FCC, 3 SMPTE 240M, 4 BT.2020.
+    pub fn from_code(code: u32) -> Matrix {
+        match code {
+            0 => Matrix::Bt709,
+            2 => Matrix::Fcc,
+            3 => Matrix::Smpte240m,
+            4 => Matrix::Bt2020,
+            _ => Matrix::Bt601,
+        }
+    }
+
+    /// The matrix's number (`from_code`).
+    pub fn code(self) -> u32 {
+        match self {
+            Matrix::Bt709 => 0,
+            Matrix::Bt601 => 1,
+            Matrix::Fcc => 2,
+            Matrix::Smpte240m => 3,
+            Matrix::Bt2020 => 4,
+        }
+    }
+
     fn coeffs(self) -> [i64; 4] {
         match self {
             Matrix::Bt709 => [117489, 138438, 13975, 34925],

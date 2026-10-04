@@ -166,11 +166,15 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (2560x1440): 380 frames a second with the detector on the GPU (WebGPU, the default, 4 frames in each call, its
   outputs read back while the next call is sent; 15.9 s for the whole review), 31 on the CPU (one frame a call; measured before the camera worker;
   test_out/browser_check/profile.html times each stage). On the GPU, with 8 threads or more, a recording of 1,200
-  frames or more is split at the key frame nearest its middle into two runs (split-runs.ts), each with its own review
+  frames or more is split at the key frame nearest its middle into two runs, each with its own review
   and camera workers, so two software decoders work at once (one was the limit: about 430 frames a second on av1;
-  test_out/browser_check/decode-bench.html). Each run's tracker and camera watch hand back parts (src/wasm.rs:
-  `tracker_part`, `camera_part`; the area watch counts from the run's first frame, and a run reads the next run's first
-  frame for the camera's turn into it), which the page joins (core-module.ts: `joinRuns`). Two runs give the same
+  test_out/browser_check/decode-bench.html). One review session in the core (src/session.rs) does the review's work
+  for the browser and the desktop app alike: it plans the runs, reads the key frames (the fixed map and the HUD's
+  boxes), says what each decoded frame is for, tracks each run's frames (`RunTracking`), watches the camera and the HUD
+  (`RunWatching`, in the camera worker and on a thread of its own natively) and joins the runs' parts (`Joining`; the
+  page calls it through core-module.ts `joinReview`). The hosts only decode, convert and run the detector, and feed it
+  (review.worker.ts, camera.worker.ts; service/src/review.rs). The area watch counts from the run's first frame, and a
+  run reads the next run's first frame for the camera's turn into it. Two runs give the same
   tracks and readings as one, byte for byte, on av1, flower, h264 and hevc (`popup` and `camera_same` test the joins). On the GPU the session uses graph capture (onnxruntime records
   the model's GPU work once and replays it), NHWC convolutions, no extra validation and a fixed input size
   (review.worker.ts, `gpuOptions`); graph capture needs every node on the GPU, so the _u8in exports cast the fixed map
@@ -196,7 +200,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   by a median 0.001 degrees), and the countdown test does not depend on the HUD color (Python's looks for teal only).
   The run window (the run page's Run window: start and end, typed or from the playhead) works in every mode: the server
   keeps it as run.json and measures again; the browser (SavedMarks) and the desktop app (run_window.rs, run.json) also
-  track only the window with a second either side (split-runs.ts `trackedWindow`, `windowFrames`: from the key frame
+  track only the window with a second either side (tracked-window.ts `trackedWindow`, src/session.rs `window_frames`: from the key frame
   before it; the first run's tracker and camera watch start part way in, and the joins fill the frames before it with
   empty ones), and track again when a new window reaches past the tracked one. The core measures a tracking run from it
   as Python does (review.rs `run_window`). av1 with 0:20 to 0:40: the same boxes and camera readings inside the window

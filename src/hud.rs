@@ -744,6 +744,21 @@ pub struct HudPart {
     store: Store,
 }
 
+/// What a watch reads in the key frames (`HudWatch::keys`): KovaaK's box, None without one, and its text rows. Each
+/// run's watch starts from it (`HudWatch::from_keys`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HudKeys {
+    layout: Option<Layout>,
+    session: Option<SessionRows>,
+}
+
+impl HudKeys {
+    /// KovaaK's session box's text rows, for src/areas.rs; None without a box.
+    pub fn session(&self) -> Option<SessionRows> {
+        self.session
+    }
+}
+
 /// A part as JSON: the glyph images as hex.
 #[derive(Serialize, Deserialize)]
 struct PartText {
@@ -912,6 +927,20 @@ impl HudWatch {
     pub fn session_box(&mut self) -> Option<SessionRows> {
         self.work_out_layout();
         self.session
+    }
+
+    /// What the key frames gave: KovaaK's box and its rows. Call it after the last key frame.
+    pub fn keys(&mut self) -> HudKeys {
+        self.work_out_layout();
+        HudKeys { layout: self.layout.flatten(), session: self.session }
+    }
+
+    /// A watch that starts from what another read in the key frames (`keys`), as if it had read them itself.
+    pub fn from_keys(width: usize, height: usize, full_range: bool, keys: &HudKeys) -> HudWatch {
+        let mut watch = HudWatch::new(width, height, full_range);
+        watch.layout = Some(keys.layout);
+        watch.session = keys.session;
+        watch
     }
 
     /// Frames not reviewed before the first one added (a review from part way in, the user's run window).

@@ -46,7 +46,7 @@ async function find(work: FinderWork): Promise<void> {
     const block = await frames.write(s);
     // the format is the first frame's, once one is written
     const { width, height, full } = frames.format as FrameFormat;
-    hud ||= core.x.hud_new(width, height, full);
+    hud ||= core.x.hud_new(width, height, Number(full));
     core.x.hud_add_key(hud, block.ptr, width * height);
     if (picks) continue;
     frames.yuv720(block, yuv720);

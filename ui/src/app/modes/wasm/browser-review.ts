@@ -13,7 +13,7 @@ import { CoreModule } from './core-module';
 import { SavedAreas } from '../web-files/saved-areas';
 import { BrowserAreaFinder } from './browser-area-finder';
 import { BrowserDevice, ReviewMessage, ReviewRequest, RunPart } from './review-messages';
-import { covers, trackedWindow } from './split-runs';
+import { covers, trackedWindow } from './tracked-window';
 
 const NOT_OPEN = 'The recording is not open in this browser.';
 const NO_SCENARIOS =
@@ -26,7 +26,7 @@ const NO_STATS =
 const DEFAULT_MODEL = 'full_v3';
 const DEVICE_NAMES: Record<BrowserDevice, string> = { webgpu: 'WebGPU', wasm: 'WebAssembly' };
 /**
- * The runs a recording is split into on the GPU, each reviewed in a worker of its own (split-runs.ts): one software
+ * The runs a recording is split into on the GPU, each reviewed in a worker of its own (src/session.rs): one software
  * decoder is the review's limit there, and two decode at almost twice the speed. On the CPU the detector is the limit:
  * one run. A computer with fewer than 8 threads has one run too.
  */
@@ -272,17 +272,10 @@ export class BrowserReview implements ReviewEngine {
     const join = async () => {
       run.job = { stage: 'linking', done: total, total };
       const got = parts.filter((p): p is RunPart => !!p);
-      const joined = await this.core.joinRuns(got, cap ?? 0, areas);
-      const first = got[0];
-      const tracks: Tracks = {
-        fps: first.fps,
-        frames: joined.frames,
-        fixed: first.fixed.reduce((a, v) => a + v, 0) / first.fixed.length,
-        detector: `onnxruntime-web (${DEVICE_NAMES[first.device]})`,
-        window,
-        version: joined.version,
-        areas,
-      };
+      const detector = `onnxruntime-web (${DEVICE_NAMES[got[0].device]})`;
+      const joined = await this.core.joinReview(got, detector);
+      // the window as given: JSON has no Infinity for an open end
+      const tracks: Tracks = { ...joined.tracks, window };
       const review: SavedReview = { tracks, readings: joined.readings, hud: joined.hud, model };
       this.found.update((all) => new Map(all).set(foundKey(id, model), review));
       // kept for the next visit; a browser that cannot keep it still shows it now

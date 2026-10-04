@@ -48,6 +48,11 @@ pub struct AroundPoint(pub f64, pub f64, pub f64);
 #[ts(export)]
 pub struct SecondShares(pub f64, pub f64);
 
+/// An area a review leaves out: x0, y0, x1, y1 (shares of the frame), and its kind's id.
+#[derive(TS)]
+#[ts(export)]
+pub struct AreaBox(pub f64, pub f64, pub f64, pub f64, pub String);
+
 /// A bot's death: its frame, the frame the crosshair is on a bot again, and the first frame a bot shows.
 #[derive(TS)]
 #[ts(export)]

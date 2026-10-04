@@ -1,3 +1,5 @@
+// Retired: the run split moved into the core (src/session.rs: `split_runs`, `window_frames`), whose tests cover
+// these cases.
 import { splitRuns, windowFrames } from './split-runs';
 
 /** n frames at 60 a second from 0, a key frame every `every` frames. */

@@ -6,6 +6,7 @@ use std::alloc::{Layout, alloc as raw_alloc, dealloc as raw_dealloc};
 
 use crate::convert::{Converter, DST_H, DST_W, Matrix};
 use crate::fixed::FixedMap;
+use crate::session::{Joining, Keys, KeysRead, NextFrame, Review, RunTracking, RunWatching, Setup, WatchPart};
 use crate::track::{RawBox, TrackFrame};
 use crate::tracker::{TrackPart, Tracker};
 
@@ -167,14 +168,7 @@ fn bytes_out(data: Vec<u8>) -> *mut u8 {
 /// 2 FCC, 3 SMPTE 240M, 4 BT.2020; full: 1 for full ("pc") range.
 #[unsafe(no_mangle)]
 pub extern "C" fn converter_new(w: usize, h: usize, matrix: u32, full: u32) -> *mut Converter {
-    let matrix = match matrix {
-        0 => Matrix::Bt709,
-        2 => Matrix::Fcc,
-        3 => Matrix::Smpte240m,
-        4 => Matrix::Bt2020,
-        _ => Matrix::Bt601,
-    };
-    Box::into_raw(Box::new(Converter::new(w, h, matrix, full == 1)))
+    Box::into_raw(Box::new(Converter::new(w, h, Matrix::from_code(matrix), full == 1)))
 }
 
 /// One frame (YUV 4:2:0 at the converter's size) as RGB24 at 1280 x 720, into `out` (1280 * 720 * 3 bytes).
@@ -625,4 +619,230 @@ pub unsafe extern "C" fn tracker_new_ends(
     let boxes: Vec<[f64; 4]> = flat.chunks_exact(4).map(|b| [b[0], b[1], b[2], b[3]]).collect();
     let which: Vec<bool> = unsafe { std::slice::from_raw_parts(ends, areas_len) }.iter().map(|&e| e != 0).collect();
     Box::into_raw(Box::new(Tracker::new(boxes, cap).end_screens(&which)))
+}
+
+// ---- the review session (src/session.rs) ----------------------------------------------------------------------------
+
+/// A part's or a review's JSON, or {"error": ...}, handed to the page.
+fn outcome_out<T: serde::Serialize>(outcome: Result<T, String>) -> *mut u8 {
+    let json = outcome.and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
+    bytes_out(json.unwrap_or_else(|e| serde_json::json!({ "error": e }).to_string().into_bytes()))
+}
+
+/// A review from its setup (`session::Setup` as JSON); null when the setup cannot be read or the video has no frames.
+///
+/// # Safety
+/// `setup` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_new(setup: *const u8, len: usize) -> *mut Review {
+    let setup = serde_json::from_slice::<Setup>(unsafe { std::slice::from_raw_parts(setup, len) });
+    match setup.map_err(|e| e.to_string()).and_then(Review::new) {
+        Ok(review) => Box::into_raw(Box::new(review)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// The detector model's settings file (detector_<name>.json, UTF-8: src/model.rs), before the review's runs start.
+/// Returns a text as `tracker_finish` does: empty when the file was read, else why it was not.
+///
+/// # Safety
+/// `review` from `review_new`; `text` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_set_model(review: *mut Review, text: *const u8, len: usize) -> *mut u8 {
+    let text = String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(text, len) });
+    match crate::model::ModelSettings::from_json(&text) {
+        Ok(model) => {
+            unsafe { &mut *review }.set_model(model);
+            bytes_out(Vec::new())
+        }
+        Err(e) => bytes_out(e.into_bytes()),
+    }
+}
+
+/// The review's runs as JSON (`session::Run` each). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `review` from `review_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_runs(review: *const Review) -> *mut u8 {
+    bytes_out(serde_json::to_vec(unsafe { &*review }.runs()).unwrap_or_default())
+}
+
+/// # Safety
+/// `review` from `review_new`, not used again (what it made lives on).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_free(review: *mut Review) {
+    drop(unsafe { Box::from_raw(review) });
+}
+
+/// The review's key frames' pass.
+///
+/// # Safety
+/// `review` from `review_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_keys(review: *const Review) -> *mut Keys {
+    Box::into_raw(Box::new(unsafe { &*review }.keys()))
+}
+
+/// One key frame: YUV 4:2:0 at 1280 x 720 (`converter_yuv420p`'s output), and its Y plane as decoded.
+///
+/// # Safety
+/// `keys` from `review_keys`; `small` must hold 1280 * 720 * 3 / 2 bytes, `y` `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keys_add(keys: *mut Keys, small: *const u8, y: *const u8, len: usize) {
+    let small = unsafe { std::slice::from_raw_parts(small, DST_W * DST_H * 3 / 2) };
+    unsafe { &mut *keys }.add(small, unsafe { std::slice::from_raw_parts(y, len) });
+}
+
+/// The fixed map into `fixed` (1280 * 720 bytes, 1 fixed), and where the HUD's boxes are as JSON (`hud::HudKeys`), for
+/// `review_watching`; frees the pass. Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `keys` from `review_keys`, not used again; `fixed` must hold 1280 * 720 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keys_finish(keys: *mut Keys, fixed: *mut u8) -> *mut u8 {
+    let read = unsafe { Box::from_raw(keys) }.finish();
+    unsafe { std::slice::from_raw_parts_mut(fixed, DST_W * DST_H) }.copy_from_slice(&read.fixed);
+    bytes_out(serde_json::to_vec(&read.hud).unwrap_or_default())
+}
+
+/// Run `run`'s tracking.
+///
+/// # Safety
+/// `review` from `review_new`; `run` one of its runs.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_tracking(review: *const Review, run: usize) -> *mut RunTracking {
+    Box::into_raw(Box::new(unsafe { &*review }.tracking(run)))
+}
+
+/// What the next decoded frame is for (`RunTracking::next_frame`): 2 the run's (track it), 1 the next run's first (only the
+/// watches read it), 0 past the run (stop decoding).
+///
+/// # Safety
+/// `tracking` from `review_tracking`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracking_next(tracking: *mut RunTracking) -> u32 {
+    match unsafe { &mut *tracking }.next_frame() {
+        NextFrame::Track => 2,
+        NextFrame::Watch => 1,
+        NextFrame::Stop => 0,
+    }
+}
+
+/// A tracked frame as RGB24 at 1280 x 720: its excluded areas are watched for pop-ups.
+///
+/// # Safety
+/// `tracking` from `review_tracking`; `rgb` must hold 1280 * 720 * 3 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracking_watch(tracking: *mut RunTracking, rgb: *const u8) {
+    unsafe { &mut *tracking }.watch(unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
+}
+
+/// The detector's maps for the next tracked frame: the score map (gh x gw) and reg maps (4 x gh x gw), f32.
+///
+/// # Safety
+/// `tracking` from `review_tracking`; `score` and `reg` must hold `gw * gh` and `4 * gw * gh` f32s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracking_maps(
+    tracking: *mut RunTracking,
+    score: *const f32,
+    reg: *const f32,
+    gw: usize,
+    gh: usize,
+) {
+    let score = unsafe { std::slice::from_raw_parts(score, gw * gh) };
+    let reg = unsafe { std::slice::from_raw_parts(reg, 4 * gw * gh) };
+    unsafe { &mut *tracking }.maps(score, reg, gw, gh);
+}
+
+/// The run's part of the tracking as JSON (`TrackPart`), or {error}; frees the tracking. Free the result as
+/// `tracker_finish`'s.
+///
+/// # Safety
+/// `tracking` from `review_tracking`, not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tracking_part(tracking: *mut RunTracking) -> *mut u8 {
+    outcome_out(unsafe { Box::from_raw(tracking) }.part())
+}
+
+/// Run `run`'s watches, from what the key frames gave: the fixed map (1280 * 720 bytes) and the HUD's boxes
+/// (`keys_finish`'s JSON). Null when that JSON cannot be read.
+///
+/// # Safety
+/// `review` from `review_new`; `run` one of its runs; `fixed` must hold 1280 * 720 bytes, `hud` `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_watching(
+    review: *const Review,
+    run: usize,
+    fixed: *const u8,
+    hud: *const u8,
+    len: usize,
+) -> *mut RunWatching {
+    let Ok(hud) = serde_json::from_slice(unsafe { std::slice::from_raw_parts(hud, len) }) else {
+        return std::ptr::null_mut();
+    };
+    let fixed = unsafe { std::slice::from_raw_parts(fixed, DST_W * DST_H) }.to_vec();
+    Box::into_raw(Box::new(unsafe { &*review }.watching(run, &KeysRead { fixed, hud })))
+}
+
+/// One frame the run reads: its Y plane as decoded, then its countdown rows (`camera_rgb_rows` of its 720p RGB).
+///
+/// # Safety
+/// `watching` from `review_watching`; `frame` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn watching_frame(watching: *mut RunWatching, frame: *const u8, len: usize) {
+    let w = unsafe { &mut *watching };
+    let (y, rows) = unsafe { std::slice::from_raw_parts(frame, len) }.split_at(w.y_bytes());
+    w.frame(y, rows);
+}
+
+/// The run's part of the watches as JSON (`WatchPart`), or {error}; frees the watches. Free the result as
+/// `tracker_finish`'s.
+///
+/// # Safety
+/// `watching` from `review_watching`, not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn watching_part(watching: *mut RunWatching) -> *mut u8 {
+    outcome_out(unsafe { Box::from_raw(watching) }.part())
+}
+
+/// The runs' parts joined, in order, from the key frames' fixed map (1280 * 720 bytes).
+///
+/// # Safety
+/// `review` from `review_new`; `fixed` must hold 1280 * 720 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn review_joining(review: *const Review, fixed: *const u8) -> *mut Joining {
+    let fixed = unsafe { std::slice::from_raw_parts(fixed, DST_W * DST_H) };
+    Box::into_raw(Box::new(unsafe { &*review }.joining(fixed)))
+}
+
+/// The next run's parts: `tracking_part`'s and `watching_part`'s JSON. Returns 1 when both were read, else 0 (the join
+/// then fails).
+///
+/// # Safety
+/// `joining` from `review_joining`; `track` must hold `track_len` bytes, `watch` `watch_len`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn joining_add(
+    joining: *mut Joining,
+    track: *const u8,
+    track_len: usize,
+    watch: *const u8,
+    watch_len: usize,
+) -> u32 {
+    let track = serde_json::from_slice::<TrackPart>(unsafe { std::slice::from_raw_parts(track, track_len) });
+    let watch = serde_json::from_slice::<WatchPart>(unsafe { std::slice::from_raw_parts(watch, watch_len) });
+    let (Ok(track), Ok(watch)) = (track, watch) else { return 0 };
+    unsafe { &mut *joining }.add(track, watch);
+    1
+}
+
+/// The joined review as JSON (`session::Joined`: {tracks, readings, hud}), or {error}; frees the join. `detector`: the
+/// detector that ran, as tracks.json names it (UTF-8). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `joining` from `review_joining`, not used again; `detector` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn joining_finish(joining: *mut Joining, detector: *const u8, len: usize) -> *mut u8 {
+    let detector = String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(detector, len) }).into_owned();
+    outcome_out(unsafe { Box::from_raw(joining) }.finish(detector))
 }

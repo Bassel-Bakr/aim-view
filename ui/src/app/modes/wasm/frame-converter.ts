@@ -79,9 +79,14 @@ export class FrameConverter {
         width: w,
         height: h,
         matrix: matrixNumber(s.colorSpace.matrix),
-        full: s.colorSpace.fullRange ? 1 : 0,
+        full: !!s.colorSpace.fullRange,
       };
-      this.converter = this.core.x.converter_new(w, h, this.format.matrix, this.format.full);
+      this.converter = this.core.x.converter_new(
+        w,
+        h,
+        this.format.matrix,
+        Number(this.format.full),
+      );
       this.block = this.core.reserve((w * h * 3) / 2);
     }
     if (this.scratch.length < s.allocationSize()) this.scratch = new Uint8Array(s.allocationSize());

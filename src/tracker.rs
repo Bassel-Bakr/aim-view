@@ -1,7 +1,7 @@
 //! The track step for one recording, or one run of it (a recording split into runs, reviewed at once): each frame's
 //! boxes kept or dropped (raw boxes kept too), its excluded areas watched for pop-ups, then the frames where a pop-up
-//! is off kept again, and all linked when the frames are in. The browser drives it through src/wasm.rs, the desktop
-//! app directly.
+//! is off kept again, and all linked when the frames are in. The review session (src/session.rs) drives it for the
+//! browser and the desktop app.
 
 use serde::{Deserialize, Serialize};
 

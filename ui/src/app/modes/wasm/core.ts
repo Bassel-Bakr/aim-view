@@ -1,10 +1,5 @@
 /** The review core as WebAssembly (src/wasm.rs): its exports, and the copying in and out of its memory. */
 
-import { AreaBox } from '../../api';
-
-/** The kind of the challenge's end screen (src/popup.rs: END_SCREEN): excluded only while it shows. */
-export const END_SCREEN = 'challenge_results';
-
 /** The core module's exports. Pointers and sizes are byte offsets and counts in its memory. */
 export interface CoreExports {
   memory: WebAssembly.Memory;
@@ -55,6 +50,38 @@ export interface CoreExports {
   areas_sample(input: number, len: number): number;
   areas_find(input: number, len: number): number;
   areas_learn(input: number, len: number): number;
+  review_new(setup: number, len: number): number;
+  review_set_model(review: number, text: number, len: number): number;
+  review_runs(review: number): number;
+  review_free(review: number): void;
+  review_keys(review: number): number;
+  keys_add(keys: number, small: number, y: number, len: number): void;
+  keys_finish(keys: number, fixed: number): number;
+  review_tracking(review: number, run: number): number;
+  tracking_next(tracking: number): number;
+  tracking_watch(tracking: number, rgb: number): void;
+  tracking_maps(tracking: number, score: number, reg: number, gw: number, gh: number): void;
+  tracking_part(tracking: number): number;
+  review_watching(review: number, run: number, fixed: number, hud: number, len: number): number;
+  watching_frame(watching: number, frame: number, len: number): void;
+  watching_part(watching: number): number;
+  review_joining(review: number, fixed: number): number;
+  joining_add(
+    joining: number,
+    track: number,
+    trackLen: number,
+    watch: number,
+    watchLen: number,
+  ): number;
+  joining_finish(joining: number, detector: number, len: number): number;
+}
+
+/** What `tracking_next` says a decoded frame is for (src/session.rs: `NextFrame`). */
+export const NEXT_FRAME = { stop: 0, watch: 1, track: 2 } as const;
+
+/** A core call that hands back JSON or {error}: why it refused. */
+interface CoreError {
+  error: string;
 }
 
 /** A block of the core's memory, reserved until freed. */
@@ -103,37 +130,29 @@ export class Core {
     return new Float32Array(this.x.memory.buffer, block.ptr, block.len / 4);
   }
 
-  /**
-   * A tracker that ignores these areas (shares of the frame; the challenge's end screen only while it shows); cap: the
-   * scenario's target count, 0 for none.
-   */
-  tracker(areas: readonly AreaBox[], cap: number): number {
-    const ends = this.reserve(areas.length);
-    this.bytes(ends).set(areas.map((a) => (a[4] === END_SCREEN ? 1 : 0)));
-    const tracker = this.withAreas(areas, (ptr, count) =>
-      this.x.tracker_new_ends(ptr, ends.ptr, count, cap),
-    );
-    this.free(ends);
-    return tracker;
+  /** A review from its setup (src/session.rs: `Setup`, as JSON). Throws when the core cannot read it. */
+  review(setup: string): number {
+    const review = this.textIn(setup, (ptr, len) => this.x.review_new(ptr, len));
+    if (!review) throw new Error("The review's setup could not be read");
+    return review;
   }
 
   /**
-   * The detector model's settings file (detector_<name>.json: python/model/MODEL_FILE.md) for a tracker, before its
-   * first frame. Throws when the core cannot read it.
+   * The detector model's settings file (detector_<name>.json: python/model/MODEL_FILE.md) for a review, before its
+   * runs start. Throws when the core cannot read it.
    */
-  setModel(tracker: number, settings: string): void {
+  setModel(review: number, settings: string): void {
     const why = this.takeText(
-      this.textIn(settings, (ptr, len) => this.x.tracker_set_model(tracker, ptr, len)),
+      this.textIn(settings, (ptr, len) => this.x.review_set_model(review, ptr, len)),
     );
     if (why) throw new Error(`The model's settings file: ${why}`);
   }
 
-  /**
-   * A camera watch whose tiles keep clear of these areas (KovOBS's layout when there are none) and of the fixed map
-   * (1280 x 720, at `fixed` in the core's memory).
-   */
-  camera(areas: readonly AreaBox[], fixed: number): number {
-    return this.withAreas(areas, (ptr, count) => this.x.camera_new_areas(ptr, count, fixed));
+  /** A result the core hands back as JSON or {error}: the JSON, read and freed. Throws the core's error. */
+  takeOutcome(ptr: number): string {
+    const text = this.takeText(ptr);
+    if (text.startsWith('{"error"')) throw new Error((JSON.parse(text) as CoreError).error);
+    return text;
   }
 
   /** A text in the core's memory (UTF-8) for one call: its place and length. */
@@ -144,19 +163,6 @@ export class Core {
     const out = use(block.ptr, bytes.length);
     this.free(block);
     return out;
-  }
-
-  /** The areas as the core takes them (4 f64s each), for one call. */
-  private withAreas(
-    areas: readonly AreaBox[],
-    use: (ptr: number, count: number) => number,
-  ): number {
-    const block = this.reserve(areas.length * 4 * 8);
-    const bounds = new Float64Array(this.x.memory.buffer, block.ptr, areas.length * 4);
-    areas.forEach(([x0, y0, x1, y1], i) => bounds.set([x0, y0, x1, y1], i * 4));
-    const made = use(block.ptr, areas.length);
-    this.free(block);
-    return made;
   }
 
   /** A result the core hands back: its length (u32), then its bytes, read as text and freed. */

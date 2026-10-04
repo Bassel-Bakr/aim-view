@@ -5,6 +5,7 @@
  */
 
 import { HttpErrorResponse } from '@angular/common/http';
+import type { AreaBox } from './generated/area-box';
 import type { AreaKind } from './generated/area-kind';
 import type { ClickReport as CoreClickReport } from './generated/click-report';
 import type { Kind } from './generated/kind';
@@ -48,7 +49,7 @@ export type { TrackSummary } from './generated/track-summary';
 export type { TurnBack } from './generated/turn-back';
 export type { ViewShift } from './generated/view-shift';
 export type { WhatIf } from './generated/what-if';
-export type { AreaKind, Kind, RunMarks, TimeWindow, TrackFrame };
+export type { AreaBox, AreaKind, Kind, RunMarks, TimeWindow, TrackFrame };
 
 /** Milliseconds per 1280 x 720 frame on each runtime. */
 export interface ModelSpeed {
@@ -184,12 +185,6 @@ export interface Tracks {
 
 /** A part of the frame, as shares of its width and height: x0, y0, x1, y1. */
 export type AreaRect = [x0: number, y0: number, x1: number, y1: number];
-
-/**
- * An excluded area (/api/exclude): a part of the frame the review ignores (a webcam, an overlay), as shares of the
- * frame, and the id of its kind.
- */
-export type AreaBox = [x0: number, y0: number, x1: number, y1: number, kind: string];
 
 /** Where a recording's areas come from: saved for it, the last added recording's, or KovOBS's layout (the default). */
 export type AreaSource = 'saved' | 'last upload' | 'kovobs';

@@ -4,7 +4,7 @@ import { AreaBox, JobStage, TimeWindow } from '../../api';
 export type BrowserDevice = 'webgpu' | 'wasm';
 
 /**
- * What the review worker is asked: a recording's file, which of its runs to review (`run` of `runs`: split-runs.ts;
+ * What the review worker is asked: a recording's file, which of its runs to review (`run` of `runs`: src/session.rs;
  * each run has a worker of its own) and the part of it to review (null: all of it), where the core, the detector
  * runtime and the model are, where to run the detector and how many frames it takes at once, the scenario's target
  * count (null: not known), the areas the review ignores, and the port to the camera worker.
@@ -24,74 +24,58 @@ export interface ReviewRequest {
   camera: MessagePort;
 }
 
-/** A recording's frames as the decoder gives them, as the core's converter takes them (src/wasm.rs: converter_new). */
-export interface FrameFormat {
-  width: number;
-  height: number;
-  matrix: number;
-  full: number;
-}
+export type { FrameFormat } from '../../generated/frame-format';
+export type { ReviewSetup } from '../../generated/review-setup';
+export type { VideoRun } from '../../generated/video-run';
 
 /**
- * The camera worker's opening, before the key frames: where the core is and the frames' format. It makes the HUD watch,
- * which reads every key frame before any frame (for where the HUD's boxes are).
+ * The camera worker's opening, while the review worker reads the key frames: where the core is (it loads meanwhile).
  */
-export interface WatchOpen extends FrameFormat {
+export interface WatchOpen {
   kind: 'open';
   coreUrl: string;
 }
 
-/** A key frame, in the fixed map's pass: its decoded Y plane (the recording's size). Its buffer comes back once read. */
-export interface KeyFrame {
-  kind: 'key';
-  frame: ArrayBuffer;
-}
-
 /**
- * The camera watch's start, after the key frames: the fixed map (1280 x 720), the frames before the review's first,
- * which neither watch sees (a review from part way in; 0 but for the first run of such a review), and the recording's
- * excluded areas, which the camera's tiles keep clear of.
+ * The run's watches' start, after the key frames: the review's setup (src/session.rs: `Setup`, as JSON), which of its
+ * runs this is, and what the key frames gave: the fixed map (1280 x 720) and where the HUD's boxes are (`HudKeys`, as
+ * JSON).
  */
-export interface CameraStart {
+export interface WatchStart {
   kind: 'start';
+  setup: string;
+  run: number;
   fixed: Uint8Array;
-  skip: number;
-  areas: AreaBox[];
+  hud: string;
 }
 
 /**
- * A frame, as much of it as the watches read: the decoded Y plane (the recording's size; the HUD watch reads it as it
- * is), then the rows of its 720p RGB the countdown test reads (core: camera_rgb_rows). Its buffer comes back once read.
+ * A frame the run reads, as much of it as the watches read: the decoded Y plane (the recording's size), then the rows
+ * of its 720p RGB the countdown test reads (core: camera_rgb_rows). Its buffer comes back once read.
  */
 export interface CameraFrame {
   kind: 'frame';
   frame: ArrayBuffer;
 }
 
-/** No more frames: the watches' parts come back. */
+/** No more frames: the watches' part comes back. */
 export interface CameraFinish {
   kind: 'finish';
 }
 
-/** What the review worker tells the camera worker, in this order: open, key frames, start, frames, finish. */
-export type CameraTask = WatchOpen | KeyFrame | CameraStart | CameraFrame | CameraFinish;
+/** What the review worker tells the camera worker, in this order: open, start, frames, finish. */
+export type CameraTask = WatchOpen | WatchStart | CameraFrame | CameraFinish;
 
-/** A frame's (or key frame's) buffer, read and free again. */
+/** A frame's buffer, read and free again. */
 export interface CameraFree {
   kind: 'free';
   frame: ArrayBuffer;
 }
 
-/** The camera and HUD watches' parts of the run (src/wasm.rs: camera_part's and hud_part's JSON). */
-export interface WatchParts {
-  camera: string;
-  hud: string;
-}
-
-/** The watches' parts, once every frame is read. */
+/** The watches' part of the run (src/wasm.rs: watching_part's JSON), once every frame is read. */
 export interface CameraDone {
   kind: 'part';
-  part: WatchParts;
+  part: string;
 }
 
 export interface ReviewProgress {
@@ -119,21 +103,17 @@ export type { HudGame } from '../../generated/hud-game';
 export type { HudReading } from '../../generated/hud-reading';
 
 /**
- * A run's part of the review, for the page to join with the other runs' in order (core-module.ts: joinRuns): its
- * frames, its tracker's, camera watch's and HUD watch's parts (src/wasm.rs: tracker_part, camera_part and hud_part's
- * JSON), and what every run finds the same: the frame rate, the fixed map (1280 x 720), the frames' format, where the
- * detector ran and the key frames read.
+ * A run's part of the review, for the page to join with the other runs' in order (core-module.ts: joinReview): the
+ * review's setup (every run's is the same; src/session.rs: `Setup`, as JSON), its tracking's and its watches' parts
+ * (src/wasm.rs: tracking_part's and watching_part's JSON), the key frames' fixed map (1280 x 720) and where the detector
+ * ran.
  */
 export interface RunPart {
-  frames: number;
+  setup: string;
   track: string;
-  camera: string;
-  hud: string;
-  fps: number;
+  watch: string;
   fixed: Uint8Array;
-  format: FrameFormat;
   device: BrowserDevice;
-  keyFrames: number;
 }
 
 /** A run's part; null for a run the recording is too short to have. */

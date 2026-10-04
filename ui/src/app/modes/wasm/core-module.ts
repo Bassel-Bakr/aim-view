@@ -118,14 +118,13 @@ export interface ReportRefused {
 export type ReportOutcome = ReportMade | ReportRefused;
 
 /**
- * A review's runs joined: the tracks' frames, linked, the video's readings, what the HUD read (null: nothing), and the
- * review's version (src/track.rs: `REVIEW_VERSION`).
+ * A review's runs joined (src/session.rs: `Joined`): the tracks (tracks.json), the video's readings and what the HUD
+ * read (null: nothing).
  */
-export interface JoinedRuns {
-  frames: TrackFrame[];
+export interface JoinedReview {
+  tracks: Tracks;
   readings: VideoReadings;
   hud: HudReading | null;
-  version: number;
 }
 
 /** A core export that takes text and hands text back. */
@@ -186,52 +185,26 @@ export class CoreModule {
   }
 
   /**
-   * The parts of a recording's runs (one per review worker: split-runs.ts), joined in order (src/wasm.rs:
-   * tracker_add_part, camera_add_part, hud_add_part): the frames linked, then the camera's readings, which need the
-   * tracks, and the HUD's. `cap`: the scenario's target count, 0 for none; `areas`: the areas the runs ignored.
+   * A review's runs joined in order (src/session.rs: `Joining`): the parts each review worker gave, the first's setup
+   * and fixed map (every run's are the same). `detector`: the detector that ran, as tracks.json names it.
    */
-  async joinRuns(parts: RunPart[], cap: number, areas: readonly AreaBox[]): Promise<JoinedRuns> {
+  async joinReview(parts: RunPart[], detector: string): Promise<JoinedReview> {
     const core = await this.load();
-    const withText = (text: string, use: (ptr: number, len: number) => number) => {
-      const bytes = new TextEncoder().encode(text);
-      const block = core.reserve(bytes.length);
-      core.bytes(block).set(bytes);
-      const out = use(block.ptr, bytes.length);
-      core.free(block);
-      return out;
-    };
-    const tracker = core.tracker(areas, cap);
+    const review = core.review(parts[0].setup);
     const fixed = core.reserve(parts[0].fixed.length);
     core.bytes(fixed).set(parts[0].fixed);
-    const camera = core.camera(areas, fixed.ptr);
+    const joining = core.x.review_joining(review, fixed.ptr);
     core.free(fixed);
-    const { width, height, full } = parts[0].format;
-    const hud = core.x.hud_new(width, height, full);
-    let joined = true;
-    let cameraFrames = 0;
-    let hudFrames = 0;
+    core.x.review_free(review);
     for (const p of parts) {
-      joined &&=
-        withText(p.track, (ptr, len) => core.x.tracker_add_part(tracker, ptr, len)) === p.frames;
-      cameraFrames = withText(p.camera, (ptr, len) => core.x.camera_add_part(camera, ptr, len));
-      hudFrames = withText(p.hud, (ptr, len) => core.x.hud_add_part(hud, ptr, len));
+      core.textIn(p.track, (track, trackLen) =>
+        core.textIn(p.watch, (watch, watchLen) =>
+          core.x.joining_add(joining, track, trackLen, watch, watchLen),
+        ),
+      );
     }
-    const framesText = core.takeText(core.x.tracker_finish(tracker));
-    const readingsText = core.takeText(
-      withText(framesText, (ptr, len) => core.x.camera_finish(camera, ptr, len)),
-    );
-    const hudText = core.takeText(core.x.hud_finish(hud));
-    const frames = JSON.parse(framesText) as TrackFrame[];
-    // a review from part way in has empty frames before its first, in the tracks and both watches' readings alike
-    if (!joined || cameraFrames !== frames.length || hudFrames !== frames.length) {
-      throw new Error("The review's runs do not join up");
-    }
-    return {
-      frames,
-      readings: JSON.parse(readingsText) as VideoReadings,
-      hud: JSON.parse(hudText) as HudReading | null,
-      version: core.x.review_version(),
-    };
+    const joined = core.textIn(detector, (ptr, len) => core.x.joining_finish(joining, ptr, len));
+    return JSON.parse(core.takeOutcome(joined)) as JoinedReview;
   }
 
   /** A run's report from its tracks and stats file, or without one from the HUD or the video alone: src/review.rs. */
