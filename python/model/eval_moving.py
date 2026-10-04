@@ -35,28 +35,31 @@ PER = {"dynamic": 6, "switching": 6, "tracking": 12}
 KOVOBS = r"E:\OBS\KovOBS"
 SKIP = {"voxTS Voltaic Easy - 111 - 2026.08.13-01.17.08.mp4"}     # a recording of another game, not KovaaK's
 STATIC = list(eval_vods.DEFAULT) + glob.glob(rf"{KOVOBS}\1wall 2targets xsmall - valorant\*558.46*.mp4") + \
-    [p for x in ("889.26", "886.15", "849.91") for p in glob.glob(rf"{KOVOBS}\1wall 6targets extra small\*{x}*.mp4")]
+    [path for score in ("889.26", "886.15", "849.91")
+     for path in glob.glob(rf"{KOVOBS}\1wall 6targets extra small\*{score}*.mp4")]
+NAME_CHARS, CELL_CHARS = 39, 14     # the table's columns
 
 
-def stats_of(v):
+def stats_of(video):
     try:
-        return eval_vods.stats_for(v)
+        return eval_vods.stats_for(video)
     except ValueError:                                  # a file not named the KovOBS way
         return None
 
 
 def picks(lib):
     kinds = lib.scenario_kinds()
-    out = {"static": [(v, str(stats_of(v))) for v in STATIC if stats_of(v)],
+    out = {"static": [(video, str(stats_of(video))) for video in STATIC if stats_of(video)],
            "dynamic": [], "switching": [], "tracking": []}
-    for d in sorted(Path(KOVOBS).iterdir()):
-        k = kinds.get(d.name.lower())
-        if not d.is_dir() or k not in out or k == "static" or build_data.split_of(d.name) != "test" or len(out[k]) >= PER[k]:
+    for folder in sorted(Path(KOVOBS).iterdir()):
+        kind = kinds.get(folder.name.lower())
+        if not folder.is_dir() or kind not in out or kind == "static" or build_data.split_of(folder.name) != "test" \
+                or len(out[kind]) >= PER[kind]:
             continue
-        for v in sorted(d.glob("*.mp4"), key=lambda p: -p.stat().st_mtime):
-            st = stats_of(str(v))
-            if v.name not in SKIP and st:
-                out[k].append((str(v), str(st)))
+        for video in sorted(folder.glob("*.mp4"), key=lambda path: -path.stat().st_mtime):
+            stats = stats_of(str(video))
+            if video.name not in SKIP and stats:
+                out[kind].append((str(video), str(stats)))
                 break
     return out
 
@@ -89,55 +92,73 @@ def parse_args(args):
     return args[:at] + args[at + 2:], Path(args[at + 1])
 
 
+def scenario_of(video):
+    return Path(video).stem.rsplit(" - ", 2)[0].lower()
+
+
+def model_numbers(lib, program, pick, scenarios, name, path, reports):
+    """One model's numbers on every recording; the recordings not in its track cache are tracked and added.
+    scenarios: the scenarios' facts and target counts."""
+    model = str(eval_vods.u8in(path))
+    facts, counts = scenarios
+    cache = f"test_out/vod_model/eval/moving_{name}_native.pkl"
+    tracks = pickle.load(open(cache, "rb")) if os.path.exists(cache) else {}
+    for videos in pick.values():
+        for video, _ in videos:
+            if video not in tracks:
+                tracks[video] = lib.review_video(video, model, cap=counts.get(scenario_of(video)))["tracks"]
+                pickle.dump(tracks, open(cache, "wb"))
+    out = {}
+    for kind, videos in pick.items():
+        for video, stats in videos:
+            limit = facts.get(scenario_of(video), (None, None))[1]
+            keep = reports / name / f"{Path(video).stem}.json" if reports else None
+            out[video] = core_numbers(program, kind, tracks[video], video, stats, limit, keep)
+    return out
+
+
+def print_table(pick, results):
+    """Each recording's numbers per model, then each model's totals."""
+    names = list(results)
+    print("recording".ljust(44), "  ".join(name.rjust(CELL_CHARS) for name in names))
+    totals = {name: {} for name in names}
+    gaps = {name: [] for name in names}
+    for kind, videos in pick.items():
+        for video, _ in videos:
+            cells = []
+            for name in names:
+                numbers = results[name][video]
+                if kind == "tracking":
+                    cells.append(f"{numbers[1]:.2f} vs {numbers[2]:.2f}")
+                    gaps[name].append(numbers[1] - numbers[2])
+                else:
+                    cells.append(f"{numbers[1]}/{numbers[2]} {numbers[3]}f")
+                    total = totals[name].setdefault("static" if kind == "static" else "moving", [0, 0, 0])
+                    total[0] += numbers[1]
+                    total[1] += numbers[2]
+                    total[2] += numbers[3]
+            label = Path(video).stem[:NAME_CHARS].encode("ascii", "replace").decode()
+            print(f"{kind[:4]} {label:39s}", "  ".join(cell.rjust(CELL_CHARS) for cell in cells))
+    for name in names:
+        gap = np.array(gaps[name])
+        static, moving = totals[name].get("static", [0, 0, 0]), totals[name].get("moving", [0, 0, 0])
+        print(f"{name}: static kills {static[0]}/{static[1]}, flicks {static[2]}; dynamic and switching kills "
+              f"{moving[0]}/{moving[1]}, flicks {moving[2]}; tracking on target minus accuracy: mean {gap.mean():+.3f}, "
+              f"mean abs {np.abs(gap).mean():.3f}")
+
+
 def main():
     lib = eval_vods.library()
     program = eval_video_alone.review_program()
     pick = picks(lib)
-    facts = lib.scenario_facts()
-    counts = lib.target_counts()
-    res = {}
+    scenarios = lib.scenario_facts(), lib.target_counts()
+    results = {}
     os.makedirs("test_out/vod_model/eval", exist_ok=True)
     models, reports = parse_args(sys.argv[1:])
     for arg in models:
         name, path = arg.split("=", 1)
-        model = str(eval_vods.u8in(path))
-        cache = f"test_out/vod_model/eval/moving_{name}_native.pkl"
-        tracks = pickle.load(open(cache, "rb")) if os.path.exists(cache) else {}
-        for vs in pick.values():
-            for v, _ in vs:
-                if v not in tracks:
-                    cap = counts.get(Path(v).stem.rsplit(" - ", 2)[0].lower())
-                    tracks[v] = lib.review_video(v, model, cap=cap)["tracks"]
-                    pickle.dump(tracks, open(cache, "wb"))
-        out = {}
-        for kind, vs in pick.items():
-            for v, st in vs:
-                limit = facts.get(Path(v).stem.rsplit(" - ", 2)[0].lower(), (None, None))[1]
-                keep = reports / name / f"{Path(v).stem}.json" if reports else None
-                out[v] = core_numbers(program, kind, tracks[v], v, st, limit, keep)
-        res[name] = out
-    names = list(res)
-    print("recording".ljust(44), "  ".join(n.rjust(14) for n in names))
-    tot = {n: {} for n in names}
-    err = {n: [] for n in names}
-    for kind, vs in pick.items():
-        for v, _ in vs:
-            cells = []
-            for n in names:
-                r = res[n][v]
-                if kind == "tracking":
-                    cells.append(f"{r[1]:.2f} vs {r[2]:.2f}")
-                    err[n].append(r[1] - r[2])
-                else:
-                    cells.append(f"{r[1]}/{r[2]} {r[3]}f")
-                    t = tot[n].setdefault("static" if kind == "static" else "moving", [0, 0, 0])
-                    t[0] += r[1]; t[1] += r[2]; t[2] += r[3]
-            print(f"{kind[:4]} {Path(v).stem[:39].encode('ascii', 'replace').decode():39s}",
-                  "  ".join(c.rjust(14) for c in cells))
-    for n in names:
-        e, s, m = np.array(err[n]), tot[n].get("static", [0, 0, 0]), tot[n].get("moving", [0, 0, 0])
-        print(f"{n}: static kills {s[0]}/{s[1]}, flicks {s[2]}; dynamic and switching kills {m[0]}/{m[1]}, flicks {m[2]}; "
-              f"tracking on target minus accuracy: mean {e.mean():+.3f}, mean abs {np.abs(e).mean():.3f}")
+        results[name] = model_numbers(lib, program, pick, scenarios, name, path, reports)
+    print_table(pick, results)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,11 @@ TOOL = ROOT / "target" / "release" / ("aimview-tool.exe" if os.name == "nt" else
 SETTINGS = ("data", "layout", "models", "vods", "stats", "scenarios", "device", "ffmpeg", "download_ffmpeg")
 # the tool's error statuses as Python's exceptions (anything else: RuntimeError)
 ERRORS = {404: FileNotFoundError, 400: ValueError}
+# a file-name time stamp, yyyy.mm.dd-hh.mm.ss: its length, its separators by place, and its fields' places
+STAMP_LENGTH = 19
+STAMP_SEPARATORS = ((4, "."), (7, "."), (10, "-"), (13, "."), (16, "."))
+STAMP_FIELDS = ((0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19))
+MONTHS, DAYS, LAST_HOUR, LAST_MINUTE, LAST_SECOND = 12, 31, 23, 59, 60   # a leap second reads as a time too
 
 
 def command():
@@ -43,14 +48,15 @@ def command():
 def run(*args):
     """The tool's answer to a command, as Python objects. Its error raises FileNotFoundError, ValueError or
     RuntimeError; what it prints on stderr (a review's progress, cargo's build errors) shows as it comes."""
-    p = subprocess.run(command() + [str(a) for a in args], stdout=subprocess.PIPE)
+    process = subprocess.run(command() + [str(arg) for arg in args], stdout=subprocess.PIPE)
     try:
-        out = json.loads(p.stdout)
+        answer = json.loads(process.stdout)
     except ValueError:
-        raise RuntimeError(f"aimview-tool {args[0]} gave no answer (exit code {p.returncode}): see above") from None
-    if p.returncode != 0 and isinstance(out, dict) and "error" in out:
-        raise ERRORS.get(out.get("status"), RuntimeError)(out["error"])
-    return out
+        raise RuntimeError(f"aimview-tool {args[0]} gave no answer (exit code {process.returncode}): see "
+                           "above") from None
+    if process.returncode != 0 and isinstance(answer, dict) and "error" in answer:
+        raise ERRORS.get(answer.get("status"), RuntimeError)(answer["error"])
+    return answer
 
 
 def options(settings):
@@ -73,8 +79,8 @@ def options(settings):
     return out
 
 
-def _path(p):
-    return None if p is None else Path(p)
+def _path(path):
+    return None if path is None else Path(path)
 
 
 def _key(video):
@@ -85,13 +91,14 @@ def _key(video):
 def _stamp_seconds_ok(stamp):
     """Whether a file-name time stamp (yyyy.mm.dd-hh.mm.ss) reads as a time (service/src/library/names.rs:
     stamp_seconds)."""
-    if len(stamp) != 19 or any(stamp[i] != c for i, c in ((4, "."), (7, "."), (10, "-"), (13, "."), (16, "."))):
+    if len(stamp) != STAMP_LENGTH or any(stamp[at] != separator for at, separator in STAMP_SEPARATORS):
         return False
-    parts = (stamp[0:4], stamp[5:7], stamp[8:10], stamp[11:13], stamp[14:16], stamp[17:19])
-    if not all(p.isascii() and p.isdigit() for p in parts):
+    fields = [stamp[start:end] for start, end in STAMP_FIELDS]
+    if not all(field.isascii() and field.isdigit() for field in fields):
         return False
-    _, month, day, h, m, s = map(int, parts)
-    return 1 <= month <= 12 and 1 <= day <= 31 and h <= 23 and m <= 59 and s <= 60
+    _, month, day, hour, minute, second = map(int, fields)
+    return (1 <= month <= MONTHS and 1 <= day <= DAYS and hour <= LAST_HOUR and minute <= LAST_MINUTE
+            and second <= LAST_SECOND)
 
 
 class Names:
@@ -103,11 +110,11 @@ class Names:
     def match(name):
         if not name.endswith(".mp4"):
             return None
-        rest, gap, stamp = name[:-4].rpartition(" - ")
-        scenario, gap2, score = rest.rpartition(" - ")
-        if not gap or not gap2:
+        rest, gap, stamp = name.removesuffix(".mp4").rpartition(" - ")
+        scenario, score_gap, score = rest.rpartition(" - ")
+        if not gap or not score_gap:
             return None
-        numeric = score != "" and all((c.isascii() and c.isdigit()) or c in "-." for c in score)
+        numeric = score != "" and all((char.isascii() and char.isdigit()) or char in "-." for char in score)
         if not numeric or not scenario or not _stamp_seconds_ok(stamp):
             return None
         try:
@@ -128,47 +135,49 @@ class Library:
         download_ffmpeg: True; see `aimview-tool help`). The defaults: the repo's test_out/ in Python's layout, the
         models in python/model/exports, KovaaK's scenario folders, the detector on the GPU, ffmpeg from the PATH."""
         self.options = options(dict(config, vods=vods, stats=stats))
-        out = run("recordings", *self.options)
-        self.vods = _path(out["vods"])
+        answer = run("recordings", *self.options)
+        self.vods = _path(answer["vods"])
         self.recordings, self.by_id, self.by_video, self.found = [], {}, {}, {}
-        for r in out["recordings"]:
-            more = {k: r.pop(k) for k in ("video", "dir", "stats_file", "stats_found")}
-            self.recordings.append(r)
-            self.by_id[r["id"]] = more
+        for recording in answer["recordings"]:
+            more = {key: recording.pop(key) for key in ("video", "dir", "stats_file", "stats_found")}
+            self.recordings.append(recording)
+            self.by_id[recording["id"]] = more
             if more["video"]:
-                self.by_video[_key(more["video"])] = r["id"]
-            self.found[(r["scenario"], r["stamp"])] = more["stats_found"]
+                self.by_video[_key(more["video"])] = recording["id"]
+            self.found[(recording["scenario"], recording["stamp"])] = more["stats_found"]
 
-    def _recording(self, vid):
+    def _recording(self, recording_id):
         """A recording's video, folder and stats file, by its id."""
-        if vid not in self.by_id:
-            self.by_id[vid] = run("lookup", *self.options, "--id", vid)["ids"][0]
-        return self.by_id[vid]
+        if recording_id not in self.by_id:
+            self.by_id[recording_id] = run("lookup", *self.options, "--id", recording_id)["ids"][0]
+        return self.by_id[recording_id]
 
     def list(self):
         """The recordings, newest first: what /api/vods gives."""
-        return [dict(r) for r in self.recordings]
+        return [dict(recording) for recording in self.recordings]
 
-    def resolve(self, vid):
+    def resolve(self, recording_id):
         """A recording's video (its id: its path in the VODs folder, or uploads/<name>); FileNotFoundError if none."""
-        video = self._recording(vid)["video"]
+        video = self._recording(recording_id)["video"]
         if video is None:
-            raise FileNotFoundError(f"no recording {vid}")
+            raise FileNotFoundError(f"no recording {recording_id}")
         return Path(video)
 
-    def cache_dir(self, vid):
+    def cache_dir(self, recording_id):
         """A recording's folder: its reviews, areas and marks."""
-        return Path(self._recording(vid)["dir"])
+        return Path(self._recording(recording_id)["dir"])
 
     def stats_for(self, scenario, stamp):
         """KovaaK's stats file for a run of the scenario that ended at the time stamp (within 5 s), or None."""
         if (scenario, stamp) not in self.found:
-            self.found[(scenario, stamp)] = run("lookup", *self.options, "--run", scenario, stamp)["runs"][0]["stats_file"]
+            runs = run("lookup", *self.options, "--run", scenario, stamp)["runs"]
+            self.found[(scenario, stamp)] = runs[0]["stats_file"]
         return _path(self.found[(scenario, stamp)])
 
-    def stats_of(self, vid, video):
+    def stats_of(self, recording_id, video):
         """The stats file for the recording at `video`: the user's choice, else one uploaded beside it, else by name
-        and time; by name and time for a video outside the library. `vid` is not used (the video says which)."""
+        and time; by name and time for a video outside the library. `recording_id` is not used (the video says
+        which)."""
         found = self.by_video.get(_key(video))
         if found is not None:
             return _path(self.by_id[found]["stats_file"])
@@ -213,13 +222,13 @@ class Library:
             if value is not None:
                 args += [flag, value]
         if areas is not None:
-            args += ["--areas", json.dumps([list(a) for a in areas])]
+            args += ["--areas", json.dumps([list(area) for area in areas])]
         if window is not None:
             args += ["--window", window[0], window[1]]
         if quiet:
             args.append("--quiet")
-        with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp) if out is None else Path(out)
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) if out is None else Path(out)
             answer = run(*args, "--out", folder, *([] if out is not None else ["--no-report"]))
             result = {name: json.loads((folder / f"{name}.json").read_bytes())
                       for name in ("tracks", "readings", "hud")}
