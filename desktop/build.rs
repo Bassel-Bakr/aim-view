@@ -1,5 +1,8 @@
 //! The app's build: Tauri's (tauri_build), and the VC++ runtime the installer ships beside the app
 //! (installer-hooks.nsh).
+//!
+//! In: the Visual Studio installs vswhere lists. Out: the runtime's DLLs in target/<profile>/vc-runtime/, and cargo's
+//! warnings when they cannot be found or copied.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,6 +10,8 @@ use std::process::Command;
 /// The VC++ runtime ONNX Runtime needs: its library is built for the runtime in DLLs, and msvcp140 loads the other
 /// three. Windows has them only once some program has installed Microsoft's VC++ Redistributable.
 const VC_RUNTIME: [&str; 4] = ["msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll"];
+/// OUT_DIR is target/<profile>/build/aimview-desktop-<hash>/out: target/<profile>/ is this many folders up.
+const PROFILE_FOLDER_UP: usize = 3;
 
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
@@ -19,8 +24,7 @@ fn main() {
 /// older one) into vc-runtime/ beside the app's exe (target/<profile>/), where the installer takes it from.
 fn stage_vc_runtime() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    // OUT_DIR is target/<profile>/build/aimview-desktop-<hash>/out
-    let dest = out.ancestors().nth(3).unwrap().join("vc-runtime");
+    let dest = out.ancestors().nth(PROFILE_FOLDER_UP).unwrap().join("vc-runtime");
     println!("cargo:rerun-if-changed={}", dest.display());
     let Some(from) = newest_runtime() else {
         println!("cargo:warning=no VC++ runtime in any Visual Studio here: the installer cannot be built");
@@ -30,8 +34,8 @@ fn stage_vc_runtime() {
     for name in VC_RUNTIME {
         let src = from.join(name);
         println!("cargo:rerun-if-changed={}", src.display());
-        if let Err(e) = std::fs::copy(&src, dest.join(name)) {
-            println!("cargo:warning=could not copy {}: {e}", src.display());
+        if let Err(error) = std::fs::copy(&src, dest.join(name)) {
+            println!("cargo:warning=could not copy {}: {error}", src.display());
         }
     }
 }
@@ -51,20 +55,21 @@ fn newest_runtime() -> Option<PathBuf> {
         .output()
         .ok()?;
     let mut best: Option<(Vec<u32>, PathBuf)> = None;
-    for install in String::from_utf8_lossy(&listed.stdout).lines().map(str::trim).filter(|l| !l.is_empty()) {
+    for install in String::from_utf8_lossy(&listed.stdout).lines().map(str::trim).filter(|line| !line.is_empty()) {
         let vc = Path::new(install).join("VC");
-        let Ok(version) = std::fs::read_to_string(vc.join(r"Auxiliary\Build\Microsoft.VCRedistVersion.default.txt")) else {
+        let version_file = vc.join(r"Auxiliary\Build\Microsoft.VCRedistVersion.default.txt");
+        let Ok(version) = std::fs::read_to_string(version_file) else {
             continue;
         };
         let version = version.trim();
         let Ok(entries) = std::fs::read_dir(vc.join(r"Redist\MSVC").join(version).join(arch)) else {
             continue;
         };
-        let crt = entries.flatten().map(|e| e.path()).find(|p| {
-            let name = p.file_name().unwrap_or_default().to_string_lossy();
-            p.is_dir() && name.starts_with("Microsoft.VC") && name.ends_with(".CRT")
+        let crt = entries.flatten().map(|entry| entry.path()).find(|path| {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            path.is_dir() && name.starts_with("Microsoft.VC") && name.ends_with(".CRT")
         });
-        let number: Vec<u32> = version.split('.').filter_map(|n| n.parse().ok()).collect();
+        let number: Vec<u32> = version.split('.').filter_map(|part| part.parse().ok()).collect();
         if let Some(crt) = crt
             && best.as_ref().is_none_or(|(b, _)| number > *b)
         {
