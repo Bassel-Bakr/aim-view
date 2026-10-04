@@ -35,18 +35,21 @@ const JSON_TYPE = 'application/json';
 
 /** A request's body as the service takes it: none, bytes, or a file (an upload's, kept as a Blob). */
 function bodyOf(req: HttpRequest<unknown>): Uint8Array | Blob | null {
-  const b = req.body;
-  if (b === null || b === undefined) return null;
-  if (b instanceof Blob || b instanceof Uint8Array) return b;
-  if (b instanceof ArrayBuffer) return new Uint8Array(b);
-  return new TextEncoder().encode(typeof b === 'string' ? b : JSON.stringify(b));
+  const body = req.body;
+  if (body === null || body === undefined) return null;
+  if (body instanceof Blob || body instanceof Uint8Array) return body;
+  if (body instanceof ArrayBuffer) return new Uint8Array(body);
+  return new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
 /** An answer's body as the request wants it: JSON, text, a Blob or an ArrayBuffer. */
-async function parsed(req: HttpRequest<unknown>, a: Answered): Promise<unknown> {
+async function parsed(req: HttpRequest<unknown>, answer: Answered): Promise<unknown> {
   if (req.responseType === 'blob')
-    return a.body instanceof Blob ? a.body : new Blob([a.body as BlobPart], { type: a.type });
-  const bytes = a.body instanceof Blob ? new Uint8Array(await a.body.arrayBuffer()) : a.body;
+    return answer.body instanceof Blob
+      ? answer.body
+      : new Blob([answer.body as BlobPart], { type: answer.type });
+  const bytes =
+    answer.body instanceof Blob ? new Uint8Array(await answer.body.arrayBuffer()) : answer.body;
   if (req.responseType === 'arraybuffer') return bytes.slice().buffer;
   const text = new TextDecoder().decode(bytes);
   if (req.responseType === 'text') return text;
@@ -79,33 +82,35 @@ function answered(
         events.next({ type: HttpEventType.UploadProgress, loaded: done, total });
     };
     task(progress)
-      .then(async (a) => {
-        const body = await parsed(req, a);
+      .then(async (answer) => {
+        const body = await parsed(req, answer);
         if (!open) return;
         const meta = {
-          status: a.status,
-          statusText: STATUS_TEXT[a.status] ?? '',
+          status: answer.status,
+          statusText: STATUS_TEXT[answer.status] ?? '',
           url: req.urlWithParams,
-          headers: new HttpHeaders({ 'Content-Type': a.type }),
+          headers: new HttpHeaders({ 'Content-Type': answer.type }),
         };
-        if (a.status >= 200 && a.status < 300) {
+        if (answer.status >= 200 && answer.status < 300) {
           events.next(new HttpResponse({ ...meta, body }));
           events.complete();
         } else {
           const text =
-            a.body instanceof Blob ? await a.body.text() : new TextDecoder().decode(a.body);
+            answer.body instanceof Blob
+              ? await answer.body.text()
+              : new TextDecoder().decode(answer.body);
           events.error(new HttpErrorResponse({ ...meta, error: jsonOr(text) }));
         }
       })
-      .catch((e: unknown) => {
+      .catch((error: unknown) => {
         if (!open) return;
-        const status = e instanceof ServiceFailure ? e.status : 500;
+        const status = error instanceof ServiceFailure ? error.status : 500;
         events.error(
           new HttpErrorResponse({
             status,
             statusText: STATUS_TEXT[status] ?? '',
             url: req.urlWithParams,
-            error: { error: e instanceof Error ? e.message : String(e) },
+            error: { error: error instanceof Error ? error.message : String(error) },
           }),
         );
       });
@@ -128,7 +133,7 @@ function mountedPath(url: string): string {
   return url
     .slice(FILES.length)
     .split('/')
-    .map((n) => decodeURIComponent(n))
+    .map((segment) => decodeURIComponent(segment))
     .join('/');
 }
 

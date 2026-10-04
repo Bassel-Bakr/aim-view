@@ -12,6 +12,11 @@ import { MountedFiles, recordingPath } from './mounted-files';
 
 /** A label's crop: 256 pixels square. */
 const CROP = 256;
+/** A crop's color channels (RGB), and a box's values (its corners). */
+const RGB_CHANNELS = 3;
+const BOX_VALUES = 4;
+/** A clicking run's labels leave out what lies this near the crosshair (degrees): the target being shot. */
+const CLICKING_NEAR_DEG = 2;
 
 /** What a crop's label is worked out from: the run's first and last frames, and the nearness that does not count. */
 interface CutoffSpan {
@@ -24,13 +29,14 @@ interface CutoffSpan {
  * The run's frames a submit's labels come from (python/server.py: `submit_faint`): a tracking run's own, with the
  * scores near the crosshair counted (its bot is under it); a clicking run's first flick's start to its last kill.
  */
-function cutoffSpan(r: Report): CutoffSpan {
-  if (r.mode === 'track') return { start: r.summary.start, end: r.summary.end, near: 0 };
-  if (!r.flicks.length) return { start: null, end: null, near: 2 };
+function cutoffSpan(report: Report): CutoffSpan {
+  if (report.mode === 'track')
+    return { start: report.summary.start, end: report.summary.end, near: 0 };
+  if (!report.flicks.length) return { start: null, end: null, near: CLICKING_NEAR_DEG };
   return {
-    start: Math.min(...r.flicks.map((m) => m.start_frame)),
-    end: Math.max(...r.flicks.map((m) => m.kill_frame)),
-    near: 2,
+    start: Math.min(...report.flicks.map((flick) => flick.start_frame)),
+    end: Math.max(...report.flicks.map((flick) => flick.kill_frame)),
+    near: CLICKING_NEAR_DEG,
   };
 }
 
@@ -40,29 +46,34 @@ function readPixels(work: CutoffWork): Promise<CropPixels[]> {
     const worker = new Worker(new URL('../wasm/cutoff.worker', import.meta.url), {
       type: 'module',
     });
-    worker.onmessage = (e: MessageEvent<CutoffReply>) => {
+    worker.onmessage = (event: MessageEvent<CutoffReply>) => {
       worker.terminate();
-      if (e.data.kind === 'error') reject(new Error(e.data.error));
-      else resolve(e.data.crops);
+      if (event.data.kind === 'error') reject(new Error(event.data.error));
+      else resolve(event.data.crops);
     };
-    worker.onerror = (e) => {
+    worker.onerror = (event) => {
       worker.terminate();
-      reject(new Error(e.message));
+      reject(new Error(event.message));
     };
     worker.postMessage(work);
   });
 }
 
 /** A label's crop as the .npz hand_crops.py writes: its pixels, the fixed map, no mask, the boxes it keeps. */
-function cropFile(c: CutoffCrop, px: CropPixels): Promise<CutoffCropFile> {
-  const boxes = new Float32Array(c.boxes.flat());
+function cropFile(crop: CutoffCrop, pixels: CropPixels): Promise<CutoffCropFile> {
+  const boxes = new Float32Array(crop.boxes.flat());
   return npzFile([
-    { name: 'rgb', descr: '|u1', shape: [CROP, CROP, 3], data: px.rgb },
-    { name: 'fixed', descr: '|u1', shape: [CROP, CROP], data: px.fixed },
+    { name: 'rgb', descr: '|u1', shape: [CROP, CROP, RGB_CHANNELS], data: pixels.rgb },
+    { name: 'fixed', descr: '|u1', shape: [CROP, CROP], data: pixels.fixed },
     { name: 'tmask', descr: '|u1', shape: [CROP, CROP], data: new Uint8Array(CROP * CROP) },
-    { name: 'boxes', descr: '<f4', shape: [c.boxes.length, 4], data: new Uint8Array(boxes.buffer) },
+    {
+      name: 'boxes',
+      descr: '<f4',
+      shape: [crop.boxes.length, BOX_VALUES],
+      data: new Uint8Array(boxes.buffer),
+    },
     { name: 'hidden', descr: '|u1', shape: [], data: new Uint8Array(1) },
-  ]).then((npz) => ({ file: c.row.file, npz }));
+  ]).then((npz) => ({ file: crop.row.file, npz }));
 }
 
 /**
@@ -117,9 +128,9 @@ export class BrowserFaintCutoffs extends ServerFaintCutoffs {
       coreUrl: new URL('core/aimview.wasm', document.baseURI).href,
       crops: crops.map(({ frame, x0, y0 }) => ({ frame, x0, y0 })),
     });
-    const files = await Promise.all(crops.map((c, k) => cropFile(c, pixels[k])));
+    const files = await Promise.all(crops.map((crop, index) => cropFile(crop, pixels[index])));
     await this.store.add(
-      crops.map((c) => c.row),
+      crops.map((crop) => crop.row),
       files,
     );
   }

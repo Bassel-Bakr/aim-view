@@ -3,9 +3,23 @@ import { ChosenFile, CopyDone, DirEntry } from './service-messages';
 import { FsResult } from './service-module';
 
 /** The codes of the host's file system calls (the contract's host_fs). */
+const OK = 0;
 const NOT_FOUND = 1;
 const EXISTS = 2;
 const OTHER = 3;
+/** The host's file system calls (the contract's host_fs ops, service/src/disk.rs `Op`). */
+const OP_READ = 0;
+const OP_WRITE = 1;
+const OP_CREATE_DIR_ALL = 2;
+const OP_REMOVE_FILE = 3;
+const OP_REMOVE_DIR = 4;
+const OP_REMOVE_DIR_ALL = 5;
+const OP_RENAME = 6;
+const OP_READ_DIR = 7;
+const OP_METADATA = 8;
+/** File times are kept in ms; the service's metadata gives seconds. */
+const MS_PER_SECOND = 1000;
+const HTTP_NOT_FOUND = 404;
 /** How much of a file is written at once. */
 const CHUNK = 8 << 20;
 /** The file a copy into a folder keeps what it copied in: each file's size and time, by its path below the folder. */
@@ -67,14 +81,14 @@ const notFound = (path: string) => new FsError(NOT_FOUND, `${path}: not found`);
 const readOnly = () => new FsError(OTHER, 'read-only');
 
 /** A browser error as the call's code: not there, not empty, or other (with its message). */
-function asFsError(e: unknown, path: string): FsError {
-  if (e instanceof FsError) return e;
-  const name = e instanceof DOMException ? e.name : '';
+function asFsError(error: unknown, path: string): FsError {
+  if (error instanceof FsError) return error;
+  const name = error instanceof DOMException ? error.name : '';
   if (name === 'NotFoundError') return notFound(path);
   if (name === 'InvalidModificationError') return new FsError(EXISTS, `${path}: not empty`);
   if (name === 'TypeMismatchError')
     return new FsError(OTHER, `${path}: a file where a folder is, or the other way`);
-  return new FsError(OTHER, `${path}: ${e instanceof Error ? e.message : String(e)}`);
+  return new FsError(OTHER, `${path}: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 /** Writes data into a file, replacing it, a chunk at a time (a sync access handle: the worker's own). */
@@ -128,8 +142,8 @@ export class DirMount implements MountFs {
   /** Forgets the folder handles at and below a path (it was removed or moved). */
   private forget(names: string[]): void {
     const key = names.join('/');
-    for (const k of [...this.dirs.keys()])
-      if (k === key || k.startsWith(`${key}/`)) this.dirs.delete(k);
+    for (const dirKey of [...this.dirs.keys()])
+      if (dirKey === key || dirKey.startsWith(`${key}/`)) this.dirs.delete(dirKey);
   }
 
   /** What is at the path: a file's handle, or a folder's. */
@@ -139,8 +153,8 @@ export class DirMount implements MountFs {
     const name = names[names.length - 1];
     try {
       return await parent.getFileHandle(name);
-    } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'TypeMismatchError')) throw e;
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'TypeMismatchError')) throw error;
       return parent.getDirectoryHandle(name);
     }
   }
@@ -154,8 +168,8 @@ export class DirMount implements MountFs {
   async stat(names: string[]): Promise<FsStat> {
     const entry = await this.entry(names);
     if (entry.kind === 'directory') return { dir: true, len: 0, modified: 0 };
-    const f = await (entry as FileSystemFileHandle).getFile();
-    return { dir: false, len: f.size, modified: f.lastModified / 1000 };
+    const file = await (entry as FileSystemFileHandle).getFile();
+    return { dir: false, len: file.size, modified: file.lastModified / MS_PER_SECOND };
   }
 
   /**
@@ -169,12 +183,14 @@ export class DirMount implements MountFs {
       if (limit && handles.length >= limit) break;
     }
     return Promise.all(
-      handles.map(async (h): Promise<DirEntry> => {
-        if (h.kind === 'directory') return [h.name, true, 0, 0];
-        if (!stat) return [h.name, false, null, null];
+      handles.map(async (handle): Promise<DirEntry> => {
+        if (handle.kind === 'directory') return [handle.name, true, 0, 0];
+        if (!stat) return [handle.name, false, null, null];
         // a file gone since the listing: its metadata is asked for later, and says so
-        const f = await (h as FileSystemFileHandle).getFile().catch(() => null);
-        return f ? [h.name, false, f.size, f.lastModified / 1000] : [h.name, false, null, null];
+        const file = await (handle as FileSystemFileHandle).getFile().catch(() => null);
+        return file
+          ? [handle.name, false, file.size, file.lastModified / MS_PER_SECOND]
+          : [handle.name, false, null, null];
       }),
     );
   }
@@ -260,11 +276,11 @@ export class FilesMount implements MountFs {
     this.tree.set('', new Map());
     for (const { path, file } of files) {
       const names = path.split('/').filter(Boolean);
-      names.forEach((name, k) => {
-        const dir = names.slice(0, k).join('/');
+      names.forEach((name, depth) => {
+        const dir = names.slice(0, depth).join('/');
         const entries = this.tree.get(dir) ?? new Map<string, File | null>();
         this.tree.set(dir, entries);
-        entries.set(name, k === names.length - 1 ? file : null);
+        entries.set(name, depth === names.length - 1 ? file : null);
       });
     }
   }
@@ -278,23 +294,23 @@ export class FilesMount implements MountFs {
   }
 
   async file(names: string[]): Promise<File> {
-    const f = this.at(names);
-    if (!f) throw new FsError(OTHER, `${names.join('/')}: a folder`);
-    return f;
+    const file = this.at(names);
+    if (!file) throw new FsError(OTHER, `${names.join('/')}: a folder`);
+    return file;
   }
 
   async stat(names: string[]): Promise<FsStat> {
-    const f = this.at(names);
-    return f
-      ? { dir: false, len: f.size, modified: f.lastModified / 1000 }
+    const file = this.at(names);
+    return file
+      ? { dir: false, len: file.size, modified: file.lastModified / MS_PER_SECOND }
       : { dir: true, len: 0, modified: 0 };
   }
 
   async list(names: string[], limit: number): Promise<DirEntry[]> {
     const entries = this.tree.get(names.join('/'));
     if (!entries) throw notFound(names.join('/'));
-    const out = [...entries].map(([name, f]): DirEntry =>
-      f ? [name, false, f.size, f.lastModified / 1000] : [name, true, 0, 0],
+    const out = [...entries].map(([name, file]): DirEntry =>
+      file ? [name, false, file.size, file.lastModified / MS_PER_SECOND] : [name, true, 0, 0],
     );
     return limit ? out.slice(0, limit) : out;
   }
@@ -367,8 +383,8 @@ export class PackStore {
   private read(): Promise<PackIndex> {
     this.index ??= this.root
       .then((dir) => dir.getFileHandle(PACK_INDEX))
-      .then((h) => h.getFile())
-      .then((f) => f.text())
+      .then((handle) => handle.getFile())
+      .then((file) => file.text())
       .then((text) => JSON.parse(text) as PackIndex)
       .catch((): PackIndex => ({ next: 0, files: {} }))
       .then((index) => {
@@ -391,7 +407,9 @@ export class PackStore {
     const [pack, at, len, modified] = place;
     let file = this.packs.get(pack);
     if (!file) {
-      file = this.root.then((dir) => dir.getFileHandle(`${pack}.pack`)).then((h) => h.getFile());
+      file = this.root
+        .then((dir) => dir.getFileHandle(`${pack}.pack`))
+        .then((handle) => handle.getFile());
       this.packs.set(pack, file);
     }
     return new File([(await file).slice(at, at + len)], names[names.length - 1], {
@@ -403,9 +421,11 @@ export class PackStore {
     await this.read();
     const entries = this.tree.get(names.join('/'));
     return entries
-      ? [...entries].map(([name, f]): DirEntry =>
-          f ? [name, false, f[2], f[3] / 1000] : [name, true, 0, 0],
-        )
+      ? [...entries].map(([name, place]): DirEntry => {
+          if (!place) return [name, true, 0, 0];
+          const [, , len, modified] = place;
+          return [name, false, len, modified / MS_PER_SECOND];
+        })
       : null;
   }
 
@@ -421,29 +441,32 @@ export class PackStore {
     const index = await this.read();
     const fresh = files.filter(({ path, file }) => {
       const kept = index.files[path];
-      return !kept || kept[2] !== file.size || kept[3] !== file.lastModified;
+      if (!kept) return true;
+      const [, , len, modified] = kept;
+      return len !== file.size || modified !== file.lastModified;
     });
     let done = 0;
     while (done < fresh.length) {
       progress(done, fresh.length);
       const batch: ChosenFile[] = [];
       let bytes = 0;
-      for (const f of fresh.slice(done)) {
-        if (batch.length && (batch.length >= PACK_FILES || bytes + f.file.size > PACK_BYTES)) break;
-        batch.push(f);
-        bytes += f.file.size;
+      for (const chosen of fresh.slice(done)) {
+        if (batch.length && (batch.length >= PACK_FILES || bytes + chosen.file.size > PACK_BYTES))
+          break;
+        batch.push(chosen);
+        bytes += chosen.file.size;
       }
       const parts = await Promise.all(
-        batch.map(async (f) => new Uint8Array(await f.file.arrayBuffer())),
+        batch.map(async (chosen) => new Uint8Array(await chosen.file.arrayBuffer())),
       );
       await turn(async () => {
         const dir = await this.root;
         const pack = index.next++;
         await writeWhole(dir, `${pack}.pack`, parts);
         let at = 0;
-        batch.forEach(({ path, file }, k) => {
-          index.files[path] = [pack, at, parts[k].length, file.lastModified];
-          at += parts[k].length;
+        batch.forEach(({ path, file }, partIndex) => {
+          index.files[path] = [pack, at, parts[partIndex].length, file.lastModified];
+          at += parts[partIndex].length;
         });
         await writeWhole(dir, PACK_INDEX, [new TextEncoder().encode(JSON.stringify(index))]);
         this.tree = treeOf(index.files);
@@ -460,11 +483,11 @@ function treeOf(files: Record<string, PackedFile>): Map<string, Map<string, Pack
   const tree = new Map<string, Map<string, PackedFile | null>>([['', new Map()]]);
   for (const [path, place] of Object.entries(files)) {
     const names = path.split('/').filter(Boolean);
-    names.forEach((name, k) => {
-      const dir = names.slice(0, k).join('/');
+    names.forEach((name, depth) => {
+      const dir = names.slice(0, depth).join('/');
       const entries = tree.get(dir) ?? new Map<string, PackedFile | null>();
       tree.set(dir, entries);
-      entries.set(name, k === names.length - 1 ? place : null);
+      entries.set(name, depth === names.length - 1 ? place : null);
     });
   }
   return tree;
@@ -498,8 +521,8 @@ export class KovaakMount implements MountFs {
       if (!fs) continue;
       try {
         return await get(fs);
-      } catch (e) {
-        if (asFsError(e, names.join('/')).code !== NOT_FOUND) throw e;
+      } catch (error) {
+        if (asFsError(error, names.join('/')).code !== NOT_FOUND) throw error;
       }
     }
     throw notFound(names.join('/'));
@@ -514,9 +537,9 @@ export class KovaakMount implements MountFs {
       if (fs instanceof PackStore) {
         const place = await fs.at(names);
         if (place === undefined) throw notFound(names.join('/'));
-        return place
-          ? { dir: false, len: place[2], modified: place[3] / 1000 }
-          : { dir: true, len: 0, modified: 0 };
+        if (!place) return { dir: true, len: 0, modified: 0 };
+        const [, , len, modified] = place;
+        return { dir: false, len, modified: modified / MS_PER_SECOND };
       }
       return fs.stat(names);
     });
@@ -534,7 +557,10 @@ export class KovaakMount implements MountFs {
           : await fs.list(names, 0, fs !== this.older).catch(() => null);
       if (!entries) continue;
       found = true;
-      for (const entry of entries) if (!all.has(entry[0])) all.set(entry[0], entry);
+      for (const entry of entries) {
+        const [name] = entry;
+        if (!all.has(name)) all.set(name, entry);
+      }
     }
     if (!found) throw notFound(names.join('/'));
     const out = [...all.values()];
@@ -576,18 +602,19 @@ export class HttpMount implements MountFs {
 
   /** A file of the folder; a page the server gives for any path (an HTML page) is no file. */
   private async get(name: string, method: 'GET' | 'HEAD'): Promise<Response> {
-    const res = await fetch(this.url(name), { method });
-    const page = (res.headers.get('content-type') ?? '').startsWith('text/html');
-    if (res.status === 404 || (res.ok && page)) throw notFound(name);
-    if (!res.ok) throw new FsError(OTHER, `${name}: ${res.status} ${res.statusText}`);
-    return res;
+    const response = await fetch(this.url(name), { method });
+    const page = (response.headers.get('content-type') ?? '').startsWith('text/html');
+    if (response.status === HTTP_NOT_FOUND || (response.ok && page)) throw notFound(name);
+    if (!response.ok)
+      throw new FsError(OTHER, `${name}: ${response.status} ${response.statusText}`);
+    return response;
   }
 
   async file(names: string[]): Promise<File> {
     if (names.length !== 1) throw notFound(names.join('/'));
-    const res = await this.get(names[0], 'GET');
-    const modified = Date.parse(res.headers.get('last-modified') ?? '') || 0;
-    return new File([await res.blob()], names[0], { lastModified: modified });
+    const response = await this.get(names[0], 'GET');
+    const modified = Date.parse(response.headers.get('last-modified') ?? '') || 0;
+    return new File([await response.blob()], names[0], { lastModified: modified });
   }
 
   stat(names: string[]): Promise<FsStat> {
@@ -595,10 +622,10 @@ export class HttpMount implements MountFs {
     if (names.length !== 1) return Promise.reject(notFound(names.join('/')));
     let known = this.stats.get(names[0]);
     if (!known) {
-      known = this.get(names[0], 'HEAD').then((res) => ({
+      known = this.get(names[0], 'HEAD').then((response) => ({
         dir: false,
-        len: Number(res.headers.get('content-length') ?? 0),
-        modified: (Date.parse(res.headers.get('last-modified') ?? '') || 0) / 1000,
+        len: Number(response.headers.get('content-length') ?? 0),
+        modified: (Date.parse(response.headers.get('last-modified') ?? '') || 0) / MS_PER_SECOND,
       }));
       this.stats.set(names[0], known);
     }
@@ -609,14 +636,14 @@ export class HttpMount implements MountFs {
   async list(names: string[], limit: number): Promise<DirEntry[]> {
     if (names.length) throw notFound(names.join('/'));
     this.models ??= this.file(['models.json'])
-      .then((f) => f.text())
+      .then((file) => file.text())
       .then((text) => Object.keys((JSON.parse(text) as ModelsFile).models ?? {}))
       .catch(() => []);
-    const files = (await this.models).flatMap((m) => [
-      `detector_${m}.json`,
-      `detector_${m}_u8in.onnx`,
+    const files = (await this.models).flatMap((model) => [
+      `detector_${model}.json`,
+      `detector_${model}_u8in.onnx`,
     ]);
-    const out = ['models.json', ...files].map((n): DirEntry => [n, false, null, null]);
+    const out = ['models.json', ...files].map((name): DirEntry => [name, false, null, null]);
     return limit ? out.slice(0, limit) : out;
   }
 
@@ -653,7 +680,7 @@ interface Place {
   path: string;
 }
 
-const ok = (bytes = new Uint8Array()): FsResult => ({ code: 0, bytes });
+const ok = (bytes = new Uint8Array()): FsResult => ({ code: OK, bytes });
 
 /**
  * The service's file system in the browser (the contract's mounts): /data and /kovaak in the browser's private file
@@ -677,7 +704,7 @@ export class Mounts {
   /** Where a path is: its mount and the names below it. Throws for a path outside the mounts, or with . or ..  */
   private place(path: string): Place {
     const names = path.split('/').filter(Boolean);
-    if (!path.startsWith('/') || names.some((n) => n === '.' || n === '..'))
+    if (!path.startsWith('/') || names.some((name) => name === '.' || name === '..'))
       throw new FsError(OTHER, `${path}: not an absolute path`);
     const fs = this.table.get(names[0] as MountName);
     if (!fs) throw notFound(path);
@@ -687,79 +714,86 @@ export class Mounts {
   /** The service's file system call (the contract's host_fs ops), answered as a result block's code and bytes. */
   async host(op: number, path: string, arg: Uint8Array): Promise<FsResult> {
     try {
-      if (op === 8 && !path.split('/').some(Boolean))
+      if (op === OP_METADATA && !path.split('/').some(Boolean))
         return ok(new TextEncoder().encode(JSON.stringify({ dir: true, len: 0, modified: 0 })));
-      const p = this.place(path);
+      const place = this.place(path);
       switch (op) {
-        case 0:
-          return ok(new Uint8Array(await (await p.fs.file(p.names)).arrayBuffer()));
-        case 1:
-          await p.fs.write(p.names, arg);
+        case OP_READ:
+          return ok(new Uint8Array(await (await place.fs.file(place.names)).arrayBuffer()));
+        case OP_WRITE:
+          await place.fs.write(place.names, arg);
           return ok();
-        case 2:
-          await p.fs.mkdirs(p.names);
+        case OP_CREATE_DIR_ALL:
+          await place.fs.mkdirs(place.names);
           return ok();
-        case 3:
-          await p.fs.removeFile(p.names);
+        case OP_REMOVE_FILE:
+          await place.fs.removeFile(place.names);
           return ok();
-        case 4:
-        case 5:
-          await p.fs.removeDir(p.names, op === 5);
+        case OP_REMOVE_DIR:
+        case OP_REMOVE_DIR_ALL:
+          await place.fs.removeDir(place.names, op === OP_REMOVE_DIR_ALL);
           return ok();
-        case 6: {
+        case OP_RENAME: {
           const to = this.place(new TextDecoder().decode(arg));
-          if (to.fs !== p.fs) throw new FsError(OTHER, `${path}: cannot be moved to another mount`);
-          await p.fs.rename(p.names, to.names);
+          if (to.fs !== place.fs)
+            throw new FsError(OTHER, `${path}: cannot be moved to another mount`);
+          await place.fs.rename(place.names, to.names);
           return ok();
         }
-        case 7: {
-          const entries = await p.fs.list(p.names, 0);
+        case OP_READ_DIR: {
+          const entries = await place.fs.list(place.names, 0);
           return ok(new TextEncoder().encode(JSON.stringify(entries)));
         }
-        case 8:
-          return ok(new TextEncoder().encode(JSON.stringify(await p.fs.stat(p.names))));
+        case OP_METADATA:
+          return ok(new TextEncoder().encode(JSON.stringify(await place.fs.stat(place.names))));
         default:
           throw new FsError(OTHER, `no file system call ${op}`);
       }
-    } catch (e) {
-      const err = asFsError(e, path);
-      return { code: err.code, bytes: new TextEncoder().encode(err.message) };
+    } catch (error) {
+      const failed = asFsError(error, path);
+      return { code: failed.code, bytes: new TextEncoder().encode(failed.message) };
     }
   }
 
   /** A file, for the page. */
   file(path: string): Promise<File> {
-    const p = this.place(path);
-    return p.fs.file(p.names).catch((e: unknown) => Promise.reject(asFsError(e, path)));
+    const place = this.place(path);
+    return place.fs
+      .file(place.names)
+      .catch((error: unknown) => Promise.reject(asFsError(error, path)));
   }
 
   /** A folder's entries (at most limit; 0: all), for the page. */
   list(path: string, limit: number): Promise<DirEntry[]> {
-    const p = this.place(path);
-    return p.fs.list(p.names, limit).catch((e: unknown) => Promise.reject(asFsError(e, path)));
+    const place = this.place(path);
+    return place.fs
+      .list(place.names, limit)
+      .catch((error: unknown) => Promise.reject(asFsError(error, path)));
   }
 
   /** Writes a file, making its folders. */
   async write(path: string, data: Blob | Uint8Array, progress?: Progress): Promise<void> {
-    const p = this.place(path);
+    const place = this.place(path);
     try {
-      await p.fs.mkdirs(p.names.slice(0, -1));
-      await p.fs.write(p.names, data, progress);
-    } catch (e) {
-      throw asFsError(e, path);
+      await place.fs.mkdirs(place.names.slice(0, -1));
+      await place.fs.write(place.names, data, progress);
+    } catch (error) {
+      throw asFsError(error, path);
     }
   }
 
   /** Removes a file. */
   async removeFile(path: string): Promise<void> {
-    const p = this.place(path);
-    await p.fs.removeFile(p.names).catch((e: unknown) => Promise.reject(asFsError(e, path)));
+    const place = this.place(path);
+    await place.fs
+      .removeFile(place.names)
+      .catch((error: unknown) => Promise.reject(asFsError(error, path)));
   }
 
   /** Whether a file or folder is there. */
   async exists(path: string): Promise<boolean> {
-    const p = this.place(path);
-    return p.fs.stat(p.names).then(
+    const place = this.place(path);
+    return place.fs.stat(place.names).then(
       () => true,
       () => false,
     );
@@ -776,9 +810,9 @@ export class Mounts {
     turn: <T>(step: () => Promise<T>) => Promise<T>,
     progress: Progress,
   ): Promise<CopyDone> {
-    const p = this.place(dir);
-    if (p.fs instanceof KovaakMount && !p.names.length)
-      return p.fs.packs.copy(files, turn, progress);
+    const place = this.place(dir);
+    if (place.fs instanceof KovaakMount && !place.names.length)
+      return place.fs.packs.copy(files, turn, progress);
     const indexPath = `${dir}/${COPIED}`;
     const index = await turn(async (): Promise<CopiedIndex> => {
       try {
@@ -789,7 +823,9 @@ export class Mounts {
     });
     const fresh = files.filter(({ path, file }) => {
       const kept = index[path];
-      return !kept || kept[0] !== file.size || kept[1] !== file.lastModified;
+      if (!kept) return true;
+      const [size, modified] = kept;
+      return size !== file.size || modified !== file.lastModified;
     });
     for (let at = 0; at < fresh.length; at += COPY_STEP) {
       progress(at, fresh.length);

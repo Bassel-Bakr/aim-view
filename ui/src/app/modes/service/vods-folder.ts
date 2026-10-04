@@ -27,7 +27,7 @@ export interface VodsFolderState {
 const NONE: VodsFolderState = { name: null, ask: false, busy: false, refused: null, gone: null };
 
 /** Whether an error says a file or folder is no longer there (moved, deleted, or on a drive not connected). */
-const isGone = (e: unknown) => e instanceof DOMException && e.name === 'NotFoundError';
+const isGone = (error: unknown) => error instanceof DOMException && error.name === 'NotFoundError';
 
 /** The videos among a folder input's files, by their paths below the folder chosen. */
 function chosenVideos(files: readonly File[]): ChosenFile[] {
@@ -77,9 +77,9 @@ export class VodsFolder {
     }
     try {
       this.handle = await pick.call(window, { id: 'recordings', mode: 'read' });
-    } catch (e) {
-      const closed = e instanceof DOMException && e.name === 'AbortError';
-      this.patch({ refused: closed ? null : String(e) });
+    } catch (error) {
+      const closed = error instanceof DOMException && error.name === 'AbortError';
+      this.patch({ refused: closed ? null : String(error) });
       return false;
     }
     await this.store.set(KEY, this.handle).catch(() => undefined);
@@ -93,8 +93,8 @@ export class VodsFolder {
     try {
       const leave = await handle.requestPermission({ mode: 'read' });
       return leave === 'granted' && this.mount(handle, handle.name);
-    } catch (e) {
-      if (!isGone(e)) throw e;
+    } catch (error) {
+      if (!isGone(error)) throw error;
       this.patch({ name: null, ask: false, gone: handle.name });
       return false;
     }
@@ -125,9 +125,9 @@ export class VodsFolder {
       await this.host.mount(vods);
       await firstValueFrom(this.http.post('/api/folder', null, { params: { path: MOUNTED } }));
       return true;
-    } catch (e) {
-      if (isGone(e)) this.patch({ name: null, gone: name });
-      else this.patch({ name: null, refused: errorMessage(e) });
+    } catch (error) {
+      if (isGone(error)) this.patch({ name: null, gone: name });
+      else this.patch({ name: null, refused: errorMessage(error) });
       return false;
     } finally {
       this.patch({ busy: false });
@@ -135,6 +135,6 @@ export class VodsFolder {
   }
 
   private patch(change: Partial<VodsFolderState>): void {
-    this.state.update((s) => ({ ...s, ...change }));
+    this.state.update((state) => ({ ...state, ...change }));
   }
 }

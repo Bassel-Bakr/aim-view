@@ -4,6 +4,9 @@ import { firstValueFrom } from 'rxjs';
 import { FinderReply, FinderWork } from '../wasm/area-finder-messages';
 import { MountedFiles } from './mounted-files';
 
+/** The status the service asks for the area finder's reading with. */
+const HTTP_CONFLICT = 409;
+
 /** The service's answer when it has no found areas for a recording: the page's finder must read its video first. */
 export interface NeedFound {
   error: string;
@@ -12,9 +15,11 @@ export interface NeedFound {
 }
 
 /** The service's 409 asking for the area finder's reading of the video; null for any other failure. */
-export function needsFound(e: unknown): NeedFound | null {
+export function needsFound(error: unknown): NeedFound | null {
   const body =
-    e instanceof HttpErrorResponse && e.status === 409 ? (e.error as NeedFound | null) : null;
+    error instanceof HttpErrorResponse && error.status === HTTP_CONFLICT
+      ? (error.error as NeedFound | null)
+      : null;
   return body?.need === 'found' ? body : null;
 }
 
@@ -24,14 +29,14 @@ function readFrames(file: Blob): Promise<string> {
     const worker = new Worker(new URL('../wasm/area-finder.worker', import.meta.url), {
       type: 'module',
     });
-    worker.onmessage = (e: MessageEvent<FinderReply>) => {
+    worker.onmessage = (event: MessageEvent<FinderReply>) => {
       worker.terminate();
-      if (e.data.kind === 'error') reject(new Error(e.data.error));
-      else resolve(e.data.found);
+      if (event.data.kind === 'error') reject(new Error(event.data.error));
+      else resolve(event.data.found);
     };
-    worker.onerror = (e) => {
+    worker.onerror = (event) => {
       worker.terminate();
-      reject(new Error(e.message));
+      reject(new Error(event.message));
     };
     const work: FinderWork = { file, coreUrl: new URL('core/aimview.wasm', document.baseURI).href };
     worker.postMessage(work);
@@ -55,9 +60,9 @@ export class PageAreaFinder {
     const params = { id, copy: '0' };
     try {
       await firstValueFrom(this.http.get('/api/find_areas', { params }));
-    } catch (e) {
-      const need = needsFound(e);
-      if (!need) throw e;
+    } catch (error) {
+      const need = needsFound(error);
+      if (!need) throw error;
       await this.find(id, need.video);
     }
   }

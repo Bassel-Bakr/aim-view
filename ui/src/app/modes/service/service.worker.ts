@@ -28,6 +28,11 @@ const STORE = 'kv';
 const FOLDER_KEY = 'recordings-folder';
 /** This worker's mark on the files uploads are written to first: the service clears another's at its next open. */
 const SPOOL_OWNER = crypto.getRandomValues(new Uint32Array(1))[0] || 1;
+/** A file system call's code for a file not there (mounts.ts), and the statuses a failed task answers with. */
+const FS_NOT_FOUND = 1;
+const NOT_FOUND = 404;
+const UNAVAILABLE = 503;
+const SERVER_ERROR = 500;
 
 const mounts = new Mounts();
 /** KovaaK's files at /kovaak: the ones chosen this visit over the copies kept (mounted when the service starts). */
@@ -40,7 +45,7 @@ let config = '';
 let tail: Promise<unknown> = Promise.resolve();
 let spools = 0;
 
-const say = (m: ServiceReply, transfer: Transferable[] = []) => postMessage(m, transfer);
+const say = (reply: ServiceReply, transfer: Transferable[] = []) => postMessage(reply, transfer);
 
 /** Runs a step after every step asked before it. */
 function inTurn<T>(step: () => Promise<T>): Promise<T> {
@@ -50,16 +55,17 @@ function inTurn<T>(step: () => Promise<T>): Promise<T> {
 }
 
 /** Why a task failed, as the status the page sees: 404 for a file not there, 503 when the service is not open. */
-function failure(id: number, e: unknown): void {
-  const status = e instanceof FsError && e.code === 1 ? 404 : e instanceof Unready ? 503 : 500;
-  say({ kind: 'error', id, status, error: e instanceof Error ? e.message : String(e) });
+function failure(id: number, error: unknown): void {
+  const missing = error instanceof FsError && error.code === FS_NOT_FOUND;
+  const status = missing ? NOT_FOUND : error instanceof Unready ? UNAVAILABLE : SERVER_ERROR;
+  say({ kind: 'error', id, status, error: error instanceof Error ? error.message : String(error) });
 }
 
 /** The service could not start: every request fails with why. */
 class Unready extends Error {}
 
-addEventListener('message', (e: MessageEvent<ServiceTask>) => {
-  const task = e.data;
+addEventListener('message', (event: MessageEvent<ServiceTask>) => {
+  const task = event.data;
   if (task.kind === 'start') {
     service ??= inTurn(() => start(task));
     return;
@@ -126,7 +132,7 @@ async function start(task: ServiceStart): Promise<ServiceModule> {
     mounts.set('models', new HttpMount(task.modelsUrl));
     const folder = await rememberedFolder().catch(() => null);
     if (folder) mounts.set('vods', new DirMount(Promise.resolve(folder), false));
-    await fillShipped(task.dataUrl).catch((e: unknown) => console.warn('Shipped data:', e));
+    await fillShipped(task.dataUrl).catch((error: unknown) => console.warn('Shipped data:', error));
     wasmUrl = task.wasmUrl;
     config = JSON.stringify({
       data: '/data',
@@ -139,21 +145,28 @@ async function start(task: ServiceStart): Promise<ServiceModule> {
     const send = async (method: ServiceMethod, path: string, body: Uint8Array) => {
       try {
         return await module.handle({ method, path }, body);
-      } catch (e) {
-        if (e instanceof WebAssembly.RuntimeError) module = await load();
-        throw e;
+      } catch (error) {
+        if (error instanceof WebAssembly.RuntimeError) module = await load();
+        throw error;
       }
     };
-    await moveBrowserData(send).catch((e: unknown) => console.warn('Moving browser data:', e));
+    await moveBrowserData(send).catch((error: unknown) =>
+      console.warn('Moving browser data:', error),
+    );
     return module;
-  } catch (e) {
-    throw unready(e);
+  } catch (error) {
+    throw unready(error);
   }
 }
 
 /** Why the service could not start, as every request's answer then says. */
-function unready(e: unknown): Unready {
-  const why = e instanceof OpenFailed ? e.message : e instanceof Error ? e.message : String(e);
+function unready(error: unknown): Unready {
+  const why =
+    error instanceof OpenFailed
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : String(error);
   return new Unready(`The review service could not start in this browser: ${why}`);
 }
 
@@ -173,11 +186,11 @@ async function handle(request: HandleRequest, body: Uint8Array): Promise<Service
   const module = await opened();
   try {
     return await module.handle(request, body);
-  } catch (e) {
-    if (e instanceof WebAssembly.RuntimeError) {
+  } catch (error) {
+    if (error instanceof WebAssembly.RuntimeError) {
       service = load().catch((err: unknown) => Promise.reject(unready(err)));
     }
-    throw e;
+    throw error;
   }
 }
 

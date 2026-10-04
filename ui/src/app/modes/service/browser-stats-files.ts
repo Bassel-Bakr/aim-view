@@ -24,10 +24,10 @@ export class BrowserStatsFiles extends ServerStatsFiles {
   override readonly missing = computed<string | null>(() => {
     const found = this.kovaak.found();
     if (!found || this.kovaak.transfer()) return null;
-    const missing = FOLDER_ROLES.filter((r) => !found.has(r));
+    const missing = FOLDER_ROLES.filter((role) => !found.has(role));
     if (!missing.length) return null;
     return (
-      `Missing: ${missing.map((r) => ROLE_NAMES[r]).join(', ')}. Give them with Stats folder at the top: ` +
+      `Missing: ${missing.map((role) => ROLE_NAMES[role]).join(', ')}. Give them with Stats folder at the top: ` +
       String.raw`FPSAimTrainer (in steamapps\common) for the stats and your scenarios, workshop\content\824270 ` +
       "for the workshop's. The stats folder lets each run find its stats file by scenario and time; the scenario " +
       "folders give each scenario's kind, time limit and target count. The browser keeps a copy of them: choose " +

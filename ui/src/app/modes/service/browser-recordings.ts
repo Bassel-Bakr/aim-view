@@ -9,6 +9,9 @@ import { KovaakCopy } from './kovaak-copy';
 import { MountedFiles, recordingPath } from './mounted-files';
 import { VodsFolder } from './vods-folder';
 
+const MS_PER_SECOND = 1000;
+/** A remux's progress is shown in whole percents. */
+const PERCENT = 100;
 /** What the run page shows while a link's video is copied into this browser. */
 const COPYING = 'Copying the video into this browser';
 
@@ -17,11 +20,11 @@ const goneText = (name: string) =>
   `${name} could not be found: it was moved or deleted, or its drive is not connected. `;
 
 /** A time as a file-name stamp (yyyy.mm.dd-hh.mm.ss, local), as a recording named anyhow gets its time. */
-function localStamp(d: Date): string {
-  const two = (n: number) => String(n).padStart(2, '0');
+function localStamp(date: Date): string {
+  const two = (value: number) => String(value).padStart(2, '0');
   return (
-    `${d.getFullYear()}.${two(d.getMonth() + 1)}.${two(d.getDate())}-` +
-    `${two(d.getHours())}.${two(d.getMinutes())}.${two(d.getSeconds())}`
+    `${date.getFullYear()}.${two(date.getMonth() + 1)}.${two(date.getDate())}-` +
+    `${two(date.getHours())}.${two(date.getMinutes())}.${two(date.getSeconds())}`
   );
 }
 
@@ -35,7 +38,7 @@ function linkRow(id: string, name: string): Recording {
     kind: null,
     score: vod?.score ?? null,
     stamp: vod?.stamp ?? titled?.stamp ?? localStamp(new Date()),
-    mtime: Date.now() / 1000,
+    mtime: Date.now() / MS_PER_SECOND,
     size: 0,
     stats: false,
     analysed: false,
@@ -73,28 +76,30 @@ export class BrowserRecordings extends ServerRecordings {
   override readonly problem = computed<string | null>(() => {
     const gone = this.vods.state().gone;
     if (gone) return `${goneText(gone)}Open it again with VODs folder when it is back.`;
-    const e = this.list.error();
-    return e
-      ? `The review service in this page could not list the recordings: ${errorMessage(e)}`
+    const error = this.list.error();
+    return error
+      ? `The review service in this page could not list the recordings: ${errorMessage(error)}`
       : null;
   });
   override readonly folder = computed<FolderAction>(() => {
-    const s = this.vods.state();
+    const state = this.vods.state();
     return {
       label: 'VODs folder',
       detail:
-        (s.refused ? `${s.refused}. ` : '') +
-        (s.gone ? goneText(s.gone) : '') +
-        (s.ask
-          ? `Let the browser read ${s.name} again.`
-          : s.name
-            ? `The VODs of ${s.name} are listed. Open another folder of VODs.`
+        (state.refused ? `${state.refused}. ` : '') +
+        (state.gone ? goneText(state.gone) : '') +
+        (state.ask
+          ? `Let the browser read ${state.name} again.`
+          : state.name
+            ? `The VODs of ${state.name} are listed. Open another folder of VODs.`
             : 'Open a folder of VODs (KovOBS keeps one folder per scenario). They are read where they are, ' +
               'and the browser remembers the folder.'),
-      busy: s.busy,
-      run: () => this.mounted(s.ask ? this.vods.allow() : this.vods.open()),
+      busy: state.busy,
+      run: () => this.mounted(state.ask ? this.vods.allow() : this.vods.open()),
       files:
-        this.vods.picker && !s.refused ? null : (files) => this.mounted(this.vods.chosen(files)),
+        this.vods.picker && !state.refused
+          ? null
+          : (files) => this.mounted(this.vods.chosen(files)),
     };
   });
 
@@ -130,11 +135,11 @@ export class BrowserRecordings extends ServerRecordings {
     let video: Blob;
     try {
       video = await this.files.read(recordingPath(id));
-    } catch (e) {
+    } catch (error) {
       this.setOpened(id, {
         state: 'failed',
         url: '',
-        error: `the video could not be read: ${errorMessage(e)}`,
+        error: `the video could not be read: ${errorMessage(error)}`,
       });
       return;
     }
@@ -153,18 +158,18 @@ export class BrowserRecordings extends ServerRecordings {
     const label = `Remuxing ${file.name} into MP4`;
     try {
       const mp4 = await toMp4(file, (share) => {
-        const progress = Math.floor(100 * share) / 100;
+        const progress = Math.floor(PERCENT * share) / PERCENT;
         const now = this.opened().get(id);
         if (now?.state === 'remuxing' && now.progress === progress) return;
         this.setOpened(id, { state: 'remuxing', progress });
         this.remuxing.set({ label, share: progress });
       });
       this.setOpened(id, { state: 'ready', url: URL.createObjectURL(mp4), remuxed: true });
-    } catch (e) {
+    } catch (error) {
       this.setOpened(id, {
         state: 'failed',
         url: URL.createObjectURL(file),
-        error: errorMessage(e),
+        error: errorMessage(error),
       });
     } finally {
       this.remuxing.set(null);
@@ -206,10 +211,10 @@ export class BrowserRecordings extends ServerRecordings {
     this.setLink(id, { row, video: { state: 'downloading', label: '', done: 0, total: 0 } });
     started.file
       .then((file) => this.addDownloaded(id, listed, file))
-      .catch((e: unknown) =>
+      .catch((error: unknown) =>
         this.setLink(id, {
           row: listed,
-          video: { state: 'not-downloaded', error: errorMessage(e) },
+          video: { state: 'not-downloaded', error: errorMessage(error) },
         }),
       );
     return id;
@@ -233,11 +238,15 @@ export class BrowserRecordings extends ServerRecordings {
 
   /** The id an upload of this name gets (the service's free_name: "name (2).mp4" when the name is taken). */
   private freeUploadId(name: string): string {
-    const taken = new Set([...this.recordings().map((r) => r.id), ...this.links().keys()]);
+    const taken = new Set([
+      ...this.recordings().map((recording) => recording.id),
+      ...this.links().keys(),
+    ]);
     const dot = name.lastIndexOf('.');
     const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
     let id = `uploads/${name}`;
-    for (let n = 2; taken.has(id); n++) id = `uploads/${stem} (${n})${ext}`;
+    for (let copyNumber = 2; taken.has(id); copyNumber++)
+      id = `uploads/${stem} (${copyNumber})${ext}`;
     return id;
   }
 
@@ -247,10 +256,10 @@ export class BrowserRecordings extends ServerRecordings {
    */
   override async clear(): Promise<void> {
     const uploads = this.recordings()
-      .map((r) => r.id)
+      .map((recording) => recording.id)
       .filter((id) => id.startsWith('uploads/'));
-    for (const v of this.opened().values())
-      if (v.state === 'ready' || v.state === 'failed') URL.revokeObjectURL(v.url);
+    for (const video of this.opened().values())
+      if (video.state === 'ready' || video.state === 'failed') URL.revokeObjectURL(video.url);
     this.opened.set(new Map());
     this.opening.clear();
     this.links.set(new Map());

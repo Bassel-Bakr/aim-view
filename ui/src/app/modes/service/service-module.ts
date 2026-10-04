@@ -6,6 +6,14 @@ const UNWINDING = 1;
 const REWINDING = 2;
 /** The space Asyncify saves the stack in while an async call runs. */
 const STACK_BYTES = 1 << 20;
+/** A u32 in the module's memory, as the blocks and Asyncify's data hold them (little-endian). */
+const U32_BYTES = 4;
+/** A block's header: two u32s (a result block's code and length; Asyncify's data's start and end). */
+const HEADER_BYTES = 2 * U32_BYTES;
+/** A file system call's code when it failed for another reason than the ones the contract names. */
+const FS_OTHER = 3;
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
 
 /**
  * The service's exports (browser-service/): its memory and allocator, the two calls (service_open, service_handle;
@@ -49,7 +57,7 @@ export class OpenFailed extends Error {}
  * rewinds the stack and calls the export again, which then takes the answer. One call runs at a time.
  */
 export class ServiceModule {
-  private readonly x: ServiceExports;
+  private readonly exports: ServiceExports;
   /** The Asyncify data: the stack's save space, with its start and end in front. */
   private readonly data: number;
   /** The file system call under way while the stack is unwound, and its answer once in (a result block). */
@@ -57,8 +65,8 @@ export class ServiceModule {
   private answer = 0;
 
   private constructor(instance: WebAssembly.Instance) {
-    this.x = instance.exports as unknown as ServiceExports;
-    this.data = this.x.alloc(8 + STACK_BYTES);
+    this.exports = instance.exports as unknown as ServiceExports;
+    this.data = this.exports.alloc(HEADER_BYTES + STACK_BYTES);
   }
 
   /** Loads the module from `url`, its file system calls answered by `fs`. */
@@ -68,8 +76,9 @@ export class ServiceModule {
       host: {
         host_fs: (op: number, path: number, pathLen: number, arg: number, argLen: number) =>
           (module as ServiceModule).hostFs(fs, op, path, pathLen, arg, argLen),
-        host_now: () => Date.now() / 1000,
-        host_utc_offset: (secs: number) => -new Date(secs * 1000).getTimezoneOffset() * 60,
+        host_now: () => Date.now() / MS_PER_SECOND,
+        host_utc_offset: (secs: number) =>
+          -new Date(secs * MS_PER_SECOND).getTimezoneOffset() * SECONDS_PER_MINUTE,
       },
     };
     const response = await fetch(url);
@@ -84,28 +93,30 @@ export class ServiceModule {
   /** Opens the service's library with the config (JSON); rejects with the service's reason. */
   async open(config: string): Promise<void> {
     const text = new TextEncoder().encode(config);
-    const block = await this.withBytes([text], ([c]) => this.x.service_open(c, text.length));
+    const block = await this.withBytes([text], ([configPtr]) =>
+      this.exports.service_open(configPtr, text.length),
+    );
     const view = this.view();
-    const [code, len] = [view.getUint32(block, true), view.getUint32(block + 4, true)];
-    const why = new TextDecoder().decode(this.bytes(block + 8, len));
-    this.x.dealloc(block, 8 + len);
+    const [code, len] = [view.getUint32(block, true), view.getUint32(block + U32_BYTES, true)];
+    const why = new TextDecoder().decode(this.bytes(block + HEADER_BYTES, len));
+    this.exports.dealloc(block, HEADER_BYTES + len);
     if (code !== 0) throw new OpenFailed(why || 'The service could not open its library');
   }
 
   /** One request, answered by api::handle. */
   async handle(request: HandleRequest, body: Uint8Array): Promise<ServiceAnswer> {
     const req = new TextEncoder().encode(JSON.stringify(request));
-    const block = await this.withBytes([req, body], ([r, b]) =>
-      this.x.service_handle(r, req.length, b, body.length),
+    const block = await this.withBytes([req, body], ([requestPtr, bodyPtr]) =>
+      this.exports.service_handle(requestPtr, req.length, bodyPtr, body.length),
     );
     const view = this.view();
     const status = view.getUint32(block, true);
-    const typeLen = view.getUint32(block + 4, true);
-    const type = new TextDecoder().decode(this.bytes(block + 8, typeLen));
-    const bodyAt = block + 8 + typeLen;
+    const typeLen = view.getUint32(block + U32_BYTES, true);
+    const type = new TextDecoder().decode(this.bytes(block + HEADER_BYTES, typeLen));
+    const bodyAt = block + HEADER_BYTES + typeLen;
     const bodyLen = view.getUint32(bodyAt, true);
-    const out = this.bytes(bodyAt + 4, bodyLen).slice();
-    this.x.dealloc(block, 12 + typeLen + bodyLen);
+    const out = this.bytes(bodyAt + U32_BYTES, bodyLen).slice();
+    this.exports.dealloc(block, HEADER_BYTES + typeLen + U32_BYTES + bodyLen);
     return { status, type, body: out };
   }
 
@@ -114,17 +125,17 @@ export class ServiceModule {
    * passed as no bytes at 0.
    */
   private async withBytes(inputs: Uint8Array[], call: (ptrs: number[]) => number): Promise<number> {
-    const ptrs = inputs.map((b) => {
-      if (!b.length) return 0;
-      const ptr = this.x.alloc(b.length);
-      this.bytes(ptr, b.length).set(b);
+    const ptrs = inputs.map((input) => {
+      if (!input.length) return 0;
+      const ptr = this.exports.alloc(input.length);
+      this.bytes(ptr, input.length).set(input);
       return ptr;
     });
     try {
       return await this.run(() => call(ptrs));
     } finally {
-      ptrs.forEach((p, k) => {
-        if (p) this.x.dealloc(p, inputs[k].length);
+      ptrs.forEach((ptr, index) => {
+        if (ptr) this.exports.dealloc(ptr, inputs[index].length);
       });
     }
   }
@@ -132,12 +143,12 @@ export class ServiceModule {
   /** Runs an export, waiting for each file system call it makes: unwound, awaited, rewound, called again. */
   private async run(call: () => number): Promise<number> {
     let out = call();
-    while (this.x.asyncify_get_state() === UNWINDING) {
-      this.x.asyncify_stop_unwind();
+    while (this.exports.asyncify_get_state() === UNWINDING) {
+      this.exports.asyncify_stop_unwind();
       const result = await (this.pending as Promise<FsResult>);
       this.pending = null;
       this.answer = this.resultBlock(result);
-      this.x.asyncify_start_rewind(this.data);
+      this.exports.asyncify_start_rewind(this.data);
       out = call();
     }
     return out;
@@ -152,41 +163,41 @@ export class ServiceModule {
     argPtr: number,
     argLen: number,
   ): number {
-    if (this.x.asyncify_get_state() === REWINDING) {
-      this.x.asyncify_stop_rewind();
+    if (this.exports.asyncify_get_state() === REWINDING) {
+      this.exports.asyncify_stop_rewind();
       const block = this.answer;
       this.answer = 0;
       return block;
     }
     const path = new TextDecoder().decode(this.bytes(pathPtr, pathLen));
     const arg = this.bytes(argPtr, argLen).slice();
-    this.pending = fs(op, path, arg).catch((e: unknown): FsResult => ({
-      code: 3,
-      bytes: new TextEncoder().encode(e instanceof Error ? e.message : String(e)),
+    this.pending = fs(op, path, arg).catch((error: unknown): FsResult => ({
+      code: FS_OTHER,
+      bytes: new TextEncoder().encode(error instanceof Error ? error.message : String(error)),
     }));
     const view = this.view();
-    view.setUint32(this.data, this.data + 8, true);
-    view.setUint32(this.data + 4, this.data + 8 + STACK_BYTES, true);
-    this.x.asyncify_start_unwind(this.data);
+    view.setUint32(this.data, this.data + HEADER_BYTES, true);
+    view.setUint32(this.data + U32_BYTES, this.data + HEADER_BYTES + STACK_BYTES, true);
+    this.exports.asyncify_start_unwind(this.data);
     // the module ignores what an unwinding call returns
     return 0;
   }
 
   /** A result block the module frees: [u32 code][u32 len][len bytes]. */
-  private resultBlock(r: FsResult): number {
-    const block = this.x.alloc(8 + r.bytes.length);
+  private resultBlock(result: FsResult): number {
+    const block = this.exports.alloc(HEADER_BYTES + result.bytes.length);
     const view = this.view();
-    view.setUint32(block, r.code, true);
-    view.setUint32(block + 4, r.bytes.length, true);
-    this.bytes(block + 8, r.bytes.length).set(r.bytes);
+    view.setUint32(block, result.code, true);
+    view.setUint32(block + U32_BYTES, result.bytes.length, true);
+    this.bytes(block + HEADER_BYTES, result.bytes.length).set(result.bytes);
     return block;
   }
 
   private view(): DataView {
-    return new DataView(this.x.memory.buffer);
+    return new DataView(this.exports.memory.buffer);
   }
 
   private bytes(ptr: number, len: number): Uint8Array {
-    return new Uint8Array(this.x.memory.buffer, ptr, len);
+    return new Uint8Array(this.exports.memory.buffer, ptr, len);
   }
 }

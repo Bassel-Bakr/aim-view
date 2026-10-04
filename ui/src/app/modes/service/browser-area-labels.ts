@@ -30,9 +30,9 @@ export class BrowserAreaLabels extends ServerAreaLabels {
   override async find(id: string, copy: boolean): Promise<FoundAreas> {
     try {
       return await super.find(id, copy);
-    } catch (e) {
-      const need = needsFound(e);
-      if (!need) throw e;
+    } catch (error) {
+      const need = needsFound(error);
+      if (!need) throw error;
       await this.finder.find(id, need.video);
       return super.find(id, copy);
     }

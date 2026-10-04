@@ -76,11 +76,12 @@ export class MountedFiles {
       this.http
         .post<CopyDone>(filesUrl(dir), body, { reportProgress: true, observe: 'events' })
         .pipe(
-          tap((e) => {
-            if (e.type === HttpEventType.UploadProgress) progress(e.loaded, e.total ?? 0);
+          tap((event) => {
+            if (event.type === HttpEventType.UploadProgress)
+              progress(event.loaded, event.total ?? 0);
           }),
-          filter((e): e is HttpResponse<CopyDone> => e.type === HttpEventType.Response),
-          map((e) => e.body ?? { copied: 0 }),
+          filter((event): event is HttpResponse<CopyDone> => event.type === HttpEventType.Response),
+          map((response) => response.body ?? { copied: 0 }),
         ),
     );
   }

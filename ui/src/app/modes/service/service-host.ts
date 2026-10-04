@@ -11,6 +11,9 @@ import {
   VodsMount,
 } from './service-messages';
 
+/** The status a task fails with while the service cannot run. */
+const UNAVAILABLE = 503;
+
 /** Hears how far a task is: done of total (an upload's bytes, a copy's files). */
 export type TaskProgress = (done: number, total: number) => void;
 
@@ -109,18 +112,19 @@ export class ServiceHost {
 
   /** The worker, started once: it opens the service with the app's models and shipped data. */
   private started(): Worker {
-    if (this.stopped !== null) throw new ServiceFailure(503, this.stopped);
+    if (this.stopped !== null) throw new ServiceFailure(UNAVAILABLE, this.stopped);
     if (this.worker) return this.worker;
     if (typeof Worker === 'undefined')
       throw new ServiceFailure(
-        503,
+        UNAVAILABLE,
         'This browser cannot run the review service: it has no workers',
       );
     const worker = new Worker(new URL('./service.worker', import.meta.url), { type: 'module' });
-    worker.onmessage = (e: MessageEvent<ServiceReply>) => this.hear(e.data);
-    worker.onerror = (e) => {
-      this.stopped = `The review service stopped: ${e.message || 'its worker failed'}`;
-      for (const w of this.waiting.values()) w.reject(new ServiceFailure(503, this.stopped));
+    worker.onmessage = (event: MessageEvent<ServiceReply>) => this.hear(event.data);
+    worker.onerror = (event) => {
+      this.stopped = `The review service stopped: ${event.message || 'its worker failed'}`;
+      for (const waiter of this.waiting.values())
+        waiter.reject(new ServiceFailure(UNAVAILABLE, this.stopped));
       this.waiting.clear();
     };
     const base = new URL(document.baseURI);
@@ -138,16 +142,16 @@ export class ServiceHost {
     return worker;
   }
 
-  private hear(m: ServiceReply): void {
-    const w = this.waiting.get(m.id);
-    if (!w) return;
-    if (m.kind === 'progress') {
-      w.progress?.(m.done, m.total);
+  private hear(reply: ServiceReply): void {
+    const waiter = this.waiting.get(reply.id);
+    if (!waiter) return;
+    if (reply.kind === 'progress') {
+      waiter.progress?.(reply.done, reply.total);
       return;
     }
-    this.waiting.delete(m.id);
-    if (m.kind === 'answer') w.resolve(m.answer);
-    else if (m.kind === 'done') w.resolve(m.result);
-    else w.reject(new ServiceFailure(m.status, m.error));
+    this.waiting.delete(reply.id);
+    if (reply.kind === 'answer') waiter.resolve(reply.answer);
+    else if (reply.kind === 'done') waiter.resolve(reply.result);
+    else waiter.reject(new ServiceFailure(reply.status, reply.error));
   }
 }

@@ -67,6 +67,8 @@ const DEVICE_NAMES: Record<BrowserDevice, string> = { webgpu: 'WebGPU', wasm: 'W
  * one run. A computer with fewer than 8 threads has one run too.
  */
 const GPU_RUNS = 2;
+/** The fewest threads a computer needs for the GPU's runs. */
+const GPU_RUNS_MIN_THREADS = 8;
 /** How often the page tells the service how far its review is, at most (milliseconds). */
 const REPORT_MS = 250;
 
@@ -78,8 +80,38 @@ function plainJob(job: OrderedJob): Job {
 }
 
 /** The window for the review worker: an open end as Infinity. */
-function workerWindow(w: OrderWindow | null): TimeWindow | null {
-  return w ? { start: w.start, end: w.end ?? Infinity } : null;
+function workerWindow(orderWindow: OrderWindow | null): TimeWindow | null {
+  return orderWindow ? { start: orderWindow.start, end: orderWindow.end ?? Infinity } : null;
+}
+
+/** What one run's review worker is asked: the video, its run of `runs`, the model and where the files are. */
+function reviewRequest(
+  file: Blob,
+  order: ReviewOrder,
+  run: number,
+  runs: number,
+  camera: MessagePort,
+): ReviewRequest {
+  const base = new URL(document.baseURI);
+  return {
+    file,
+    run,
+    runs,
+    window: workerWindow(order.window),
+    coreUrl: new URL('core/aimview.wasm', base).href,
+    ortPath: new URL('ort/', base).href,
+    modelUrl: new URL(`models/detector_${order.model}_u8in.onnx`, base).href,
+    device: order.device,
+    batch: order.batch || 1,
+    cap: order.cap || null,
+    areas: order.areas,
+    camera,
+  };
+}
+
+/** A time in seconds, rounded to tenths, from milliseconds. */
+function tenthsOfSecond(ms: number): number {
+  return Math.round(ms / 100) / 10;
 }
 
 /**
@@ -152,16 +184,16 @@ export class BrowserReview extends ServerReview {
         readings: joined.readings,
         hud: joined.hud,
         found: null,
-        seconds: Math.round((performance.now() - begun) / 100) / 10,
+        seconds: tenthsOfSecond(performance.now() - begun),
         device: DEVICE_NAMES[order.device],
       };
       await firstValueFrom(this.client.post<Job>('/api/reviewed', body, { params: { id } }));
       this.running.delete(id);
       // then the area finder, once a recording, when the service has nothing found for it. Run beside the review, it
       // slowed the review down (a recording with 11 key frames: 21 to 40 s, against 21 to 28 s without it).
-      this.finder.ensure(id).catch((err: unknown) => console.warn(err));
-    } catch (e) {
-      const error = errorMessage(e);
+      this.finder.ensure(id).catch((error: unknown) => console.warn(error));
+    } catch (caught) {
+      const error = errorMessage(caught);
       this.running.set(id, { stage: 'error', error });
       await this.tell(id, { error }).catch(() => undefined);
       this.running.delete(id);
@@ -178,8 +210,9 @@ export class BrowserReview extends ServerReview {
    * their own); `report` hears how far they are.
    */
   private track(file: Blob, order: ReviewOrder, report: (job: Job) => void): Promise<RunPart[]> {
-    const runs = order.device === 'webgpu' && navigator.hardwareConcurrency >= 8 ? GPU_RUNS : 1;
-    const base = new URL(document.baseURI);
+    const split =
+      order.device === 'webgpu' && navigator.hardwareConcurrency >= GPU_RUNS_MIN_THREADS;
+    const runs = split ? GPU_RUNS : 1;
     const workers: Worker[] = [];
     const parts: (RunPart | null | undefined)[] = Array.from({ length: runs }, () => undefined);
     const done = parts.map(() => 0);
@@ -189,9 +222,9 @@ export class BrowserReview extends ServerReview {
       const end = (error: string | null) => {
         if (over) return;
         over = true;
-        for (const w of workers) w.terminate();
+        for (const worker of workers) worker.terminate();
         if (error !== null) reject(new Error(error));
-        else resolve(parts.filter((p): p is RunPart => !!p));
+        else resolve(parts.filter((part): part is RunPart => !!part));
       };
       for (let i = 0; i < runs; i++) {
         const worker = new Worker(new URL('../wasm/review.worker', import.meta.url), {
@@ -203,38 +236,29 @@ export class BrowserReview extends ServerReview {
         workers.push(worker, camera);
         const channel = new MessageChannel();
         camera.postMessage(channel.port2, [channel.port2]);
-        const request: ReviewRequest = {
-          file,
-          run: i,
-          runs,
-          window: workerWindow(order.window),
-          coreUrl: new URL('core/aimview.wasm', base).href,
-          ortPath: new URL('ort/', base).href,
-          modelUrl: new URL(`models/detector_${order.model}_u8in.onnx`, base).href,
-          device: order.device,
-          batch: order.batch || 1,
-          cap: order.cap || null,
-          areas: order.areas,
-          camera: channel.port1,
-        };
-        worker.onmessage = (e: MessageEvent<ReviewMessage>) => {
-          const m = e.data;
+        const request = reviewRequest(file, order, i, runs, channel.port1);
+        worker.onmessage = (event: MessageEvent<ReviewMessage>) => {
+          const message = event.data;
           if (over) return;
-          if (m.kind === 'error') return end(m.error);
-          if (m.kind === 'progress') {
-            done[i] = m.done;
-            looking[i] = m.stage === 'looking';
-            const stage = looking.some((l) => l) ? 'looking' : 'tracking';
-            report({ stage, done: done.reduce((a, d) => a + d, 0), total: m.total });
+          if (message.kind === 'error') return end(message.error);
+          if (message.kind === 'progress') {
+            done[i] = message.done;
+            looking[i] = message.stage === 'looking';
+            const stage = looking.some((isLooking) => isLooking) ? 'looking' : 'tracking';
+            report({
+              stage,
+              done: done.reduce((a, partDone) => a + partDone, 0),
+              total: message.total,
+            });
             return;
           }
-          parts[i] = m.part;
+          parts[i] = message.part;
           looking[i] = false;
           worker.terminate();
           camera.terminate();
-          if (parts.every((p) => p !== undefined)) end(null);
+          if (parts.every((part) => part !== undefined)) end(null);
         };
-        worker.onerror = camera.onerror = (e) => end(e.message);
+        worker.onerror = camera.onerror = (event) => end(event.message);
         worker.postMessage(request, [channel.port1]);
       }
     });

@@ -23,12 +23,13 @@ function kovaakFiles(files: readonly File[]): ChosenFile[] {
   const out: ChosenFile[] = [];
   for (const file of files) {
     const parts = (file.webkitRelativePath || file.name).split('/');
-    const at = (k: number) => (parts[parts.length - 1 - k] ?? '').toLowerCase();
-    if (/\.csv$/i.test(file.name) && at(1) === 'stats')
+    const folderAbove = (levelsUp: number) =>
+      (parts[parts.length - 1 - levelsUp] ?? '').toLowerCase();
+    if (/\.csv$/i.test(file.name) && folderAbove(1) === 'stats')
       out.push({ path: `stats/${file.name}`, file });
-    else if (/\.sce$/i.test(file.name) && at(1) === 'scenarios')
+    else if (/\.sce$/i.test(file.name) && folderAbove(1) === 'scenarios')
       out.push({ path: `scenarios/${file.name}`, file });
-    else if (/\.sce$/i.test(file.name) && at(2) === '824270')
+    else if (/\.sce$/i.test(file.name) && folderAbove(2) === '824270')
       out.push({ path: `workshop/${parts[parts.length - 2]}/${file.name}`, file });
   }
   return out;
@@ -64,7 +65,7 @@ export class KovaakCopy {
         ),
       ),
     );
-    this.found.set(new Set(FOLDER_ROLES.filter((_, k) => has[k])));
+    this.found.set(new Set(FOLDER_ROLES.filter((_role, index) => has[index])));
   }
 
   /**
@@ -89,8 +90,8 @@ export class KovaakCopy {
       await this.files.copyIn(KOVAAK, chosen, (done, total) =>
         this.transfer.set({ label, share: total ? done / total : null, count: { done, total } }),
       );
-    } catch (e) {
-      console.warn("KovaaK's files were not kept in this browser:", e);
+    } catch (error) {
+      console.warn("KovaaK's files were not kept in this browser:", error);
     } finally {
       this.transfer.set(null);
     }

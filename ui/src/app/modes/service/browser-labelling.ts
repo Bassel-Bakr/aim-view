@@ -27,23 +27,23 @@ interface ExampleLine {
   line: string;
 }
 
-const isText = (v: unknown): v is string => typeof v === 'string';
+const isText = (value: unknown): value is string => typeof value === 'string';
 
-function isExample(v: unknown): v is AreaExample {
-  const e = v as AreaExample | null;
+function isExample(value: unknown): value is AreaExample {
+  const example = value as AreaExample | null;
   return (
-    typeof e === 'object' &&
-    e !== null &&
-    isText(e.rec) &&
-    isText(e.kind) &&
-    Array.isArray(e.feat) &&
-    e.feat.every((x) => typeof x === 'number')
+    typeof example === 'object' &&
+    example !== null &&
+    isText(example.rec) &&
+    isText(example.kind) &&
+    Array.isArray(example.feat) &&
+    example.feat.every((x) => typeof x === 'number')
   );
 }
 
-function isKind(v: unknown): v is AreaKind {
-  const k = v as AreaKind | null;
-  return typeof k === 'object' && k !== null && isText(k.id) && isText(k.name);
+function isKind(value: unknown): value is AreaKind {
+  const kind = value as AreaKind | null;
+  return typeof kind === 'object' && kind !== null && isText(kind.id) && isText(kind.name);
 }
 
 /** Reads area_examples.jsonl: one example a line, kept as written. Throws on a line that is not one. */
@@ -51,14 +51,14 @@ function parseExamples(text: string): ExampleLine[] {
   const out: ExampleLine[] = [];
   for (const [i, line] of text.split(/\r?\n/).entries()) {
     if (!line.trim()) continue;
-    let e: unknown;
+    let parsed: unknown;
     try {
-      e = JSON.parse(line);
+      parsed = JSON.parse(line);
     } catch {
-      e = null;
+      parsed = null;
     }
-    if (!isExample(e)) throw new Error(`line ${i + 1} is not an area example`);
-    out.push({ example: e, line });
+    if (!isExample(parsed)) throw new Error(`line ${i + 1} is not an area example`);
+    out.push({ example: parsed, line });
   }
   return out;
 }
@@ -68,10 +68,10 @@ function parseKinds(text: string): AreaKind[] {
   const list: unknown = JSON.parse(text);
   if (!Array.isArray(list) || !list.every(isKind))
     throw new Error('it is not a list of area types with ids');
-  return list.map((k: AreaKind) => ({
-    id: k.id,
-    name: k.name,
-    about: isText(k.about) ? k.about : '',
+  return list.map((kind: AreaKind) => ({
+    id: kind.id,
+    name: kind.name,
+    about: isText(kind.about) ? kind.about : '',
   }));
 }
 
@@ -87,7 +87,10 @@ function parsedOr<T>(parse: (text: string) => T[], text: string | null): T[] {
 
 /** JSON as Python's json.dumps writes it: every character outside printable ASCII as \uXXXX. */
 function asciiJson(text: string): string {
-  return text.replace(/[\u007f-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  return text.replace(
+    /[\u007f-￿]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
 }
 
 /**
@@ -109,10 +112,12 @@ export class BrowserExamples implements ExamplesStore {
   private reading = 0;
   readonly fileNames = [EXAMPLES_FILE, KINDS_FILE];
   readonly count = computed<ExamplesCount>(() => {
-    const t = this.texts();
-    const examples = parsedOr(parseExamples, t.examples).map((e) => e.example);
-    const kinds = t.kinds === null ? builtInKinds() : parsedOr(parseKinds, t.kinds);
-    const recordings = new Set(examples.filter((e) => !e.rec.startsWith(LAYOUT)).map((e) => e.rec));
+    const texts = this.texts();
+    const examples = parsedOr(parseExamples, texts.examples).map((parsed) => parsed.example);
+    const kinds = texts.kinds === null ? builtInKinds() : parsedOr(parseKinds, texts.kinds);
+    const recordings = new Set(
+      examples.filter((example) => !example.rec.startsWith(LAYOUT)).map((example) => example.rec),
+    );
     return { examples: examples.length, recordings: recordings.size, kinds: kinds.length };
   });
 
@@ -122,7 +127,7 @@ export class BrowserExamples implements ExamplesStore {
 
   /** The files changed: they are read again. */
   changed(): Promise<void> {
-    this.version.update((v) => v + 1);
+    this.version.update((version) => version + 1);
     return this.refresh();
   }
 
@@ -157,8 +162,10 @@ export class BrowserExamples implements ExamplesStore {
         if (/\.jsonl$/i.test(file.name)) out.examples += await this.loadExamples(file);
         else if (/\.json$/i.test(file.name)) out.kinds += await this.loadKinds(file);
         else out.refused.push(`${file.name} (not ${EXAMPLES_FILE} or ${KINDS_FILE})`);
-      } catch (e) {
-        out.refused.push(`${file.name} (${e instanceof Error ? e.message : String(e)})`);
+      } catch (error) {
+        out.refused.push(
+          `${file.name} (${error instanceof Error ? error.message : String(error)})`,
+        );
       }
     }
     await this.changed();
@@ -168,12 +175,12 @@ export class BrowserExamples implements ExamplesStore {
   /** The file's examples in place of the kept ones of the same recordings; how many it held. */
   private async loadExamples(file: File): Promise<number> {
     const loaded = parseExamples(await file.text());
-    const recs = new Set(loaded.map((e) => e.example.rec));
+    const recs = new Set(loaded.map((entry) => entry.example.rec));
     const now = await this.examplesText();
     if (now === null) throw new Error('the examples kept here could not be read');
     const kept = parseExamples(now);
-    const lines = [...kept.filter((e) => !recs.has(e.example.rec)), ...loaded].map(
-      (e) => `${e.line}\n`,
+    const lines = [...kept.filter((entry) => !recs.has(entry.example.rec)), ...loaded].map(
+      (entry) => `${entry.line}\n`,
     );
     await firstValueFrom(this.http.post('/api/area_examples', lines.join('')));
     return loaded.length;
@@ -182,10 +189,10 @@ export class BrowserExamples implements ExamplesStore {
   /** The file's area types first, then the kept ones it does not hold; how many it held. */
   private async loadKinds(file: File): Promise<number> {
     const loaded = parseKinds(await file.text());
-    const ids = new Set(loaded.map((k) => k.id));
+    const ids = new Set(loaded.map((kind) => kind.id));
     const text = await this.files.text(KINDS);
     const kept = text === null ? builtInKinds() : parsedOr(parseKinds, text);
-    const kinds = [...loaded, ...kept.filter((k) => !ids.has(k.id))];
+    const kinds = [...loaded, ...kept.filter((kind) => !ids.has(kind.id))];
     await this.files.write(KINDS, asciiJson(JSON.stringify(kinds, null, 1)));
     return loaded.length;
   }
