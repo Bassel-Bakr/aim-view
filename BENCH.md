@@ -20,7 +20,8 @@ code before it.
 
 Baseline: commit b8c56ef (the stats-file matching; the tracks are 4b7ddc4's), full_v3, the native review. Raw output:
 `test_out/baselines/b8c56ef/` (`before_after.txt`: eval_moving.py's runs before and after; eval_vods.py's numbers
-from the tracks its 4b7ddc4 run kept). Before it: `test_out/baselines/4b7ddc4/`.
+from the tracks its 4b7ddc4 run kept). Before it: `test_out/baselines/4b7ddc4/`. Unchanged at 9b04bc5 (the arrival
+between frames moves no count): `test_out/baselines/9b04bc5/`, with `arrival_changes.txt`, how each flick's arrival moved.
 
 | Check | Command | Result |
 | --- | --- | --- |
@@ -35,7 +36,7 @@ The video-alone benchmark's harness, caches and notes: `test_out/baselines/vbenc
 | Check | Command | Baseline |
 | --- | --- | --- |
 | The core against Python | `cargo test --profile quick` | every test passes; fixtures in `test_out/parity/` |
-| The native review, byte for byte | `cargo run -p aimview-service --release --example track -- "<video>" python/model/exports/detector_full_v3_u8in.onnx <out> 0 2 4 - - <stats.csv>` (DirectML, 2 runs, 4 frames a call) | `test_out/baselines/b8c56ef/native/`: av1 (1wall 2targets xsmall, with test_out/parity/av1/review/stats.csv, and `no_stats/` without it) and flower (Flower Easier); tracks, readings, hud and report. `python test_out/baselines/native_compare.py b8c56ef` reviews all three and compares. Tracks, readings and hud equal to 4b7ddc4's through b8c56ef; its report's `appeared` changed there (the matching's joins). The script builds the checkout it is run from (a worktree too) |
+| The native review, byte for byte | `cargo run -p aimview-service --release --example track -- "<video>" python/model/exports/detector_full_v3_u8in.onnx <out> 0 2 4 - - <stats.csv>` (DirectML, 2 runs, 4 frames a call) | `test_out/baselines/9b04bc5/native/`: av1 (1wall 2targets xsmall, with test_out/parity/av1/review/stats.csv, and `no_stats/` without it) and flower (Flower Easier); tracks, readings, hud and report. `python test_out/baselines/native_compare.py 9b04bc5` reviews all three and compares. Tracks, readings and hud equal to 4b7ddc4's through 9b04bc5; the report's `appeared` changed at b8c56ef (the matching's joins), and av1's measures at 9b04bc5 (the arrival: arrive, dwell, settle, hold and parts, and the summary's arrive, budget, holding and what-if; flower's report is the same). The script builds the checkout it is run from (a worktree too) |
 | The review after the detector, byte for byte | `cargo test --profile quick --test replay` (0.8 s) | the native review's parts before the join (`test_out/baselines/parts/`, kept once by the track example's `--parts <folder>`; `saved.txt` there) joined and reported again: all 12 files equal to the byte-compare's baseline above (tests/replay.rs `NATIVE` names it; move it with this row). A change after the detector (keep, link, the camera's readings, the HUD's reading, matching, measures, the report) needs only this. A change before the join (decoding, the conversion, the detector, a watch's reading of each frame) needs the native byte-compare, then the parts kept again |
 
 ## Speed
@@ -74,7 +75,7 @@ change only beyond 5%, and a change under 10% needs a second run before it count
 
 Baseline: commit 9cbcbf7 (2026-10-04), `test_out/baselines/criterion/` (each bench's `9cbcbf7/` folder). The
 matching and report benches were saved again at 326eb95, after b8c56ef changed the matching (their `326eb95/`
-folders): compare those with `--baseline 326eb95`.
+folders), and with the measure bench at 9b04bc5 (the arrival): compare those three with `--baseline 9b04bc5`.
 
 | Bench | What one call does | Median |
 | --- | --- | --- |
@@ -99,7 +100,7 @@ folders): compare those with `--baseline 326eb95`.
 | `areas/finish_av1` | `AreaFinder::finish` on av1's 25 key frames | 48.6 ms |
 | `matching/match_times_av1` | `matching::match_times`: av1's 66 kills from the stats file (with `clock_offset`) | 9.20 ms; 8.17 ms at 326eb95 |
 | `matching/match_video_av1` | `matching::match_video`: av1's kills from the video alone | 12.4 ms; 8.53 ms at 326eb95 |
-| `measure/measure_av1` | `measure::measure`: av1's matched flicks | 482 µs |
+| `measure/measure_av1` | `measure::measure`: av1's matched flicks | 482 µs; 311 µs at 9b04bc5 (309 µs just before it, at f096454) |
 | `report/clicks_av1` | `review::review_clicks` with the stats file: matching, measures, summary and checks | 14.5 ms; 13.1 ms at 326eb95 |
 | `report/hud_av1` | `review::review_clicks` without it: the kills from the HUD's reading | 13.0 ms; 12.5 ms at 326eb95 |
 | `report/json_av1` | `review::review_json`: the service's report request for av1, JSON in and out | 21.6 ms; 17.4 ms at 326eb95 |
