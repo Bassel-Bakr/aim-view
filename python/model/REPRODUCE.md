@@ -105,6 +105,16 @@ python python/model/validate_data.py --data test_out/vod_model/data_themes_check
 python python/model/validate_data.py --data test_out/vod_model/data_mined_checked --sheet test_out/vod_model/sheet_mined_checked.png
 ```
 
+full_v5's mined set is built from the user's second pass, `data_mined/checked_phone_2.jsonl` (`checked_phone.jsonl`
+stays as it was). In it, 11 boxes that covered only the crosshair's dot (a bot hidden under it) moved from "boxes" to
+"covered". `checked_data.py` writes those into the npz as "ignore", and `train.py` learns neither a target nor wall
+there. The 3 Switching Humanoid crops (whole-robot boxes) are left out too:
+
+```bash
+python python/model/checked_data.py --labels test_out/vod_model/data_mined/checked_phone_2.jsonl --out test_out/vod_model/data_mined_checked2 --tag chk_mined_ --leave-out train/5428426d1d_00863_g00.npz,train/a1ccc534da_01368_l00.npz,train/a1ccc534da_01798_l01.npz,train/a1ccc534da_03890_l02.npz
+python python/model/validate_data.py --data test_out/vod_model/data_mined_checked2 --sheet test_out/vod_model/sheet_mined_checked2.png
+```
+
 ## 2. Train
 
 ```bash
@@ -189,6 +199,27 @@ python python/model/train.py python/model/configs/full_v4.json --data $D/data_v3
   --repeat $D/repeat_full_v4.txt --times 3 --init $D/runs/full_v3/best.pt
 python python/model/export.py $D/runs/full_v4/best.pt
 python python/model/accept.py full_v4
+```
+
+full_v4c, the control: full_v4's config and command (`full_v4c.json` differs only in its name) without the two
+checked sets, with the plain `repeat_v9.txt`. It tells the fine-tune itself from the checked crops:
+
+```bash
+python python/model/train.py python/model/configs/full_v4c.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --repeat $D/repeat_v9.txt --times 3 --init $D/runs/full_v3/best.pt
+python python/model/export.py $D/runs/full_v4c/best.pt
+python python/model/accept.py full_v4c
+```
+
+full_v5: full_v4's recipe at half its learning rate (`full_v5.json`: 0.00025; full_v4c showed that 0.0005 alone fails
+the gate), with `data_mined_checked2` (step 1) in place of `data_mined_checked`:
+
+```bash
+python python/model/train.py python/model/configs/full_v5.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked --extra $D/data_mined_checked2 \
+  --repeat $D/repeat_full_v4.txt --times 3 --init $D/runs/full_v3/best.pt
+python python/model/export.py $D/runs/full_v5/best.pt
+python python/model/accept.py full_v5
 ```
 
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,

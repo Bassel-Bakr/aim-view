@@ -2,8 +2,9 @@
 crop's npz copied with its boxes replaced by the checked ones ("skip": no target there, no boxes) and its target mask
 made again from them (the ellipse that fills each box, as build_data.py's model labels and build_mined.py make it).
 The rest of the npz is kept as it is, and so is the crop's split (train/, val/, test/). Crops checked "unsure" are
-left out, and so are the files --leave-out names (a slip on the label page). The manifest is copied, so
-validate_data.py reads the new set.
+left out, and so are the files --leave-out names (a slip on the label page). A row's "covered" boxes (a target
+hidden under the crosshair) go into the npz as "ignore": train.py learns neither a target nor wall there. The
+manifest is copied, so validate_data.py reads the new set.
 
 Each crop's name gets a 10-character tag in front (--tag), so train.py --repeat can weight these crops alone: their
 recordings' hashes also start other sets' crops of the same recordings.
@@ -56,8 +57,13 @@ def main():
             tmask[((xx - bx) / max(1.0, bw / 2)) ** 2 + ((yy - by) / max(1.0, bh / 2)) ** 2 <= 1] = 1
         split = Path(f).parent.name
         (out / split).mkdir(parents=True, exist_ok=True)
+        extra = {}
+        if r.get("covered"):                            # a target under the crosshair: train.py learns nothing there
+            extra["ignore"] = np.array(r["covered"], np.float32).reshape(-1, 4)
+            n["ignore boxes"] += len(extra["ignore"])
         np.savez_compressed(out / split / f"{a.tag}{Path(f).name}", **{k: z[k] for k in z.files if k not in
-                                                                        ("boxes", "tmask")}, tmask=tmask, boxes=bb)
+                                                                        ("boxes", "tmask")}, tmask=tmask, boxes=bb,
+                            **extra)
         n[split] += 1
         n["boxes"] += len(bb)
         n["without targets"] += len(bb) == 0

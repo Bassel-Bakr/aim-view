@@ -440,7 +440,8 @@ of the section above (kills from the HUD) was not measured again.
 
 ## full_v4: the checked crops (2026-10-04)
 
-full_v3 fine-tuned on the crops the user checked by eye. It fails the gate; full_v3 stays the best model.
+full_v3 fine-tuned on the crops the user checked by eye. It fails the gate, and so do the control full_v4c and
+full_v5 (below); full_v3 stays the best model.
 
 **Data** (REPRODUCE.md step 1, `checked_data.py`). The two sets with the user's boxes (Known limitations below):
 `data_themes_checked`, 405 crops of moving targets on other themes (train 189, val 143, test 73; 353 boxes, 89 crops
@@ -462,27 +463,52 @@ On the checked themes crops full_v4 gains a little (val 0.932 to 0.946, 21 to 15
 its boxes sit closer (median center error 0.89 to 0.78 px on val, 1.00 to 0.89 on test). The mined val and test hold
 only 14 boxes (F1 0.786 to 0.769).
 
-**The gate** (`accept.py full_v4`, the app's native review; raw outputs in `test_out/baselines/full_v4/`):
+**The gate** (`accept.py <name>`, the app's native review; raw outputs in `test_out/baselines/<name>/`). full_v4c
+and full_v5 are below; "Allowed" is the drop from full_v3 the gate lets through.
 
-| Check | full_v4 | full_v3 | Allowed | Result |
-| --- | --- | --- | --- | --- |
-| Contract | crosshair fails | | every check | FAIL |
-| Static kills, flicks (854) | 854, 850 | 854, 847 | no drop, -5.5 | pass |
-| Dynamic kills, flicks (707) | 704, 701 | 704, 695 | no drop, -7.2 | pass |
-| Switching kills, flicks (405) | 400, 384 | 403, 392 | no drop, -7.4 | FAIL |
-| Tracking gap: mean size, mean | 0.0857, -0.0222 | 0.0875, -0.0325 | +0.031, +0.055 | pass |
-| Report (4 static runs) kills, flicks (496) | 496, 494 | 496, 493 | no drop, -3.6 | pass |
-| Video alone, all: recall, precision | 0.928, 0.934 | 0.945, 0.957 | -0.007, -0.006 | FAIL |
-| static | 0.900, 0.907 | 0.926, 0.948 | -0.010, -0.009 | FAIL |
-| dynamic | 0.972, 0.980 | 0.980, 0.988 | -0.007, -0.005 | FAIL |
-| switching | 0.911, 0.904 | 0.913, 0.903 | -0.024, -0.025 | pass |
+| Check | full_v3 | full_v4 | full_v4c | full_v5 | Allowed |
+| --- | --- | --- | --- | --- | --- |
+| Contract | meets it | crosshair FAIL | crosshair FAIL | meets it | every check |
+| Static kills, flicks (854) | 854, 847 | 854, 850 | 854, 850 | 854, 850 | 0, 5.5 |
+| Dynamic kills, flicks (707) | 704, 695 | 704, 701 | 706, 698 | **702**, 694 | 0, 7.2 |
+| Switching kills, flicks (405) | 403, 392 | **400, 384** | **400, 384** | **400**, 391 | 0, 7.4 |
+| Tracking gap: mean size, mean | 0.0875, -0.0325 | 0.0857, -0.0222 | 0.0819, -0.0410 | 0.0800, -0.0247 | 0.031, 0.055 |
+| Report (4 static runs) kills, flicks (496) | 496, 493 | 496, 494 | 496, 494 | 496, 494 | 0, 3.6 |
+| Video alone, all: recall, precision | 0.945, 0.957 | **0.928, 0.934** | 0.939, **0.945** | 0.943, 0.956 | 0.007, 0.006 |
+| static | 0.926, 0.948 | **0.900, 0.907** | 0.917, **0.924** | 0.926, 0.948 | 0.010, 0.009 |
+| dynamic | 0.980, 0.988 | **0.972, 0.980** | 0.978, 0.988 | 0.978, 0.986 | 0.007, 0.005 |
+| switching | 0.913, 0.903 | 0.911, 0.904 | 0.915, 0.906 | 0.911, 0.900 | 0.024, 0.025 |
+| Gate | (the best) | FAIL | FAIL | FAIL | |
 
-The losses sit in a few runs. The contract's crosshair check: full_v4 boxes the user's crosshair in 5.9% of the turning
-pairs of 1wall 6targets extra small 849.91 (full_v3 0.9%; 1.26% more over all, 0.5% allowed). Switching: all on
-Smoothbot Switch Robots (54 to 51 kills, 43 to 35 flicks; the training's only robot labels are the mined set's 3
-Switching Humanoid crops, boxed as whole robots). Video alone: VT ww5t Advanced S5 1520 (151 to 100 kills found) and
-1wall 2targets xsmall valorant 558.46 (40 to 4 found, 88 video kills against 69). The gains are small: 3 more static
-flicks, 6 more dynamic ones, and tracking a little closer to the stats files.
+full_v4's losses sit in a few runs. The contract's crosshair check: full_v4 boxes the user's crosshair in 5.9% of the
+turning pairs of 1wall 6targets extra small 849.91 (full_v3 0.9%; 1.26% more over all, 0.5% allowed). Switching: all
+on Smoothbot Switch Robots (54 to 51 kills, 43 to 35 flicks). Video alone: VT ww5t Advanced S5 1520 (151 to 100
+kills found) and 1wall 2targets xsmall valorant 558.46 (40 to 4 found, 88 video kills against 69). The gains are
+small: 3 more static flicks, 6 more dynamic ones, and tracking a little closer to the stats files.
+
+**The control, full_v4c.** full_v4's recipe without the checked crops (REPRODUCE.md step 2). It fails too, so the
+recipe itself caused most of full_v4's losses. It has the crosshair failure (5.2% on 849.91), the same Smoothbot run
+(51 kills, 35 flicks, though it has no robot labels) and valorant 558.46 (9 kills found, 97 video kills). It does not
+have VT ww5t's (142 found): that one, and part of the dynamic loss, came from the checked crops. Val F1 by epoch
+0.9432, 0.9409, 0.9469 (best.pt), 0.9448, on full_v3's own val set (full_v3 0.9445).
+
+**full_v5.** Half full_v4's learning rate (0.00025), because the control showed 0.0005 alone fails. Two data changes
+came from the diagnosis of full_v4. In the user's second pass on the mined crops (`checked_phone_2.jsonl`), 11 boxes
+that covered only the crosshair's dot move to "covered". Those are bots hidden under the crosshair, so train.py now
+takes them as ignore regions: no heatmap loss (positive or negative) on the grid cells such a box covers, with a cell
+of slack, and no regression there (`train.kept_cells`). The 3 Switching Humanoid crops with whole-robot boxes are left
+out. `data_mined_checked2`: 106 crops (train 96, val 5, test 5; 141 boxes, 11 ignore boxes, 5 crops without a
+target). 71,872 training crops; val F1 0.9379, 0.9437, 0.9451 (best.pt), 0.9451.
+The ignore regions were checked (`test_out/baselines/full_v5/ignore_check.json`). On 4 batches of 32 crops with no
+ignore field, the loss equals the old train.py's bit for bit. On a batch with the 11 ignore crops (180 cells ignored),
+random outputs in the ignored cells leave the loss unchanged to the bit. The loss equals the old formula summed over
+the other cells (1.3321577 against 1.3321576), against 1.3575 without the mask. After the flips and turns (all 8
+seen), the ignore boxes equal the boxes they were copied from, and a marker pixel follows them 64 times of 64.
+
+full_v5 meets the contract (849.91: 1.1%, full_v3 0.86%). The video-alone check is back to full_v3's level (valorant
+558.46: 41 found; VT ww5t still 136 against 151). It fails only on kills matched. Dynamic: 360 Tracking OW2 matches 5
+of its 10 kills (full_v3 7, full_v4c 9). Switching: Smoothbot Switch Robots matches 51 of 56 (full_v3 54), though its
+flicks are back to 42 (43). The settings file got a score map (0.2865 on full_v3's 0.3 scale).
 
 ## Current best model
 

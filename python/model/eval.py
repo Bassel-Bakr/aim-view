@@ -73,7 +73,7 @@ def run(runner, folder, thr, recolour=False, by_file=False):
     tot = [0, 0, 0, []]
     per = {}
     k = 0
-    for rgb, fixed, tmask, boxes, n in dl:
+    for rgb, fixed, tmask, boxes, n, _ in dl:
         rgb, fixed, tmask = rgb.cuda(), fixed.cuda(), tmask.cuda()
         if recolour:
             torch.manual_seed(int(torch.randint(0, 10 ** 6, (1,), generator=g)))

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import net  # noqa: E402
 
 MAXBOX = 40
+MAXIGNORE = 8
 
 
 class Crops(Dataset):
@@ -49,7 +50,11 @@ class Crops(Dataset):
         n = min(MAXBOX, len(keep))
         if n:
             b[:n] = np.array(keep[:n])
-        return z["rgb"], z["fixed"], z["tmask"], b, n
+        ig = np.zeros((MAXIGNORE, 4), np.float32)   # "ignore": a target there, but not one to learn (under the
+        if "ignore" in z.files:                     # crosshair); padding has width 0
+            k = min(MAXIGNORE, len(z["ignore"]))
+            ig[:k] = z["ignore"][:k]
+        return z["rgb"], z["fixed"], z["tmask"], b, n, ig
 
 
 # ---- augmentation (batched, on the GPU) -----------------------------------------------------------------------------
@@ -262,11 +267,15 @@ def blur_noise(img, p=0.5):
     return img.clamp(0, 1)
 
 
-def augment(rgb, fixed, tmask, boxes, n, cfg):
+def augment(rgb, fixed, tmask, boxes, n, cfg, ignore=None):
+    """The augmented batch and its boxes; with ignore boxes, those too (moved as the boxes are)."""
     img = rgb.permute(0, 3, 1, 2).float() / 255.0
     fixed = fixed[:, None].float()
     tmask = tmask[:, None].float()
-    img, fixed, tmask, boxes = flip_rot(img, fixed, tmask, boxes, n)
+    k = boxes.shape[1]
+    img, fixed, tmask, boxes = flip_rot(img, fixed, tmask, boxes if ignore is None else torch.cat([boxes, ignore], 1), n)
+    if ignore is not None:
+        boxes, ignore = boxes[:, :k], boxes[:, k:]
     a = cfg["augment"]
     img = recolour(img, tmask, a["theme"], a["target"])
     img = texture(img, tmask, a["texture"])
@@ -275,7 +284,7 @@ def augment(rgb, fixed, tmask, boxes, n, cfg):
                             a.get("crosshair_jitter", 0.0), a.get("crosshair_outline", 0.0), a.get("crosshair_real", 0.0))
     img = decoder(img, a.get("decoder", 0.0))
     img = blur_noise(img, a["blur"])
-    return torch.cat([img, fixed], 1), boxes
+    return (torch.cat([img, fixed], 1), boxes) + (() if ignore is None else (ignore,))
 
 
 # ---- targets and loss -----------------------------------------------------------------------------------------------
@@ -304,10 +313,28 @@ def targets(boxes, n, S):
     return hm, peak, reg
 
 
-def loss_fn(out, hm, peak, reg, cfg):
+def kept_cells(ignore, G):
+    """(B, 1, G, G): 0 on the grid cells an ignore box covers, with a cell of slack round it, else 1. None when the
+    batch has no ignore box."""
+    on = ignore[..., 2] > 0
+    if not on.any():
+        return None
+    keep = torch.ones(ignore.shape[0], 1, G, G, device=ignore.device)
+    for b, j in on.nonzero().tolist():
+        cx, cy, w, h = ignore[b, j].tolist()
+        x0, x1 = max(0, math.floor((cx - w / 2) / net.STRIDE) - 1), min(G - 1, math.floor((cx + w / 2) / net.STRIDE) + 1)
+        y0, y1 = max(0, math.floor((cy - h / 2) / net.STRIDE) - 1), min(G - 1, math.floor((cy + h / 2) / net.STRIDE) + 1)
+        keep[b, 0, y0:y1 + 1, x0:x1 + 1] = 0
+    return keep
+
+
+def loss_fn(out, hm, peak, reg, cfg, keep=None):
+    """keep (kept_cells): the cells outside it add nothing, to the heatmap's loss or the regression."""
     p = torch.sigmoid(out[:, 0:1].float()).clamp(1e-4, 1 - 1e-4)
     pos = peak
     neg = 1 - pos
+    if keep is not None:
+        pos, neg = pos * keep, neg * keep
     lp = -((1 - p) ** 2 * torch.log(p) * pos).sum()
     ln = -((1 - hm) ** 4 * p ** 2 * torch.log(1 - p) * neg).sum()
     npos = pos.sum().clamp(min=1)
@@ -361,7 +388,7 @@ def evaluate(model, loader, dev, recolour_test=False, thr=0.3):
     g = torch.Generator(device="cpu").manual_seed(0)
     tp = fp = fn = 0
     err = []
-    for rgb, fixed, tmask, boxes, n in loader:
+    for rgb, fixed, tmask, boxes, n, _ in loader:
         rgb, fixed, tmask, boxes = rgb.to(dev), fixed.to(dev), tmask.to(dev), boxes.to(dev)
         if recolour_test:
             torch.manual_seed(int(torch.randint(0, 10 ** 6, (1,), generator=g)))
@@ -499,13 +526,14 @@ def main():
         order.set_epoch(ep, start)
         done = start
         try:
-            for rgb, fixed, tmask, boxes, n in train_dl:
-                rgb, fixed, tmask, boxes, n = (v.to(dev, non_blocking=True) for v in (rgb, fixed, tmask, boxes, n))
-                x, boxes = augment(rgb, fixed, tmask, boxes.clone(), n, cfg)
+            for rgb, fixed, tmask, boxes, n, ignore in train_dl:
+                rgb, fixed, tmask, boxes, n, ignore = (v.to(dev, non_blocking=True)
+                                                       for v in (rgb, fixed, tmask, boxes, n, ignore))
+                x, boxes, ignore = augment(rgb, fixed, tmask, boxes.clone(), n, cfg, ignore)
                 hm, peak, reg = targets(boxes, n, x.shape[-1])
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev.type == "cuda"):
                     out = model(x)
-                loss, parts = loss_fn(out, hm, peak, reg, cfg)
+                loss, parts = loss_fn(out, hm, peak, reg, cfg, kept_cells(ignore, hm.shape[-1]))
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
