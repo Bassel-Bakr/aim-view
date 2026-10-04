@@ -1,8 +1,10 @@
 //! The file system and the clock, for the whole service: every file the library reads or writes goes through here.
-//! Natively (the `native` feature) each call is std's, the same call as before (`std::fs`, `SystemTime`, the process id,
-//! the time zone). In the browser build each is a call to the page (the host's imports, module "host"): the files are in
-//! the page's mounted folders (/data, /kovaak, /vods, /models), their paths absolute with forward slashes. The modules
-//! that only build natively (the native review, ffmpeg, yt-dlp, links) keep std's calls.
+//! In: the library's paths and bytes. Out: the files' bytes, listings and metadata, the time and the time zone.
+//!
+//! Natively (the `native` feature) each call is std's, the same call as before (`std::fs`, `SystemTime`, the process
+//! id, the time zone). In the browser build each is a call to the page (the host's imports, module "host"): the files
+//! are in the page's mounted folders (/data, /kovaak, /vods, /models), their paths absolute with forward slashes. The
+//! modules that only build natively (the native review, ffmpeg, yt-dlp, links) keep std's calls.
 
 use std::ffi::OsString;
 use std::io;
@@ -48,9 +50,10 @@ mod imp {
     pub use std::time::Instant;
 
     impl From<std::fs::Metadata> for Metadata {
-        fn from(m: std::fs::Metadata) -> Metadata {
-            let modified = m.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs_f64());
-            Metadata { len: m.len(), modified, dir: m.is_dir() }
+        fn from(metadata: std::fs::Metadata) -> Metadata {
+            let since_epoch = metadata.modified().ok().and_then(|time| time.duration_since(UNIX_EPOCH).ok());
+            let modified = since_epoch.map(|since| since.as_secs_f64());
+            Metadata { len: metadata.len(), modified, dir: metadata.is_dir() }
         }
     }
 
@@ -84,54 +87,54 @@ mod imp {
         type Item = io::Result<Entry>;
 
         fn next(&mut self) -> Option<io::Result<Entry>> {
-            self.0.next().map(|e| e.map(Entry))
+            self.0.next().map(|entry| entry.map(Entry))
         }
     }
 
-    pub fn read(p: impl AsRef<Path>) -> io::Result<Vec<u8>> {
-        std::fs::read(p)
+    pub fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+        std::fs::read(path)
     }
 
-    pub fn read_to_string(p: impl AsRef<Path>) -> io::Result<String> {
-        std::fs::read_to_string(p)
+    pub fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
+        std::fs::read_to_string(path)
     }
 
-    pub fn is_file(p: impl AsRef<Path>) -> bool {
-        p.as_ref().is_file()
+    pub fn is_file(path: impl AsRef<Path>) -> bool {
+        path.as_ref().is_file()
     }
 
-    pub fn is_dir(p: impl AsRef<Path>) -> bool {
-        p.as_ref().is_dir()
+    pub fn is_dir(path: impl AsRef<Path>) -> bool {
+        path.as_ref().is_dir()
     }
 
-    pub fn exists(p: impl AsRef<Path>) -> bool {
-        p.as_ref().exists()
+    pub fn exists(path: impl AsRef<Path>) -> bool {
+        path.as_ref().exists()
     }
 
-    pub fn write(p: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
-        std::fs::write(p, bytes)
+    pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
+        std::fs::write(path, bytes)
     }
 
     /// Bytes added at the end of a file (made when missing).
-    pub fn append(p: impl AsRef<Path>, bytes: &[u8]) -> io::Result<()> {
+    pub fn append(path: impl AsRef<Path>, bytes: &[u8]) -> io::Result<()> {
         use std::io::Write;
-        std::fs::OpenOptions::new().create(true).append(true).open(p)?.write_all(bytes)
+        std::fs::OpenOptions::new().create(true).append(true).open(path)?.write_all(bytes)
     }
 
-    pub fn create_dir_all(p: impl AsRef<Path>) -> io::Result<()> {
-        std::fs::create_dir_all(p)
+    pub fn create_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
+        std::fs::create_dir_all(path)
     }
 
-    pub fn remove_file(p: impl AsRef<Path>) -> io::Result<()> {
-        std::fs::remove_file(p)
+    pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
+        std::fs::remove_file(path)
     }
 
-    pub fn remove_dir(p: impl AsRef<Path>) -> io::Result<()> {
-        std::fs::remove_dir(p)
+    pub fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
+        std::fs::remove_dir(path)
     }
 
-    pub fn remove_dir_all(p: impl AsRef<Path>) -> io::Result<()> {
-        std::fs::remove_dir_all(p)
+    pub fn remove_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
+        std::fs::remove_dir_all(path)
     }
 
     pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
@@ -142,21 +145,21 @@ mod imp {
         std::fs::copy(from, to)
     }
 
-    pub fn read_dir(p: impl AsRef<Path>) -> io::Result<ReadDir> {
-        std::fs::read_dir(p).map(ReadDir)
+    pub fn read_dir(path: impl AsRef<Path>) -> io::Result<ReadDir> {
+        std::fs::read_dir(path).map(ReadDir)
     }
 
-    pub fn metadata(p: impl AsRef<Path>) -> io::Result<Metadata> {
-        std::fs::metadata(p).map(Metadata::from)
+    pub fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
+        std::fs::metadata(path).map(Metadata::from)
     }
 
-    pub fn canonicalize(p: impl AsRef<Path>) -> io::Result<PathBuf> {
-        std::fs::canonicalize(p)
+    pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+        std::fs::canonicalize(path)
     }
 
     /// Seconds since 1970.
     pub fn now() -> f64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+        SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |since| since.as_secs_f64())
     }
 
     pub fn process_id() -> u32 {
@@ -179,8 +182,8 @@ mod imp {
     #[link(wasm_import_module = "host")]
     unsafe extern "C" {
         /// A file system call (see `Op`) on `path` (UTF-8), with `arg` (an op's bytes): a result block the host
-        /// reserved with the module's `alloc`: [u32 code][u32 len][len bytes], little-endian. Asynchronous on the page's
-        /// side (Asyncify): the call waits for it.
+        /// reserved with the module's `alloc`: [u32 code][u32 len][len bytes], little-endian. Asynchronous on the
+        /// page's side (Asyncify): the call waits for it.
         fn host_fs(op: u32, path_ptr: *const u8, path_len: usize, arg_ptr: *const u8, arg_len: usize) -> *mut u8;
         /// Date.now() / 1000.
         fn host_now() -> f64;
@@ -202,8 +205,17 @@ mod imp {
         Metadata = 8,
     }
 
-    /// A call to the host: its bytes, or its error (code 1 not found, 2 there already or not empty, 3 another error
-    /// with its message).
+    /// The bytes before a result block's own: its code and its length, each a little-endian u32.
+    const BLOCK_HEAD_BYTES: usize = 8;
+    /// The alignment of the blocks the host reserves with the module's `alloc` (browser-service/src/lib.rs).
+    const BLOCK_ALIGN: usize = 8;
+    /// A result block's codes: the call worked, the path is not there, the path is there already (or a folder to remove
+    /// is not empty). Any other code is another error, with its message as the block's bytes.
+    const DONE: u32 = 0;
+    const NOT_FOUND: u32 = 1;
+    const THERE_ALREADY: u32 = 2;
+
+    /// A call to the host: its bytes, or its error (see `DONE` and the codes after it).
     fn call(op: Op, path: &Path, arg: &[u8]) -> io::Result<Vec<u8>> {
         let path = path.to_string_lossy();
         // SAFETY: the host reads the two byte ranges it is given and answers with a block it reserved with `alloc`
@@ -213,18 +225,21 @@ mod imp {
         }
         // SAFETY: the block starts with its code and its length, then that many bytes
         let (code, bytes) = unsafe {
-            let head = std::slice::from_raw_parts(block, 8);
+            let head = std::slice::from_raw_parts(block, BLOCK_HEAD_BYTES);
             let code = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
             let len = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
-            let bytes = std::slice::from_raw_parts(block.add(8), len).to_vec();
-            dealloc(block, Layout::from_size_align((8 + len).max(1), 8).expect("a block's layout"));
+            let bytes = std::slice::from_raw_parts(block.add(BLOCK_HEAD_BYTES), len).to_vec();
+            let layout = Layout::from_size_align((BLOCK_HEAD_BYTES + len).max(1), BLOCK_ALIGN);
+            dealloc(block, layout.expect("a block's layout"));
             (code, bytes)
         };
         let message = || String::from_utf8_lossy(&bytes).into_owned();
         match code {
-            0 => Ok(bytes),
-            1 => Err(io::Error::new(io::ErrorKind::NotFound, format!("{}: not found", path))),
-            2 => Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{}: there already, or not empty", path))),
+            DONE => Ok(bytes),
+            NOT_FOUND => Err(io::Error::new(io::ErrorKind::NotFound, format!("{}: not found", path))),
+            THERE_ALREADY => {
+                Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{}: there already, or not empty", path)))
+            }
             _ => Err(io::Error::other(message())),
         }
     }
@@ -236,8 +251,8 @@ mod imp {
     }
 
     impl File {
-        pub fn open(p: impl AsRef<Path>) -> io::Result<File> {
-            Ok(File { bytes: Cursor::new(read(p)?) })
+        pub fn open(path: impl AsRef<Path>) -> io::Result<File> {
+            Ok(File { bytes: Cursor::new(read(path)?) })
         }
 
         pub fn metadata(&self) -> io::Result<Metadata> {
@@ -309,59 +324,61 @@ mod imp {
         }
     }
 
-    fn bad_answer(what: &str, e: impl std::fmt::Display) -> io::Error {
-        io::Error::new(io::ErrorKind::InvalidData, format!("the page's {what}: {e}"))
+    fn bad_answer(what: &str, error: impl std::fmt::Display) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidData, format!("the page's {what}: {error}"))
     }
 
-    pub fn read(p: impl AsRef<Path>) -> io::Result<Vec<u8>> {
-        call(Op::Read, p.as_ref(), &[])
+    pub fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+        call(Op::Read, path.as_ref(), &[])
     }
 
-    pub fn read_to_string(p: impl AsRef<Path>) -> io::Result<String> {
-        String::from_utf8(read(p)?).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "stream did not contain valid UTF-8"))
+    pub fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
+        // std's own words for a file that is not UTF-8
+        let not_utf8 = || io::Error::new(io::ErrorKind::InvalidData, "stream did not contain valid UTF-8");
+        String::from_utf8(read(path)?).map_err(|_| not_utf8())
     }
 
-    pub fn is_file(p: impl AsRef<Path>) -> bool {
-        metadata(p).is_ok_and(|m| m.is_file())
+    pub fn is_file(path: impl AsRef<Path>) -> bool {
+        metadata(path).is_ok_and(|found| found.is_file())
     }
 
-    pub fn is_dir(p: impl AsRef<Path>) -> bool {
-        metadata(p).is_ok_and(|m| m.is_dir())
+    pub fn is_dir(path: impl AsRef<Path>) -> bool {
+        metadata(path).is_ok_and(|found| found.is_dir())
     }
 
-    pub fn exists(p: impl AsRef<Path>) -> bool {
-        metadata(p).is_ok()
+    pub fn exists(path: impl AsRef<Path>) -> bool {
+        metadata(path).is_ok()
     }
 
-    pub fn write(p: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
-        call(Op::Write, p.as_ref(), bytes.as_ref()).map(drop)
+    pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
+        call(Op::Write, path.as_ref(), bytes.as_ref()).map(drop)
     }
 
     /// Bytes added at the end of a file (made when missing): the file read and written again.
-    pub fn append(p: impl AsRef<Path>, bytes: &[u8]) -> io::Result<()> {
-        let mut all = match read(p.as_ref()) {
+    pub fn append(path: impl AsRef<Path>, bytes: &[u8]) -> io::Result<()> {
+        let mut all = match read(path.as_ref()) {
             Ok(old) => old,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => return Err(e),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(error),
         };
         all.extend_from_slice(bytes);
-        write(p, all)
+        write(path, all)
     }
 
-    pub fn create_dir_all(p: impl AsRef<Path>) -> io::Result<()> {
-        call(Op::CreateDirAll, p.as_ref(), &[]).map(drop)
+    pub fn create_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
+        call(Op::CreateDirAll, path.as_ref(), &[]).map(drop)
     }
 
-    pub fn remove_file(p: impl AsRef<Path>) -> io::Result<()> {
-        call(Op::RemoveFile, p.as_ref(), &[]).map(drop)
+    pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
+        call(Op::RemoveFile, path.as_ref(), &[]).map(drop)
     }
 
-    pub fn remove_dir(p: impl AsRef<Path>) -> io::Result<()> {
-        call(Op::RemoveDir, p.as_ref(), &[]).map(drop)
+    pub fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
+        call(Op::RemoveDir, path.as_ref(), &[]).map(drop)
     }
 
-    pub fn remove_dir_all(p: impl AsRef<Path>) -> io::Result<()> {
-        call(Op::RemoveDirAll, p.as_ref(), &[]).map(drop)
+    pub fn remove_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
+        call(Op::RemoveDirAll, path.as_ref(), &[]).map(drop)
     }
 
     pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
@@ -375,41 +392,45 @@ mod imp {
         Ok(bytes.len() as u64)
     }
 
-    pub fn read_dir(p: impl AsRef<Path>) -> io::Result<ReadDir> {
-        let p = p.as_ref();
-        // [name, dir, size, time]: the size and time null when the page has none at hand
-        let listed: Vec<(String, bool, Option<f64>, Option<f64>)> =
-            serde_json::from_slice(&call(Op::ReadDir, p, &[])?).map_err(|e| bad_answer("listing", e))?;
-        Ok(ReadDir(
-            listed
-                .into_iter()
-                .map(|(name, dir, len, modified)| {
-                    let meta = len.zip(modified).map(|(len, modified)| Metadata { len: len.max(0.0) as u64, modified: Some(modified), dir });
-                    Entry { path: p.join(&name), name, dir, meta }
-                })
-                .collect::<Vec<_>>()
-                .into_iter(),
-        ))
+    /// An entry as the host lists it: [name, dir, size, time], the size and time null when the page has none at hand.
+    type Listed = (String, bool, Option<f64>, Option<f64>);
+
+    pub fn read_dir(path: impl AsRef<Path>) -> io::Result<ReadDir> {
+        let path = path.as_ref();
+        let listed: Vec<Listed> =
+            serde_json::from_slice(&call(Op::ReadDir, path, &[])?).map_err(|error| bad_answer("listing", error))?;
+        let entry = |(name, dir, len, modified): Listed| {
+            let meta = len.zip(modified).map(|(len, modified)| Metadata {
+                len: len.max(0.0) as u64,
+                modified: Some(modified),
+                dir,
+            });
+            Entry { path: path.join(&name), name, dir, meta }
+        };
+        Ok(ReadDir(listed.into_iter().map(entry).collect::<Vec<_>>().into_iter()))
     }
 
-    pub fn metadata(p: impl AsRef<Path>) -> io::Result<Metadata> {
+    pub fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
+        /// The host's answer: the length in bytes as a JavaScript number.
         #[derive(serde::Deserialize)]
-        struct Answer {
+        struct HostMetadata {
             dir: bool,
             len: f64,
             modified: Option<f64>,
         }
-        let a: Answer = serde_json::from_slice(&call(Op::Metadata, p.as_ref(), &[])?).map_err(|e| bad_answer("metadata", e))?;
-        Ok(Metadata { len: a.len.max(0.0) as u64, modified: a.modified, dir: a.dir })
+        let answer = call(Op::Metadata, path.as_ref(), &[])?;
+        let host: HostMetadata = serde_json::from_slice(&answer).map_err(|error| bad_answer("metadata", error))?;
+        Ok(Metadata { len: host.len.max(0.0) as u64, modified: host.modified, dir: host.dir })
     }
 
     /// The path as it is given: the page's folders have no links, and a path that climbs out with ".." is refused.
-    pub fn canonicalize(p: impl AsRef<Path>) -> io::Result<PathBuf> {
-        let p = p.as_ref();
-        if p.components().any(|c| c == std::path::Component::ParentDir) {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{}: no \"..\" in the page's paths", p.display())));
+    pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+        let path = path.as_ref();
+        if path.components().any(|component| component == std::path::Component::ParentDir) {
+            let message = format!("{}: no \"..\" in the page's paths", path.display());
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, message));
         }
-        Ok(p.to_path_buf())
+        Ok(path.to_path_buf())
     }
 
     /// Seconds since 1970, from the page's clock.
