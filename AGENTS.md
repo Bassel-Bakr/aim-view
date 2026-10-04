@@ -58,7 +58,11 @@ FOV and KovaaK's HUD layout stay put within a run but can change between runs; t
 recordings; targets are spheres, pills, humanoid bots or squares, and mostly vanish on death (some settings show a
 death animation); games are KovaaK's, Aim Lab, Valorant and Aim Beast; KovaaK's runs mostly have a stats file, but
 other people's recordings may not; some maps show a sky that can move on its own; zoom (ADS) is very rare but some
-scenarios allow it.
+scenarios allow it. Kills are mostly hits at the crosshair, but some bots lose health on a timer, so a kill need not
+be at a hit; targets in a run mostly look alike, not always; target size changes with depth and in some static
+scenarios; the spawn delay and the number of targets on screen are up to the scenario; health bars are a game setting
+and can show on any bot (never a target); OBS overlays can sit on the play area; a target's color stands out from the
+wall's.
 
 Browser mode starts from the user's latest training data. `bun run assets` copies the area finder's examples and
 types (`test_out/vod_app/area_examples.jsonl`, `area_kinds.json`) into `ui/generated/data/`, and the review service in
