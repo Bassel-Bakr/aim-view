@@ -11,7 +11,7 @@ publish = false
 # WebAssembly, which browser mode runs in a worker. The detector prototype keeps its own build until its code moves
 # into src/.
 members = ["browser-service", "desktop", "service", "server"]
-exclude = ["python/model/rust"]
+exclude = ["python/model/rust", "prototypes/gpu_decode"]
 
 [workspace.lints.clippy]
 # AGENTS.md, "Readable code": warnings, which the refactor clears file by file; new code adds none (limits: clippy.toml)

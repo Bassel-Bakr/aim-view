@@ -1,0 +1,24 @@
+[package]
+name = "gpu-decode-prototype"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Prototype: a recording decoded on the GPU (Media Foundation, D3D11) and converted there to the detector's frame"
+
+# its own build, outside the app's workspace
+[workspace]
+
+[dependencies]
+aimview = { path = "../.." }
+sha2 = "0.10.9"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+] }
