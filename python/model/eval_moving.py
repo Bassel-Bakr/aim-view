@@ -11,9 +11,12 @@ thing. All from the core's review of the tracks (`core_numbers`: examples/review
 The tracks come from the app's native review (the review service's aimview-tool, through python/aimview_tools.py: the
 model's _u8in export, see eval_vods.u8in, and the app's areas for each recording). They are cached per model name in
 test_out/vod_model/eval/moving_<name>_native.pkl.
-Usage: python python/model/eval_moving.py name=model [name=model ...]
+Usage: python python/model/eval_moving.py name=model [name=model ...] [--reports <folder>]
+--reports also writes the core's whole report of each run to <folder>/<name>/<video>.json: run it before and after a
+change to the core's tracking or clicking review and compare the folders (`diff -rq`; BENCH.md).
 """
 import glob
+import json
 import os
 import pickle
 import sys
@@ -58,20 +61,32 @@ def picks():
     return out
 
 
-def core_numbers(program, kind, tracks, video, stats, limit):
+def core_numbers(program, kind, tracks, video, stats, limit, keep=None):
     """A recording's numbers from the core's review of its tracks, as the app's report works them out. Clicking kinds:
     (kind, kills matched, the stats file's kills, flicks measured), with the stats file. Tracking: (kind, the review's
-    time on the bot, the stats file's accuracy), without the stats file, over the scenario's time limit `limit`."""
+    time on the bot, the stats file's accuracy), without the stats file, over the scenario's time limit `limit`. With
+    `keep`, the whole report is written there too."""
     meta, rows = old_review.load_stats(stats)
     tracking = kind == "tracking"
     request = dict(tracks=tracks, statsText="" if tracking else Path(stats).read_bytes().decode("utf-8", "replace"),
                    video=Path(video).name, stats="" if tracking else Path(stats).name, hud=None, run=None,
                    tracking=tracking, limit=limit if tracking else None, camera=[], countdown=[], faint=None)
     report = eval_video_alone.request_report(program, request)
+    if keep:
+        Path(keep).parent.mkdir(parents=True, exist_ok=True)
+        Path(keep).write_text(json.dumps(report, indent=1))
     if tracking:
         hits, misses = float(meta.get("Hit Count", 0)), float(meta.get("Miss Count", 0))
         return kind, report["summary"]["on_target"] or 0.0, hits / max(1.0, hits + misses)
     return kind, report["summary"]["info"]["matched"], len(rows), report["summary"]["measured"]
+
+
+def parse_args(args):
+    """The name=model arguments, and the --reports folder (None without it)."""
+    if "--reports" not in args:
+        return args, None
+    at = args.index("--reports")
+    return args[:at] + args[at + 2:], Path(args[at + 1])
 
 
 def main():
@@ -82,7 +97,8 @@ def main():
     counts = old_review.target_counts()
     res = {}
     os.makedirs("test_out/vod_model/eval", exist_ok=True)
-    for arg in sys.argv[1:]:
+    models, reports = parse_args(sys.argv[1:])
+    for arg in models:
         name, path = arg.split("=", 1)
         model = str(eval_vods.u8in(path))
         cache = f"test_out/vod_model/eval/moving_{name}_native.pkl"
@@ -97,7 +113,8 @@ def main():
         for kind, vs in pick.items():
             for v, st in vs:
                 limit = facts.get(Path(v).stem.rsplit(" - ", 2)[0].lower(), (None, None))[1]
-                out[v] = core_numbers(program, kind, tracks[v], v, st, limit)
+                keep = reports / name / f"{Path(v).stem}.json" if reports else None
+                out[v] = core_numbers(program, kind, tracks[v], v, st, limit, keep)
         res[name] = out
     names = list(res)
     print("recording".ljust(44), "  ".join(n.rjust(14) for n in names))
