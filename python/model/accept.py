@@ -29,10 +29,15 @@ before the export or a changed settings file stops the gate. The four report rec
 Every review runs one copy of the review program, built once at the start (test_out/vod_model/accept/<name>/bin/), so
 both models are reviewed by the same code even while the source changes. No script's result file is written.
 
+The gate runs stage by stage and stops at the first stage with a failed check (--all runs every stage): the
+contract, then the moving recordings' switching, dynamic and static runs, the report, the tracking runs and last the
+video-alone runs, each judged as soon as both models have it. A model that passes runs every stage and gets the same
+report as before; one that fails gets the checks run so far, and the stages not run.
+
 On a pass, --list adds the model to models.json (so `bun run assets` ships it), unless it is there already. It never
 edits models.json on a fail and never changes the default model: it prints the lines to change for that.
 Writes python/model/reports/accept_<name>.json; exits 1 on a fail.
-Usage: python python/model/accept.py <name> [--list]
+Usage: python python/model/accept.py <name> [--list] [--all]
 """
 import argparse
 import hashlib
@@ -65,6 +70,11 @@ EVAL = ROOT / "test_out" / "vod_model" / "eval"
 WORK = ROOT / "test_out" / "vod_model" / "accept"
 DRAWS, SDS, SEED = 400, 2.0, 0
 CLICKING = ("static", "dynamic", "switching")
+# the stages after the contract, in the order they run: the checks that failed most often and cost least first (the
+# switching and dynamic recordings), the video-alone runs, the costliest (about half the reviews), last
+MOVING_STAGE, REPORT_STAGE, VIDEO_ALONE_STAGE = "moving ", "report", "video alone"
+STAGES = (*(MOVING_STAGE + kind for kind in ("switching", "dynamic", "static")), REPORT_STAGE,
+          MOVING_STAGE + "tracking", VIDEO_ALONE_STAGE)
 TOLERANCE = 3                                   # eval_video_alone.py's frames between a video kill and its stats kill
 PLAIN_THRESHOLD = 0.3                           # what the pipeline took without a settings file (with no score map)
 NAME_CHARS = 60                                 # a recording's name in the progress lines
@@ -264,15 +274,47 @@ def video_alone(model, program):
     return {run_id: {field: result[field] for field in keep} for run_id, result in per_run.items()}, left_out, todo
 
 
-def evaluate(model, pick, lib, scorer, programs):
+def empty_results():
+    """A model's results before any stage has run."""
+    return dict(moving={}, report={}, video_alone={}, video_alone_left_out={},
+                fresh=dict(moving_tracked=[], report_reviewed=False, video_alone_tracked=0), seconds=0.0)
+
+
+def measure_stage(stage, model, results, tools):
+    """Adds a stage's numbers for the model to its results. tools: (pick, lib, scorer, programs)."""
+    pick, lib, scorer, programs = tools
     started = time.time()
-    moving_results, moving_fresh = moving(model, pick, lib, scorer)
-    report_results, report_fresh = report_runs(model, lib, programs)
-    alone, alone_left_out, alone_fresh = video_alone(model, scorer)
-    return dict(moving=moving_results, report=report_results, video_alone=alone, video_alone_left_out=alone_left_out,
-                fresh=dict(moving_tracked=moving_fresh, report_reviewed=report_fresh,
-                           video_alone_tracked=len(alone_fresh)),
-                seconds=round(time.time() - started, 1))
+    if stage.startswith(MOVING_STAGE):
+        kind = stage.removeprefix(MOVING_STAGE)
+        numbers, fresh = moving(model, {kind: pick[kind]}, lib, scorer)
+        results["moving"].update(numbers)
+        results["fresh"]["moving_tracked"] += fresh
+    elif stage == REPORT_STAGE:
+        results["report"], results["fresh"]["report_reviewed"] = report_runs(model, lib, programs)
+    else:
+        alone, left_out, fresh = video_alone(model, scorer)
+        results.update(video_alone=alone, video_alone_left_out=left_out)
+        results["fresh"]["video_alone_tracked"] = len(fresh)
+    results["seconds"] = round(results["seconds"] + time.time() - started, 1)
+
+
+def run_stages(model, best_one, tools, every):
+    """The checks after the contract, stage by stage (STAGES): each measured on the model, then on the best model
+    (mostly from its caches), and judged at once. The first stage with a failed check ends the gate, unless `every`.
+    Returns the rows, both models' results and the stages not run."""
+    cand = empty_results()
+    base = cand if best_one.name == model.name else empty_results()
+    rows = []
+    for at, stage in enumerate(STAGES):
+        say(f"stage: {stage}")
+        measure_stage(stage, model, cand, tools)
+        if base is not cand:
+            measure_stage(stage, best_one, base, tools)
+        stage_rows = judge_stage(stage, cand, base)
+        rows += stage_rows
+        if not every and not all(check["passed"] for check in stage_rows):
+            return rows, cand, base, list(STAGES[at + 1:])
+    return rows, cand, base, []
 
 
 # ---- the limits ------------------------------------------------------------------------------------------------------
@@ -342,18 +384,43 @@ def video_alone_rows(candidate, base):
     return rows
 
 
+def contract_row(con):
+    return dict(check="contract", kind="all", model="meets it" if con["passed"] else "fails",
+                best="", difference="", allowed="every check", unit="", passed=con["passed"])
+
+
+def moving_rows(kind, moving_model, moving_best):
+    """A clicking kind's kills matched and flicks measured on the moving recordings both models have."""
+    videos = [video for video, numbers in moving_best.items() if numbers[0] == kind and video in moving_model]
+    return count_rows("moving", kind, [moving_model[video][1:] for video in videos],
+                      [moving_best[video][1:] for video in videos])
+
+
+def report_rows(report_model, report_best):
+    videos = [video for video in report_best if video in report_model]
+    return count_rows("report", "static", [report_model[video] for video in videos],
+                      [report_best[video] for video in videos])
+
+
+def judge_stage(stage, cand, base):
+    """A stage's rows: the model's numbers against the best model's."""
+    if stage == MOVING_STAGE + "tracking":
+        return tracking_rows(cand["moving"], base["moving"])
+    if stage.startswith(MOVING_STAGE):
+        return moving_rows(stage.removeprefix(MOVING_STAGE), cand["moving"], base["moving"])
+    if stage == REPORT_STAGE:
+        return report_rows(cand["report"], base["report"])
+    return video_alone_rows(cand["video_alone"], base["video_alone"])
+
+
 def judge(cand, base, con):
-    rows = [dict(check="contract", kind="all", model="meets it" if con["passed"] else "fails",
-                 best="", difference="", allowed="every check", unit="", passed=con["passed"])]
-    moving_model, moving_best = cand["moving"], base["moving"]
+    """Every check's row, in the report's order (the contract, the moving kinds, tracking, the report, the video
+    alone), whatever order the stages ran in."""
+    rows = [contract_row(con)]
     for kind in CLICKING:
-        videos = [video for video, numbers in moving_best.items() if numbers[0] == kind and video in moving_model]
-        rows += count_rows("moving", kind, [moving_model[video][1:] for video in videos],
-                           [moving_best[video][1:] for video in videos])
-    rows += tracking_rows(moving_model, moving_best)
-    videos = [video for video in base["report"] if video in cand["report"]]
-    rows += count_rows("report", "static", [cand["report"][video] for video in videos],
-                       [base["report"][video] for video in videos])
+        rows += moving_rows(kind, cand["moving"], base["moving"])
+    rows += tracking_rows(cand["moving"], base["moving"])
+    rows += report_rows(cand["report"], base["report"])
     return rows + video_alone_rows(cand["video_alone"], base["video_alone"])
 
 
@@ -450,19 +517,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("name", help="the model: python/model/exports/detector_<name>_u8in.onnx and detector_<name>.json")
     parser.add_argument("--list", action="store_true", help="on a pass, add the model to models.json")
+    parser.add_argument("--all", action="store_true", help="run every stage, even after a failed check")
     args = parser.parse_args()
     best = best_model()
     model, best_one = Model(args.name), Model(best)
     say(f"{model.name} against {best}, the best model")
     con = contract(model)
-    scorer, programs = pin_programs(model.name)
-    lib = eval_vods.library()
-    pick = eval_moving.picks(lib)
-    cand = evaluate(model, pick, lib, scorer, programs)
-    base = cand if best_one.name == model.name else evaluate(best_one, pick, lib, scorer, programs)
-    rows = judge(cand, base, con)
-    passed = all(check["passed"] for check in rows)
+    rows, cand, base, not_run, programs = [contract_row(con)], empty_results(), empty_results(), list(STAGES), None
+    if con["passed"] or args.all:
+        scorer, programs = pin_programs(model.name)
+        lib = eval_vods.library()
+        tools = (eval_moving.picks(lib), lib, scorer, programs)
+        stage_rows, cand, base, not_run = run_stages(model, best_one, tools, args.all)
+        rows = judge(cand, base, con) if not not_run else rows + stage_rows
+    passed = all(check["passed"] for check in rows) and not not_run
     say_checks(rows, con, best)
+    if not_run:
+        say(f"stopped at the first failed stage; not run: {', '.join(not_run)} (--all runs them)")
     listed = None
     if passed and args.list:
         listed = add_to_models(model, entry(model, cand, rows))
@@ -473,7 +544,7 @@ def main():
                limits=dict(draws=DRAWS, standard_deviations=SDS, seed=SEED,
                            kills_matched="no drop", flicks_recall_precision="2 SD of the best model's share over "
                            "draws of its kills", tracking="2 SD of the best model's number over draws of the runs"),
-               contract=con, checks=rows, model_results=cand, best_results=base, listed=listed,
+               contract=con, checks=rows, not_run=not_run, model_results=cand, best_results=base, listed=listed,
                default_lines=lines)
     out = REPORTS / f"accept_{model.name}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
