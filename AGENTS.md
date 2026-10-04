@@ -214,7 +214,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   countdown bar), which runs beside it so the detector never waits for it: it gets the decoded Y plane and the rows of
   the RGB the countdown test reads, and makes only the 720p luma (the same bytes as the Y of yuv420p;
   `--test camera_same` checks the watch's shifts to the bit), and the service gives the summary (src/tracking.rs). Equal to Python's on 5 tracking runs (`--test tracking_parity`), the camera within
-  1e-8 degrees on the same frames (`--test camera_parity`). Two inputs differ from Python's on purpose: the camera
+  1e-8 degrees on the same frames when measured (`--test camera_parity` asserts under 1e-3 and prints the largest
+  difference). Two inputs differ from Python's on purpose: the camera
   reads the frame's Y plane, where Python reads ffmpeg's `format=gray` (which goes through the colors: readings differ
   by a median 0.001 degrees), and the countdown test does not depend on the HUD color (Python's looks for teal only).
   The run window (the run page's Run window: start and end, typed or from the playhead) works in every mode: the server
