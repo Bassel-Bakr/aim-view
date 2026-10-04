@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, Folders};
 pub use names::{local_stamp, parse_name, parse_stats_name, slug, stamp_seconds};
+pub(crate) use recordings::is_upload;
 pub use reviews::Job;
 use settings::Settings;
 use stats::StatsIndex;
