@@ -31,7 +31,7 @@ The video-alone benchmark's harness, caches and notes: `test_out/baselines/vbenc
 | Check | Command | Baseline |
 | --- | --- | --- |
 | The core against Python | `cargo test --profile quick` | every test passes; fixtures in `test_out/parity/` |
-| The native review, byte for byte | `cargo run -p aimview-service --release --example track -- "<video>" python/model/exports/detector_full_v3_u8in.onnx <out> 0 2 4 - - <stats.csv>` (DirectML, 2 runs, 4 frames a call) | `test_out/baselines/4b7ddc4/native/`: av1 (1wall 2targets xsmall, with test_out/parity/av1/review/stats.csv, and `no_stats/` without it) and flower (Flower Easier); tracks, readings, hud and report. Equal through 38101cb (the Vec refactor) |
+| The native review, byte for byte | `cargo run -p aimview-service --release --example track -- "<video>" python/model/exports/detector_full_v3_u8in.onnx <out> 0 2 4 - - <stats.csv>` (DirectML, 2 runs, 4 frames a call) | `test_out/baselines/4b7ddc4/native/`: av1 (1wall 2targets xsmall, with test_out/parity/av1/review/stats.csv, and `no_stats/` without it) and flower (Flower Easier); tracks, readings, hud and report. `python test_out/baselines/native_compare.py 4b7ddc4` reviews all three and compares. Equal through 47f8857 (the Vec refactor and the three loop fixes) |
 
 ## Speed
 
