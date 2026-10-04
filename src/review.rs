@@ -6,13 +6,14 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::ops::RangeInclusive;
 
 use serde::{Deserialize, Serialize};
 
 use crate::capped::Capped;
 use crate::faint::{FaintSetting, without_faint};
 use crate::geometry::{CX, CY, H, K, W};
-use crate::hud::{HudGame, HudReading};
+use crate::hud::{HudFinal, HudGame, HudReading};
 use crate::matching::{
     appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
     JOIN_GAP_S, JOIN_RADIUS_DEG, SPOTS,
@@ -177,14 +178,95 @@ struct ClickKills<'a> {
     stats: Option<&'a str>,
 }
 
-/// A clicking run's kills from its stats file (`name`, `text`).
-fn stats_kills<'a>(tracks: &Tracks, name: &'a str, text: &str) -> Result<ClickKills<'a>, String> {
+/// A clicking run's kills from its stats file (`name`, `text`); with a run window, only those inside it (each kill on
+/// the video's clock by the matching's offset).
+fn stats_kills<'a>(
+    tracks: &Tracks,
+    name: &'a str,
+    text: &str,
+    window: Option<&RangeInclusive<i64>>,
+) -> Result<ClickKills<'a>, String> {
     let file = StatsFile::parse(text);
     let kills = file.kills()?;
     let (flicks, mut info) = match_times(tracks, &kills.times, &kills.shots, KILL_WINDOW_S, None);
     info.source = Some(KillSource::Stats);
     let hits = file.hits();
-    Ok(ClickKills { flicks, info, meta: file.meta, shots: kills.shots, hits, stats: Some(name) })
+    let all = ClickKills { flicks, info, meta: file.meta, shots: kills.shots, hits, stats: Some(name) };
+    Ok(match (window, all.info.offset) {
+        (Some(window), Some(offset_s)) => {
+            let frame = |time_s: &f64| Some(((time_s + offset_s) * tracks.fps).round_ties_even() as i64);
+            let kill_frames: Vec<Option<i64>> = kills.times.iter().map(frame).collect();
+            kills_within(all, &kill_frames, window)
+        }
+        _ => all,
+    })
+}
+
+/// The frames a clicking run is measured on (first..=last): the user's run window, when its marks give a start or an
+/// end (`run_window`). A start alone runs to the recording's last frame, an end alone from its first.
+fn click_window(marks: &serde_json::Value, fps: f64, frame_count: usize) -> Option<RangeInclusive<i64>> {
+    let frame = |time_s: f64| (time_s * fps).round_ties_even() as i64;
+    let last_frame = frame_count as i64 - 1;
+    match run_window(marks, fps, None) {
+        (Some(first), length_s) => Some(first..=length_s.map_or(last_frame, |length_s| first + frame(length_s))),
+        (None, _) => marks.get("end").and_then(serde_json::Value::as_f64).map(|end_s| 0..=frame(end_s)),
+    }
+}
+
+/// What the HUD read inside the window: its kills, hits and shots there, with the totals counted from them (Aim Lab's
+/// points are the whole run's, so they are left out).
+fn hud_within(reading: &HudReading, window: &RangeInclusive<i64>) -> HudReading {
+    let inside =
+        |frames: &[i64]| -> Vec<i64> { frames.iter().copied().filter(|frame| window.contains(frame)).collect() };
+    let (kills, hits, shots) = (inside(&reading.kills), inside(&reading.hits), inside(&reading.shots));
+    let totals = HudFinal {
+        kills: kills.len() as i64,
+        hits: reading.totals.hits.map(|_| hits.len() as i64),
+        shots: reading.totals.shots.map(|_| shots.len() as i64),
+    };
+    HudReading { game: reading.game, kills, shots, hits, totals, checked: reading.checked, points: None }
+}
+
+/// Only the kills inside the window, numbered again from 1 (`kill_frames`: each kill's frame in the run's order, None
+/// where it is not known): their flicks, shots and hits, and the counts the summary reads (the matched kills, and the
+/// stats file's Kills, Hit Count and Miss Count from the kept kills' shots and hits).
+fn kills_within<'a>(
+    kills: ClickKills<'a>,
+    kill_frames: &[Option<i64>],
+    window: &RangeInclusive<i64>,
+) -> ClickKills<'a> {
+    let ClickKills { flicks, mut info, mut meta, shots, hits, stats } = kills;
+    let kept: Vec<usize> =
+        (0..kill_frames.len()).filter(|&i| kill_frames[i].is_some_and(|frame| window.contains(&frame))).collect();
+    let new_number: HashMap<usize, usize> = kept.iter().enumerate().map(|(at, &i)| (i + 1, at + 1)).collect();
+    let flicks: Vec<Flick> = flicks
+        .into_iter()
+        .filter_map(|flick| Some(Flick { kill_number: *new_number.get(&flick.kill_number)?, ..flick }))
+        .collect();
+    // each kill's shots and hits come one a kill, in the run's order
+    let pick = |all: &[i64]| -> Vec<i64> {
+        if all.len() == kill_frames.len() { kept.iter().map(|&i| all[i]).collect() } else { Vec::new() }
+    };
+    let (shots, hits) = (pick(&shots), hits.map(|hits| pick(&hits)));
+    info.matched = flicks.len();
+    if info.kills_stats.is_some() {
+        info.kills_stats = Some(kept.len());
+        meta.insert("Kills".into(), kept.len().to_string());
+        match hits.as_ref().filter(|hits| hits.len() == kept.len()) {
+            Some(hits) => {
+                let (hit_count, shot_count) = (hits.iter().sum::<i64>(), shots.iter().sum::<i64>());
+                meta.insert("Hit Count".into(), hit_count.to_string());
+                meta.insert("Miss Count".into(), (shot_count - hit_count).max(0).to_string());
+            }
+            None => {
+                meta.remove("Hit Count");
+                meta.remove("Miss Count");
+            }
+        }
+    } else {
+        info.kills_video = kept.len();
+    }
+    ClickKills { flicks, info, meta, shots, hits, stats }
 }
 
 /// What reloading cost the run, for a scenario whose magazine runs out (`reload`): from each kill's shots in the run's
@@ -240,9 +322,11 @@ pub fn review_clicks(
     run: Option<serde_json::Value>,
     reload: Option<&AmmoRules>,
 ) -> Result<Reviewed, String> {
+    // the user's run window: the kills outside it are left out
+    let window = run.as_ref().and_then(|marks| click_window(marks, tracks.fps, tracks.frames.len()));
     let kills = match kills {
-        KillTimes::Stats { name, text } => stats_kills(tracks, name, text)?,
-        KillTimes::Unpaired { hud } => unpaired_kills(tracks, hud, video),
+        KillTimes::Stats { name, text } => stats_kills(tracks, name, text, window.as_ref())?,
+        KillTimes::Unpaired { hud } => unpaired_kills(tracks, hud, video, window.as_ref()),
     };
     let ClickKills { flicks, info, meta, shots, hits, stats } = kills;
     let cost = run_reload_cost(reload, &shots, hits, &meta);
@@ -285,18 +369,35 @@ fn add_hud_facts(meta: &mut HashMap<String, String>, hud: &HudReading, score: Op
 }
 
 /// A clicking run's kills without a stats file: from the HUD, with its shots and totals (the score from the file name,
-/// or Aim Lab's points), else from the video alone (no score, shots, misses or accuracy).
-fn unpaired_kills(tracks: &Tracks, hud: Option<&HudReading>, video: &str) -> ClickKills<'static> {
+/// or Aim Lab's points), else from the video alone (no score, shots, misses or accuracy); with a run window, only the
+/// kills inside it.
+fn unpaired_kills(
+    tracks: &Tracks,
+    hud: Option<&HudReading>,
+    video: &str,
+    window: Option<&RangeInclusive<i64>>,
+) -> ClickKills<'static> {
     let (scenario, score) = name_parts(video);
     let mut meta = HashMap::from([("Scenario".to_string(), scenario)]);
-    let hud = hud.filter(|reading| {
+    let windowed = hud.zip(window).map(|(reading, window)| hud_within(reading, window));
+    let hud = windowed.as_ref().or(hud).filter(|reading| {
         !reading.kills.is_empty()
             && (reading.game != HudGame::Aimlab
                 || reading.kills.len() as f64 <= AIMLAB_MAX_KILLS_PER_VIDEO_KILL * match_video(tracks).0.len() as f64)
     });
     let Some(reading) = hud else {
         let (flicks, info) = match_video(tracks);
-        return ClickKills { flicks, info, meta, shots: Vec::new(), hits: None, stats: None };
+        let all = ClickKills { flicks, info, meta, shots: Vec::new(), hits: None, stats: None };
+        let Some(window) = window else {
+            return all;
+        };
+        let mut kill_frames = vec![None; all.info.kills_video];
+        for flick in &all.flicks {
+            if let Some(slot) = kill_frames.get_mut(flick.kill_number - 1) {
+                *slot = Some(flick.kill_frame);
+            }
+        }
+        return kills_within(all, &kill_frames, window);
     };
     let shots = hud_shots(reading);
     // Aim Lab's crosshair is marked as a target by every model: its tracks were taken for the killed target. In
@@ -564,5 +665,72 @@ mod tests {
         assert_eq!(window(json!({"start": null, "end": 3.0, "length": 5.0}), None), (Some(0), Some(5.0)));
         assert_eq!(window(json!({"start": null, "end": null, "length": null}), Some(60.0)), (None, Some(60.0)));
         assert_eq!(window(json!({"start": 9.0, "end": 3.0, "length": 0.0}), None), (Some(540), None));
+    }
+
+    #[test]
+    fn a_clicking_runs_window_spans_its_marks() {
+        let window = |marks: serde_json::Value| click_window(&marks, 60.0, 1000);
+        assert_eq!(window(json!({"start": 2.0, "end": 12.0, "length": null})), Some(120..=720));
+        assert_eq!(window(json!({"start": 2.0, "end": null, "length": 5.0})), Some(120..=420));
+        assert_eq!(window(json!({"start": 2.0, "end": null, "length": null})), Some(120..=999));
+        assert_eq!(window(json!({"start": null, "end": 12.0, "length": null})), Some(0..=720));
+        assert_eq!(window(json!({"start": null, "end": null, "length": 5.0})), None);
+    }
+
+    #[test]
+    fn the_hud_counts_only_inside_the_window() {
+        let reading = HudReading {
+            game: HudGame::Kovaak,
+            kills: vec![10, 50, 100, 150],
+            shots: vec![10, 30, 50, 100, 140, 150],
+            hits: vec![10, 50, 100, 150],
+            totals: HudFinal { kills: 4, hits: Some(4), shots: Some(6) },
+            checked: 1.0,
+            points: None,
+        };
+        let inside = hud_within(&reading, &(40..=120));
+        assert_eq!((inside.kills, inside.hits, inside.shots), (vec![50, 100], vec![50, 100], vec![50, 100]));
+        assert_eq!(inside.totals, HudFinal { kills: 2, hits: Some(2), shots: Some(2) });
+    }
+
+    #[test]
+    fn a_stats_file_counts_only_the_kills_inside_the_window() {
+        let flick = |kill_number: usize, kill_frame: i64| Flick {
+            kill_number,
+            kill_frame,
+            stats_frame: Some(kill_frame),
+            start_frame: kill_frame - 20,
+            shots: None,
+            path: Vec::new(),
+            spawned: false,
+            area_px: None,
+        };
+        let info = MatchInfo {
+            kills_video: 4,
+            kills_stats: Some(4),
+            matched: 3,
+            confirmed: None,
+            offset: Some(0.0),
+            fps: 60.0,
+            source: Some(KillSource::Stats),
+        };
+        let meta = HashMap::from([("Kills".to_string(), "4".to_string()), ("Hit Count".to_string(), "4".to_string())]);
+        let kills = ClickKills {
+            flicks: vec![flick(2, 50), flick(3, 100), flick(4, 150)],
+            info,
+            meta,
+            shots: vec![1, 3, 2, 1],
+            hits: Some(vec![1, 1, 1, 1]),
+            stats: Some("run.csv"),
+        };
+        let kill_frames = [Some(10), Some(50), Some(100), Some(150)];
+        let inside = kills_within(kills, &kill_frames, &(40..=120));
+        let numbers: Vec<(usize, i64)> =
+            inside.flicks.iter().map(|flick| (flick.kill_number, flick.kill_frame)).collect();
+        assert_eq!(numbers, vec![(1, 50), (2, 100)]);
+        assert_eq!((inside.shots, inside.hits), (vec![3, 2], Some(vec![1, 1])));
+        assert_eq!((inside.info.matched, inside.info.kills_stats), (2, Some(2)));
+        let count = |key: &str| inside.meta[key].clone();
+        assert_eq!((count("Kills"), count("Hit Count"), count("Miss Count")), ("2".into(), "2".into(), "3".into()));
     }
 }
