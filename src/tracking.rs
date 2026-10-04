@@ -1,10 +1,12 @@
 //! A tracking run's summary (review.py: `track_summary`, `track_motion`, `what_if`, `stats_length`,
-//! `countdown_end`): how the crosshair stayed on the target, from the tracks and the camera's turn.
+//! `countdown_end`, `tracking_crosshair`, `without_crosshair`): how the crosshair stayed on the target, from the tracks
+//! and the camera's turn.
 
 use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::faint::picked;
 use crate::geometry::{K, degrees};
 use crate::optional_fields::OptionalFields;
 use crate::matching::KillSource;
@@ -541,8 +543,125 @@ pub fn countdown_end(showing: &[bool], fps: f64, until: f64) -> Option<usize> {
     showing.iter().enumerate().take_while(|&(i, _)| (i as f64) / fps < until).filter(|&(_, &s)| s).map(|(i, _)| i + 1).last()
 }
 
+/// Where a detector marks the crosshair in a tracking run: the points its box sits on (degrees from the crosshair),
+/// and the box's width and height (degrees).
+struct CrosshairBox {
+    points: Vec<(f64, f64)>,
+    size: (f64, f64),
+}
+
+/// The crosshair's box in a tracking run (review.py: `tracking_crosshair`): piles of boxes within 0.015 degrees of a
+/// point, the first in 5% of all the frames or more, then up to two more within 0.3 degrees of it in 2% or more. A bot
+/// never stays that still. Only boxes with a size count. Its size: the median width and height of the boxes within
+/// 0.02 degrees of the first point. None without such points.
+fn crosshair_box(frames: &[TrackFrame]) -> Option<CrosshairBox> {
+    const NEAR: f64 = 0.5;
+    const STEP: f64 = 0.01;
+    let p: Vec<(f64, f64, f64, f64)> = frames
+        .iter()
+        .filter_map(|f| f.wh.as_ref().map(|wh| f.t.iter().zip(wh).map(|(&(_, x, y), &(w, h))| (x, y, w, h))))
+        .flatten()
+        .filter(|&(x, y, _, _)| hypot(x, y) < NEAR)
+        .collect();
+    if p.len() < 30 {
+        return None;
+    }
+    // NumPy's histogram2d: edges as `linspace` makes them, a value on an edge in the bin above
+    let n = (2.0 * NEAR / STEP).round_ties_even() as usize;
+    let step = 2.0 * NEAR / n as f64;
+    let mut edges: Vec<f64> = (0..=n).map(|k| k as f64 * step + -NEAR).collect();
+    edges[n] = NEAR;
+    let bin = |v: f64| edges.partition_point(|&e| e <= v) - 1;
+    let mut h = vec![0.0; n * n];
+    for &(x, y, _, _) in &p {
+        h[bin(x) * n + bin(y)] += 1.0;
+    }
+    let centers: Vec<f64> = (0..n).map(|k| -NEAR + (k as f64 + 0.5) * STEP).collect();
+    let within = |c: (f64, f64)| p.iter().filter(move |q| (q.0 - c.0).hypot(q.1 - c.1) < 0.02).collect::<Vec<_>>();
+    let mean = |v: &[&(f64, f64, f64, f64)], f: fn(&(f64, f64, f64, f64)) -> f64| {
+        v.iter().map(|&q| f(q)).sum::<f64>() / v.len() as f64
+    };
+    let (mut out, mut size): (Vec<(f64, f64)>, (f64, f64)) = (Vec::new(), (0.0, 0.0));
+    for _ in 0..3 {
+        // each bin with its 8 neighbours (wrapping round, as np.roll does), the first largest; after the first point,
+        // only bins within 0.3 degrees of it
+        let mut best = (0, 0, f64::NEG_INFINITY);
+        for i in 0..n {
+            for j in 0..n {
+                let mut b = 0.0;
+                if out.first().is_none_or(|o| (centers[i] - o.0).hypot(centers[j] - o.1) <= 0.3) {
+                    for a in [n - 1, 0, 1] {
+                        for c in [n - 1, 0, 1] {
+                            b += h[((i + a) % n) * n + (j + c) % n];
+                        }
+                    }
+                }
+                if b > best.2 {
+                    best = (i, j, b);
+                }
+            }
+        }
+        let (i, j, b) = best;
+        let need = if out.is_empty() { 0.05 } else { 0.02 };
+        if b < (need * frames.len() as f64).max(25.0) {
+            break;
+        }
+        let on = within((centers[i], centers[j]));
+        if on.is_empty() {
+            break;
+        }
+        let c = (mean(&on, |q| q.0), mean(&on, |q| q.1));
+        if out.is_empty() {
+            let on = within(c);
+            let side = |f: fn(&(f64, f64, f64, f64)) -> f64| median(&on.iter().map(|&q| f(q)).collect::<Vec<_>>());
+            size = (side(|q| q.2), side(|q| q.3));
+        }
+        out.push(c);
+        for (a, &gx) in centers.iter().enumerate() {
+            for (b, &gy) in centers.iter().enumerate() {
+                if (gx - c.0).hypot(gy - c.1) < 0.06 {
+                    h[a * n + b] = 0.0;
+                }
+            }
+        }
+    }
+    (!out.is_empty()).then_some(CrosshairBox { points: out, size })
+}
+
+/// The frames without the boxes a detector puts on the crosshair in a tracking run (review.py: `without_crosshair`):
+/// those within 0.1 degrees of one of its points (`crosshair_box`), with a width and a height within 20% of its
+/// box's. None when the run has no such points.
+fn without_crosshair(frames: &[TrackFrame]) -> Option<Vec<TrackFrame>> {
+    let CrosshairBox { points, size: (w0, h0) } = crosshair_box(frames)?;
+    let crosshair = |x: f64, y: f64, w: f64, h: f64| {
+        points.iter().any(|&(a, b)| hypot(x - a, y - b) < 0.1)
+            && (w - w0).abs() <= 0.2 * w0
+            && (h - h0).abs() <= 0.2 * h0
+    };
+    let frames = frames
+        .iter()
+        .map(|f| {
+            let Some(wh) = &f.wh else { return f.clone() };
+            let keep: Vec<usize> = (f.t.iter().zip(wh).enumerate())
+                .filter(|&(_, (&(_, x, y), &(w, h)))| !crosshair(x, y, w, h))
+                .map(|(k, _)| k)
+                .collect();
+            TrackFrame {
+                i: f.i,
+                shift: f.shift,
+                t: picked(&f.t, &keep),
+                a: picked(&f.a, &keep),
+                wh: Some(picked(wh, &keep)),
+                s: f.s.as_ref().map(|v| picked(v, &keep)),
+            }
+        })
+        .collect();
+    Some(frames)
+}
+
 /// How the crosshair stayed on the target in a tracking run. `limit`: the run's length (seconds); `start`: its first
-/// frame when known; `deaths`: the frames where bots die; `cam`: the camera's readings.
+/// frame when known; `deaths`: the frames where bots die; `cam`: the camera's readings. The boxes a detector puts on
+/// the crosshair are left out first (`without_crosshair`).
 pub fn track_summary(
     tracks: &Tracks,
     meta: &HashMap<String, String>,
@@ -553,7 +672,8 @@ pub fn track_summary(
     source: KillSource,
 ) -> TrackSummary {
     const GAP: f64 = 0.1;
-    let (fr, fps) = (&tracks.frames, tracks.fps);
+    let kept = without_crosshair(&tracks.frames);
+    let (fr, fps): (&[TrackFrame], f64) = (kept.as_deref().unwrap_or(&tracks.frames), tracks.fps);
     let mut near: Vec<Option<(f64, f64)>> = Vec::with_capacity(fr.len());
     let mut inside = Vec::with_capacity(fr.len());
     for f in fr {

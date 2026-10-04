@@ -8,6 +8,8 @@ Usage: python tests/fixtures.py <video> [--name NAME] [--model full_v3] [--areas
        python tests/fixtures.py --review <name>   (Python's review of a fixture's tracks, with its stats file)
        python tests/fixtures.py --from-cache <review cache folder> <name>   (the same from the review app's cached
            tracks and camera readings, for runs no fixture covers)
+       python tests/fixtures.py --crosshair   (flower_crosshair: flower's tracks with the valorant run's crosshair
+           boxes put in, after --review flower and --review av1)
        python tests/fixtures.py --faint   (the faint-target cut-off: tracking reviews with it on, and the scores, cut and
            labels of every recording the user set one for)"""
 import argparse
@@ -95,6 +97,45 @@ def cache_case(cache, name):
     track_inputs(old["video"], out, len(json.load(open(out / "tracks.json"))["frames"]))
     m = report["summary"].get("motion") or {}
     print(f"{name}: on target {report['summary']['on_target']}, reversals {m.get('reversals')}")
+
+
+def crosshair_case(name="flower_crosshair"):
+    """A tracking case with a detector's boxes on the crosshair (review.without_crosshair at work): flower's tracks,
+    with the valorant run's crosshair boxes (av1's, in its run, frames 129 to 5466, while the camera turns more than
+    0.5 deg a frame: no target is under the crosshair then) put into flower's run in order, in the frames with no box
+    within 0.45 deg of them. Then Python's review of them, as --from-cache does."""
+    import math
+    import shutil
+    import tempfile
+    root = ROOT / "test_out" / "parity"
+    av1 = json.load(open(root / "av1" / "review" / "tracks.json"))["frames"]
+    src = root / "flower" / "review"
+    tracks, old = json.load(open(src / "tracks.json")), json.load(open(src / "report.json"))
+    pool = []
+    for f in av1[129:5467]:
+        if math.hypot(*(f.get("shift") or (0, 0))) <= 0.5 or "wh" not in f:
+            continue
+        b = [(x, y, wh[0], wh[1], a, s) for (_, x, y), wh, a, s in zip(f["t"], f["wh"], f["a"], f["s"])
+             if math.hypot(x, y) < 0.3 and min(wh) > 0.6]
+        pool.append(min(b, key=lambda q: math.hypot(q[0], q[1])) if b else None)
+    tid, prev = 1 + max(q[0] for f in tracks["frames"] for q in f["t"]), False
+    for k, f in enumerate(tracks["frames"]):
+        b = pool[k % len(pool)]
+        if not old["summary"]["start"] <= k < old["summary"]["end"] or b is None or \
+                any(math.hypot(x - b[0], y - b[1]) < 0.45 for _, x, y in f["t"]):
+            prev = False
+            continue
+        if not prev:                                        # a new track after each gap
+            tid += 1
+        prev = True
+        f["t"].append([tid, b[0], b[1]])
+        for key, v in (("a", b[4]), ("wh", [b[2], b[3]]), ("s", b[5])):
+            f.setdefault(key, []).append(v)
+    with tempfile.TemporaryDirectory() as tmp:
+        json.dump(tracks, open(Path(tmp) / "tracks.json", "w"))
+        shutil.copyfile(src / "camera.json", Path(tmp) / "camera.json")
+        json.dump(dict(video=old["video"], stats=old["stats"]), open(Path(tmp) / "report.json", "w"))
+        cache_case(tmp, name)
 
 
 def track_inputs(video, out, n, pairs=40):
@@ -212,6 +253,8 @@ def main():
         return review_case(sys.argv[2])
     if sys.argv[1:2] == ["--from-cache"]:
         return cache_case(sys.argv[2], sys.argv[3])
+    if sys.argv[1:] == ["--crosshair"]:
+        return crosshair_case()
     if sys.argv[1:] == ["--hypot"]:
         return hypot_cases()
     if sys.argv[1:] == ["--scenarios"]:

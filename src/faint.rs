@@ -117,7 +117,7 @@ pub fn without_faint(frames: &[TrackFrame], offset: f64, near: f64) -> FaintCutF
 }
 
 /// The values at the indexes kept.
-fn picked<T: Copy>(v: &[T], keep: &[usize]) -> Vec<T> {
+pub(crate) fn picked<T: Copy>(v: &[T], keep: &[usize]) -> Vec<T> {
     keep.iter().filter_map(|&k| v.get(k).copied()).collect()
 }
 

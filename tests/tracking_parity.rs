@@ -12,7 +12,9 @@ use aimview::tracking::CameraReading;
 mod common;
 use common::{Diff, compare, read};
 
-const CASES: [&str; 5] = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol"];
+/// flower_crosshair (tests/fixtures.py --crosshair): flower's tracks with the valorant run's crosshair boxes (av1's,
+/// from its fast turns) put into its run, so the tracking review leaves out a detector's boxes on the crosshair.
+const CASES: [&str; 6] = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol", "flower_crosshair"];
 
 #[test]
 fn tracking_review_matches_python() {

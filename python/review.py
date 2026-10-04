@@ -1441,6 +1441,70 @@ def without_faint(frames, offset, near=2.0):
     return out, round(cut, 3), len(gone)
 
 
+def tracking_crosshair(frames, near=0.5, step=0.01):
+    """Where a detector marks the crosshair in a tracking run, and the size of the box it gives it. The clicking rule
+    (crosshair_spots) reads the frames where the camera turns, as no target stays put on screen then; in a tracking
+    run the bot stays near the crosshair too. But the crosshair's box sits on one to three fixed points, a fraction
+    of a pixel across, in most frames, and a bot never stays that still: a pile of boxes within 0.015 deg of a point
+    in 5% of all the frames or more (the valorant run's crosshair boxes, put into the 12 tracking runs of
+    eval_moving.py: 12% to 37%; the bots of those runs: 1.1% at most), then more such points within 0.3 deg of the
+    first in 2% or more (its second point: 2.6% to 12%). Only boxes with a size count. Returns [(x, y) deg], at most
+    3, and the median (w, h) deg of the boxes within 0.02 deg of the first point, or [] and None."""
+    P = np.array([(x, y) for f in frames if "wh" in f for _, x, y in f["t"] if math.hypot(x, y) < near]).reshape(-1, 2)
+    S = np.array([wh for f in frames if "wh" in f for (_, x, y), wh in zip(f["t"], f["wh"])
+                  if math.hypot(x, y) < near]).reshape(-1, 2)
+    out, size = [], None
+    if len(P) < 30:
+        return out, size
+    n = int(round(2 * near / step))
+    H = np.histogram2d(P[:, 0], P[:, 1], bins=n, range=[[-near, near], [-near, near]])[0]
+    g = -near + (np.arange(n) + 0.5) * step
+    for _ in range(3):
+        B = sum(np.roll(np.roll(H, a, 0), b, 1) for a in (-1, 0, 1) for b in (-1, 0, 1))
+        if out:                                     # its other points lie near the first
+            B[np.hypot(g[:, None] - out[0][0], g[None, :] - out[0][1]) > 0.3] = 0
+        i, j = np.unravel_index(np.argmax(B), B.shape)
+        if B[i, j] < max(25, (0.02 if out else 0.05) * len(frames)):
+            break
+        on = np.hypot(*(P - np.array([g[i], g[j]])).T) < 0.02
+        if not on.any():
+            break
+        c = P[on].mean(axis=0)
+        if not out:
+            on = np.hypot(*(P - c).T) < 0.02
+            size = (float(np.median(S[on, 0])), float(np.median(S[on, 1])))
+        out.append((float(c[0]), float(c[1])))
+        H[np.hypot(g[:, None] - c[0], g[None, :] - c[1]) < 0.06] = 0
+    return out, size
+
+
+def without_crosshair(frames):
+    """The frames without the boxes a detector puts on the crosshair in a tracking run (tracking_crosshair): those
+    within 0.1 deg of one of its points, with a width and a height within 20% of its box's. With such boxes the
+    crosshair is on a target in nearly every frame: put into the 12 tracking runs of eval_moving.py, the valorant
+    run's crosshair boxes (from its fast turns, where no target is under the crosshair) took on_target from 0.27-0.87
+    to 0.97-1.0; with them left out it comes within 0.034 of the runs' own (0.019 on average). A bot of the
+    crosshair's size that sits on one of its points goes with them (Pokeball 1w2ts: 0.006 of the run). A run with no
+    such points is left as it is."""
+    spots, size = tracking_crosshair(frames)
+    if not spots:
+        return frames
+    (w0, h0), out = size, []
+    for f in frames:
+        if "wh" not in f:
+            out.append(f)
+            continue
+        keep = [k for k, ((_, x, y), (w, h)) in enumerate(zip(f["t"], f["wh"]))
+                if not (any(math.hypot(x - a, y - b) < 0.1 for a, b in spots)
+                        and abs(w - w0) <= 0.2 * w0 and abs(h - h0) <= 0.2 * h0)]
+        g = dict(f)
+        for key in ("t", "a", "wh", "s"):
+            if key in f:
+                g[key] = [f[key][k] for k in keep]
+        out.append(g)
+    return out
+
+
 def track_summary(tracks, meta, limit=None, gap=0.1, cam=None, deaths=None, start=None):
     """A tracking run (bots that stay alive, so the stats file holds totals only): how the crosshair stayed on the
     target, from the tracks. The crosshair is on the target in a frame when it lies inside a target's box plus 0.05 deg
@@ -1465,8 +1529,9 @@ def track_summary(tracks, meta, limit=None, gap=0.1, cam=None, deaths=None, star
     to_next: the median time from a death to being on a target again, split into waiting (no target on screen yet)
     and onto (from the first target shown to being on it); switching: the share of the run spent switching.
     per_second: per second, [the share on the target, the share switching].
-    motion (with cam, camera_motion's reading): track_motion's diagnostics."""
-    fr, fps = tracks["frames"], tracks["fps"]
+    motion (with cam, camera_motion's reading): track_motion's diagnostics.
+    The boxes a detector puts on the crosshair are left out first (without_crosshair)."""
+    fr, fps = without_crosshair(tracks["frames"]), tracks["fps"]
     near, inside = [], []
     for f in fr:
         best, ins = None, False
