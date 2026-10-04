@@ -42,20 +42,20 @@ export class SpeedChart {
   protected readonly smooth = signal(localStorage.getItem(SMOOTH_KEY) !== '0');
   private readonly size = signal<ChartSize>({ width: 600, height: 150 });
   protected readonly model = computed<SpeedChartModel | null>(() => {
-    const m = this.focus.selected();
-    const r = this.report();
-    const path = m && r.paths[String(m.kill_number)];
-    return m && path ? speedChart(m, path, r.fps, this.size(), this.smooth()) : null;
+    const flick = this.focus.selected();
+    const report = this.report();
+    const path = flick && report.paths[String(flick.kill_number)];
+    return flick && path ? speedChart(flick, path, report.fps, this.size(), this.smooth()) : null;
   });
   /** The flick's length, in milliseconds: the slider's range. */
   protected readonly flickMs = computed(() => {
-    const m = this.focus.selected();
-    return m ? Math.round(1000 * m.total) : 0;
+    const flick = this.focus.selected();
+    return flick ? Math.round(1000 * flick.total) : 0;
   });
   protected readonly title = computed(() => {
-    const m = this.focus.selected();
-    return m
-      ? `Kill ${m.kill_number}: ${m.D0.toFixed(1)}° ${arrow(m.direction_deg)}, ${Math.round(1000 * m.total)} ms`
+    const flick = this.focus.selected();
+    return flick
+      ? `Kill ${flick.kill_number}: ${flick.D0.toFixed(1)}° ${arrow(flick.direction_deg)}, ${Math.round(1000 * flick.total)} ms`
       : '';
   });
 
@@ -68,7 +68,7 @@ export class SpeedChart {
   }
 
   private follow(): void {
-    const stop = this.playback.onFrame((t) => this.moveHead(t));
+    const stop = this.playback.onFrame((seconds) => this.moveHead(seconds));
     const resize = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width && height) this.size.set({ width, height });
@@ -80,16 +80,16 @@ export class SpeedChart {
     });
   }
 
-  private moveHead(t: number): void {
-    const m = this.model();
+  private moveHead(seconds: number): void {
+    const model = this.model();
     const head = this.head()?.nativeElement;
-    if (!m || !head) return;
-    const frame = Math.min(m.lastFrame, Math.max(m.firstFrame, t * m.fps));
-    const x = String(xOf(m, frame));
+    if (!model || !head) return;
+    const frame = Math.min(model.lastFrame, Math.max(model.firstFrame, seconds * model.fps));
+    const x = String(xOf(model, frame));
     head.setAttribute('x1', x);
     head.setAttribute('x2', x);
     if (this.playback.paused()) {
-      const ms = Math.round((1000 * (frame - m.firstFrame)) / m.fps);
+      const ms = Math.round((1000 * (frame - model.firstFrame)) / model.fps);
       const svg = this.svg().nativeElement;
       svg.setAttribute('aria-valuenow', String(ms));
       svg.setAttribute('aria-valuetext', `${ms} ms into the flick`);
@@ -97,46 +97,48 @@ export class SpeedChart {
   }
 
   /** Left and Right step a frame; Home and End go to the flick's start and its kill. */
-  protected stepWithKeys(e: KeyboardEvent): void {
-    const m = this.model();
-    if (!m) return;
-    const frame = Math.round(this.playback.time * m.fps);
+  protected stepWithKeys(event: KeyboardEvent): void {
+    const model = this.model();
+    if (!model) return;
+    const frame = Math.round(this.playback.time * model.fps);
     const to: Record<string, number> = {
       ArrowRight: frame + 1,
       ArrowUp: frame + 1,
       ArrowLeft: frame - 1,
       ArrowDown: frame - 1,
-      Home: m.firstFrame,
-      End: m.lastFrame,
+      Home: model.firstFrame,
+      End: model.lastFrame,
     };
-    if (!(e.key in to)) return;
-    e.preventDefault();
+    if (!(event.key in to)) return;
+    event.preventDefault();
     this.playback.pause();
-    this.playback.seek(Math.min(m.lastFrame, Math.max(m.firstFrame, to[e.key])) / m.fps);
+    this.playback.seek(
+      Math.min(model.lastFrame, Math.max(model.firstFrame, to[event.key])) / model.fps,
+    );
   }
 
   /** The mouse's x across the chart, in the chart's own pixels. */
-  private chartX(e: MouseEvent, m: SpeedChartModel): number {
-    const r = (e.currentTarget as Element).getBoundingClientRect();
-    return ((e.clientX - r.left) * m.size.width) / r.width;
+  private chartX(event: MouseEvent, model: SpeedChartModel): number {
+    const bounds = (event.currentTarget as Element).getBoundingClientRect();
+    return ((event.clientX - bounds.left) * model.size.width) / bounds.width;
   }
 
-  protected showPoint(e: PointerEvent): void {
-    const m = this.model();
+  protected showPoint(event: PointerEvent): void {
+    const model = this.model();
     const marker = this.marker()?.nativeElement;
     const tip = this.tip()?.nativeElement;
-    if (!m || !marker || !tip || !m.data.length) return;
-    const x = this.chartX(e, m);
-    const [f, v] = m.data.reduce((a, b) =>
-      Math.abs(xOf(m, b[0]) - x) < Math.abs(xOf(m, a[0]) - x) ? b : a,
+    if (!model || !marker || !tip || !model.data.length) return;
+    const x = this.chartX(event, model);
+    const [frame, speed] = model.data.reduce((a, b) =>
+      Math.abs(xOf(model, b[0]) - x) < Math.abs(xOf(model, a[0]) - x) ? b : a,
     );
-    marker.setAttribute('cx', String(xOf(m, f)));
-    marker.setAttribute('cy', String(yOf(m, v)));
+    marker.setAttribute('cx', String(xOf(model, frame)));
+    marker.setAttribute('cy', String(yOf(model, speed)));
     marker.setAttribute('visibility', 'visible');
-    const ms = Math.round((1000 * (f - m.firstFrame)) / m.fps);
-    tip.textContent = `${ms} ms · ${Math.round(v)} °/s${this.smooth() ? ' (smoothed)' : ''}`;
+    const ms = Math.round((1000 * (frame - model.firstFrame)) / model.fps);
+    tip.textContent = `${ms} ms · ${Math.round(speed)} °/s${this.smooth() ? ' (smoothed)' : ''}`;
     tip.hidden = false;
-    tip.style.left = `${(xOf(m, f) / m.size.width) * 100}%`;
+    tip.style.left = `${(xOf(model, frame) / model.size.width) * 100}%`;
   }
 
   protected hidePoint(): void {
@@ -145,11 +147,11 @@ export class SpeedChart {
     if (tip) tip.hidden = true;
   }
 
-  protected goToPoint(e: MouseEvent): void {
-    const m = this.model();
-    if (!m) return;
+  protected goToPoint(event: MouseEvent): void {
+    const model = this.model();
+    if (!model) return;
     this.playback.pause();
-    this.playback.seek(frameAt(m, this.chartX(e, m)) / m.fps);
+    this.playback.seek(frameAt(model, this.chartX(event, model)) / model.fps);
   }
 
   protected toggleSmooth(): void {
