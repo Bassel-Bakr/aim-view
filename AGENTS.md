@@ -16,8 +16,8 @@ are in `README.md` ("Where it's going").
 
 ```bash
 bun run server                                 # the review server (server/, aimview-server), http://127.0.0.1:8770/: the
-                                               # server-mode build at /, the old page at /old/ (bun run build:server
-                                               # first; flags or aimview-server.toml: server/README.md)
+                                               # server-mode build at / (bun run build:server first; flags or
+                                               # aimview-server.toml: server/README.md)
 cargo run -q --release -p aimview-service --bin aimview-tool -- help   # the library and the native review for
                                                # scripts, JSON on stdout (python/aimview_tools.py runs it)
 python python/model/test_model.py              # the detector's tests
@@ -146,7 +146,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   desktop app (Tauri 2) and as WebAssembly for the browser. The ground truth is KovaaK's stats files, not Python: a
   new feature is checked against them (for a run without one, on runs that have one, with the file left out). Python's
   review stays a cross-check while it lasts; `python/model/` stays for training the detector. The Python server has
-  retired (the Rust server serves server mode); the old page retires once the Angular app does what it does.
+  retired (the Rust server serves server mode); the old page retired too (python/retired/app/).
 - Done: the layout (`python/`, the Rust crate at the root, `ui/`). In `ui/`: the recordings list, and the run page
   (review button and progress, the video with its overlay, seek bar, controls, keys, and a tracking run's timeline),
   and both reports (a clicking run's cards, time budget, checks, tables, flick list and speed chart; a tracking run's
@@ -260,8 +260,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 - The service (service/, aimview-service): the review server's API without Tauri, `api::handle` over a `Library`
   opened with a `Config` (the data folder in the app's layout or Python's test_out/ layout, the VODs, stats and
   scenario folders, the models, the device: DirectML, CUDA behind the `cuda` feature, or the CPU). Two servers serve
-  it: the desktop app over its own protocol, and server/ (aimview-server: HTTP, the server-mode UI build, the old page
-  at /old/, a token for anything beyond this machine). Python's scripts (areas.py, model/build_kills.py, eval_vods.py,
+  it: the desktop app over its own protocol, and server/ (aimview-server: HTTP, the server-mode UI build, a token for
+  anything beyond this machine). Python's scripts (areas.py, model/build_kills.py, eval_vods.py,
   eval_moving.py, tests/find_popups.py, tests/fixtures.py) use it through its command-line tool, aimview-tool
   (service/src/bin/: `recordings`, `lookup`, `review`, JSON on stdout), which python/aimview_tools.py runs (cargo run
   --release, so a Rust change is built first). The Python bindings and the thin Python server over them retired
@@ -287,8 +287,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   own) and the VC++ runtime ONNX Runtime loads (msvcp140, msvcp140_1, vcruntime140, vcruntime140_1; desktop/build.rs
   copies them from the newest Visual Studio). ONNX Runtime is linked into the exe. Checked: installed silently into
   a folder, the app reviewed a recording on DirectML with every one of these DLLs loaded from that folder.
-- The Angular app does everything the old page (`python/app/`, now at /old/ on the Rust server) did, the player's
-  full screen (F, Escape) included; the old page stays until the user retires it. Server mode stays (a stronger
+- The Angular app does everything the old page did, the player's full screen (F, Escape) included; the old page
+  retired to `python/retired/app/` (2026-10-04), and the Rust server no longer serves it. Server mode stays (a stronger
   machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review
   through the app's native pipeline by default (--python: the old one).
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
@@ -298,7 +298,5 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   turn at a kill, a target merged with the next): untested; measure on the stats-file runs (Smoothbot Switch Robots:
   41 flicks for 54 kills); the camera's turn at a kill fixed at its source (src/track.rs `view_shift` lines another
   target up with a dead one on a plain wall), for every review; the video-alone benchmark has only 8 switching runs
-  (VT DriftTS breaks into many tracks); the UI does not show the device a review ran on (/api/job `device`); a partial
-  upload a server crash leaves (`.incoming-*.part` in the uploads folder) is never cleaned up; the flick table (16
-  columns, 1,190 px) scrolls in its box at every width; at 1024 px the run's title is squeezed by the toolbar;
+  (VT DriftTS breaks into many tracks);
   python/model/infer.py still uses the fixed threshold, not the model's settings file (the `--python` path).

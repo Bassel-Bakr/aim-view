@@ -1,6 +1,6 @@
 # aimview-server
 
-Aim View's review server, in Rust. It serves the UI's server-mode build, the old page (`python/app/`) at /old/, and
+Aim View's review server, in Rust. It serves the UI's server-mode build and
 the review server's API, the one the Python server served (`python/retired/`). The review runs natively, as in the
 desktop app: both use the `aimview-service` crate (`service/`). It is the server the UI's server mode talks to.
 
@@ -32,7 +32,6 @@ With no settings, the server runs on the machine Aim View is made on:
 | Device | `--device` | `auto`; also `directml`, `cuda`, `cpu` |
 | ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg/` in the data folder; `path` for the PATH's only |
 | UI build | `--ui` | the repo's `ui/dist/server/browser` |
-| The old page, at /old/ | `--old` | the repo's `python/app` |
 | Token | `--token` | none |
 
 The same settings can go in a TOML file: `--config <file>`, or `aimview-server.toml` in the current folder. A flag

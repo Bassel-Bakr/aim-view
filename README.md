@@ -55,7 +55,7 @@ JavaScript package (the core's WebAssembly build).
 | --- | --- |
 | `python/review.py` | The whole review pipeline: tracking, kill matching, flick and tracking measures, the report. |
 | `service/`, `server/` | The review API in Rust (shared by every server) and the HTTP server (port 8770). The service's `aimview-tool` gives Python's scripts the library and the native review (`python/aimview_tools.py`). |
-| `python/app/` | The web app: `index.html`, `style.css`, `app.js` (plain HTML, CSS and JavaScript, no build step). |
+| `python/retired/app/` | The old web page (plain HTML, CSS and JavaScript), retired: the Angular app in `ui/` does what it did. |
 | `python/hud.py`, `python/areas.py` | The HUD readers (KovaaK's session HUD, Aim Lab's POINTS) and the overlay-area finder. |
 | `python/model/` | The target detector: training, evaluation, export, and the exported models (`exports/`, every version). |
 | `python/README.md` | How the review works, in detail. |
@@ -73,7 +73,7 @@ bun run build:server
 bun run server
 ```
 
-Then open http://127.0.0.1:8770/ (the old page is at http://127.0.0.1:8770/old/). It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
+Then open http://127.0.0.1:8770/. It lists the recordings in `E:\OBS\KovOBS` and finds their stats files in KovaaK's
 `stats` folder. The detector runs through ONNX Runtime: DirectML on Windows, CUDA on Linux (the `cuda` feature), or the CPU.
 
 The new Angular app runs in browser mode (everything in the browser) or in server mode (its data from that server):

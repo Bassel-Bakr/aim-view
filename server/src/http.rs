@@ -1,5 +1,4 @@
-//! The HTTP side: each request is checked (access.rs), then goes to the review API, to the old page (/old/) or to the
-//! UI's files. The API answers on a blocking thread of its own: a listing or a report reads files, and a review's start
+//! The HTTP side: each request is checked (access.rs), then goes to the review API or to the UI's files. The API answers on a blocking thread of its own: a listing or a report reads files, and a review's start
 //! can take a while (the review itself runs in the background, polled with /api/job).
 
 use std::path::{Path, PathBuf};
@@ -52,8 +51,6 @@ pub struct App {
     pub access: Access,
     /// The UI's build (index.html and its files)
     pub ui: PathBuf,
-    /// The old page (python/app/), at /old/
-    pub old: PathBuf,
 }
 
 /// Every path goes through `answer`; uploads (a whole video) have no size limit: they go to disk as they arrive.
@@ -112,15 +109,7 @@ async fn route(app: &App, req: Request) -> Response {
     if !matches!(*req.method(), Method::GET | Method::HEAD) {
         return text(StatusCode::METHOD_NOT_ALLOWED, "the UI's files are read with GET\n");
     }
-    let path = req.uri().path();
-    if path == "/old" {
-        // the old page names its files relative to /old/
-        return (StatusCode::MOVED_PERMANENTLY, [(LOCATION, "/old/")]).into_response();
-    }
-    if let Some(rest) = path.strip_prefix("/old/") {
-        return old_file(app, rest).await;
-    }
-    ui_file(app, path).await
+    ui_file(app, req.uri().path()).await
 }
 
 async fn call_api(app: &App, req: Request) -> Response {
@@ -232,21 +221,6 @@ async fn ui_file(app: &App, path: &str) -> Response {
     response
 }
 
-/// One of the old page's files (python/app/), as python/server.py served them: index.html for /old/, never kept, and
-/// no cross-origin isolation (the page needs none). A file it does not have is not found.
-async fn old_file(app: &App, rest: &str) -> Response {
-    let file = match files::find(&app.old, rest) {
-        Found::File(f) => f,
-        Found::Index if rest.is_empty() => app.old.join("index.html"),
-        Found::Index => return text(StatusCode::NOT_FOUND, "not found\n"),
-    };
-    let Some(mut response) = file_response(&file).await else {
-        return text(StatusCode::NOT_FOUND, format!("no old page: {} is missing\n", file.display()));
-    };
-    response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-    response
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -294,19 +268,11 @@ mod tests {
         root
     }
 
-    fn old() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("aimview-server-old-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("index.html"), "<!doctype html><title>Old page</title>").unwrap();
-        std::fs::write(root.join("app.js"), "old()").unwrap();
-        root
-    }
-
     fn app(token: Option<&str>) -> (Arc<Echo>, Router) {
         let echo = Arc::new(Echo::default());
         let addrs = ["127.0.0.1:8770".parse().unwrap()];
         let access = Access::new(&addrs, token.map(String::from)).unwrap();
-        (echo.clone(), router(Arc::new(App { api: echo, access, ui: ui(), old: old() })))
+        (echo.clone(), router(Arc::new(App { api: echo, access, ui: ui() })))
     }
 
     async fn send(router: &Router, req: axum::http::request::Builder, body: &'static [u8]) -> (StatusCode, Response) {
@@ -336,30 +302,6 @@ mod tests {
         assert!(echo.calls.lock().unwrap().is_empty(), "no page went to the API");
         let (status, _) = send(&router, Request::post("/"), b"").await;
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
-    }
-
-    #[tokio::test]
-    async fn the_old_page_is_at_old() {
-        let (echo, router) = app(None);
-        let (status, r) = send(&router, Request::get("/old"), b"").await;
-        assert_eq!(status, StatusCode::MOVED_PERMANENTLY);
-        assert_eq!(r.headers()[LOCATION], "/old/");
-        let (status, r) = send(&router, Request::get("/old/"), b"").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(r.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
-        assert_eq!(r.headers()[CACHE_CONTROL], "no-cache");
-        assert!(r.headers().get("cross-origin-embedder-policy").is_none());
-        assert!(body(r).await.contains("<title>Old page</title>"));
-        let (status, r) = send(&router, Request::get("/old/app.js"), b"").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(r.headers()[CONTENT_TYPE], "text/javascript; charset=utf-8");
-        assert_eq!(body(r).await, "old()");
-        // a file it does not have, and never a file outside its folder
-        for path in ["/old/missing.js", "/old/../Cargo.toml", "/old/%2e%2e/x", "/old//"] {
-            let (status, _) = send(&router, Request::get(path), b"").await;
-            assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
-        }
-        assert!(echo.calls.lock().unwrap().is_empty(), "nothing went to the API");
     }
 
     #[tokio::test]
