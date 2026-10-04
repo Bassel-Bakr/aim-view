@@ -23,7 +23,7 @@ export interface MouseCard {
 
 /** One kill's row in the table of kills. */
 export interface MouseKillRow {
-  n: number;
+  killNumber: number;
   at: string;
   cells: string[];
 }
@@ -34,9 +34,9 @@ export interface MouseMessage {
   failed: boolean;
 }
 
-const ms = (v: number) => `${Math.round(v)} ms`;
-const speed = (v: number) => formatSpeed(v);
-const degrees = (v: number) => formatDegrees(v, 1);
+const ms = (value: number) => `${Math.round(value)} ms`;
+const speed = (value: number) => formatSpeed(value);
+const degrees = (value: number) => formatDegrees(value, 1);
 const NONE = '–';
 
 export const MEASURES: Record<MouseMeasureKey, MeasureLabel> = {
@@ -86,29 +86,29 @@ const KILL_COLUMNS: readonly MouseMeasureKey[] = [
 
 /** The run's measures as cards: the median of each, with its p10 and p90. */
 export function mouseCards(run: MouseRun): MouseCard[] {
-  return run.spreads.map((s) => {
-    const m = MEASURES[s.key];
+  return run.spreads.map((spread) => {
+    const measure = MEASURES[spread.key];
     return {
-      key: s.key,
-      value: m.write(s.median),
-      label: m.label,
-      detail: `p10 ${m.write(s.p10)} · p90 ${m.write(s.p90)}`,
-      why: `${m.why} (median of ${s.n} kills)`,
+      key: spread.key,
+      value: measure.write(spread.median),
+      label: measure.label,
+      detail: `p10 ${measure.write(spread.p10)} · p90 ${measure.write(spread.p90)}`,
+      why: `${measure.why} (median of ${spread.n} kills)`,
     };
   });
 }
 
 /** Each kill's row: its number, the click's local time, and its measures. */
 export function mouseKillRows(run: MouseRun): MouseKillRow[] {
-  return run.kills.map((k: MouseKill) => ({
-    n: k.n,
-    at: k.press_local.slice(0, 12),
+  return run.kills.map((kill: MouseKill) => ({
+    killNumber: kill.n,
+    at: kill.press_local.slice(0, 12),
     cells: [
       ...KILL_COLUMNS.map((key) => {
-        const v = k[key];
-        return v == null ? NONE : MEASURES[key].write(v);
+        const value = kill[key];
+        return value == null ? NONE : MEASURES[key].write(value);
       }),
-      k.corrections == null ? NONE : String(k.corrections),
+      kill.corrections == null ? NONE : String(kill.corrections),
     ],
   }));
 }
@@ -128,9 +128,9 @@ export function mouseSource(file: string | null, run: MouseRun): string {
 
 /** The kinds of kill the reader counts, and the settings it measured with. */
 export function mouseNotes(run: MouseRun): string {
-  const n = run.kills.length;
+  const count = run.kills.length;
   return (
-    `Clicked while moving: ${run.moving_clicks} of ${n}; no stop before the click: ${run.no_stop}; ` +
+    `Clicked while moving: ${run.moving_clicks} of ${count}; no stop before the click: ${run.no_stop}; ` +
     `with micros: ${run.corrected}. ${formatNumber(run.dpi)} dpi and ${formatNumber(run.cm360)} cm/360 ` +
     `(from ${run.sens_from}); speeds over ${formatNumber(run.window_ms)} ms; moving from ` +
     `${formatNumber(run.start_dps)} °/s, still under ${formatNumber(run.stop_dps)} °/s for ` +
@@ -155,7 +155,7 @@ export class MousePanel {
   protected readonly measures = this.logs.measures(() => this.recording().id);
   protected readonly busy = signal(false);
   protected readonly message = signal<MouseMessage | null>(null);
-  protected readonly columns = [...KILL_COLUMNS.map((k) => MEASURES[k].label), 'Micros'];
+  protected readonly columns = [...KILL_COLUMNS.map((key) => MEASURES[key].label), 'Micros'];
 
   protected readonly shown = computed(() =>
     this.measures.hasValue() ? (this.measures.value() ?? null) : null,
@@ -166,24 +166,24 @@ export class MousePanel {
     () => this.logs.adds || this.logs.logs || this.shown() !== null,
   );
   protected readonly cards = computed(() => {
-    const r = this.run();
-    return r ? mouseCards(r) : [];
+    const run = this.run();
+    return run ? mouseCards(run) : [];
   });
   protected readonly rows = computed(() => {
-    const r = this.run();
-    return r ? mouseKillRows(r) : [];
+    const run = this.run();
+    return run ? mouseKillRows(run) : [];
   });
   protected readonly source = computed(() => {
-    const r = this.run();
-    return r ? mouseSource(this.shown()?.file ?? null, r) : '';
+    const run = this.run();
+    return run ? mouseSource(this.shown()?.file ?? null, run) : '';
   });
   /** The median time between the log's events, ms. */
   protected readonly gapMs = computed(() =>
     Math.round((this.run()?.log.median_interval ?? 0) * 1000),
   );
   protected readonly notes = computed(() => {
-    const r = this.run();
-    return r ? mouseNotes(r) : '';
+    const run = this.run();
+    return run ? mouseNotes(run) : '';
   });
 
   protected async addLog(input: HTMLInputElement): Promise<void> {
@@ -195,8 +195,8 @@ export class MousePanel {
     try {
       await this.logs.add(this.recording().id, file);
       this.measures.reload();
-    } catch (e) {
-      this.message.set({ text: errorMessage(e), failed: true });
+    } catch (error) {
+      this.message.set({ text: errorMessage(error), failed: true });
     } finally {
       this.busy.set(false);
     }

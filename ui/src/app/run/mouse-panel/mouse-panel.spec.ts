@@ -27,9 +27,9 @@ class StandInLogs extends MouseLogs {
 
   add(_id: string, file: File): Promise<MouseMeasures> {
     this.added.push(file);
-    const m: MouseMeasures = { file: file.name, run: mouseRun(), error: null };
-    this.measured.set(m);
-    return Promise.resolve(m);
+    const measures: MouseMeasures = { file: file.name, run: mouseRun(), error: null };
+    this.measured.set(measures);
+    return Promise.resolve(measures);
   }
 
   forget(): Promise<void> {
@@ -59,16 +59,16 @@ describe('MousePanel', () => {
     const logs = new StandInLogs(true, false);
     logs.measured.set({ file: 'mouse_a.bin', run: mouseRun(), error: null });
     const el = await render(logs);
-    const cards = [...el.querySelectorAll('.card')].map((c) =>
-      [...c.children].map((s) => s.textContent?.trim()).join(' | '),
+    const cards = [...el.querySelectorAll('.card')].map((card) =>
+      [...card.children].map((part) => part.textContent?.trim()).join(' | '),
     );
     expect(cards).toEqual([
       'Reaction | 163 ms | p10 150 ms · p90 170 ms',
       'Flick speed | 383 °/s | p10 300 °/s · p90 400 °/s',
       'Confirmation | 41 ms | p10 0 ms · p90 80 ms',
     ]);
-    const rows = [...el.querySelectorAll('tbody tr')].map((r) =>
-      [...r.children].map((c) => c.textContent?.trim()).join(' | '),
+    const rows = [...el.querySelectorAll('tbody tr')].map((row) =>
+      [...row.children].map((cell) => cell.textContent?.trim()).join(' | '),
     );
     expect(rows[1]).toBe(
       '2 | 04:54:22.001 | 163 ms | – | 383 °/s | – | 0 ms | 136 °/s | 21.6° | –',
@@ -85,7 +85,7 @@ describe('MousePanel', () => {
     Object.defineProperty(input, 'files', { value: [file] });
     input.dispatchEvent(new Event('change'));
     for (let i = 0; i < 3; i++) {
-      await new Promise((r) => setTimeout(r));
+      await new Promise((resolve) => setTimeout(resolve));
       TestBed.tick();
     }
     expect(logs.added).toEqual([file]);

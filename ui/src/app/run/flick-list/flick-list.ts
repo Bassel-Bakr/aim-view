@@ -17,7 +17,7 @@ import { micro, microSplit } from '../report/budget';
 /** A flick as the list shows it. */
 export interface FlickRow {
   flick: Flick;
-  n: number;
+  killNumber: number;
   /** The distance and the way it was: "12.3° ↑". */
   distance: string;
   ttk: string;
@@ -46,24 +46,26 @@ function whole(value: number | null | undefined, scale = 1): string {
   return value == null ? '–' : String(Math.round(scale * value));
 }
 
-export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[] {
-  return r.flicks.map((m) => ({
-    flick: m,
-    n: m.kill_number,
-    distance: `${m.D0.toFixed(1)}° ${arrow(m.direction_deg)}`,
-    ttk: whole(m.total, 1000),
-    landed: formatEnded(m.end_left, r.summary.radius),
-    confirmation: whole(m.still, 1000),
-    flickSpeed: whole(m.peak),
-    onTheMove: whole(m.click_speed),
-    shots: formatCount(m.shots),
-    missed: (m.shots ?? 0) > 1,
-    pathing: pickText(paths, m.kill_number),
-    steps: [m.react, m.flick, micro(m)].map((s) => whole(s, 1000)).join(' · '),
-    microSplit: m.parts ? microSplit(m.parts) : '',
-    offCenter: formatDegrees(m.click_off),
-    micros: formatCount(m.corrections),
-    spawn: m.spawned ? 'yes' : 'no',
+export function flickRows(report: ClickReport, paths: PathAnalysis | null): FlickRow[] {
+  return report.flicks.map((flick) => ({
+    flick: flick,
+    killNumber: flick.kill_number,
+    distance: `${flick.D0.toFixed(1)}° ${arrow(flick.direction_deg)}`,
+    ttk: whole(flick.total, 1000),
+    landed: formatEnded(flick.end_left, report.summary.radius),
+    confirmation: whole(flick.still, 1000),
+    flickSpeed: whole(flick.peak),
+    onTheMove: whole(flick.click_speed),
+    shots: formatCount(flick.shots),
+    missed: (flick.shots ?? 0) > 1,
+    pathing: pickText(paths, flick.kill_number),
+    steps: [flick.react, flick.flick, micro(flick)]
+      .map((seconds) => whole(seconds, 1000))
+      .join(' · '),
+    microSplit: flick.parts ? microSplit(flick.parts) : '',
+    offCenter: formatDegrees(flick.click_off),
+    micros: formatCount(flick.corrections),
+    spawn: flick.spawned ? 'yes' : 'no',
   }));
 }
 
@@ -85,15 +87,15 @@ export class FlickList {
 
   constructor() {
     afterRenderEffect(() => {
-      const m = this.focus.selected();
-      if (m) this.keepInView(m.kill_number);
+      const flick = this.focus.selected();
+      if (flick) this.keepInView(flick.kill_number);
     });
   }
 
   /** Centers the row in the list when it is out of view, scrolling the list only. */
-  private keepInView(n: number): void {
+  private keepInView(killNumber: number): void {
     const box = this.scroll()?.nativeElement;
-    const row = box?.querySelector<HTMLElement>(`tr[data-n="${n}"]`);
+    const row = box?.querySelector<HTMLElement>(`tr[data-n="${killNumber}"]`);
     if (!box || !row) return;
     const top = row.getBoundingClientRect().top - box.getBoundingClientRect().top;
     if (top >= 0 && top + row.offsetHeight <= box.clientHeight) return;

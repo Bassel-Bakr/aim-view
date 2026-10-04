@@ -20,7 +20,7 @@ export class FlickProfileChart {
   protected readonly chart = computed(() => profileChart(this.report().summary.flick_profile));
   protected readonly flicks = computed(() => this.report().summary.flick_profile?.flicks ?? 0);
   protected readonly picked = computed(() => {
-    const c = this.chart();
-    return c ? killCurve(this.focus.selected(), c) : null;
+    const model = this.chart();
+    return model ? killCurve(this.focus.selected(), model) : null;
   });
 }

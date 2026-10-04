@@ -61,9 +61,9 @@
               </tr>
             </thead>
             <tbody>
-              @for (row of rows(); track row.n) {
+              @for (row of rows(); track row.killNumber) {
                 <tr>
-                  <td>{{ row.n }}</td>
+                  <td>{{ row.killNumber }}</td>
                   <td>{{ row.at }}</td>
                   @for (cell of row.cells; track $index) {
                     <td>{{ cell }}</td>

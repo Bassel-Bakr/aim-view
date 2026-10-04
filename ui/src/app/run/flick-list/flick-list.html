@@ -33,10 +33,10 @@
       </tr>
     </thead>
     <tbody>
-      @for (r of rows(); track r.n) {
+      @for (r of rows(); track r.killNumber) {
         <tr
           class="row"
-          [attr.data-n]="r.n"
+          [attr.data-n]="r.killNumber"
           [attr.data-selected]="r.flick === focus.selected() ? '' : null"
           [attr.aria-current]="r.flick === focus.selected() ? 'true' : null"
         >
@@ -44,10 +44,10 @@
             <button
               class="play"
               type="button"
-              [attr.aria-label]="'Play kill ' + r.n"
+              [attr.aria-label]="'Play kill ' + r.killNumber"
               (click)="focus.play(r.flick)"
             >
-              {{ r.n }}
+              {{ r.killNumber }}
             </button>
           </td>
           <td>{{ r.distance }}</td>
