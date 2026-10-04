@@ -5,7 +5,7 @@ import type { OffFrames } from './off-frames';
 import type { TurnBack } from './turn-back';
 
 /**
- * Tracking diagnostics from the target's own motion and the camera's (see review.py: `track_motion`).
+ * Tracking diagnostics from the target's own motion and the camera's (see the old review's `track_motion`).
  */
 export interface Motion {
   camera: number;

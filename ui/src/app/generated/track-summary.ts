@@ -8,7 +8,7 @@ import type { TrackInfo } from './track-info';
 import type { WhatIf } from './what-if';
 
 /**
- * A tracking run's summary (see review.py: `track_summary`).
+ * A tracking run's summary (see the old review's `track_summary`).
  */
 export interface TrackSummary {
   scenario: string | null;
