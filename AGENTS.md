@@ -6,7 +6,8 @@ the UI is Angular (`ui/`), and
 `python/model/` trains the target detector. `python/review.py` is the old Python pipeline, kept as the parity tests'
 reference. Read `README.md` first, then `python/README.md` (how the review works) and
 `python/model/MODEL_STATUS.md` (the detector's results and limits). Every command to rebuild the detector is in
-`python/model/REPRODUCE.md`.
+`python/model/REPRODUCE.md`. Every benchmark, its baseline and when to rerun it are in `BENCH.md`: check it before
+running one.
 
 It was copied from the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) on 2026-10-02, with its caches and
 training data in `test_out/` (ignored by git). Its `vod/` folder became `python/` here. The planned stack and layout
@@ -232,7 +233,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   miss after the last redraw), its kill frames within a frame on 25. The video alone (matching.rs `match_video`, its
   `Paths`: a false camera turn at a kill repaired, a target found again only where and as big as it was) finds 94.5%
   of the stats files' kills within 3 frames on 47 runs (97.4% on the 18 held out; was 83%), precision 95.7% (held out
-  97.2%); switching runs are the weakest (90% precision held out). The benchmark and its notes: the session scratchpad's vbench/ (2026-10-04). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
+  97.2%); switching runs are the weakest (90% precision held out). The benchmark and its notes: test_out/baselines/vbench/ (BENCH.md). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
   recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
   `REVIEW_VERSION`, 3 since `link` repairs a false camera turn; 2 was the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.
