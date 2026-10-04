@@ -228,7 +228,7 @@ pub fn spikes(shifts: &[(f64, f64)]) -> Vec<bool> {
 
 /// The frame's targets given ids: each track from the frame before is moved by the view's shift and takes the nearest
 /// target now within 0.5 degrees; a target nobody took starts a new track.
-fn follow(prev: &[Tracked], now: &[Spot], shift: (f64, f64), next_id: &mut u32) -> Vec<Tracked> {
+fn follow(prev: &[Tracked], now: &[Spot], shift: (f64, f64), next_id: &mut u32) -> Box<[Tracked]> {
     let mut cur = Vec::with_capacity(now.len());
     let mut used = vec![false; now.len()];
     for a in prev {
@@ -256,7 +256,8 @@ fn follow(prev: &[Tracked], now: &[Spot], shift: (f64, f64), next_id: &mut u32) 
             *next_id += 1;
         }
     }
-    cur
+    // every spot now was taken by a track or started one
+    cur.into_boxed_slice()
 }
 
 /// How many of the tracks before take a target now with this shift (`follow`).
@@ -270,10 +271,10 @@ fn linked(prev: &[Tracked], now: &[Spot], shift: (f64, f64)) -> usize {
 /// frame before as it was tracked. A spike (`spikes`) is replaced by the mean of the shifts either side when that
 /// mean links as many of the frame before's targets as the spike does: a spike that lines up more of them is the
 /// camera's own jerk (frames captured unevenly), and stays. Then the frames are tracked with those shifts.
-pub fn link(frames: &[Vec<Spot>]) -> Vec<TrackFrame> {
+pub fn link(frames: &[Vec<Spot>]) -> Box<[TrackFrame]> {
     let mut shifts = Vec::with_capacity(frames.len());
     let mut before = Vec::with_capacity(frames.len());
-    let mut prev: Vec<Tracked> = Vec::new();
+    let mut prev: Box<[Tracked]> = Box::default();
     let mut next_id = 0;
     for now in frames {
         let shift = if prev.is_empty() || now.is_empty() {
@@ -286,6 +287,7 @@ pub fn link(frames: &[Vec<Spot>]) -> Vec<TrackFrame> {
         before.push(prev);
         prev = cur;
     }
+    let (mut shifts, before) = (shifts.into_boxed_slice(), before.into_boxed_slice());
     let found = shifts.clone();
     for (j, spike) in spikes(&found).into_iter().enumerate() {
         if !spike {
@@ -297,9 +299,9 @@ pub fn link(frames: &[Vec<Spot>]) -> Vec<TrackFrame> {
         }
     }
     let mut out = Vec::with_capacity(frames.len());
-    let mut prev: Vec<Tracked> = Vec::new();
+    let mut prev: Box<[Tracked]> = Box::default();
     let mut next_id = 0;
-    for (i, (now, &shift)) in frames.iter().zip(&shifts).enumerate() {
+    for (i, (now, &shift)) in frames.iter().zip(shifts.iter()).enumerate() {
         let cur = follow(&prev, now, shift, &mut next_id);
         let boxes: Vec<ModelBox> = cur.iter().filter_map(|c| c.spot.model).collect();
         out.push(TrackFrame {
@@ -313,5 +315,5 @@ pub fn link(frames: &[Vec<Spot>]) -> Vec<TrackFrame> {
         });
         prev = cur;
     }
-    out
+    out.into_boxed_slice()
 }

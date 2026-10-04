@@ -140,7 +140,7 @@ pub(crate) fn taps(len: usize, out: usize, support: f64, filter: fn(f64) -> f64)
 
 /// One axis of a crop of the frame scaled to a size: each output pixel's first source pixel and weights.
 struct Axis {
-    taps: Vec<(usize, Vec<f32>)>,
+    taps: Box<[(usize, Box<[f32]>)]>,
     identity: bool,
 }
 
@@ -197,7 +197,7 @@ impl Scale {
     }
 
     /// The scaled crop's pixels in `rows` x `cols` (row by row), each source byte through `lut`.
-    fn rect(&self, plane: &[u8], lut: &[u8; 256], rows: Range<usize>, cols: Range<usize>) -> Vec<u8> {
+    fn rect(&self, plane: &[u8], lut: &[u8; 256], rows: Range<usize>, cols: Range<usize>) -> Box<[u8]> {
         let mut out = Vec::with_capacity(rows.len() * cols.len());
         if self.x.identity && self.y.identity {
             let x0 = self.x.taps[cols.start].0;
@@ -205,7 +205,7 @@ impl Scale {
                 let at = self.y.taps[oy].0 * self.stride + x0;
                 out.extend(plane[at..at + cols.len()].iter().map(|&v| lut[v as usize]));
             }
-            return out;
+            return out.into_boxed_slice();
         }
         let c0 = cols.clone().map(|x| self.x.taps[x].0).min().unwrap_or(0);
         let c1 = cols.clone().map(|x| self.x.taps[x].0 + self.x.taps[x].1.len()).max().unwrap_or(c0);
@@ -225,7 +225,7 @@ impl Scale {
                 out.push(v.round().clamp(0.0, 255.0) as u8);
             }
         }
-        out
+        out.into_boxed_slice()
     }
 }
 
@@ -631,14 +631,14 @@ struct Store {
     /// The glyph images, GLYPH bytes each (the ink's strength, 0 to 255).
     images: Vec<u8>,
     /// The distinct lines of glyphs; line 0 is the empty one.
-    lines: Vec<Vec<Glyph>>,
+    lines: Vec<Box<[Glyph]>>,
     /// Each row's lines frame by frame, as runs (line, frames).
     rows: [Vec<(u32, u32)>; ROWS],
 }
 
 impl Default for Store {
     fn default() -> Store {
-        Store { images: Vec::new(), lines: vec![Vec::new()], rows: Default::default() }
+        Store { images: Vec::new(), lines: vec![Box::default()], rows: Default::default() }
     }
 }
 
@@ -801,7 +801,7 @@ impl TryFrom<PartText> for HudPart {
             .filter(|b| b.len() % GLYPH == 0)
             .ok_or("a HUD part's images are not hex glyphs")?;
         let count = (images.len() / GLYPH) as u32;
-        let mut lines = vec![Vec::new()];
+        let mut lines = vec![Box::default()];
         for l in t.lines {
             let line = l
                 .into_iter()
@@ -812,7 +812,7 @@ impl TryFrom<PartText> for HudPart {
                         w: w as u16,
                     })
                 })
-                .collect::<Option<Vec<Glyph>>>()
+                .collect::<Option<Box<[Glyph]>>>()
                 .ok_or("a HUD part's line has a glyph it does not have")?;
             lines.push(line);
         }
@@ -841,7 +841,7 @@ pub struct HudWatch {
     region: Scale,
     aim: Scale,
     /// The key frames' box regions (BW x BH), every `key_step`-th of the `keys_seen`.
-    keys: Vec<Vec<u8>>,
+    keys: Vec<Box<[u8]>>,
     keys_seen: usize,
     key_step: usize,
     /// KovaaK's box: None until worked out (at the first frame), then Some(None) when there is none.

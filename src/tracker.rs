@@ -12,7 +12,7 @@ use crate::track::{Mask, RawBox, Spot, TrackFrame, keep, link, reopen};
 
 pub struct Tracker {
     model: ModelSettings,
-    areas: Vec<[f64; 4]>,
+    areas: Box<[[f64; 4]]>,
     mask: Mask,
     cap: Option<usize>,
     watch: AreaWatch,
@@ -36,7 +36,7 @@ impl Tracker {
             model: ModelSettings::default(),
             mask: Mask::without(&areas),
             watch: AreaWatch::new(&areas),
-            areas,
+            areas: areas.into_boxed_slice(),
             cap: (cap > 0).then_some(cap),
             raw: Vec::new(),
             frames: Vec::new(),
@@ -104,7 +104,7 @@ impl Tracker {
     }
 
     /// The frames linked: tracks.json's `frames`.
-    pub fn finish(mut self) -> Vec<TrackFrame> {
+    pub fn finish(mut self) -> Box<[TrackFrame]> {
         let shows = self.watch.showing();
         reopen(&self.raw, &mut self.frames, &self.areas, &shows, self.cap);
         link(&self.frames)

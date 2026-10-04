@@ -87,22 +87,23 @@ fn local_pos(chr_subsample: i64, pos: i64) -> i64 {
 /// line as ffmpeg reads it and the zero coefficients left out, and each tap's input clamped (`at`).
 #[derive(Clone, Debug)]
 struct Filter {
-    pos: Vec<i64>,
-    coef: Vec<i64>,
+    pos: Box<[i64]>,
+    coef: Box<[i64]>,
     size: usize,
-    taps: Vec<(u32, i32)>,
-    tap_at: Vec<u32>,
+    taps: Box<[(u32, i32)]>,
+    tap_at: Box<[u32]>,
     /// The input samples in the line.
     src: usize,
 }
 
 impl Filter {
-    fn new(pos: Vec<i64>, coef: Vec<i64>, size: usize, src: usize) -> Filter {
+    fn new(pos: Box<[i64]>, coef: Box<[i64]>, size: usize, src: usize) -> Filter {
         // the coefficients are shares of one (1 << 14 at most), a few to a sample: 15-bit samples and their sums fit in
         // 32 bits
         assert!(size < 16 && coef.iter().all(|c| c.abs() <= 1 << 14), "a filter too large for 32-bit sums");
         let mut taps = Vec::new();
-        let mut tap_at = vec![0];
+        let mut tap_at = Vec::with_capacity(pos.len() + 1);
+        tap_at.push(0);
         for (i, &p) in pos.iter().enumerate() {
             for (j, &c) in coef[i * size..(i + 1) * size].iter().enumerate() {
                 if c != 0 {
@@ -111,7 +112,7 @@ impl Filter {
             }
             tap_at.push(taps.len() as u32);
         }
-        Filter { pos, coef, size, taps, tap_at, src }
+        Filter { pos, coef, size, taps: taps.into_boxed_slice(), tap_at: tap_at.into_boxed_slice(), src }
     }
 
     fn row(&self, i: usize) -> &[i64] {
@@ -139,13 +140,13 @@ fn init_filter(x_inc: i64, src_w: usize, dst_w: usize, align: usize, one: i64, s
     let (sw, dw) = (src_w as i64, dst_w as i64);
     let fone: i64 = 1 << (54 - av_log2(sw / dw).min(8));
     let mut pos = vec![0i64; dst_w];
-    let mut filt: Vec<Vec<i64>> = Vec::with_capacity(dst_w);
+    let mut filt: Vec<Box<[i64]>> = Vec::with_capacity(dst_w);
     let mut size: usize;
     if (x_inc - 0x10000).abs() < 10 && src_pos == dst_pos {
         size = 1;
         for (i, p) in pos.iter_mut().enumerate() {
             *p = i as i64;
-            filt.push(vec![fone]);
+            filt.push(Box::new([fone]));
         }
     } else if x_inc <= 1 << 16 {
         // SWS_AREA when upscaling is bilinear
@@ -159,7 +160,7 @@ fn init_filter(x_inc: i64, src_w: usize, dst_w: usize, align: usize, one: i64, s
                 row.push((fone - (xx * (1 << 16) - x).abs() * (fone >> 16)).max(0));
                 xx += 1;
             }
-            filt.push(row);
+            filt.push(row.into_boxed_slice());
             x += x_inc;
         }
     } else {
@@ -184,10 +185,11 @@ fn init_filter(x_inc: i64, src_w: usize, dst_w: usize, align: usize, one: i64, s
                 row.push(coeff * (fone >> 46));
                 xx += 1;
             }
-            filt.push(row);
+            filt.push(row.into_boxed_slice());
             x += 2 * x_inc;
         }
     }
+    let mut filt = filt.into_boxed_slice();
     let f2 = size;
     // drop near-zero taps: from the left by moving the position, from the right by counting
     let cut_limit = 0.002 * fone as f64;
@@ -203,8 +205,8 @@ fn init_filter(x_inc: i64, src_w: usize, dst_w: usize, align: usize, one: i64, s
             if i < dst_w - 1 && pos[i] >= pos[i + 1] {
                 break;
             }
-            filt[i].remove(0);
-            filt[i].push(0);
+            filt[i].copy_within(1.., 0);
+            filt[i][f2 - 1] = 0;
             pos[i] += 1;
         }
         let mut cut = 0i64;
@@ -261,7 +263,7 @@ fn init_filter(x_inc: i64, src_w: usize, dst_w: usize, align: usize, one: i64, s
             err = v - iv * s;
         }
     }
-    Filter::new(pos, coef, size, src_w)
+    Filter::new(pos.into_boxed_slice(), coef.into_boxed_slice(), size, src_w)
 }
 
 /// hScale8To15_c: one plane's rows, 8-bit samples to 15-bit, into `out` (kept from frame to frame).

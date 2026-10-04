@@ -22,7 +22,7 @@ pub const END_SCREEN: &str = "challenge_results";
 /// One look at an area: which of its sampled pixels stand out (row by row). Sent between workers as bits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(into = "LookBits", try_from = "LookBits")]
-struct Look(Vec<bool>);
+struct Look(Box<[bool]>);
 
 /// A look as text: its pixel count, and its pixels as bits in hex (8 to a byte, the first pixel in the lowest bit).
 #[derive(Serialize, Deserialize)]
@@ -63,22 +63,22 @@ impl TryFrom<LookBits> for Look {
 /// from part way in (the user's run window) starts its first watch there: the frames before it have no looks.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AreaWatch {
-    boxes: Vec<[usize; 4]>,
-    steps: Vec<usize>,
-    looks: Vec<Vec<Look>>,
+    boxes: Box<[[usize; 4]]>,
+    steps: Box<[usize]>,
+    looks: Box<[Vec<Look>]>,
     frames: usize,
     /// The first frame watched: frames before it were not reviewed.
     #[serde(default)]
     from: usize,
     /// Per area: it is the challenge's end screen (`end_screens`); none set: no area is.
     #[serde(default)]
-    ends: Vec<bool>,
+    ends: Box<[bool]>,
 }
 
 impl AreaWatch {
     /// For the excluded areas, as shares of the frame [x0, y0, x1, y1].
     pub fn new(areas: &[[f64; 4]]) -> AreaWatch {
-        let boxes: Vec<[usize; 4]> = areas
+        let boxes: Box<[[usize; 4]]> = areas
             .iter()
             .map(|&[x0, y0, x1, y1]| {
                 let px = |v: f64, s: usize| (v * s as f64).round_ties_even().max(0.0) as usize;
@@ -86,13 +86,14 @@ impl AreaWatch {
             })
             .collect();
         let steps = boxes.iter().map(|&[x0, y0, x1, y1]| ((x1 - x0).max(y1 - y0) / 64).max(1)).collect();
-        AreaWatch { looks: vec![Vec::new(); boxes.len()], boxes, steps, frames: 0, from: 0, ends: Vec::new() }
+        let looks = vec![Vec::new(); boxes.len()].into_boxed_slice();
+        AreaWatch { looks, boxes, steps, frames: 0, from: 0, ends: Box::default() }
     }
 
     /// Which areas are the challenge's end screen, in the areas' order.
     pub fn end_screens(&mut self, which: &[bool]) {
         assert_eq!(which.len(), self.boxes.len(), "one flag per area");
-        self.ends = which.to_vec();
+        self.ends = which.into();
     }
 
     /// For a run of the recording that starts at frame `first`, before its first frame: it looks at the frames the
@@ -136,7 +137,7 @@ impl AreaWatch {
                 let ys: Vec<usize> = (y0..y1.min(H)).step_by(k).collect();
                 let xs: Vec<usize> = (x0..x1.min(W)).step_by(k).collect();
                 if ys.len().min(xs.len()) < 3 {
-                    looks.push(Look(vec![false]));
+                    looks.push(Look(Box::new([false])));
                     continue;
                 }
                 let small: Vec<f32> =
@@ -222,7 +223,7 @@ mod tests {
         let watch = |end: bool, on_from: usize| {
             let mut w = AreaWatch::new(&[[0.1, 0.1, 0.9, 0.9]]);
             w.end_screens(&[end]);
-            w.looks = vec![looks(on_from)];
+            w.looks = vec![looks(on_from)].into_boxed_slice();
             w.frames = 300 * STEP;
             w.showing().remove(0)
         };

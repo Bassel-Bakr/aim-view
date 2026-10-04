@@ -150,7 +150,7 @@ pub struct Setup {
 #[derive(Clone, Debug)]
 pub struct Review {
     setup: Setup,
-    runs: Vec<Run>,
+    runs: Box<[Run]>,
 }
 
 impl Review {
@@ -159,7 +159,7 @@ impl Review {
             return Err("the video has no frames".into());
         }
         let range = window_frames(&setup.times, setup.window);
-        let runs = split_runs(&setup.times, &setup.keys, setup.runs.max(1), LEAST_RUN, range);
+        let runs = split_runs(&setup.times, &setup.keys, setup.runs.max(1), LEAST_RUN, range).into_boxed_slice();
         Ok(Review { setup, runs })
     }
 
@@ -391,7 +391,7 @@ impl RunWatching {
 #[derive(Serialize)]
 pub struct Tracks {
     pub fps: f64,
-    pub frames: Vec<TrackFrame>,
+    pub frames: Box<[TrackFrame]>,
     pub fixed: f64,
     pub detector: String,
     /// The part of the video tracked, when only part of it was; the frames outside are empty.

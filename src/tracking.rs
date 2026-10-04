@@ -187,7 +187,7 @@ pub struct Motion {
     /// radius, in degrees: where the crosshair sat around the target.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::AroundPoint>>", optional))]
-    pub around: Option<Vec<[f64; 3]>>,
+    pub around: Option<Box<[[f64; 3]]>>,
     /// Each direction change of the bot (both axes' together when they fall within 0.2 s), and how long the crosshair
     /// took to get back on it. Not in Python's review.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -281,7 +281,7 @@ pub fn track_motion(
         ra[i] = t.r;
         around.push([al[i], -cx * uy + cy * ux, t.r]);
     }
-    out.around = Some(around);
+    out.around = Some(around.into_boxed_slice());
     let of = |f: &dyn Fn(usize) -> f64| moving.iter().map(|&i| f(i)).collect::<Vec<f64>>();
     out.target_speed = med(&of(&|i| speed[i]));
     out.mouse_speed = med(&of(&|i| mouse[i].0.hypot(mouse[i].1)).into_iter().filter(|v| !v.is_nan()).collect::<Vec<_>>());
@@ -699,6 +699,7 @@ pub fn track_summary(
         near.push(best);
         inside.push(ins);
     }
+    let (near, inside) = (near.into_boxed_slice(), inside.into_boxed_slice());
     let num = |k: &str| meta.get(k).filter(|v| !v.is_empty()).and_then(|v| v.trim().parse::<f64>().ok());
     let (hits, miss) = (num("Hit Count"), num("Miss Count"));
     let mut s = TrackSummary {

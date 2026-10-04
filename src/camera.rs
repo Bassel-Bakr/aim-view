@@ -176,7 +176,7 @@ pub struct CameraWatch {
     row: Arc<dyn Fft<f32>>,
     row_inv: Arc<dyn Fft<f32>>,
     /// The FFTs' working space, kept from frame to frame.
-    scratch: Vec<Complex32>,
+    scratch: Box<[Complex32]>,
     prev: Option<Vec<Complex32>>,
     pub shifts: Vec<TileShifts>,
     pub countdown: Vec<bool>,
@@ -194,7 +194,8 @@ impl CameraWatch {
         }
         let mut planner = FftPlanner::new();
         let (row, row_inv) = (planner.plan_fft_forward(T), planner.plan_fft_inverse(T));
-        let scratch = vec![Complex32::default(); row.get_inplace_scratch_len().max(row_inv.get_inplace_scratch_len())];
+        let scratch = vec![Complex32::default(); row.get_inplace_scratch_len().max(row_inv.get_inplace_scratch_len())]
+            .into_boxed_slice();
         CameraWatch {
             grid,
             static_ok,

@@ -227,7 +227,7 @@ pub struct AreaFinder {
     /// Per pixel, the frames it stood out in.
     counts: Box<[u16; W * H]>,
     /// Each frame's Y plane.
-    ys: Vec<Vec<u8>>,
+    ys: Vec<Box<[u8]>>,
 }
 
 impl Default for AreaFinder {
@@ -249,7 +249,7 @@ impl AreaFinder {
         for (n, c) in self.counts.iter_mut().zip(contrast(yuv)) {
             *n += (c > DIFF) as u16;
         }
-        self.ys.push(yuv[..W * H].to_vec());
+        self.ys.push(yuv[..W * H].into());
     }
 
     /// The frames added.
@@ -306,7 +306,7 @@ fn find_areas(
     stand: &[f64],
     fixed: &[bool],
     change: &[f64],
-    ys: &[Vec<u8>],
+    ys: &[Box<[u8]>],
     session: Option<SessionRows>,
 ) -> Vec<Area> {
     let session_box = session.map(session_share);
@@ -638,7 +638,7 @@ fn standardized(a: Vec<f32>) -> Vec<f32> {
 }
 
 /// A box of every frame's Y plane, each scaled to 16 x 16, one after another, standardized.
-fn thumbnails(ys: &[Vec<u8>], cols: Range<usize>, rows: Range<usize>) -> Vec<f32> {
+fn thumbnails(ys: &[Box<[u8]>], cols: Range<usize>, rows: Range<usize>) -> Vec<f32> {
     let (w, h) = (cols.len(), rows.len());
     let all: Vec<f32> = ys
         .iter()
@@ -655,7 +655,7 @@ fn thumbnails(ys: &[Vec<u8>], cols: Range<usize>, rows: Range<usize>) -> Vec<f32
 /// A magnified copy of the screen around the crosshair (a crosshair zoom; python/areas.py: zoomed): over the frames,
 /// the area's picture follows the center's, scaled down by some zoom. True when one zoom (1.5 to 8) correlates 0.8 or
 /// more. Areas smaller than 24 pixels either way, and runs of fewer than 10 frames, are never one.
-pub fn zoomed(b: &[f64; 4], ys: &[Vec<u8>]) -> bool {
+pub fn zoomed(b: &[f64; 4], ys: &[Box<[u8]>]) -> bool {
     let r = rect(b);
     let (w, h) = (r.x1 - r.x0, r.y1 - r.y0);
     if w < 24 || h < 24 || ys.len() < 10 {
