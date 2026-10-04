@@ -26,8 +26,8 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 
 | Stage | Where | Cost | Notes |
 | --- | --- | --- | --- |
-| Contrast map for the fixed map | src/fixed.rs `contrast`, `blur_up`; `FixedMap::add` | 4.9 ms a key frame (survey) | the upsampling divides per pixel; reading the block directly measured 2.9 ms, bit-equal |
-| The same contrast for the area finder | src/areas.rs `AreaFinder::add` | 4.9 ms a key frame (survey); an earlier measure of the whole `add`: 4.8 to 12.5 ms a frame natively, median 5.6 | natively computed a second time on the same frame with the same counts; the browser's area finder runs in its own worker |
+| Contrast map for the fixed map | src/fixed.rs `contrast`, `walls`; `FixedMap::add` | 2.9 ms a key frame (survey, reading each pixel's block directly; 4.9 ms before, with full-size upsampled walls) | bit-equal to Python's |
+| The same contrast for the area finder | src/areas.rs `AreaFinder::add`, `add_contrast` | natively none: the review shares the fixed map's (service/src/review.rs); the browser's area finder computes its own in its worker | an earlier measure of the whole `add`: 4.8 to 12.5 ms a frame natively, median 5.6, before both changes |
 
 ## Once a review
 

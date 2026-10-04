@@ -111,9 +111,10 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
     // the area finder reads the same key frames, when there are enough of them (python/areas.py: sample)
     let mut finder = sample_frames(info.keys.len(), &info.times, info.duration).is_none().then(AreaFinder::new);
     key_frames(&req.video, &info, |small, y| {
-        keys.add(small, y);
+        let contrast = aimview::fixed::contrast(small);
+        keys.add_contrast(&contrast, y);
         if let Some(f) = finder.as_mut() {
-            f.add(small);
+            f.add_contrast(small, &contrast);
         }
     })?;
     let keys = keys.finish();

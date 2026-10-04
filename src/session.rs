@@ -269,7 +269,13 @@ impl Keys {
     /// One key frame, in order: at 1280 x 720 as YUV 4:2:0 (for the fixed map), and its Y plane as decoded (for the
     /// HUD's boxes).
     pub fn add(&mut self, small: &[u8], y: &[u8]) {
-        self.fixed.add(small);
+        self.add_contrast(&crate::fixed::contrast(small), y);
+    }
+
+    /// The same, with the frame's `fixed::contrast` already worked out (the native review shares it with the area
+    /// finder).
+    pub fn add_contrast(&mut self, contrast: &[f32], y: &[u8]) {
+        self.fixed.add_contrast(contrast);
         self.hud.add_key(y);
     }
 

@@ -244,10 +244,17 @@ impl AreaFinder {
 
     /// One frame, YUV 4:2:0 at 1280 x 720 (FRAME bytes); a shorter buffer is left out.
     pub fn add(&mut self, yuv: &[u8]) {
+        if yuv.len() >= FRAME {
+            self.add_contrast(yuv, &contrast(yuv));
+        }
+    }
+
+    /// The same, with the frame's `contrast` already worked out (the fixed map's, on the same key frame).
+    pub fn add_contrast(&mut self, yuv: &[u8], c: &[f32]) {
         if yuv.len() < FRAME {
             return;
         }
-        for (n, c) in self.counts.iter_mut().zip(contrast(yuv)) {
+        for (n, &c) in self.counts.iter_mut().zip(c) {
             *n += (c > DIFF) as u16;
         }
         self.ys.push(yuv[..W * H].into());
