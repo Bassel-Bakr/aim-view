@@ -40,9 +40,13 @@ const CASES: [(&str, Option<&str>, &str); 3] = [
 ];
 
 const FILES: [&str; 4] = ["tracks.json", "readings.json", "hud.json", "report.json"];
+/// How much of a video's name the test prints.
+const SHORT_NAME_BYTES: usize = 20;
+/// How many differences a differing file prints.
+const SHOWN_DIFFERENCES: usize = 10;
 
 fn read<T: DeserializeOwned>(path: &Path) -> T {
-    serde_json::from_slice(&fs::read(path).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
 /// The review's tracks, readings and HUD reading, as the track example writes them, from its kept parts.
@@ -65,10 +69,10 @@ fn join(parts: &Path) -> [Vec<u8>; 3] {
 /// The report as the service works it out from the three files (service/src/report.rs, `work_out`, as the track
 /// example calls it: no run marks, no scenario facts, no cut-off).
 fn report(outputs: &[Vec<u8>; 3], video: &str, stats: Option<&Path>) -> Vec<u8> {
-    let value = |b: &[u8]| serde_json::from_slice::<Value>(b).unwrap();
+    let value = |bytes: &[u8]| serde_json::from_slice::<Value>(bytes).unwrap();
     let (tracks, readings, hud) = (value(&outputs[0]), value(&outputs[1]), value(&outputs[2]));
-    let stats_text = stats.map_or(String::new(), |p| String::from_utf8_lossy(&fs::read(p).unwrap()).into_owned());
-    let name = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
+    let stats_text = stats.map_or(String::new(), |path| String::from_utf8_lossy(&fs::read(path).unwrap()).into_owned());
+    let name = |path: &Path| path.file_name().unwrap().to_string_lossy().into_owned();
     let request = json!({
         "tracks": tracks,
         "statsText": stats_text,
@@ -102,7 +106,7 @@ fn replayed_reviews_equal_the_native_ones() {
             continue;
         }
         let [tracks, readings, hud] = join(&parts);
-        let stats = stats.map(|s| root.join(s));
+        let stats = stats.map(|path| root.join(path));
         let report = report(&[tracks.clone(), readings.clone(), hud.clone()], video, stats.as_deref());
         for (file, got) in FILES.iter().zip([tracks, readings, hud, report]) {
             if let Some(folder) = &write_to {
@@ -120,14 +124,12 @@ fn replayed_reviews_equal_the_native_ones() {
             // where they differ, as JSON paths
             let mut diff = Diff::default();
             compare(file, &serde_json::from_slice(&got).unwrap(), &read_json(&path), &mut diff);
-            let (short, sizes) = (&video[..20], (got.len(), want.len()));
+            let (short, sizes) = (&video[..SHORT_NAME_BYTES], (got.len(), want.len()));
             eprintln!("{short} {sub} {file}: {sizes:?} bytes, {} numbers equal only within 1e-9", diff.close);
-            for w in diff.wrong.iter().take(10) {
-                eprintln!("  {w}");
-            }
-            wrong.push(format!("{} {sub} {file}", &video[..20]));
+            diff.print_wrong(SHOWN_DIFFERENCES);
+            wrong.push(format!("{short} {sub} {file}"));
         }
-        eprintln!("{} {}: replayed", &video[..20], if sub.is_empty() { "stats" } else { sub });
+        eprintln!("{} {}: replayed", &video[..SHORT_NAME_BYTES], if sub.is_empty() { "stats" } else { sub });
     }
     assert!(wrong.is_empty(), "differ from the native review: {wrong:?}");
     eprintln!("{checked} files equal to the native review's, byte for byte");

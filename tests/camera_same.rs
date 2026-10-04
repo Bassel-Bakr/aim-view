@@ -3,44 +3,42 @@
 //! now (test_out/parity/<case>/review/camera_shifts.json); without it they are compared with the stored ones.
 
 use std::fs;
-use std::path::PathBuf;
+use std::ops::Range;
 
-use aimview::camera::{CameraPart, CameraWatch, excluded};
-use aimview::geometry::{H, W, overlay_shares};
-use aimview::track::Mask;
+use aimview::camera::{CameraPart, CameraWatch};
+use aimview::geometry::{H, W};
+
+mod common;
+use common::{GrayFrames, parity_root};
 
 const CASES: [&str; 3] = ["spectral", "flower", "pokeball5"];
+/// How many of flower's frames the join test watches, cut at every frame between.
+const JOIN_FRAMES: usize = 12;
 
 /// A tile's shift as the bits of its two floats, so equal means equal to the bit; None where it was not read.
 type ShiftBits = Option<(u32, u32)>;
 
 #[test]
 fn camera_shifts_are_unchanged() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity");
     let keep = std::env::var("AIMVIEW_KEEP_SHIFTS").is_ok();
     for case in CASES {
-        let dir = root.join(case);
-        let Ok(npy) = fs::read(dir.join("fixed.npy")) else {
+        let dir = parity_root().join(case);
+        let Some(frames) = GrayFrames::read(&dir) else {
             eprintln!("no {}", dir.display());
             continue;
         };
-        let review = dir.join("review");
-        let picks: serde_json::Value = serde_json::from_str(&fs::read_to_string(review.join("gray.json")).unwrap()).unwrap();
-        let stored: Vec<usize> = serde_json::from_value(picks["frames"].clone()).unwrap();
-        let gray = fs::read(review.join("gray.raw")).unwrap();
-        let bad = excluded(Mask::without(&overlay_shares()).kept(), &npy[npy.len() - W * H..]);
         let rgb = vec![0u8; W * H * 3];
         // every stored frame in order, each against the one before it
-        let mut watch = CameraWatch::new(&bad);
-        for k in 0..stored.len() {
-            watch.add(&gray[k * W * H..(k + 1) * W * H], &rgb);
+        let mut watch = CameraWatch::new(&frames.left_out);
+        for i in 0..frames.numbers.len() {
+            watch.add(frames.frame(i), &rgb);
         }
         let got: Vec<Vec<ShiftBits>> = watch
             .shifts
             .iter()
-            .map(|s| s.iter().map(|t| t.map(|(x, y)| (x.to_bits(), y.to_bits()))).collect())
+            .map(|tiles| tiles.iter().map(|tile| tile.map(|(x, y)| (x.to_bits(), y.to_bits()))).collect())
             .collect();
-        let path = review.join("camera_shifts.json");
+        let path = dir.join("review").join("camera_shifts.json");
         if keep {
             fs::write(&path, serde_json::to_string(&got).unwrap()).unwrap();
             eprintln!("{case}: {} frames' shifts kept", got.len());
@@ -57,32 +55,26 @@ fn camera_shifts_are_unchanged() {
 /// JSON and joined, gives the whole recording's shifts and countdown, to the bit, wherever the cut is.
 #[test]
 fn camera_runs_join_to_the_whole() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity");
     // a tracking run, where the camera turns
-    let dir = root.join("flower");
-    let Ok(npy) = fs::read(dir.join("fixed.npy")) else {
+    let dir = parity_root().join("flower");
+    let Some(frames) = GrayFrames::read(&dir) else {
         eprintln!("no {}", dir.display());
         return;
     };
-    let review = dir.join("review");
-    let picks: serde_json::Value = serde_json::from_str(&fs::read_to_string(review.join("gray.json")).unwrap()).unwrap();
-    let n = picks["frames"].as_array().unwrap().len().min(12);
-    let gray = fs::read(review.join("gray.raw")).unwrap();
-    let bad = excluded(Mask::without(&overlay_shares()).kept(), &npy[npy.len() - W * H..]);
-    let frame = |k: usize| &gray[k * W * H..(k + 1) * W * H];
+    let frame_count = frames.numbers.len().min(JOIN_FRAMES);
     // the countdown rows as the frame's luma, so the countdown test reads something that changes
-    let rgb = |k: usize| frame(k).iter().flat_map(|&v| [v, v, v]).collect::<Vec<u8>>();
-    let watch = |range: std::ops::Range<usize>| {
-        let mut w = CameraWatch::new(&bad);
-        range.for_each(|k| w.add(frame(k), &rgb(k)));
-        serde_json::from_str::<CameraPart>(&serde_json::to_string(&w.part()).unwrap()).unwrap()
+    let rgb = |i: usize| frames.frame(i).iter().flat_map(|&luma| [luma, luma, luma]).collect::<Vec<u8>>();
+    let watch = |range: Range<usize>| {
+        let mut watch = CameraWatch::new(&frames.left_out);
+        range.for_each(|i| watch.add(frames.frame(i), &rgb(i)));
+        serde_json::from_str::<CameraPart>(&serde_json::to_string(&watch.part()).unwrap()).unwrap()
     };
-    let whole = watch(0..n);
-    assert!(whole.shifts.iter().skip(1).any(|s| s.iter().any(Option::is_some)));
-    for cut in 1..n {
-        let mut joined = CameraWatch::new(&bad);
+    let whole = watch(0..frame_count);
+    assert!(whole.shifts.iter().skip(1).any(|tiles| tiles.iter().any(Option::is_some)));
+    for cut in 1..frame_count {
+        let mut joined = CameraWatch::new(&frames.left_out);
         joined.join(watch(0..cut + 1));
-        joined.join(watch(cut..n));
+        joined.join(watch(cut..frame_count));
         assert_eq!(joined.part(), whole, "cut at {cut}");
     }
 }

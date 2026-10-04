@@ -1,11 +1,11 @@
 //! The what-if lines (src/what_if.rs) on real runs with their stats files: the parity runs (test_out/parity/<case>/
-//! review/) and some of the video-alone benchmark's (test_out/vod_model/eval/video_alone/full_v3/<run>/). Each line must
-//! be plausible: at least half a kill, no more than the run's kills, biggest first. `--nocapture` prints them.
+//! review/) and some of the video-alone benchmark's (test_out/vod_model/eval/video_alone/full_v3/<run>/). Each line
+//! must be plausible: at least half a kill, no more than the run's kills, biggest first. `--nocapture` prints them.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use aimview::review::{KillTimes, review_clicks};
+use aimview::review::{KillTimes, Report, review_clicks};
 use aimview::track::Tracks;
 
 const STATS: &str = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats";
@@ -16,13 +16,31 @@ const RUNS: [&str; 5] = [
     "vod_model/eval/video_alone/full_v3/1w4ts_Voltaic_-_143_-_2026.09.30-04.55.23",
     "vod_model/eval/video_alone/full_v3/Pasu_Switch_Wide_-_460_-_2026.07.19-16.07.10",
 ];
+/// The fewest kills a what-if line may add.
+const MIN_LINE_KILLS: f64 = 0.5;
+
+/// Prints the run's what-if lines and checks each is plausible, biggest first.
+fn check_lines(run: &str, report: &Report) {
+    let summary = &report.summary;
+    let scenario = summary.scenario.as_deref().unwrap_or(run);
+    let (mode, kills, measured, score) = (&summary.mode, summary.kills, summary.measured, summary.score);
+    eprintln!("{scenario} ({mode:?}, {kills} kills, {measured} measured, score {score:?})");
+    for line in &summary.what_if {
+        let score = line.score.map(|value| (value * 10.0).round() / 10.0);
+        eprintln!("  {:?} {}: +{:.1} kills, {score:?} score. {}", line.group, line.what, line.kills, line.how);
+        let plausible = line.kills >= MIN_LINE_KILLS && line.kills <= kills as f64 && line.kills <= measured as f64;
+        assert!(plausible, "{}: {}", run, line.what);
+    }
+    assert!(summary.what_if.windows(2).all(|pair| pair[0].kills >= pair[1].kills), "{run}: not biggest first");
+}
 
 #[test]
 fn what_if_lines_are_plausible_on_real_runs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out");
     for run in RUNS {
         let dir = root.join(run);
-        let (Ok(tracks), Ok(report)) = (fs::read_to_string(dir.join("tracks.json")), fs::read_to_string(dir.join("report.json")))
+        let (Ok(tracks), Ok(report)) =
+            (fs::read_to_string(dir.join("tracks.json")), fs::read_to_string(dir.join("report.json")))
         else {
             eprintln!("no {}", dir.display());
             continue;
@@ -31,19 +49,12 @@ fn what_if_lines_are_plausible_on_real_runs() {
         let report: serde_json::Value = serde_json::from_str(&report).unwrap();
         let stats = report["stats"].as_str().unwrap();
         let path = if Path::new(stats).is_absolute() { PathBuf::from(stats) } else { Path::new(STATS).join(stats) };
-        let Ok(text) = fs::read(&path).map(|b| String::from_utf8_lossy(&b).into_owned()) else {
+        let Ok(text) = fs::read(&path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned()) else {
             eprintln!("no {}", path.display());
             continue;
         };
-        let got = review_clicks(&tracks, KillTimes::Stats { name: stats, text: &text }, report["video"].as_str().unwrap(), None, None)
-            .unwrap()
-            .report;
-        let s = &got.summary;
-        eprintln!("{} ({:?}, {} kills, {} measured, score {:?})", s.scenario.as_deref().unwrap_or(run), s.mode, s.kills, s.measured, s.score);
-        for w in &s.what_if {
-            eprintln!("  {:?} {}: +{:.1} kills, {:?} score. {}", w.group, w.what, w.kills, w.score.map(|v| (v * 10.0).round() / 10.0), w.how);
-            assert!(w.kills >= 0.5 && w.kills <= s.kills as f64 && w.kills <= s.measured as f64, "{}: {}", run, w.what);
-        }
-        assert!(s.what_if.windows(2).all(|p| p[0].kills >= p[1].kills), "{run}: not biggest first");
+        let kills = KillTimes::Stats { name: stats, text: &text };
+        let got = review_clicks(&tracks, kills, report["video"].as_str().unwrap(), None, None).unwrap().report;
+        check_lines(run, &got);
     }
 }

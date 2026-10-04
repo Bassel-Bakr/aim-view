@@ -1,7 +1,6 @@
 //! The parity tests' comparison (tests/common): it compares only the fields Python's output has, so a field the core
 //! adds passes, while a field Python has that the core lacks, or a different value, is a difference.
 
-#[allow(dead_code)] // the other parity tests use the rest of it
 mod common;
 use common::{compare, rename_key, Diff};
 use serde_json::json;
