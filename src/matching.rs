@@ -1,11 +1,13 @@
 //! Each kill matched to the target it killed and the flick to it (review.py: `match_times`, `_attach_kills`,
 //! `appearances`, `crosshair_spots`).
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::capped::Capped;
+use crate::geometry::{H, W, to_deg};
 use crate::python::hypot;
 use crate::track::{TrackFrame, Tracks, spikes};
 
@@ -234,82 +236,118 @@ pub fn appearances(tracks: &Tracks, gap: f64, radius: f64) -> Appearances {
     out
 }
 
-/// The 2-D histogram's bin of a value: NumPy's `histogram2d` edges (`linspace`), a value on an edge in the bin above.
-fn bin(edges: &[f64], v: f64) -> usize {
-    edges.partition_point(|&e| e <= v) - 1
+/// The most crosshair spots `crosshair_spots` finds.
+pub const SPOTS: usize = 1;
+
+/// A box within this many degrees of the crosshair's center (`crosshair_center`) is on the crosshair spot.
+pub const ON_SPOT_DEG: f64 = 0.1;
+/// The camera turns on a frame whose view shift is more than this many degrees: no target stays put on screen then.
+const TURNING_DEG: f64 = 0.1;
+/// The ring around the crosshair's center (inner and outer radius, degrees) whose boxes the spot's are weighed against.
+const RING_DEG: (f64, f64) = (0.2, 0.4);
+/// How many times as densely as the ring's the boxes on the spot lie when the detector marks the crosshair.
+const SPOT_DENSITY: f64 = 5.0;
+/// The fewest boxes on the spot when the detector marks the crosshair: a share of the turning frames, and a number.
+const SPOT_SHARE: f64 = 0.02;
+const SPOT_BOXES: f64 = 25.0;
+/// A box has the size of the crosshair's box when its width and height are each within this share of it.
+const SAME_SIZE: f64 = 0.2;
+
+/// Where the detector's box on the crosshair sits (degrees): the screen's center, since the crosshair is always drawn
+/// there. A box's center is in the pixels' own numbering (pixel i's center is at i: the labels the detector learned
+/// from were blob centroids), so the center of a frame W pixels wide is at W / 2 - 0.5.
+pub fn crosshair_center() -> (f64, f64) {
+    to_deg(W as f64 / 2.0 - 0.5, H as f64 / 2.0 - 0.5)
 }
 
-/// The most crosshair spots `crosshair_spots` finds.
-pub const SPOTS: usize = 3;
+/// Whether the camera turns on a frame (`TURNING_DEG`).
+fn turning(frame: &TrackFrame) -> bool {
+    hypot(frame.shift.0, frame.shift.1) > TURNING_DEG
+}
 
-/// Fixed screen spots where the detector marks the crosshair: detections near the crosshair while the camera turns (no
-/// target stays put on screen then) that pile up on one point, at least 2% of the turning frames within 0.015 degrees
-/// and most of what lies within 0.1 degrees of it. At most SPOTS.
+/// The crosshair spot (degrees), if the detector marks the crosshair: its center (`crosshair_center`), when the boxes
+/// within ON_SPOT_DEG of it on the frames where the camera turns are at least SPOT_SHARE of those frames (and
+/// SPOT_BOXES), and lie at least SPOT_DENSITY times as densely as the boxes in the ring around it (`RING_DEG`): a
+/// target held near the crosshair while the camera turns spreads over both.
 pub fn crosshair_spots(frames: &[TrackFrame]) -> Capped<(f64, f64), SPOTS> {
-    const NEAR: f64 = 0.5;
-    const STEP: f64 = 0.01;
-    let turning: Vec<&TrackFrame> = frames.iter().filter(|f| hypot(f.shift.0, f.shift.1) > 0.1).collect();
-    let p: Vec<(f64, f64)> = turning
-        .iter()
-        .flat_map(|f| f.t.iter().map(|&(_, x, y)| (x, y)))
-        .filter(|&(x, y)| hypot(x, y) < NEAR)
-        .collect();
+    let center = crosshair_center();
+    let (mut turning_frames, mut on_spot, mut in_ring) = (0usize, 0usize, 0usize);
+    for frame in frames.iter().filter(|frame| turning(frame)) {
+        turning_frames += 1;
+        for &(_, x, y) in &frame.t {
+            let distance = hypot(x - center.0, y - center.1);
+            if distance < ON_SPOT_DEG {
+                on_spot += 1;
+            } else if (RING_DEG.0..RING_DEG.1).contains(&distance) {
+                in_ring += 1;
+            }
+        }
+    }
+    let enough = on_spot as f64 >= (SPOT_SHARE * turning_frames as f64).max(SPOT_BOXES);
+    let spot_area = ON_SPOT_DEG * ON_SPOT_DEG;
+    let ring_area = RING_DEG.1 * RING_DEG.1 - RING_DEG.0 * RING_DEG.0;
+    let dense = on_spot as f64 / spot_area >= SPOT_DENSITY * in_ring as f64 / ring_area;
     let mut out = Capped::new();
-    if p.len() < 30 {
-        return out;
-    }
-    let n = round_frame(2.0 * NEAR / STEP) as usize;
-    let step = 2.0 * NEAR / n as f64;
-    let mut edges: Vec<f64> = (0..=n).map(|k| k as f64 * step + -NEAR).collect();
-    edges[n] = NEAR;
-    let mut h = vec![0.0; n * n];
-    for &(x, y) in &p {
-        h[bin(&edges, x) * n + bin(&edges, y)] += 1.0;
-    }
-    let within = |c: (f64, f64), r: f64| p.iter().filter(move |&&(x, y)| (x - c.0).hypot(y - c.1) < r);
-    let centers: Vec<f64> = (0..n).map(|k| -NEAR + (k as f64 + 0.5) * STEP).collect();
-    for _ in 0..SPOTS {
-        // each bin with its 8 neighbours (wrapping round, as np.roll does), the first largest
-        let mut best = (0, 0, f64::NEG_INFINITY);
-        for i in 0..n {
-            for j in 0..n {
-                let mut b = 0.0;
-                for a in [n - 1, 0, 1] {
-                    for c in [n - 1, 0, 1] {
-                        b += h[((i + a) % n) * n + (j + c) % n];
-                    }
-                }
-                if b > best.2 {
-                    best = (i, j, b);
-                }
-            }
-        }
-        let (i, j, b) = best;
-        if b < (0.02 * turning.len() as f64).max(25.0) {
-            break;
-        }
-        let c = (centers[i], centers[j]);
-        let near: Vec<&(f64, f64)> = within(c, 0.02).collect();
-        if near.is_empty() {
-            break;
-        }
-        let c = (
-            near.iter().map(|q| q.0).sum::<f64>() / near.len() as f64,
-            near.iter().map(|q| q.1).sum::<f64>() / near.len() as f64,
-        );
-        if (within(c, 0.02).count() as f64) < 0.6 * within(c, 0.1).count() as f64 {
-            break; // spread out: targets held near the crosshair, not a fixed spot
-        }
-        out.push(c);
-        for (a, &gx) in centers.iter().enumerate() {
-            for (b, &gy) in centers.iter().enumerate() {
-                if (gx - c.0).hypot(gy - c.1) < 0.06 {
-                    h[a * n + b] = 0.0;
-                }
-            }
-        }
+    if enough && dense {
+        out.push(center);
     }
     out
+}
+
+/// A box in a frame: its track, its place and its width and height (degrees).
+type SizedBox = (u32, f64, f64, (f64, f64));
+
+/// A frame's boxes with their sizes (none in tracks without sizes).
+fn sized_boxes(frame: &TrackFrame) -> impl Iterator<Item = SizedBox> + '_ {
+    frame.wh.iter().flat_map(|sizes| frame.t.iter().zip(sizes).map(|(&(track, x, y), &size)| (track, x, y, size)))
+}
+
+/// The tracks without the end of each one that turns into the crosshair's box: where the detector marks the crosshair,
+/// the tracker hands it the killed target's track, which runs on until the camera turns (the box stays put on screen).
+/// A box is the crosshair's on the spot (`crosshair_spots`, within ON_SPOT_DEG) with the size of the crosshair's box
+/// (SAME_SIZE of the median width and height of the boxes on the spot while the camera turns: the crosshair never
+/// changes). A track whose last boxes are the crosshair's, after a box of another size, and that ends as the camera
+/// turns, ends at that box. One that ends with the camera still keeps its end: the crosshair's box went with the
+/// target (a detector can mark the crosshair only over a target). So does a target as big as the crosshair's box,
+/// which cannot be told from it.
+pub fn without_crosshair_ends(tracks: &Tracks) -> Cow<'_, Tracks> {
+    let frames = &tracks.frames;
+    let Some(&center) = crosshair_spots(frames).first() else { return Cow::Borrowed(tracks) };
+    let on_spot = |x: f64, y: f64| hypot(x - center.0, y - center.1) < ON_SPOT_DEG;
+    let (mut widths, mut heights) = (Vec::new(), Vec::new());
+    for frame in frames.iter().filter(|frame| turning(frame)) {
+        for (_, _, _, (width, height)) in sized_boxes(frame).filter(|&(_, x, y, _)| on_spot(x, y)) {
+            widths.push(width);
+            heights.push(height);
+        }
+    }
+    if widths.is_empty() {
+        return Cow::Borrowed(tracks);
+    }
+    let crosshair = (crate::statistics::median(&widths), crate::statistics::median(&heights));
+    let crosshair_sized = |(width, height): (f64, f64)| {
+        (width - crosshair.0).abs() <= SAME_SIZE * crosshair.0 && (height - crosshair.1).abs() <= SAME_SIZE * crosshair.1
+    };
+    // each track's last box that is not the crosshair's (its frame, and whether it has the crosshair's size), and end
+    let mut last_other: HashMap<u32, (usize, bool)> = HashMap::new();
+    let mut end_frame: HashMap<u32, usize> = HashMap::new();
+    for frame in frames {
+        for (track, x, y, size) in sized_boxes(frame) {
+            if !on_spot(x, y) || !crosshair_sized(size) {
+                last_other.insert(track, (frame.i, crosshair_sized(size)));
+            }
+            end_frame.insert(track, frame.i);
+        }
+    }
+    let cut_after: HashMap<u32, usize> = last_other
+        .into_iter()
+        .filter(|&(track, (_, sized))| !sized && frames.get(end_frame[&track] + 1).is_some_and(turning))
+        .map(|(track, (frame, _))| (track, frame))
+        .collect();
+    if cut_after.is_empty() {
+        return Cow::Borrowed(tracks);
+    }
+    Cow::Owned(keep_points(tracks, |frame, track| cut_after.get(&track).is_none_or(|&last| frame <= last)))
 }
 
 /// The flicks for known kill times (seconds) with the shots each kill took: from the stats file, or from the session
@@ -327,6 +365,7 @@ pub fn match_times(
     window: f64,
     off: Option<f64>,
 ) -> (Vec<Flick>, MatchInfo) {
+    let tracks = &*without_crosshair_ends(tracks);
     let fps = tracks.fps;
     let index = TrackIndex::new(&tracks.frames);
     let n_frames = tracks.frames.len() as i64;
@@ -577,19 +616,27 @@ pub fn ghosts(frames: &[TrackFrame], maxd: f64, share: f64, moved: f64) -> HashS
 /// The tracks without those that are the crosshair (`ghosts`).
 pub fn without_ghosts(tracks: &Tracks) -> Tracks {
     let gone = ghosts(&tracks.frames, 0.5, 0.5, 0.3);
-    let mut out = tracks.clone();
     if gone.is_empty() {
-        return out;
+        return tracks.clone();
     }
-    for f in &mut out.frames {
-        let keep: Vec<bool> = f.t.iter().map(|q| !gone.contains(&q.0)).collect();
-        kept(&mut f.t, &keep);
-        kept(&mut f.a, &keep);
-        if let Some(wh) = f.wh.as_mut() {
-            kept(wh, &keep);
+    keep_points(tracks, |_, tid| !gone.contains(&tid))
+}
+
+/// The tracks with only the points `keep` (frame, track) keeps.
+fn keep_points(tracks: &Tracks, keep: impl Fn(usize, u32) -> bool) -> Tracks {
+    let mut out = tracks.clone();
+    for frame in &mut out.frames {
+        let kept_here: Vec<bool> = frame.t.iter().map(|point| keep(frame.i, point.0)).collect();
+        if !kept_here.contains(&false) {
+            continue;
         }
-        if let Some(s) = f.s.as_mut() {
-            kept(s, &keep);
+        kept(&mut frame.t, &kept_here);
+        kept(&mut frame.a, &kept_here);
+        if let Some(sizes) = frame.wh.as_mut() {
+            kept(sizes, &kept_here);
+        }
+        if let Some(scores) = frame.s.as_mut() {
+            kept(scores, &kept_here);
         }
     }
     out
@@ -854,7 +901,7 @@ impl Paths {
 /// its target's track. "Near" is the target's radius (from the tracks' median blob area) plus 0.25 degrees, and at
 /// least 0.6. Flicks are built as `match_times` builds them, with no shot counts.
 pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
-    let tracks = without_ghosts(tracks);
+    let tracks = without_ghosts(&without_crosshair_ends(tracks));
     let (fps, frames) = (tracks.fps, &tracks.frames);
     let mut paths = Paths::new(frames);
     let areas: Vec<f64> = paths
@@ -1032,6 +1079,38 @@ mod tests {
                 .collect();
             let t = Tracks { fps: 60.0, frames, version: 0 };
             assert_eq!(match_times(&t, &[10.0 / 60.0], &[1], 0.25, Some(0.0)).0.len(), matched);
+        }
+    }
+
+    #[test]
+    fn a_target_handed_to_the_crosshairs_box_ends_where_it_was_last_seen() {
+        // the detector boxes the crosshair (0.6 degrees) at the center while the camera turns; a target (1.4 degrees)
+        // comes to the crosshair and dies on frame 50, and its track runs on over the crosshair's box until frame 55.
+        // When the camera turns on frame 56, the box stayed after the target: the kill is on frame 50. When the camera
+        // is still and the box is gone, the box went with the target: the kill is on frame 55.
+        let center = crosshair_center();
+        for (turns, kill) in [(true, 50), (false, 55)] {
+            let frames = (0..70usize)
+                .map(|i| {
+                    let crosshair = (1000 + i as u32, center.0, center.1, 0.6);
+                    let (shift, boxes) = match i {
+                        ..40 => ((0.3, 0.0), vec![crosshair]),
+                        40..=50 => ((0.0, 0.0), vec![(1, 0.5 - 0.04 * (i - 40) as f64, 0.0, 1.4)]),
+                        51..=55 => ((0.0, 0.0), vec![(1, center.0, center.1, 0.6)]),
+                        56..60 if turns => ((0.5, 0.0), vec![crosshair]),
+                        _ => ((0.0, 0.0), vec![]),
+                    };
+                    TrackFrame {
+                        i,
+                        shift,
+                        t: boxes.iter().map(|&(track, x, y, _)| (track, x, y)).collect(),
+                        a: vec![40; boxes.len()],
+                        wh: Some(boxes.iter().map(|&(_, _, _, size)| (size, size)).collect()),
+                        s: None,
+                    }
+                })
+                .collect();
+            assert_eq!(kill_frames(&Tracks { fps: 60.0, frames, version: 0 }), vec![kill]);
         }
     }
 }

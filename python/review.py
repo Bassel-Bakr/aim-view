@@ -683,6 +683,7 @@ def match_times(tracks, kt, shots, window=0.25, off=None):
        track need not end exactly at the kill.
     3. The flick runs from the previous kill, or from the target's first appearance when it appeared after that kill
        (one target at a time), to this kill. Returns (flicks, info)."""
+    tracks = without_crosshair_ends(tracks)
     fps, frames = tracks["fps"], tracks["frames"]
     pos, area = {}, {}
     for f in frames:
@@ -863,30 +864,96 @@ def appearances(tracks, gap=0.5, radius=1.0):
     return appeared, follows
 
 
-def crosshair_spots(frames, near=0.5, step=0.01):
-    """Fixed screen spots where the detector marks the crosshair: detections near the crosshair while the camera turns
-    (no target stays put on screen then) that pile up on one point, at least 2% of the turning frames within 0.015 deg
-    and most of what lies within 0.1 deg of it. Returns [(x, y) deg], at most 3."""
-    turning = [f for f in frames if math.hypot(*(f.get("shift") or (0.0, 0.0))) > 0.1]
-    P = np.array([(x, y) for f in turning for _, x, y in f["t"] if math.hypot(x, y) < near]).reshape(-1, 2)
-    out = []
-    if len(P) < 30:
-        return out
-    n = int(round(2 * near / step))
-    H = np.histogram2d(P[:, 0], P[:, 1], bins=n, range=[[-near, near], [-near, near]])[0]
-    for _ in range(3):
-        B = sum(np.roll(np.roll(H, a, 0), b, 1) for a in (-1, 0, 1) for b in (-1, 0, 1))
-        i, j = np.unravel_index(np.argmax(B), B.shape)
-        if B[i, j] < max(25, 0.02 * len(turning)):
-            break
-        c = np.array([-near + (i + 0.5) * step, -near + (j + 0.5) * step])
-        c = P[np.hypot(*(P - c).T) < 0.02].mean(axis=0)
-        if np.sum(np.hypot(*(P - c).T) < 0.02) < 0.6 * np.sum(np.hypot(*(P - c).T) < 0.1):
-            break                                       # spread out: targets held near the crosshair, not a fixed spot
-        out.append((float(c[0]), float(c[1])))
-        g = -near + (np.arange(n) + 0.5) * step
-        H[np.hypot(g[:, None] - c[0], g[None, :] - c[1]) < 0.06] = 0
-    return out
+ON_SPOT_DEG = 0.1             # a box this near the crosshair's center (crosshair_center()) is on the crosshair spot
+TURNING_DEG = 0.1             # the camera turns on a frame whose view shift is more: no target stays put on screen then
+RING_DEG = (0.2, 0.4)         # the ring around the center whose boxes the spot's are weighed against
+SPOT_DENSITY = 5.0            # how many times as densely as the ring's the spot's boxes lie when the crosshair is boxed
+SPOT_SHARE, SPOT_BOXES = 0.02, 25   # the fewest boxes on the spot: a share of the turning frames, and a number
+SAME_SIZE = 0.2               # a box has the crosshair box's size when its width and height are each within this share
+
+
+def crosshair_center():
+    """Where the detector's box on the crosshair sits (deg): the screen's center, since the crosshair is always drawn
+    there. A box's center is in the pixels' own numbering (pixel i's center is at i: the labels the detector learned
+    from were blob centroids), so the center of a frame W pixels wide is at W / 2 - 0.5."""
+    return to_deg(W / 2 - 0.5, H / 2 - 0.5)
+
+
+def _turning(frame):
+    """Whether the camera turns on a frame (TURNING_DEG)."""
+    return math.hypot(*(frame.get("shift") or (0.0, 0.0))) > TURNING_DEG
+
+
+def crosshair_spots(frames):
+    """The crosshair spot, if the detector marks the crosshair: its center (crosshair_center()), when the boxes within
+    ON_SPOT_DEG of it on the frames where the camera turns are at least SPOT_SHARE of those frames (and SPOT_BOXES),
+    and lie at least SPOT_DENSITY times as densely as the boxes in the ring around it (RING_DEG): a target held near
+    the crosshair while the camera turns spreads over both. Returns [(x, y) deg], at most 1."""
+    center = crosshair_center()
+    turning_frames = on_spot = in_ring = 0
+    for frame in filter(_turning, frames):
+        turning_frames += 1
+        for _, x, y in frame["t"]:
+            distance = math.hypot(x - center[0], y - center[1])
+            if distance < ON_SPOT_DEG:
+                on_spot += 1
+            elif RING_DEG[0] <= distance < RING_DEG[1]:
+                in_ring += 1
+    enough = on_spot >= max(SPOT_SHARE * turning_frames, SPOT_BOXES)
+    spot_area = ON_SPOT_DEG * ON_SPOT_DEG
+    ring_area = RING_DEG[1] * RING_DEG[1] - RING_DEG[0] * RING_DEG[0]
+    dense = on_spot / spot_area >= SPOT_DENSITY * in_ring / ring_area
+    return [center] if enough and dense else []
+
+
+def _kept(frame, keep):
+    """A frame with only the targets `keep` (one bool each) keeps, in each of its lists of that length."""
+    lists = [key for key in ("t", "a", "wh", "s") if frame.get(key) is not None and len(frame[key]) == len(keep)]
+    return dict(frame, **{key: [value for value, kept in zip(frame[key], keep) if kept] for key in lists})
+
+
+def without_crosshair_ends(tracks):
+    """The tracks without the end of each one that turns into the crosshair's box: where the detector marks the
+    crosshair, the tracker hands it the killed target's track, which runs on until the camera turns (the box stays put
+    on screen). A box is the crosshair's on the spot (crosshair_spots(), within ON_SPOT_DEG) with the size of the
+    crosshair's box (SAME_SIZE of the median width and height of the boxes on the spot while the camera turns: the
+    crosshair never changes). A track whose last boxes are the crosshair's, after a box of another size, and that ends
+    as the camera turns, ends at that box. One that ends with the camera still keeps its end: the crosshair's box went
+    with the target (a detector can mark the crosshair only over a target). So does a target as big as the crosshair's
+    box, which cannot be told from it."""
+    frames = tracks["frames"]
+    spots = crosshair_spots(frames)
+    if not spots:
+        return tracks
+    center = spots[0]
+
+    def on_spot(x, y):
+        return math.hypot(x - center[0], y - center[1]) < ON_SPOT_DEG
+
+    def sized_boxes(frame):                         # its boxes with their sizes (none in tracks without sizes)
+        return zip(frame["t"], frame["wh"]) if frame.get("wh") is not None else ()
+
+    sizes = [size for frame in filter(_turning, frames) for (_, x, y), size in sized_boxes(frame) if on_spot(x, y)]
+    if not sizes:
+        return tracks
+    crosshair = st.median([width for width, _ in sizes]), st.median([height for _, height in sizes])
+
+    def crosshair_sized(width, height):
+        return (abs(width - crosshair[0]) <= SAME_SIZE * crosshair[0]
+                and abs(height - crosshair[1]) <= SAME_SIZE * crosshair[1])
+
+    last_other, end_frame = {}, {}      # each track's last box not the crosshair's (frame, its size), and its end
+    for frame in frames:
+        for (track, x, y), size in sized_boxes(frame):
+            if not on_spot(x, y) or not crosshair_sized(*size):
+                last_other[track] = (frame["i"], crosshair_sized(*size))
+            end_frame[track] = frame["i"]
+    cut_after = {track: last for track, (last, sized) in last_other.items()
+                 if not sized and end_frame[track] + 1 < len(frames) and _turning(frames[end_frame[track] + 1])}
+    if not cut_after:
+        return tracks
+    keep = [[point[0] not in cut_after or frame["i"] <= cut_after[point[0]] for point in frame["t"]] for frame in frames]
+    return dict(tracks, frames=[_kept(frame, kept) for frame, kept in zip(frames, keep)])
 
 
 def ghosts(frames, maxd=0.5, share=0.5, moved=0.3):
@@ -924,10 +991,7 @@ def without_ghosts(tracks):
     g = ghosts(tracks["frames"])
     if not g:
         return tracks
-    keep = lambda f: [j for j, q in enumerate(f["t"]) if q[0] not in g]
-    return dict(tracks, frames=[dict(f, t=[f["t"][j] for j in keep(f)],
-                                     **({"a": [f["a"][j] for j in keep(f)]} if f.get("a") else {}))
-                                for f in tracks["frames"]])
+    return dict(tracks, frames=[_kept(frame, [point[0] not in g for point in frame["t"]]) for frame in tracks["frames"]])
 
 
 def match_video(tracks):
@@ -941,7 +1005,7 @@ def match_video(tracks):
     A flick's path joins the pieces of its target's track.
     "Near" is the target's radius (from the tracks' median blob area) plus 0.25 deg, and at least 0.6 deg. Flicks are
     built as in match(), with no shot counts. Returns (flicks, info)."""
-    tracks = without_ghosts(tracks)
+    tracks = without_ghosts(without_crosshair_ends(tracks))
     fps, frames = tracks["fps"], tracks["frames"]
     pos, area = {}, {}
     for f in frames:

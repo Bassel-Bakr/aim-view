@@ -263,8 +263,12 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   27, its hits and shots on 22 (the rest: a lightning gun's last redraw, a bot whose hits KovaaK counts apart, a last
   miss after the last redraw), its kill frames within a frame on 25. The video alone (matching.rs `match_video`, its
   `Paths`: a false camera turn at a kill repaired, a target found again only where and as big as it was) finds 94.5%
-  of the stats files' kills within 3 frames on 47 runs (97.4% on the 18 held out; was 83%), precision 95.7% (held out
-  97.2%); switching runs are the weakest (90% precision held out). The benchmark and its notes: test_out/baselines/vbench/ (BENCH.md). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
+  of the stats files' kills within 3 frames on 47 runs (97.6% on the 18 held out; was 83%), precision 95.8% (held out
+  97.4%); switching runs are the weakest (90% precision held out). Where the detector marks the crosshair (matching.rs
+  `crosshair_spots`: boxes piled at the screen's center while the camera turns, 5 times as dense as 0.2 to 0.4 degrees
+  around it; no search, so no knife edge), a track the tracker hands to the crosshair's box when its target dies is cut
+  back to its last target box (`without_crosshair_ends`), with a stats file too: its clock was 7 to 10 frames late on
+  3 of 188 mined full_v3 runs (the HUD shows), and full_v4's on VT ww5t. The benchmark and its notes: test_out/baselines/vbench/ (BENCH.md). The HUD costs nothing measurable (av1: 15.6 s in the browser, 11.0 s natively). `examples/hud.rs` reads a
   recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
   `REVIEW_VERSION`, 3 since `link` repairs a false camera turn; 2 was the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.
@@ -336,5 +340,7 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   frames; and review.py's `_attach_kills` reads `last` from the last track it looked at, not the chosen one (kept in
   matching.rs for parity; before this fix the chosen one lost 2 Smoothbot flicks); the video-alone benchmark has only
   8 switching runs
-  (VT DriftTS breaks into many tracks);
+  (VT DriftTS breaks into many tracks); a target as big as the crosshair's box hidden under it (1wall 2targets xsmall
+  valorant): the stats file's clock is 9 frames late there (the HUD shows) and the video alone finds none of its kills
+  (the benchmark's own clock hides it);
   python/model/infer.py still uses the fixed threshold, not the model's settings file (the `--python` path).

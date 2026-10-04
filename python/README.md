@@ -274,12 +274,15 @@ python/review.py's `match_video` keeps the old rules: a track picked up again wi
 turn) continues it, with no repair, no test of where and how big a target comes back, and no limit on blob size. It
 stays only as the reference for the parity of the HUD path; the core's video-alone path differs from it on purpose.
 `python/model/eval_video_alone.py` scores the core's finder against the stats files of 48 clicking runs
-(python/model/REPRODUCE.md, step 3). With full_v3 it finds 94.5% of the kills within 3 frames, and 95.5% of the kills it
-gives are real (on the held-out scenarios, 97.3% and 96.7%). The old rules found 83.1%, with 94.8% real.
+(python/model/REPRODUCE.md, step 3). With full_v3 it finds 94.5% of the kills within 3 frames, and 95.8% of the kills it
+gives are real (on the held-out scenarios, 97.6% and 97.4%). The old rules found 83.1%, with 94.8% real.
 
 A track is the crosshair when it stays on the crosshair while the camera turns, which a static target cannot do, or
-when it lasts 3 frames or fewer on a crosshair spot (`review.crosshair_spots`): a fixed point near the crosshair where
-detections pile up while the camera turns. Aim Lab's crosshair (a red cross with a dark edge, bigger than its targets)
+when it lasts 3 frames or fewer on a crosshair spot (`review.crosshair_spots`): the screen's center, where the crosshair
+always is, when detections pile up there while the camera turns (5 times as densely as 0.2 to 0.4 deg around it: a
+target held near the crosshair spreads over both). Where a detector marks the crosshair, the tracker hands it the dying
+target's track, which then runs on until the camera turns: `review.without_crosshair_ends` cuts such a track back to
+its last box of another size than the crosshair's box. Aim Lab's crosshair (a red cross with a dark edge, bigger than its targets)
 is marked by every model in about half the turning frames; right after a kill, those one-frame "targets" made the dead
 target look picked up again, so its kill was lost or came late. The user's KovaaK's runs have no such spot with
 small_v7.
