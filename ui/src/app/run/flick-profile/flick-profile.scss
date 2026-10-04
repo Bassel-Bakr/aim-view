@@ -50,9 +50,9 @@
 }
 
 @layer components {
-  // under the other charts, in a column as wide as theirs
-  .profiles {
-    @apply mt-5 grid grid-cols-(--profile-columns) gap-5;
+  // a cell of the report's chart grid (click-report.html), after the run's charts
+  :host {
+    display: contents;
   }
 
   .profile-summary {

@@ -2,6 +2,14 @@
 @use 'themes/report' as r;
 @reference '../../../tailwind.css';
 
+// The charts are cells of the report's chart grid (click-report.html), beside the flick speed card
+@layer components {
+  :host,
+  .cells {
+    display: contents;
+  }
+}
+
 // The drawings' lines, dots and labels: SVG strokes and fills, which utilities do not reach inside the drawing
 @layer components {
   .grid {

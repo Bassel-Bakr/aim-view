@@ -1,58 +1,56 @@
 @if (chart(); as c) {
-  <div class="profiles">
-    <figure class="chart">
-      <figcaption class="chart-title">Flick speed through the flick</figcaption>
-      <svg
-        class="chart-svg"
-        role="img"
-        [attr.aria-label]="'The camera\'s speed through the flicks, averaged. ' + c.summary"
-        [attr.viewBox]="'0 0 ' + c.box.width + ' ' + c.box.height"
-      >
-        @for (t of c.yTicks; track t.label) {
-          <line
-            class="gridline"
-            [attr.x1]="c.box.left"
-            [attr.x2]="c.box.width - c.box.right"
-            [attr.y1]="t.at"
-            [attr.y2]="t.at"
-          />
-          <text class="label" text-anchor="end" [attr.x]="c.box.left - 6" [attr.y]="t.at + 4">
-            {{ t.label }}
-          </text>
-        }
-        @for (t of c.xTicks; track t.label) {
-          <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="c.box.height - 6">
-            {{ t.label }}
-          </text>
-        }
+  <figure class="chart">
+    <figcaption class="chart-title">Flick speed through the flick</figcaption>
+    <svg
+      class="chart-svg"
+      role="img"
+      [attr.aria-label]="'The camera\'s speed through the flicks, averaged. ' + c.summary"
+      [attr.viewBox]="'0 0 ' + c.box.width + ' ' + c.box.height"
+    >
+      @for (t of c.yTicks; track t.label) {
         <line
-          class="end"
-          [attr.x1]="c.end"
-          [attr.x2]="c.end"
-          [attr.y1]="c.box.top"
-          [attr.y2]="c.box.height - c.box.bottom"
+          class="gridline"
+          [attr.x1]="c.box.left"
+          [attr.x2]="c.box.width - c.box.right"
+          [attr.y1]="t.at"
+          [attr.y2]="t.at"
         />
-        <path class="band" [attr.d]="c.band" />
-        <path class="mean" [attr.d]="c.mean" />
-        <line
-          class="peak"
-          [attr.x1]="c.peak.x"
-          [attr.x2]="c.peak.x"
-          [attr.y1]="c.peak.y"
-          [attr.y2]="c.box.height - c.box.bottom"
-        />
-        <circle class="peak-dot" [attr.cx]="c.peak.x" [attr.cy]="c.peak.y" />
-        @if (picked(); as p) {
-          <path class="picked" [attr.d]="p" />
-        }
-      </svg>
-      <p class="profile-summary">{{ c.summary }}</p>
-      <p class="chart-note">
-        The camera's speed, as a share of each flick's top speed, against its time, as a share of
-        the main flick (100%: its end; past it, the braking that follows). The line is the average
-        of {{ flicks() }} flicks, the band holds their middle half, the dot is the top speed; the
-        picked kill is in yellow.
-      </p>
-    </figure>
-  </div>
+        <text class="label" text-anchor="end" [attr.x]="c.box.left - 6" [attr.y]="t.at + 4">
+          {{ t.label }}
+        </text>
+      }
+      @for (t of c.xTicks; track t.label) {
+        <text class="label" text-anchor="middle" [attr.x]="t.at" [attr.y]="c.box.height - 6">
+          {{ t.label }}
+        </text>
+      }
+      <line
+        class="end"
+        [attr.x1]="c.end"
+        [attr.x2]="c.end"
+        [attr.y1]="c.box.top"
+        [attr.y2]="c.box.height - c.box.bottom"
+      />
+      <path class="band" [attr.d]="c.band" />
+      <path class="mean" [attr.d]="c.mean" />
+      <line
+        class="peak"
+        [attr.x1]="c.peak.x"
+        [attr.x2]="c.peak.x"
+        [attr.y1]="c.peak.y"
+        [attr.y2]="c.box.height - c.box.bottom"
+      />
+      <circle class="peak-dot" [attr.cx]="c.peak.x" [attr.cy]="c.peak.y" />
+      @if (picked(); as p) {
+        <path class="picked" [attr.d]="p" />
+      }
+    </svg>
+    <p class="profile-summary">{{ c.summary }}</p>
+    <p class="chart-note">
+      The camera's speed, as a share of each flick's top speed, against its time, as a share of the
+      main flick (100%: its end; past it, the braking that follows). The line is the average of
+      {{ flicks() }} flicks, the band holds their middle half, the dot is the top speed; the picked
+      kill is in yellow.
+    </p>
+  </figure>
 }

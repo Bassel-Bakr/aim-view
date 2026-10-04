@@ -27,6 +27,15 @@
     padding: r.$flick-list-cell-padding;
   }
 
+  /* the values stay on one line; a header of two words or more takes two lines, so the table fits beside the player */
+  td {
+    @apply whitespace-nowrap;
+  }
+
+  th {
+    @apply align-bottom whitespace-normal;
+  }
+
   thead th {
     @apply sticky top-0 z-1 bg-surface-1 pt-3 tracking-wide uppercase;
   }

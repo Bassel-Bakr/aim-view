@@ -8,14 +8,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ClickReport, Flick } from '../../api';
-import {
-  arrow,
-  formatCount,
-  formatDegrees,
-  formatEnded,
-  formatMs,
-  formatSpeed,
-} from '../../format';
+import { arrow, formatCount, formatDegrees, formatEnded } from '../../format';
 import { PathAnalysis, pickText } from '../fastest-path/path-analysis';
 import { PathCost } from '../fastest-path/path-cost';
 import { FlickFocus } from '../flick-focus';
@@ -36,9 +29,8 @@ export interface FlickRow {
   missed: boolean;
   /** What picking this target cost against the fastest pick. */
   pathing: string;
-  reaction: string;
-  flickTime: string;
-  micro: string;
+  /** The kill's steps in one cell, to keep the table narrow: reaction, flick and micro, "67 · 183 · 125 ms". */
+  steps: string;
   /** The micro's two parts, on hover: "120 ms onto the target, 80 ms settling". */
   microSplit: string;
   offCenter: string;
@@ -46,22 +38,28 @@ export interface FlickRow {
   spawn: string;
 }
 
+/**
+ * A number rounded after scaling (seconds by 1000: milliseconds), without its unit, which the column's header names
+ * (the table stays narrow enough to fit beside the player); a dash when not measured.
+ */
+function whole(value: number | null | undefined, scale = 1): string {
+  return value == null ? '–' : String(Math.round(scale * value));
+}
+
 export function flickRows(r: ClickReport, paths: PathAnalysis | null): FlickRow[] {
   return r.flicks.map((m) => ({
     flick: m,
     n: m.n,
     distance: `${m.D0.toFixed(1)}° ${arrow(m.dir)}`,
-    ttk: formatMs(m.total),
+    ttk: whole(m.total, 1000),
     landed: formatEnded(m.end_left, r.summary.radius),
-    confirmation: formatMs(m.still),
-    flickSpeed: formatSpeed(m.peak),
-    onTheMove: formatSpeed(m.click_speed),
+    confirmation: whole(m.still, 1000),
+    flickSpeed: whole(m.peak),
+    onTheMove: whole(m.click_speed),
     shots: formatCount(m.shots),
     missed: (m.shots ?? 0) > 1,
     pathing: pickText(paths, m.n),
-    reaction: formatMs(m.react),
-    flickTime: formatMs(m.flick),
-    micro: formatMs(micro(m)),
+    steps: [m.react, m.flick, micro(m)].map((s) => whole(s, 1000)).join(' · '),
     microSplit: m.parts ? microSplit(m.parts) : '',
     offCenter: formatDegrees(m.click_off),
     micros: formatCount(m.corr),

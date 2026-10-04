@@ -23,8 +23,11 @@
 
 <section aria-label="The run at a glance">
   <h3>The run at a glance</h3>
-  <app-run-charts [report]="report()" />
-  <app-flick-profile [report]="report()" />
+  <!-- one grid for both, so the flick speed card takes the next free cell, not a row of its own -->
+  <div class="charts">
+    <app-run-charts [report]="report()" />
+    <app-flick-profile [report]="report()" />
+  </div>
 </section>
 
 <div class="split">

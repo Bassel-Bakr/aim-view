@@ -15,17 +15,6 @@
     @if (!review.unavailable()) {
       <button
         type="button"
-        appButton
-        [intent]="recording().analysed ? 'normal' : 'primary'"
-        [disabled]="review.running() || notHere()"
-        (click)="startReview()"
-      >
-        {{ actionLabel() }}
-      </button>
-    }
-    @if (!review.unavailable()) {
-      <button
-        type="button"
         aria-controls="run-window"
         appButton
         title="Where the run starts and ends: the review measures only that part"
@@ -64,6 +53,17 @@
     >
       Stats file
     </button>
+    @if (!review.unavailable()) {
+      <button
+        type="button"
+        appButton
+        [intent]="recording().analysed ? 'normal' : 'primary'"
+        [disabled]="review.running() || notHere()"
+        (click)="startReview()"
+      >
+        {{ actionLabel() }}
+      </button>
+    }
   </div>
 </div>
 <app-queue-bar [recording]="recording()" />

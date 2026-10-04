@@ -147,11 +147,13 @@ export class Run {
       return 'The model behind this review was not recorded (it is from before reviews kept it)';
     const chosen = this.models.chosen();
     const other = chosen && chosen !== by ? `, not ${modelName(chosen)} (the model in use)` : '';
-    return `Reviewed with ${modelName(by)}${other}`;
+    // the device in the review's detector, as tracks.json names it: "onnxruntime (DirectML)", "onnxruntime-web (WebGPU)"
+    const device = /\(([^)]+)\)$/.exec(this.tracks()?.detector ?? '')?.[1];
+    return `Reviewed with ${modelName(by)}${device ? ` on ${device}` : ''}${other}`;
   });
 
   protected readonly actionLabel = computed(() => {
-    if (!this.recording().analysed) return 'Analyse';
+    if (!this.recording().analysed) return 'Analyze';
     if (this.unmeasured()) return 'Measure again';
     const chosen = this.models.chosen();
     const by = this.report()?.review_model;
