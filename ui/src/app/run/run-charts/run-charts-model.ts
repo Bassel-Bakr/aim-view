@@ -112,7 +112,7 @@ export interface SpeedsModel {
 
 export const BOX: ChartBox = { width: 520, height: 200, left: 44, right: 12, top: 10, bottom: 24 };
 /** A float's rounding error is below this, so a value this close to a whole step counts as on it. */
-const ROUNDING_SLACK = 1e-9;
+export const ROUNDING_SLACK = 1e-9;
 /** An axis reaches this far past the largest value it shows. */
 const HEADROOM = 1.05;
 /** The time axes reach at least this far (seconds; a flick's own axis less), the distance axes this far (degrees). */
@@ -125,9 +125,9 @@ const BAR_FILL = 0.7;
 const SPEEDS_BEFORE = 0.3;
 const SPEEDS_AFTER = 0.4;
 
-const plotWidth = (b: ChartBox) => b.width - b.left - b.right;
-const plotBottom = (b: ChartBox) => b.height - b.bottom;
-const plotHeight = (b: ChartBox) => plotBottom(b) - b.top;
+export const plotWidth = (b: ChartBox) => b.width - b.left - b.right;
+export const plotBottom = (b: ChartBox) => b.height - b.bottom;
+export const plotHeight = (b: ChartBox) => plotBottom(b) - b.top;
 
 /** A round step for an axis that reaches top, giving about four to six lines. */
 export function niceStep(top: number): number {
