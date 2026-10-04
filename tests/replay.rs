@@ -26,7 +26,7 @@ mod common;
 use common::{Diff, compare, read as read_json};
 
 /// The byte-compare's baseline: move it with BENCH.md's.
-const NATIVE: &str = "test_out/baselines/5a66b5c/native";
+const NATIVE: &str = "test_out/baselines/34134a5/native";
 const PARTS: &str = "test_out/baselines/parts";
 const AV1: &str = "1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04";
 const FLOWER: &str = "Flower Easier - 4801 - 2026.09.20-02.33.56";
