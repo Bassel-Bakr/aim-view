@@ -1,0 +1,3 @@
+# The limits of the lints in Cargo.toml's [workspace.lints.clippy] (AGENTS.md, "Readable code")
+too-many-lines-threshold = 60
+allowed-idents-below-min-chars = ["i", "j", "x", "y", "a", "b"]

@@ -16,3 +16,6 @@ aimview-service = { path = "../service" }
 serde_json = "1"
 # the system's folder dialog (the VODs folder)
 rfd = "0.15"
+
+[lints]
+workspace = true

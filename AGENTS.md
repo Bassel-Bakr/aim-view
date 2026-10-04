@@ -37,6 +37,8 @@ bun run build:app                              # its installer: target/release/b
 bun run test:ui                                # the UI's tests
 bun run lint:ui                                # ESLint (angular-eslint's recommended set, plus the rules below)
 bun run format                                 # Prettier, over ui/
+cargo clippy --workspace --all-targets         # the Rust lints (Cargo.toml, clippy.toml)
+python -m ruff check python                    # the Python lints (ruff.toml)
 cargo test --profile quick                     # the Rust core, checked against Python's results (test_out/parity/)
                                                # (--release gives the same results; its builds take 40 s, quick's 3 s)
 python tests/fixtures.py <video> [--areas exclude.json]   # Python's results stage by stage, for those checks
@@ -145,6 +147,18 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (`selectRow`, not `onClick`). Services are `@Service()` (Angular 22's), not `@Injectable({ providedIn: 'root' })`.
   `inject()`, `protected` for template-only members, `readonly` for inputs and queries.
 - **Format and lint** the UI before calling a change done: `bun run format`, then `bun run lint:ui`.
+- **Readable code.** The Rust core began as a line-for-line port of `python/review.py` and kept its short NumPy-style
+  names; code is now written for the next person who reads it. Names say what a thing is, with its unit where it has
+  one (`shift_deg`, `kill_frame`, `radius_px`). Single letters only for loop counters (`i`, `j`), coordinates (`x`,
+  `y`) and a comparison's two sides (`a`, `b`). Short forms only when they are the domain's own words: `fps`, `hud`,
+  `px`, `deg`, `ms`, `ttk`, `fov`, `rgb`, `yuv`. A number with a meaning is a named constant
+  (`const MAX_GAP_FRAMES: usize = 2`). Every file starts with a comment on what it does, where its data comes from and
+  where it goes; a function's doc gives its units. Comments say why, not what: if a comment says what, rename instead.
+  Functions stay under about 60 lines. Clippy (`min_ident_chars`, `too_many_lines`, `cognitive_complexity`), ESLint
+  (`id-length`, `max-lines-per-function`, `complexity`) and Ruff (`ruff.toml`) warn on these. The refactor clears the
+  warnings file by file, and new code adds none. It uses refactoring.guru's catalog (Rename Variable, Extract Method,
+  Introduce Parameter Object, Replace Magic Number with Symbolic Constant, Decompose Conditional), and every commit
+  keeps behavior identical: the replay check, the parity tests and the UI tests pass unchanged.
 - **Spelling and style.** Write "center", not "centre". Docs in plain, simple English: short sentences, active voice,
   no arrows.
 - **Nothing gets deleted.** Old files move to a `retired/` folder; the user's own data is never overwritten.

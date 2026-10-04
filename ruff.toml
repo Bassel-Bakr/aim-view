@@ -1,0 +1,14 @@
+# Python's checks (`python -m ruff check python`; AGENTS.md, "Readable code"). Ruff has no check for short names:
+# that rule is kept by review.
+extend-exclude = ["python/retired"]
+
+[lint]
+# Errors (E4, E7, E9, F), plus: ambiguous and capital variable names (E741, N806), complexity (C901), long
+# functions (PLR0915) and numbers that need a named constant (PLR2004)
+select = ["E4", "E7", "E9", "F", "E741", "N806", "C901", "PLR0915", "PLR2004"]
+
+[lint.mccabe]
+max-complexity = 15
+
+[lint.pylint]
+max-statements = 40

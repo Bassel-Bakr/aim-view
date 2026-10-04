@@ -52,3 +52,6 @@ ort = { version = "=2.0.0-rc.10", features = ["directml"], optional = true }
 [target.'cfg(unix)'.dependencies]
 # the local time zone's offset at a given time (localtime_r), for local time stamps off Windows
 libc = { version = "0.2", optional = true }
+
+[lints]
+workspace = true

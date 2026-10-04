@@ -45,6 +45,10 @@ module.exports = defineConfig([
           message: 'Name this tuple type with a type alias (AGENTS.md, "Named types").',
         },
       ],
+      // AGENTS.md, "Readable code": warnings, which the refactor clears file by file; new code adds none
+      'id-length': ['warn', { min: 2, exceptions: ['i', 'j', 'x', 'y', 'a', 'b'] }],
+      'max-lines-per-function': ['warn', { max: 60, skipBlankLines: true, skipComments: true }],
+      complexity: ['warn', 15],
       // AGENTS.md, "Angular for speed": preferences, so warnings
       'no-restricted-imports': [
         'warn',
