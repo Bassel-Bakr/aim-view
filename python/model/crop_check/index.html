@@ -1,0 +1,719 @@
+<title>Crop Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Semi+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* One screen, thumb first: the crop fills the width, the verdicts sit in a bar at the bottom. */
+  :root {
+    --bg: #eef1f0;
+    --panel: #ffffff;
+    --ink: #17201e;
+    --muted: #5b6a66;
+    --line: #d3dbd8;
+    --accent: #0f7a6b;
+    --box: #ffb020;
+    --box-under: #10140f;
+    --gone: #d8342a;
+    --added: #1aa35b;
+    --right: #0f7a6b;
+    --wrong: #c2412d;
+    --unsure: #6b7280;
+    --face-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    --face-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --face-data: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101614; --panel: #18201e; --ink: #e6ecea; --muted: #93a29e; --line: #2a3532;
+      --accent: #3cc2ad; --right: #2aa893; --wrong: #e0644f; --unsure: #8b93a1; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101614; --panel: #18201e; --ink: #e6ecea; --muted: #93a29e; --line: #2a3532;
+    --accent: #3cc2ad; --right: #2aa893; --wrong: #e0644f; --unsure: #8b93a1; color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); font: 16px/1.4 var(--face-body);
+    display: flex; flex-direction: column; padding-inline: 16px; padding-block: 0;
+  }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding-block: 12px 8px;
+  }
+  h1 { margin: 0; font: 700 22px/1.1 var(--face-display); letter-spacing: 0.01em; text-wrap: balance; }
+  .count { font: 600 14px var(--face-data); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .sets button {
+    font: 600 14px var(--face-display); letter-spacing: 0.02em; text-transform: uppercase;
+    border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 4px 12px;
+  }
+  .sets button[aria-pressed="true"] { color: var(--ink); border-color: var(--accent); }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 0.25s; }
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 0; }
+  .stage {
+    position: relative; width: min(100%, 520px); aspect-ratio: 1; max-width: 100%; flex-shrink: 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; touch-action: manipulation;
+  }
+  .stage img, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stage img { image-rendering: pixelated; transform-origin: 0 0; }
+  .stage canvas { touch-action: none; }
+  .tools { width: min(100%, 520px); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tools .spacer { flex: 1; }
+  .tools .zoom { min-width: 40px; }
+  .tools .level { font: 600 13px var(--face-data); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .peek {
+    font: 600 14px var(--face-display); letter-spacing: 0.04em; text-transform: uppercase; padding: 8px 14px;
+    border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  .peek[aria-pressed="true"] { border-color: var(--accent); }
+  .stage[data-mode="fix"] { border-color: var(--wrong); box-shadow: 0 0 0 2px var(--wrong); touch-action: none; }
+  .note { width: min(100%, 520px); font-size: 14px; color: var(--muted); min-width: 0; }
+  .note b { color: var(--ink); font-weight: 700; }
+  .note .adjusted { margin-top: 4px; color: var(--accent); font-weight: 700; }
+  .note .data { font: 13px var(--face-data); }
+  .chip {
+    display: inline-block; font: 700 12px var(--face-display); letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 4px; color: #fff; vertical-align: 1px;
+  }
+  .chip[data-v="right"] { background: var(--right); }
+  .chip[data-v="wrong"] { background: var(--wrong); }
+  .chip[data-v="unsure"] { background: var(--unsure); }
+  .help { width: min(100%, 520px); font-size: 14px; border-left: 3px solid var(--wrong); padding-left: 10px; }
+  .banner { width: min(100%, 520px); font-size: 14px; border: 1px solid var(--wrong); border-radius: 6px; padding: 8px 10px; }
+  nav.actions {
+    position: sticky; bottom: 0; display: grid; gap: 8px; padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg); width: min(100%, 520px); align-self: center;
+  }
+  .row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .row.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .actions button {
+    font: 700 18px var(--face-display); letter-spacing: 0.02em; min-height: 52px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  .actions button.v-right { background: var(--right); border-color: var(--right); color: #fff; }
+  .actions button.v-wrong { background: var(--wrong); border-color: var(--wrong); color: #fff; }
+  .actions button:disabled { opacity: 0.45; }
+  .actions .small button { min-height: 40px; font-size: 15px; font-weight: 600; color: var(--muted); }
+  button { cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .done { text-align: center; padding-block: 24px; }
+  .done h2 { font: 700 24px var(--face-display); margin: 0 0 6px; }
+  @media (prefers-reduced-motion: reduce) { .bar > div { transition: none; } }
+</style>
+
+<header>
+  <h1>Crop Check</h1>
+  <span class="count" id="count">loading…</span>
+</header>
+<div class="sets" id="sets"></div>
+<div class="bar"><div id="bar"></div></div>
+<main>
+  <div class="banner" id="banner" hidden></div>
+  <div class="stage" id="stage" data-mode="view">
+    <img id="img" alt="A 256 by 256 crop of a recording, with the model's boxes drawn over it">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div class="tools" id="tools">
+    <button class="peek zoom" id="b-out" aria-label="Zoom out">&minus;</button>
+    <button class="peek zoom" id="b-in" aria-label="Zoom in">+</button>
+    <button class="peek" id="b-fit">Fit</button>
+    <span class="level" id="level">1&times;</span>
+    <span class="spacer"></span>
+    <button class="peek" id="b-peek" aria-pressed="false">Hide marks</button>
+  </div>
+  <div class="help" id="help" hidden>Drag a box to move it, or drag one of its corners to resize it. Tap a box to cross it out (tap again to bring it back). Drag on empty wall to draw a box round a missed target; tap to mark a small one. A box's sides should touch the target's top, bottom, left and right: the dashed outline should run along the target's outer edge. Pinch or use + and &minus; to zoom; two fingers move a zoomed crop. Then <b>Save fix</b>.</div>
+  <div class="note" id="note"></div>
+  <div class="done" id="done" hidden></div>
+</main>
+<nav class="actions" id="actions">
+  <div class="row" id="verdicts">
+    <button id="b-right" class="v-right">Right</button>
+    <button id="b-wrong" class="v-wrong">Wrong</button>
+    <button id="b-unsure">Can't tell</button>
+  </div>
+  <div class="row two" id="fixes" hidden>
+    <button id="b-save" class="v-wrong">Save fix</button>
+    <button id="b-cancel">Cancel</button>
+  </div>
+  <div class="row small">
+    <button id="b-back">Back</button>
+    <button id="b-next">Next</button>
+    <button id="b-todo">Next unchecked</button>
+  </div>
+</nav>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SIZE = 256;
+const MAX_ZOOM = 8;
+let crops = [], sets = [], set = null, list = [], at = 0;
+let setInfo = {};   // sets.json: each set's tab title, its crossed-out note, and whether its answers teach suggestions
+let checks = new Map();      // crop id -> saved answer
+let mode = "view", draft = null, db = null, store = null, started = false;
+let marksOff = false, holding = false;   // the marks hidden by the button, or while the crop is held
+const view = { s: 1, x: 0, y: 0 };      // the zoom: a crop pixel p shows at p * unit * s + (x, y) in the stage
+const pointers = new Map();             // the fingers (or the mouse) on the crop, by pointer id
+let gesture = null;                     // what the fingers are doing: draw, move, resize, pan, pinch, press
+let peekTimer = 0;
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function current() { return list[at]; }
+function answer(c) { return c && checks.get(c.id); }
+const r1 = (v) => Math.round(v * 10) / 10;
+
+// ---- the zoom ----------------------------------------------------------------------------------------------------
+
+// the crop's area, in CSS pixels: square by its style, but read both sides so the marks always land on the picture
+function area() { const st = $("stage"); return { w: st.clientWidth, h: st.clientHeight }; }
+function scaleX() { return (area().w / SIZE) * view.s; }
+function scaleY() { return (area().h / SIZE) * view.s; }
+function scale() { return Math.min(scaleX(), scaleY()); }
+
+function clampView() {
+  const { w, h } = area();
+  view.s = Math.min(Math.max(view.s, 1), MAX_ZOOM);
+  view.x = Math.min(0, Math.max(w - w * view.s, view.x));
+  view.y = Math.min(0, Math.max(h - h * view.s, view.y));
+}
+
+function applyView() {
+  clampView();
+  $("img").style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
+  $("level").textContent = `${view.s.toFixed(view.s < 2 ? 1 : 0).replace(/\.0$/, "")}×`;
+  draw();
+}
+
+/** Zoom by a factor round a point of the stage (in its own pixels), which stays where it is. */
+function zoomAt(factor, px, py) {
+  const s = Math.min(Math.max(view.s * factor, 1), MAX_ZOOM);
+  view.x = px - ((px - view.x) * s) / view.s;
+  view.y = py - ((py - view.y) * s) / view.s;
+  view.s = s;
+  applyView();
+}
+
+function resetView() { view.s = 1; view.x = 0; view.y = 0; applyView(); }
+
+function stageXY(ev) {
+  const r = $("canvas").getBoundingClientRect();   // inside the stage's border, where the crop is drawn
+  return [ev.clientX - r.left, ev.clientY - r.top];
+}
+
+function toCrop(px, py) { return [(px - view.x) / scaleX(), (py - view.y) / scaleY()]; }
+
+// ---- learning from the answers so far ----------------------------------------------------------------------------
+
+const median = (v) => { const s = [...v].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+let byId = new Map();   // every crop of every set, by id
+let lessons = null;     // per recording: what the fixes so far say, worked out again when the answers change
+
+/** Per recording: the typical correction of the model's boxes (from the boxes moved, resized or redrawn over them)
+ *  and the score below which every box was crossed out while every box above it was kept. */
+function learn() {
+  const per = new Map();
+  const get = (f) => per.get(f) || (per.set(f, { pairs: [], removed: [], kept: [] }), per.get(f));
+  for (const [id, a] of checks) {
+    const c = byId.get(id);
+    if (!c || setInfo[c.set]?.learn === false || a.verdict === "unsure" || a.suggested) continue;
+    const L = get(c.folder), edit = a.edit || {}, remove = a.remove || [], replaced = new Set();
+    for (const [i, e] of Object.entries(edit)) L.pairs.push([c.boxes[i], e]);
+    for (const d of (a.add || []).filter((b) => b.length === 4)) {
+      // a box drawn over a crossed-out one corrects it: the nearest crossed-out box whose center it covers
+      let best = -1, bestD = Infinity;
+      for (const j of remove) {
+        const [cx, cy] = c.boxes[j], dist = Math.hypot(cx - d[0], cy - d[1]);
+        if (!replaced.has(j) && Math.abs(cx - d[0]) <= d[2] / 2 && Math.abs(cy - d[1]) <= d[3] / 2 && dist < bestD) { best = j; bestD = dist; }
+      }
+      if (best >= 0) { replaced.add(best); L.pairs.push([c.boxes[best], d]); }
+    }
+    c.boxes.forEach((_, i) => {
+      const score = c.scores[i];
+      if (score === undefined) return;
+      if (remove.includes(i) && !replaced.has(i)) L.removed.push(score);
+      else if (!remove.includes(i)) L.kept.push(score);
+    });
+  }
+  lessons = new Map();
+  for (const [f, L] of per) {
+    const out = {};
+    // a correction needs 3 fixes or more that agree (their sizes within 35% of each other), not a stray one
+    const ws = L.pairs.map(([o, e]) => e[2] / o[2]), hs = L.pairs.map(([o, e]) => e[3] / o[3]);
+    const agree = (v) => Math.max(...v) / Math.min(...v) <= 1.35;
+    if (L.pairs.length >= 3 && agree(ws) && agree(hs)) {
+      const sw = median(ws), sh = median(hs);
+      const dx = median(L.pairs.map(([o, e]) => (e[0] - o[0]) / o[2])), dy = median(L.pairs.map(([o, e]) => (e[1] - o[1]) / o[3]));
+      if (Math.abs(sw - 1) > 0.05 || Math.abs(sh - 1) > 0.05 || Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05) out.fix = { sw, sh, dx, dy, n: L.pairs.length };
+    }
+    if (L.removed.length >= 2 && L.kept.length >= 2 && Math.max(...L.removed) < Math.min(...L.kept)) {
+      out.cut = (Math.max(...L.removed) + Math.min(...L.kept)) / 2;
+    }
+    if (out.fix || out.cut !== undefined) lessons.set(f, out);
+  }
+}
+
+/** The fixes so far, applied to a crop not yet answered: its boxes corrected and the low scores crossed out. */
+function suggestion(c) {
+  // a mined false box starts crossed out: Right agrees it is not a target
+  if (c && c.preset && !checks.has(c.id)) return { remove: [...c.preset.remove], edit: {}, add: [], lesson: null, preset: true };
+  // the Tighten set already carries its correction: never applied twice
+  if (!lessons || !c || setInfo[c.set]?.learn === false || checks.has(c.id)) return null;
+  const L = lessons.get(c.folder);
+  if (!L) return null;
+  const remove = [], edit = {};
+  c.boxes.forEach((b, i) => {
+    if (L.cut !== undefined && c.scores[i] !== undefined && c.scores[i] < L.cut) remove.push(i);
+    else if (L.fix) edit[i] = [b[0] + L.fix.dx * b[2], b[1] + L.fix.dy * b[3], b[2] * L.fix.sw, b[3] * L.fix.sh].map(r1);
+  });
+  return remove.length || Object.keys(edit).length ? { remove, edit, add: [], lesson: L } : null;
+}
+
+// ---- the boxes being shown ---------------------------------------------------------------------------------------
+
+/** The marks of the crop on show: the model's boxes (moved or resized where the answer says so) and the added ones. */
+function marks() {
+  const c = current();
+  const a = mode === "fix" ? draft : (answer(c) || suggestion(c) || {});
+  const remove = a.remove || [], edit = a.edit || {}, add = a.add || [];
+  const model = c.boxes.map((b, i) => ({ ref: { type: "model", i }, box: edit[i] || b, gone: remove.includes(i), moved: !!edit[i] }));
+  const added = add.map((b, j) => ({ ref: { type: "add", j }, box: b, gone: false, point: b.length !== 4 }));
+  return { model, added };
+}
+
+function boxOf(ref) {
+  return ref.type === "model" ? (draft.edit[ref.i] || current().boxes[ref.i]) : draft.add[ref.j];
+}
+
+function setBox(ref, box) {
+  const b = box.map(r1);
+  if (ref.type === "model") draft.edit[ref.i] = b;
+  else draft.add[ref.j] = b;
+}
+
+// ---- drawing -----------------------------------------------------------------------------------------------------
+
+function draw() {
+  const c = current();
+  const cv = $("canvas"), { w, h } = area(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  if (!c || marksOff || holding) return;
+  const kx = scaleX(), ky = scaleY(), k = Math.min(kx, ky), X = (x) => x * kx + view.x, Y = (y) => y * ky + view.y;
+  const stroke = (color, width, path) => {
+    g.lineWidth = width + 2; g.strokeStyle = css("--box-under"); g.globalAlpha = 0.5; path(); g.stroke();
+    g.lineWidth = width; g.strokeStyle = color; g.globalAlpha = 0.95; path(); g.stroke(); g.globalAlpha = 1;
+  };
+  const brackets = (x0, y0, x1, y1) => {
+    const l = Math.max(4, Math.min(10, (x1 - x0) / 3, (y1 - y0) / 3));
+    g.beginPath();
+    g.moveTo(x0, y0 + l); g.lineTo(x0, y0); g.lineTo(x0 + l, y0);
+    g.moveTo(x1 - l, y0); g.lineTo(x1, y0); g.lineTo(x1, y0 + l);
+    g.moveTo(x1, y1 - l); g.lineTo(x1, y1); g.lineTo(x1 - l, y1);
+    g.moveTo(x0 + l, y1); g.lineTo(x0, y1); g.lineTo(x0, y1 - l);
+  };
+  // the shape the box stands for, touching its four sides: a circle or oval, or a pill when it is long
+  const guide = (cx, cy, bw, bh, color, alpha) => {
+    const x0 = X(cx - bw / 2), y0 = Y(cy - bh / 2), ww = bw * kx, hh = bh * ky;
+    const path = () => {
+      g.beginPath();
+      if (Math.max(ww, hh) > 1.4 * Math.min(ww, hh)) g.roundRect(x0, y0, ww, hh, Math.min(ww, hh) / 2);
+      else g.ellipse(X(cx), Y(cy), ww / 2, hh / 2, 0, 0, 2 * Math.PI);
+    };
+    g.setLineDash([7, 5]);
+    g.globalAlpha = alpha * 0.45; g.lineWidth = 3.5; g.strokeStyle = css("--box-under"); path(); g.stroke();
+    g.globalAlpha = alpha; g.lineWidth = 2; g.strokeStyle = color; path(); g.stroke();
+    g.setLineDash([]); g.globalAlpha = 1;
+  };
+  const gap = 3;
+  const { model, added } = marks();
+  const editing = mode === "fix";
+  const handles = (cx, cy, bw, bh, color) => {   // the corners a finger can drag to resize, in fix mode
+    if (!editing) return;
+    g.fillStyle = color;
+    for (const [hx, hy] of [[cx - bw / 2, cy - bh / 2], [cx + bw / 2, cy - bh / 2], [cx + bw / 2, cy + bh / 2], [cx - bw / 2, cy + bh / 2]]) {
+      g.beginPath(); g.arc(X(hx), Y(hy), 3, 0, 2 * Math.PI); g.fill();
+    }
+  };
+  for (const m of model) {
+    const [cx, cy, bw, bh] = m.box;
+    const s = Math.max(bw, bh, 10 / view.s);   // a small box's brackets stay far enough apart to see and tap
+    const x0 = X(cx - Math.max(bw, s) / 2) - gap, y0 = Y(cy - Math.max(bh, s) / 2) - gap;
+    const x1 = X(cx + Math.max(bw, s) / 2) + gap, y1 = Y(cy + Math.max(bh, s) / 2) + gap;
+    const color = m.gone ? css("--gone") : css("--box");
+    stroke(color, 1.5, () => brackets(x0, y0, x1, y1));
+    guide(cx, cy, bw, bh, color, m.gone ? 0.35 : 0.7);
+    if (m.gone) {   // a small cross beside the box's corner, outside it
+      const r = 4, ox = x1 + r + 2, oy = y0 - r - 2;
+      stroke(css("--gone"), 2, () => { g.beginPath(); g.moveTo(ox - r, oy - r); g.lineTo(ox + r, oy + r); g.moveTo(ox + r, oy - r); g.lineTo(ox - r, oy + r); });
+    } else {
+      handles(cx, cy, bw, bh, color);
+    }
+  }
+  for (const m of added) {
+    const b = m.box;
+    if (m.point) {   // a ring round a marked target, open in the middle
+      stroke(css("--added"), 2, () => { g.beginPath(); g.arc(X(b[0]), Y(b[1]), 11 * k, 0, 2 * Math.PI); });
+      continue;
+    }
+    const [cx, cy, bw, bh] = b;
+    stroke(css("--added"), 2, () => brackets(X(cx - bw / 2) - gap, Y(cy - bh / 2) - gap, X(cx + bw / 2) + gap, Y(cy + bh / 2) + gap));
+    guide(cx, cy, bw, bh, css("--added"), 0.7);
+    handles(cx, cy, bw, bh, css("--added"));
+  }
+  if (gesture && gesture.kind === "draw" && gesture.moved) {
+    const d = gesture, x0 = Math.min(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), x1 = Math.max(d.x0, d.x1), y1 = Math.max(d.y0, d.y1);
+    stroke(css("--added"), 1.5, () => { g.beginPath(); g.rect(X(x0), Y(y0), (x1 - x0) * kx, (y1 - y0) * ky); });
+    guide((x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0, css("--added"), 0.9);
+  }
+}
+
+// ---- touching the crop -------------------------------------------------------------------------------------------
+
+/** What a finger at a crop point would take hold of in fix mode: a box's corner, a box, a marked point, or nothing. */
+function hitAt(x, y) {
+  const k = scale(), near = 14 / k, slack = 8 / k;
+  const { model, added } = marks();
+  const live = [...added.filter((m) => !m.point), ...model.filter((m) => !m.gone)];
+  for (const m of live) {
+    const [cx, cy, bw, bh] = m.box;
+    const corners = [[cx - bw / 2, cy - bh / 2], [cx + bw / 2, cy - bh / 2], [cx + bw / 2, cy + bh / 2], [cx - bw / 2, cy + bh / 2]];
+    const c = corners.findIndex(([hx, hy]) => Math.hypot(hx - x, hy - y) < near);
+    if (c >= 0) return { kind: "resize", ref: m.ref, corner: c };
+  }
+  for (const m of added.filter((p) => p.point)) {
+    if (Math.hypot(m.box[0] - x, m.box[1] - y) < 16 / k) return { kind: "move", ref: m.ref };
+  }
+  for (const m of [...added.filter((p) => !p.point), ...model]) {
+    const [cx, cy, bw, bh] = m.box;
+    if (Math.abs(x - cx) <= Math.max(bw / 2, 6 / k) + slack && Math.abs(y - cy) <= Math.max(bh / 2, 6 / k) + slack) {
+      return { kind: m.gone ? "tap" : "move", ref: m.ref };
+    }
+  }
+  return { kind: "draw" };
+}
+
+/** A tap that did not move: cross a model box out or back, remove an added mark, or mark a small target. */
+function tapAt(hit, x, y) {
+  if (hit.ref && hit.ref.type === "model") {
+    const i = hit.ref.i;
+    draft.remove = draft.remove.includes(i) ? draft.remove.filter((v) => v !== i) : [...draft.remove, i];
+  } else if (hit.ref && hit.ref.type === "add") {
+    draft.add.splice(hit.ref.j, 1);
+  } else {
+    draft.add.push([r1(x), r1(y)]);
+  }
+}
+
+function pinchState() {
+  const [a, b] = [...pointers.values()];
+  return { dist: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+}
+
+function cancelGesture() {
+  if (gesture && (gesture.kind === "move" || gesture.kind === "resize") && gesture.before) setBox(gesture.ref, gesture.before);
+  clearTimeout(peekTimer);
+  if (holding) holding = false;
+  gesture = null;
+}
+
+$("canvas").addEventListener("pointerdown", (ev) => {
+  $("canvas").setPointerCapture(ev.pointerId);
+  const [px, py] = stageXY(ev);
+  pointers.set(ev.pointerId, { x: px, y: py });
+  if (pointers.size === 2) {   // a second finger: pinch and pan, whatever the first was doing
+    cancelGesture();
+    const p = pinchState();
+    gesture = { kind: "pinch", dist: p.dist, mx: p.mx, my: p.my, s: view.s, vx: view.x, vy: view.y };
+    return draw();
+  }
+  if (pointers.size > 2) return;
+  const [x, y] = toCrop(px, py);
+  if (mode === "fix") {
+    const hit = hitAt(x, y);
+    gesture = { ...hit, px, py, x0: x, y0: y, x1: x, y1: y, moved: false };
+    if (hit.ref && hit.kind !== "tap") gesture.before = [...boxOf(hit.ref)];
+  } else {
+    // in view: a held finger peeks under the marks; a moving one pans a zoomed crop
+    gesture = { kind: "press", px, py, vx: view.x, vy: view.y, moved: false };
+    peekTimer = setTimeout(() => { if (gesture && !gesture.moved) { holding = true; draw(); } }, 180);
+  }
+});
+
+$("canvas").addEventListener("pointermove", (ev) => {
+  if (!pointers.has(ev.pointerId) || !gesture) return;
+  const [px, py] = stageXY(ev);
+  pointers.set(ev.pointerId, { x: px, y: py });
+  const d = gesture;
+  if (d.kind === "pinch") {
+    if (pointers.size < 2) return;
+    const p = pinchState(), s = Math.min(Math.max(d.s * (p.dist / d.dist), 1), MAX_ZOOM);
+    view.x = p.mx - ((d.mx - d.vx) * s) / d.s;
+    view.y = p.my - ((d.my - d.vy) * s) / d.s;
+    view.s = s;
+    return applyView();
+  }
+  if (!d.moved && Math.hypot(px - d.px, py - d.py) > 6) d.moved = true;
+  if (!d.moved) return;
+  if (d.kind === "press") {   // pan a zoomed crop with one finger in view
+    clearTimeout(peekTimer);
+    if (holding) holding = false;
+    view.x = d.vx + (px - d.px); view.y = d.vy + (py - d.py);
+    return applyView();
+  }
+  const [x, y] = toCrop(px, py);
+  d.x1 = Math.min(Math.max(x, 0), SIZE); d.y1 = Math.min(Math.max(y, 0), SIZE);
+  if (d.kind === "move") {
+    const b = d.before;
+    setBox(d.ref, b.length === 4 ? [b[0] + d.x1 - d.x0, b[1] + d.y1 - d.y0, b[2], b[3]] : [b[0] + d.x1 - d.x0, b[1] + d.y1 - d.y0]);
+  } else if (d.kind === "resize") {
+    // the opposite corner stays put; this one follows the finger
+    const [cx, cy, bw, bh] = d.before;
+    const ox = d.corner === 1 || d.corner === 2 ? cx - bw / 2 : cx + bw / 2;
+    const oy = d.corner >= 2 ? cy - bh / 2 : cy + bh / 2;
+    const w = Math.max(Math.abs(d.x1 - ox), 2), h = Math.max(Math.abs(d.y1 - oy), 2);
+    setBox(d.ref, [ox + Math.sign(d.x1 - ox || 1) * w / 2, oy + Math.sign(d.y1 - oy || 1) * h / 2, w, h]);
+  }
+  draw();
+});
+
+function pointerEnd(ev) {
+  if (!pointers.has(ev.pointerId)) return;
+  pointers.delete(ev.pointerId);
+  const d = gesture;
+  if (!d) return;
+  if (d.kind === "pinch") {
+    if (pointers.size === 0) gesture = null;
+    return;
+  }
+  gesture = null;
+  clearTimeout(peekTimer);
+  if (d.kind === "press") {
+    if (holding) { holding = false; draw(); }
+    return;
+  }
+  if (ev.type === "pointercancel") {
+    if (d.before) setBox(d.ref, d.before);
+    return draw();
+  }
+  if (!d.moved) {
+    if (d.before) setBox(d.ref, d.before);
+    tapAt(d, d.x0, d.y0);
+  } else if (d.kind === "draw") {
+    const w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
+    if (w >= 2 && h >= 2) {
+      const box = [r1((d.x0 + d.x1) / 2), r1((d.y0 + d.y1) / 2), r1(w), r1(h)];
+      draft.add.push(box);
+      // the drawn box replaces a model box it covers (one too small or off): that box is crossed out
+      current().boxes.forEach((b, i) => {
+        const [cx, cy] = draft.edit[i] || b;
+        if (Math.abs(cx - box[0]) <= box[2] / 2 && Math.abs(cy - box[1]) <= box[3] / 2 && !draft.remove.includes(i)) draft.remove.push(i);
+      });
+    }
+  }
+  draw();
+}
+$("canvas").addEventListener("pointerup", pointerEnd);
+$("canvas").addEventListener("pointercancel", pointerEnd);
+$("canvas").addEventListener("contextmenu", (e) => e.preventDefault());
+$("canvas").addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const [px, py] = stageXY(ev);
+  zoomAt(ev.deltaY < 0 ? 1.25 : 0.8, px, py);
+}, { passive: false });
+
+// ---- the page ----------------------------------------------------------------------------------------------------
+
+function render() {
+  const c = current();
+  const done = list.filter((x) => checks.has(x.id)).length;
+  $("count").textContent = `${done} / ${list.length} checked`;
+  $("bar").style.width = list.length ? `${(100 * done) / list.length}%` : "0";
+  for (const b of $("sets").children) b.setAttribute("aria-pressed", String(b.dataset.set === set));
+  const finished = list.length && done === list.length && mode === "view" && !c;
+  $("done").hidden = !finished;
+  if (finished) doneText();
+  if (!c) {
+    $("stage").hidden = true; $("tools").hidden = true; $("note").textContent = ""; $("help").hidden = true;
+    $("verdicts").hidden = true; $("fixes").hidden = true;
+    return;
+  }
+  $("stage").hidden = false;
+  $("tools").hidden = false;
+  $("stage").dataset.mode = mode;
+  $("help").hidden = mode !== "fix";
+  $("verdicts").hidden = mode === "fix";
+  $("fixes").hidden = mode !== "fix";
+  if ($("img").dataset.id !== c.id) {
+    $("img").dataset.id = c.id;
+    $("img").src = `crops/${c.id}.png`;
+    const next = list[at + 1];
+    if (next) new Image().src = `crops/${next.id}.png`;
+    resetView();
+  }
+  const a = answer(c);
+  const chip = a ? `<span class="chip" data-v="${a.verdict}">${a.verdict === "unsure" ? "can't tell" : a.verdict}</span> ` : "";
+  const scores = c.scores.length ? `scores <span class="data">${c.scores.map((s) => s.toFixed(2)).join(", ")}</span>` : "no box";
+  const why = (c.why || []).join("; ");
+  $("note").innerHTML = `${chip}<b></b> &middot; <span class="kind"></span> &middot; ${scores}<br><span class="why"></span>
+    <br><span class="data">${at + 1} of ${list.length}</span>`;
+  $("note").querySelector("b").textContent = c.folder;
+  $("note").querySelector(".kind").textContent = c.kind || c.rule || "";
+  $("note").querySelector(".why").textContent = why ? `Picked for: ${why}` : "";
+  const sug = suggestion(c);
+  if (sug && sug.preset) {
+    const line = document.createElement("div");
+    line.className = "adjusted";
+    line.textContent = setInfo[c.set]?.crossedOut || "The crossed-out box is where the model saw a target that isn't one. Right agrees; if it is a real target, tap Wrong, then tap the box to bring it back.";
+    $("note").append(line);
+  } else if (sug) {
+    const L = sug.lesson, parts = [];
+    if (L.fix && Object.keys(sug.edit).length) parts.push(`boxes ${Math.round(L.fix.sw * 100)}% wide and ${Math.round(L.fix.sh * 100)}% tall, from ${L.fix.n} of your fixes`);
+    if (sug.remove.length) parts.push(`${sug.remove.length} low-score box${sug.remove.length > 1 ? "es" : ""} crossed out (under ${L.cut.toFixed(2)})`);
+    const line = document.createElement("div");
+    line.className = "adjusted";
+    line.textContent = `Adjusted from your fixes on this recording: ${parts.join("; ")}. Right keeps it as shown.`;
+    $("note").append(line);
+  }
+  draw();
+}
+
+async function save(verdict, edits) {
+  const c = current();
+  if (!store || !c) return;
+  cancelGesture();
+  const edit = edits ? Object.fromEntries(Object.entries(edits.edit).filter(([i]) => !edits.remove.includes(Number(i)))) : {};
+  const body = { verdict, remove: edits ? edits.remove : [], add: edits ? edits.add : [], edit, set: c.set, file: c.file, at: Date.now() };
+  if (edits && edits.suggested) body.suggested = true;   // taken as offered: not a lesson of its own
+  checks.set(c.id, body);   // shown at once; the store's snapshot confirms it
+  learn();
+  mode = "view"; draft = null;
+  try {
+    await store.doc(c.id).set(body);
+  } catch (e) {
+    checks.delete(c.id);
+    showBanner(`That answer was not saved (${e && e.code || "error"}). Check your connection and tap it again.`);
+    return render();
+  }
+  nextUnchecked();
+}
+
+function nextUnchecked() {
+  for (let i = 1; i <= list.length; i++) {
+    const j = (at + i) % list.length;
+    if (!checks.has(list[j].id)) { at = j; return render(); }
+  }
+  at = list.length; render();   // all done
+}
+
+function go(step) { cancelGesture(); mode = "view"; draft = null; at = Math.min(Math.max(at + step, 0), list.length - 1); render(); }
+
+function showBanner(text) { $("banner").hidden = !text; $("banner").textContent = text || ""; }
+
+function pickSet(name) {
+  set = name; list = crops.filter((c) => c.set === name); at = 0; mode = "view"; draft = null;
+  const first = list.findIndex((c) => !checks.has(c.id));
+  at = first >= 0 ? first : 0;
+  render();
+}
+
+function doneText() {
+  const n = (v) => list.filter((c) => checks.get(c.id)?.verdict === v).length;
+  $("done").innerHTML = `<h2>All ${list.length} checked</h2><p>Right <b>${n("right")}</b> &middot; wrong <b>${n("wrong")}</b> &middot; can't tell <b>${n("unsure")}</b></p><p>Tell Claude in the chat; your answers are already saved.</p>`;
+}
+
+$("b-right").onclick = () => {
+  const sug = suggestion(current());
+  save("right", sug ? { remove: sug.remove, add: [], edit: sug.edit, suggested: true } : null);
+};
+$("b-unsure").onclick = () => save("unsure");
+$("b-wrong").onclick = () => {
+  const a = answer(current()) || suggestion(current());
+  draft = {
+    remove: [...(a?.remove || [])],
+    add: (a?.add || []).map((p) => [...p]),
+    edit: Object.fromEntries(Object.entries(a?.edit || {}).map(([i, b]) => [i, [...b]])),
+  };
+  mode = "fix"; render();
+};
+$("b-save").onclick = () => save("wrong", draft);
+$("b-cancel").onclick = () => { cancelGesture(); mode = "view"; draft = null; render(); };
+$("b-back").onclick = () => go(-1);
+$("b-next").onclick = () => go(1);
+$("b-todo").onclick = () => { cancelGesture(); mode = "view"; draft = null; nextUnchecked(); };
+$("b-in").onclick = () => { const { w, h } = area(); zoomAt(1.5, w / 2, h / 2); };
+$("b-out").onclick = () => { const { w, h } = area(); zoomAt(1 / 1.5, w / 2, h / 2); };
+$("b-fit").onclick = () => resetView();
+$("b-peek").onclick = () => {
+  marksOff = !marksOff;
+  $("b-peek").textContent = marksOff ? "Show marks" : "Hide marks";
+  $("b-peek").setAttribute("aria-pressed", String(marksOff));
+  draw();
+};
+addEventListener("resize", applyView);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("input, textarea")) return;
+  if (mode === "view" && e.key === "1") save("right");
+  else if (mode === "view" && e.key === "2") $("b-wrong").click();
+  else if (mode === "view" && e.key === "3") save("unsure");
+  else if (mode === "fix" && e.key === "Enter") $("b-save").click();
+  else if (e.key === "Escape" && mode === "fix") $("b-cancel").click();
+  else if (e.key === "+" || e.key === "=") $("b-in").click();
+  else if (e.key === "-") $("b-out").click();
+  else if (e.key === "0") $("b-fit").click();
+  else if (e.key === "ArrowLeft") go(-1);
+  else if (e.key === "ArrowRight") go(1);
+});
+
+async function start() {
+  try {
+    crops = await (await fetch("crops.json")).json();
+  } catch {
+    $("count").textContent = "the crops did not load"; return;
+  }
+  try {
+    const answer = await fetch("sets.json");
+    if (answer.ok) setInfo = await answer.json();
+  } catch {
+    setInfo = {};
+  }
+  sets = [...new Set(crops.map((c) => c.set))];
+  byId = new Map(crops.map((c) => [c.id, c]));
+  $("sets").innerHTML = "";
+  for (const s of sets) {
+    const b = document.createElement("button");
+    b.dataset.set = s; b.textContent = `${setInfo[s]?.title || s} (${crops.filter((c) => c.set === s).length})`;
+    b.onclick = () => pickSet(s);
+    $("sets").append(b);
+  }
+  $("sets").hidden = sets.length < 2;
+  pickSet(sets[0]);
+  for (const b of $("verdicts").children) b.disabled = true;
+  showBanner("Connecting to where your answers are kept…");
+  db = await (window.claude?.use ? window.claude.use("db") : null);
+  if (!db) {
+    showBanner("Answers can't be saved in this view. Open the page signed in to claude.ai to check crops.");
+    return;
+  }
+  store = db.collection("checks");
+  store.onSnapshot((snap) => {
+    checks = new Map(snap.docs.filter((d) => d.exists).map((d) => [d.id, d.data()]));
+    learn();
+    for (const b of $("verdicts").children) b.disabled = false;
+    showBanner("");
+    if (!started) {
+      started = true;
+      // open on the first set that still has crops to check
+      const open = sets.find((name) => crops.some((c) => c.set === name && !checks.has(c.id)));
+      if (open && open !== set) pickSet(open);
+      const first = list.findIndex((c) => !checks.has(c.id));
+      at = first >= 0 ? first : list.length;
+    }
+    if (mode !== "fix") render();
+  }, (e) => showBanner(`Your saved answers did not load (${e.code}). Reload the page to try again.`));
+}
+start();
+</script>

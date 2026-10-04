@@ -29,6 +29,8 @@ python python/model/eval_video_alone.py [model]  # the video-alone kill finder o
                                                # (tracks kept per model; --retrack after a change to the tracking)
 python python/model/accept.py <name> [--list]  # the acceptance gate: the contract and the three checks above against
                                                # the best model's; --list adds a passing model to models.json
+python python/model/crop_check/make_page.py <page> <set> <crops>   # a set of crops for the phone check page;
+                                               # labels.py turns its answers into labels (crop_check/README.md)
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
 bun run build                                  # every mode's build: ui/dist/browser, server, desktop
