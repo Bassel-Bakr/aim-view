@@ -1,6 +1,8 @@
-//! The review of a run (review.py: `review`): a clicking run's flicks, or a tracking run's time on the target. The
-//! kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without a readable
-//! HUD, from the video alone.
+//! The review of a run (python/retired/review.py: `review`): a clicking run's flicks, or a tracking run's time on the
+//! target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without
+//! a readable HUD, from the video alone. The page, the desktop app and the review server send a request
+//! (`review_json`: the run's tracks, its stats file and what the video read); the report goes back as report.json,
+//! which the run page shows.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
@@ -16,17 +18,39 @@ use crate::matching::{
     JOIN_GAP_S, JOIN_RADIUS_DEG, SPOTS,
 };
 use crate::measure::{choices, measure, target_radius, Measure};
-use crate::reload::reload_cost;
+use crate::reload::{reload_cost, ReloadCost};
 use crate::scenario::AmmoRules;
 use crate::stats_file::StatsFile;
 use crate::summary::{judge, summarize, Issue, Mode, Summary};
 use crate::track::{REVIEW_VERSION, Tracks};
 use crate::tracking::{CameraReading, FaintCut, TrackSummary, countdown_end, stats_length, track_summary};
 
+/// A kill's target is the track nearest the crosshair in this many seconds before it (`match_times`' window).
+const KILL_WINDOW_S: f64 = 0.25;
+/// The HUD's kills are on the video's clock already (`match_times`' offset).
+const ON_VIDEO_CLOCK: Option<f64> = Some(0.0);
+/// A recording's name: "<scenario> - <score> - <time>".
+const NAME_SEPARATOR: &str = " - ";
+const NAME_FIELDS: usize = 3;
+/// A HUD with at most this many hits a kill is a one-hit scenario's: each kill took one hit.
+const ONE_HIT_MAX_HITS_PER_KILL: f64 = 1.2;
+/// Aim Lab's HUD counts hits: with more than this many of its kills to each kill the video finds, its targets take
+/// several hits, and the video's kills are the kills.
+const AIMLAB_MAX_KILLS_PER_VIDEO_KILL: f64 = 1.3;
+/// A run whose median kill took more shots than this holds the trigger.
+const MAX_CLICK_SHOTS: i64 = 3;
+/// KovaaK's countdown is looked for up to this many seconds past the latest the run can start (the recording's length
+/// less the run's), and over the first `MIN_COUNTDOWN_SEARCH_S` seconds at least.
+const COUNTDOWN_SLACK_S: f64 = 3.0;
+const MIN_COUNTDOWN_SEARCH_S: f64 = 5.0;
+/// A tracking run's faint scores count the frames under the crosshair too: its bot is there most of the time.
+const TRACKING_FAINT_NEAR_DEG: f64 = 0.0;
+
 /// The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees come from.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[allow(non_snake_case)]
+#[expect(clippy::min_ident_chars, reason = "W, H and K are the JSON's keys, which the run page reads")]
 pub struct Geometry {
     pub W: usize,
     pub H: usize,
@@ -34,6 +58,9 @@ pub struct Geometry {
     pub CY: f64,
     pub K: f64,
 }
+
+/// The geometry every report gives: the frame's (1280 x 720).
+const FRAME_GEOMETRY: Geometry = Geometry { W, H, CX, CY, K };
 
 /// A clicking run's report, as report.json keeps it.
 #[derive(Clone, Debug, Serialize)]
@@ -76,48 +103,56 @@ pub enum KillTimes<'a> {
     Unpaired { hud: Option<&'a HudReading> },
 }
 
+/// The number a text starts with (digits, then a point and digits), as written; None where it starts with no digit.
+fn leading_number(text: &str) -> Option<String> {
+    let digits = |part: &str| part.len() - part.trim_start_matches(|character: char| character.is_ascii_digit()).len();
+    let whole = digits(text);
+    let fraction = text[whole..].strip_prefix('.').map_or(0, |rest| match digits(rest) {
+        0 => 0,
+        count => count + 1,
+    });
+    (whole > 0).then(|| text[..whole + fraction].to_string())
+}
+
 /// The scenario and the score a recording's name gives ("<scenario> - <score> - <time>"); other recorders name files
 /// freely, so either can be missing.
 fn name_parts(video: &str) -> (String, Option<String>) {
-    let stem = std::path::Path::new(video).file_stem().map_or(Cow::Borrowed(video), |s| s.to_string_lossy());
-    let mut parts: Capped<&str, 3> = stem.rsplitn(3, " - ").collect();
+    let stem = std::path::Path::new(video).file_stem().map_or(Cow::Borrowed(video), |stem| stem.to_string_lossy());
+    let mut parts: Capped<&str, NAME_FIELDS> = stem.rsplitn(NAME_FIELDS, NAME_SEPARATOR).collect();
     parts.reverse();
-    let score = parts.get(1).and_then(|s| {
-        let s = s.trim_start();
-        let digits = |t: &str| t.len() - t.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        let whole = digits(s);
-        let frac = s[whole..].strip_prefix('.').map_or(0, |r| match digits(r) {
-            0 => 0,
-            d => d + 1,
-        });
-        (whole > 0).then(|| s[..whole + frac].to_string())
-    });
+    let score = parts.get(1).and_then(|part| leading_number(part.trim_start()));
     (parts[0].to_string(), score)
+}
+
+/// How many times each frame comes up.
+fn per_frame(frames: &[i64]) -> BTreeMap<i64, i64> {
+    let mut counts: BTreeMap<i64, i64> = BTreeMap::new();
+    for &frame in frames {
+        *counts.entry(frame).or_default() += 1;
+    }
+    counts
+}
+
+/// The counts in a kill's stretch: the frames after the kill before (`a`) up to this kill (`b`). Two kills on one
+/// frame (the count went up by two) leave the second an empty stretch.
+fn within(counts: &BTreeMap<i64, i64>, a: i64, b: i64) -> i64 {
+    if a < b { counts.range(a + 1..=b).map(|(_, &count)| count).sum() } else { 0 }
 }
 
 /// The shots each HUD kill took. The Accuracy row can update up to a third of a second after the Kill Count, so a shot
 /// can land in the next kill's stretch: in one-hit scenarios (hits about equal to kills) each kill is one hit plus the
 /// misses in its stretch; otherwise the shots in its stretch.
-fn hud_shots(h: &HudReading) -> Vec<i64> {
-    let count = |frames: &[i64]| {
-        let mut c: BTreeMap<i64, i64> = BTreeMap::new();
-        for &f in frames {
-            *c.entry(f).or_default() += 1;
-        }
-        c
-    };
-    let (shots, hits) = (count(&h.shots), count(&h.hits));
-    let spans = std::iter::once(-1).chain(h.kills.iter().copied()).zip(h.kills.iter().copied());
-    // two kills on one frame (the count went up by two) leave the second an empty stretch
-    let within =
-        |c: &BTreeMap<i64, i64>, a: i64, b: i64| if a < b { c.range(a + 1..=b).map(|(_, &n)| n).sum() } else { 0 };
-    if !h.hits.is_empty() && h.hits.len() as f64 <= 1.2 * h.kills.len() as f64 {
-        let miss: BTreeMap<i64, i64> = shots
+fn hud_shots(hud: &HudReading) -> Vec<i64> {
+    let (shots, hits) = (per_frame(&hud.shots), per_frame(&hud.hits));
+    // the first kill's stretch starts before the first frame
+    let spans = std::iter::once(-1).chain(hud.kills.iter().copied()).zip(hud.kills.iter().copied());
+    if !hud.hits.is_empty() && hud.hits.len() as f64 <= ONE_HIT_MAX_HITS_PER_KILL * hud.kills.len() as f64 {
+        let misses: BTreeMap<i64, i64> = shots
             .iter()
-            .map(|(&f, &n)| (f, n - hits.get(&f).copied().unwrap_or(0)))
-            .filter(|&(_, n)| n > 0)
+            .map(|(&frame, &count)| (frame, count - hits.get(&frame).copied().unwrap_or(0)))
+            .filter(|&(_, count)| count > 0)
             .collect();
-        spans.map(|(a, b)| 1 + within(&miss, a, b)).collect()
+        spans.map(|(a, b)| 1 + within(&misses, a, b)).collect()
     } else {
         spans.map(|(a, b)| within(&shots, a, b)).collect()
     }
@@ -128,6 +163,70 @@ fn hits_per_kill(meta: &HashMap<String, String>) -> Option<i64> {
     let get = |key: &str| meta.get(key)?.trim().parse::<f64>().ok();
     let (hits, kills) = (get("Hit Count")?, get("Kills")?);
     (kills > 0.0).then(|| ((hits / kills).round() as i64).max(1))
+}
+
+/// What a clicking run's kill times give: the flicks matched to them, how they matched, the stats file's facts (or
+/// what the HUD and the file name give), each kill's shots in the run's order, its hits (only from a stats file's kill
+/// table) and the stats file's name.
+struct ClickKills<'a> {
+    flicks: Vec<Flick>,
+    info: MatchInfo,
+    meta: HashMap<String, String>,
+    shots: Vec<i64>,
+    hits: Option<Vec<i64>>,
+    stats: Option<&'a str>,
+}
+
+/// A clicking run's kills from its stats file (`name`, `text`).
+fn stats_kills<'a>(tracks: &Tracks, name: &'a str, text: &str) -> Result<ClickKills<'a>, String> {
+    let file = StatsFile::parse(text);
+    let kills = file.kills()?;
+    let (flicks, mut info) = match_times(tracks, &kills.times, &kills.shots, KILL_WINDOW_S, None);
+    info.source = Some(KillSource::Stats);
+    let hits = file.hits();
+    Ok(ClickKills { flicks, info, meta: file.meta, shots: kills.shots, hits, stats: Some(name) })
+}
+
+/// What reloading cost the run, for a scenario whose magazine runs out (`reload`): from each kill's shots in the run's
+/// order, and its hits from the stats file's kill table (`hits`), else the run's hits a kill.
+fn run_reload_cost(
+    reload: Option<&AmmoRules>,
+    shots: &[i64],
+    hits: Option<Vec<i64>>,
+    meta: &HashMap<String, String>,
+) -> Option<ReloadCost> {
+    reload.filter(|_| !shots.is_empty()).map(|rules| {
+        let count = shots.len();
+        let hits = hits
+            .filter(|kill_hits| kill_hits.len() == count)
+            .or_else(|| hits_per_kill(meta).map(|per_kill| vec![per_kill; count]));
+        reload_cost(rules, shots, hits.as_deref())
+    })
+}
+
+/// Each measured kill's reloads and their time, from the reloads its magazine forced.
+fn add_reloads(measures: &mut [Measure], cost: &ReloadCost) {
+    for kill in measures {
+        if let Some(forced) = kill.kill_number.checked_sub(1).and_then(|i| cost.per_kill.get(i)) {
+            (kill.reloads, kill.reload_time) = (Some(forced.reloads), Some(forced.seconds));
+        }
+    }
+}
+
+/// Click or hold, from each kill's shots: a run whose median kill took more than 3 holds the trigger.
+fn click_mode(shots: &[i64]) -> Mode {
+    let mut sorted = shots.to_vec();
+    sorted.sort();
+    if sorted.is_empty() {
+        sorted.push(1);
+    }
+    if sorted[sorted.len() / 2] > MAX_CLICK_SHOTS { Mode::Hold } else { Mode::Click }
+}
+
+/// Each track (its id) with the frame its target first appeared on.
+fn appeared(tracks: &Tracks) -> BTreeMap<String, i64> {
+    let joined = appearances(tracks, JOIN_GAP_S, JOIN_RADIUS_DEG);
+    joined.appeared.into_iter().map(|(id, frame)| (id.to_string(), frame)).collect()
 }
 
 /// Reviews a clicking run from its tracks and its kill times. `video` is the recording's name (the report gives it,
@@ -141,57 +240,30 @@ pub fn review_clicks(
     run: Option<serde_json::Value>,
     reload: Option<&AmmoRules>,
 ) -> Result<Reviewed, String> {
-    let (flicks, info, meta, mut per_kill, hits, stats) = match kills {
-        KillTimes::Stats { name, text } => {
-            let file = StatsFile::parse(text);
-            let kills = file.kills()?;
-            let (flicks, mut info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
-            info.source = Some(KillSource::Stats);
-            let hits = file.hits();
-            (flicks, info, file.meta, kills.shots, hits, Some(name))
-        }
-        KillTimes::Unpaired { hud } => {
-            let (flicks, info, meta, per_kill) = unpaired_kills(tracks, hud, video);
-            (flicks, info, meta, per_kill, None, None)
-        }
+    let kills = match kills {
+        KillTimes::Stats { name, text } => stats_kills(tracks, name, text)?,
+        KillTimes::Unpaired { hud } => unpaired_kills(tracks, hud, video),
     };
-    // each kill's shots in the run's order; its hits from the stats file's kill table, else the run's hits a kill
-    let cost = reload.filter(|_| !per_kill.is_empty()).map(|rules| {
-        let n = per_kill.len();
-        let hits = hits.filter(|h| h.len() == n).or_else(|| hits_per_kill(&meta).map(|h| vec![h; n]));
-        reload_cost(rules, &per_kill, hits.as_deref())
-    });
-    per_kill.sort();
-    if per_kill.is_empty() {
-        per_kill.push(1);
+    let ClickKills { flicks, info, meta, shots, hits, stats } = kills;
+    let cost = run_reload_cost(reload, &shots, hits, &meta);
+    let mode = click_mode(&shots);
+    let radius = target_radius(&flicks);
+    let mut measures = measure(&flicks, tracks, radius);
+    if let Some(cost) = &cost {
+        add_reloads(&mut measures, cost);
     }
-    let r = target_radius(&flicks);
-    let mut ms = measure(&flicks, tracks, r);
-    if let Some(c) = &cost {
-        for m in &mut ms {
-            if let Some(k) = m.kill_number.checked_sub(1).and_then(|i| c.per_kill.get(i)) {
-                (m.reloads, m.reload_time) = (Some(k.reloads), Some(k.seconds));
-            }
-        }
-    }
-    let mode = if per_kill[per_kill.len() / 2] > 3 { Mode::Hold } else { Mode::Click };
-    let ch = choices(tracks, &flicks);
-    let summary = summarize(&ms, &ch, &meta, info, r, mode, cost.as_ref())?;
+    let summary = summarize(&measures, &choices(tracks, &flicks), &meta, info, radius, mode, cost.as_ref())?;
     let report = Report {
         video: video.into(),
         stats: stats.map(Into::into),
         issues: judge(&summary),
         summary,
-        flicks: ms,
+        flicks: measures,
         mode,
-        paths: flicks.iter().map(|f| (f.kill_number.to_string(), f.path.clone())).collect(),
+        paths: flicks.iter().map(|flick| (flick.kill_number.to_string(), flick.path.clone())).collect(),
         fps: tracks.fps,
-        geometry: Geometry { W, H, CX, CY, K },
-        appeared: appearances(tracks, JOIN_GAP_S, JOIN_RADIUS_DEG)
-            .appeared
-            .into_iter()
-            .map(|(t, i)| (t.to_string(), i))
-            .collect(),
+        geometry: FRAME_GEOMETRY,
+        appeared: appeared(tracks),
         crosshair: crosshair_spots(&tracks.frames),
         run,
         outdated: false,
@@ -199,42 +271,43 @@ pub fn review_clicks(
     Ok(Reviewed { flicks, report })
 }
 
-/// A clicking run's kills without a stats file: from the HUD, with its shots and totals (the score from the file name,
-/// or Aim Lab's points), else from the video alone (no score, shots, misses or accuracy). Returns the flicks, how they
-/// matched, the stats file's facts the HUD gives, and each kill's shots.
-fn unpaired_kills(
-    tracks: &Tracks,
-    hud: Option<&HudReading>,
-    video: &str,
-) -> (Vec<Flick>, MatchInfo, HashMap<String, String>, Vec<i64>) {
-    let (scenario, score) = name_parts(video);
-    let mut meta = HashMap::from([("Scenario".to_string(), scenario)]);
-    // Aim Lab counts hits: in a task whose targets take several hits, the video's kills are the kills
-    let hud = hud.filter(|h| {
-        !h.kills.is_empty()
-            && (h.game != HudGame::Aimlab || h.kills.len() as f64 <= 1.3 * match_video(tracks).0.len() as f64)
-    });
-    let Some(h) = hud else {
-        let (flicks, info) = match_video(tracks);
-        return (flicks, info, meta, Vec::new());
-    };
-    let shots = hud_shots(h);
-    // Aim Lab's crosshair is marked as a target by every model: its tracks were taken for the killed target. In
-    // KovaaK's runs they stay: a target held under the crosshair looks like them
-    let aimlab = h.game == HudGame::Aimlab;
-    let t = if aimlab { Cow::Owned(without_ghosts(tracks)) } else { Cow::Borrowed(tracks) };
-    let times: Vec<f64> = h.kills.iter().map(|&f| f as f64 / tracks.fps).collect();
-    let (flicks, mut info) = match_times(&t, &times, &shots, 0.25, Some(0.0));
-    info.source = Some(if aimlab { KillSource::Aimlab } else { KillSource::Hud });
-    meta.insert("Kills".into(), h.totals.kills.to_string());
-    if let Some(s) = score.or_else(|| h.points.map(|p| p.to_string())) {
-        meta.insert("Score".into(), s);
+/// The stats file's facts the HUD gives: the kills, the score (from the file name, else Aim Lab's points) and the hits
+/// and misses.
+fn add_hud_facts(meta: &mut HashMap<String, String>, hud: &HudReading, score: Option<String>) {
+    meta.insert("Kills".into(), hud.totals.kills.to_string());
+    if let Some(score) = score.or_else(|| hud.points.map(|points| points.to_string())) {
+        meta.insert("Score".into(), score);
     }
-    if let (Some(hits), Some(all)) = (h.totals.hits, h.totals.shots) {
+    if let (Some(hits), Some(all)) = (hud.totals.hits, hud.totals.shots) {
         meta.insert("Hit Count".into(), hits.to_string());
         meta.insert("Miss Count".into(), (all - hits).to_string());
     }
-    (flicks, info, meta, shots)
+}
+
+/// A clicking run's kills without a stats file: from the HUD, with its shots and totals (the score from the file name,
+/// or Aim Lab's points), else from the video alone (no score, shots, misses or accuracy).
+fn unpaired_kills(tracks: &Tracks, hud: Option<&HudReading>, video: &str) -> ClickKills<'static> {
+    let (scenario, score) = name_parts(video);
+    let mut meta = HashMap::from([("Scenario".to_string(), scenario)]);
+    let hud = hud.filter(|reading| {
+        !reading.kills.is_empty()
+            && (reading.game != HudGame::Aimlab
+                || reading.kills.len() as f64 <= AIMLAB_MAX_KILLS_PER_VIDEO_KILL * match_video(tracks).0.len() as f64)
+    });
+    let Some(reading) = hud else {
+        let (flicks, info) = match_video(tracks);
+        return ClickKills { flicks, info, meta, shots: Vec::new(), hits: None, stats: None };
+    };
+    let shots = hud_shots(reading);
+    // Aim Lab's crosshair is marked as a target by every model: its tracks were taken for the killed target. In
+    // KovaaK's runs they stay: a target held under the crosshair looks like them
+    let aimlab = reading.game == HudGame::Aimlab;
+    let matched = if aimlab { Cow::Owned(without_ghosts(tracks)) } else { Cow::Borrowed(tracks) };
+    let times: Vec<f64> = reading.kills.iter().map(|&frame| frame as f64 / tracks.fps).collect();
+    let (flicks, mut info) = match_times(&matched, &times, &shots, KILL_WINDOW_S, ON_VIDEO_CLOCK);
+    info.source = Some(if aimlab { KillSource::Aimlab } else { KillSource::Hud });
+    add_hud_facts(&mut meta, reading, score);
+    ClickKills { flicks, info, meta, shots, hits: None, stats: None }
 }
 
 /// A tracking run's report, as report.json keeps it: the summary, with the clicking run's parts empty.
@@ -270,6 +343,64 @@ pub struct VideoReadings<'a> {
     pub countdown: &'a [bool],
 }
 
+/// What a tracking run's kill times give: the stats file's facts (or the scenario the file name gives), its name,
+/// where the kills come from, the frames bots died on, the challenge's start (a frame, where the kills place it) and
+/// the run's length (seconds: the stats file's, else the scenario's time limit).
+struct TrackingKills<'a> {
+    meta: HashMap<String, String>,
+    stats: Option<&'a str>,
+    source: KillSource,
+    deaths: Vec<i64>,
+    start: Option<i64>,
+    limit: Option<f64>,
+}
+
+/// A tracking run's kills (bots that die) from its stats file (`name`, `text`); `limit` the scenario's time limit
+/// (seconds), which the file's own length overrides.
+fn tracking_stats_kills<'a>(
+    tracks: &Tracks,
+    name: &'a str,
+    text: &str,
+    limit: Option<f64>,
+) -> Result<TrackingKills<'a>, String> {
+    let file = StatsFile::parse(text);
+    let limit = stats_length(name, &file).or(limit);
+    let (mut deaths, mut start) = (Vec::new(), None);
+    if !file.rows.is_empty() {
+        // bots that die: their kills, matched in the video, and the challenge's start on the video's clock
+        let kills = file.kills()?;
+        let (flicks, info) = match_times(tracks, &kills.times, &kills.shots, KILL_WINDOW_S, None);
+        deaths = flicks.iter().map(|flick| flick.kill_frame).collect();
+        if let Some(offset_s) = info.offset
+            && info.matched > 0
+        {
+            start = Some((offset_s * tracks.fps).round_ties_even() as i64);
+        }
+    }
+    Ok(TrackingKills { meta: file.meta, stats: Some(name), source: KillSource::Stats, deaths, start, limit })
+}
+
+/// A tracking run's kills without a stats file: KovaaK's HUD's, else none (the video alone finds no deaths).
+fn tracking_hud_kills(hud: Option<&HudReading>, video: &str, limit: Option<f64>) -> TrackingKills<'static> {
+    let meta = HashMap::from([("Scenario".to_string(), name_parts(video).0)]);
+    let (deaths, source) = match hud.filter(|reading| reading.game == HudGame::Kovaak && !reading.kills.is_empty()) {
+        Some(reading) => (reading.kills.clone(), KillSource::Hud),
+        None => (Vec::new(), KillSource::Video),
+    };
+    TrackingKills { meta, stats: None, source, deaths, start: None, limit }
+}
+
+/// The tracks a tracking run is measured on: without the tracks the user's faint cut-off leaves out, when it is on,
+/// and what the cut did.
+fn faint_cut(tracks: &Tracks, faint: Option<FaintSetting>) -> (Cow<'_, Tracks>, Option<FaintCut>) {
+    let Some(setting) = faint.filter(|setting| setting.on) else {
+        return (Cow::Borrowed(tracks), None);
+    };
+    let without = without_faint(&tracks.frames, setting.offset, TRACKING_FAINT_NEAR_DEG);
+    let cut = FaintCut { offset: setting.offset, cut: without.cut, tracks: without.gone };
+    (Cow::Owned(Tracks { fps: tracks.fps, frames: without.frames, version: tracks.version }), Some(cut))
+}
+
 /// Reviews a tracking run from its tracks, its kill times (bots that die) and its video's readings. `limit`: the
 /// scenario's time limit (seconds), which the stats file's own length overrides. `faint`: the user's faint-target
 /// cut-off; when on, the measures leave out the tracks it cuts (the kills are still matched on every track).
@@ -283,58 +414,26 @@ pub fn review_tracking(
     faint: Option<FaintSetting>,
 ) -> Result<TrackReport, String> {
     let fps = tracks.fps;
-    let (mut deaths, mut start, mut limit) = (Vec::new(), None, limit);
-    let (meta, stats, source) = match kills {
-        KillTimes::Stats { name, text } => {
-            let file = StatsFile::parse(text);
-            limit = stats_length(name, &file).or(limit);
-            if !file.rows.is_empty() {
-                // bots that die: their kills, matched in the video, and the challenge's start on the video's clock
-                let kills = file.kills()?;
-                let (flicks, info) = match_times(tracks, &kills.times, &kills.shots, 0.25, None);
-                deaths = flicks.iter().map(|f| f.kill_frame).collect();
-                if let Some(off) = info.offset
-                    && info.matched > 0
-                {
-                    start = Some((off * fps).round_ties_even() as i64);
-                }
-            }
-            (file.meta, Some(name), KillSource::Stats)
-        }
-        KillTimes::Unpaired { hud } => {
-            let meta = HashMap::from([("Scenario".to_string(), name_parts(video).0)]);
-            match hud.filter(|h| h.game == HudGame::Kovaak && !h.kills.is_empty()) {
-                Some(h) => {
-                    deaths = h.kills.clone();
-                    (meta, None, KillSource::Hud)
-                }
-                None => (meta, None, KillSource::Video),
-            }
-        }
+    let kills = match kills {
+        KillTimes::Stats { name, text } => tracking_stats_kills(tracks, name, text, limit)?,
+        KillTimes::Unpaired { hud } => tracking_hud_kills(hud, video, limit),
     };
+    let TrackingKills { meta, stats, source, deaths, mut start, mut limit } = kills;
     if start.is_none()
-        && let Some(l) = limit.filter(|&l| l != 0.0)
+        && let Some(length_s) = limit.filter(|&length_s| length_s != 0.0)
     {
         // no kills to place the start: KovaaK's countdown ends it
-        let until = (tracks.frames.len() as f64 / fps - l + 3.0).max(5.0);
-        start = countdown_end(readings.countdown, fps, until).map(|i| i as i64);
+        let until_s = (tracks.frames.len() as f64 / fps - length_s + COUNTDOWN_SLACK_S).max(MIN_COUNTDOWN_SEARCH_S);
+        start = countdown_end(readings.countdown, fps, until_s).map(|frame| frame as i64);
     }
     // the user's own window comes first
     if let Some(marks) = run.as_ref() {
-        let (first, length) = run_window(marks, fps, limit);
+        let (first, length_s) = run_window(marks, fps, limit);
         start = first.or(start);
-        limit = length;
+        limit = length_s;
     }
-    let cut_tracks: Tracks;
-    let (measured, cut) = match faint.filter(|f| f.on) {
-        Some(f) => {
-            let c = without_faint(&tracks.frames, f.offset, 0.0);
-            cut_tracks = Tracks { fps, frames: c.frames, version: tracks.version };
-            (&cut_tracks, Some(FaintCut { offset: f.offset, cut: c.cut, tracks: c.gone }))
-        }
-        None => (tracks, None),
-    };
-    let mut summary = track_summary(measured, &meta, limit, Some(readings.camera), &deaths, start, source);
+    let (measured, cut) = faint_cut(tracks, faint);
+    let mut summary = track_summary(&measured, &meta, limit, Some(readings.camera), &deaths, start, source);
     summary.faint = cut;
     Ok(TrackReport {
         video: video.into(),
@@ -345,7 +444,7 @@ pub fn review_tracking(
         mode: Mode::Track,
         paths: BTreeMap::new(),
         fps,
-        geometry: Geometry { W, H, CX, CY, K },
+        geometry: FRAME_GEOMETRY,
         appeared: BTreeMap::new(),
         crosshair: Capped::new(),
         run,
@@ -358,19 +457,20 @@ pub fn review_tracking(
 /// seconds, or (None, limit) where it says nothing (python/retired/review.py: `run_window`). Two of the three settle
 /// the third; a start or an end alone takes the length given (the stats file's or the scenario's).
 pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (Option<i64>, Option<f64>) {
-    let get = |k: &str| marks.get(k).and_then(serde_json::Value::as_f64);
-    let (a, b) = (get("start"), get("end"));
-    let frame = |t: f64| (t * fps).round_ties_even() as i64;
-    if let (Some(a), Some(b)) = (a, b)
-        && b > a
+    let mark = |key: &str| marks.get(key).and_then(serde_json::Value::as_f64);
+    let (start_s, end_s) = (mark("start"), mark("end"));
+    let frame = |time_s: f64| (time_s * fps).round_ties_even() as i64;
+    if let (Some(start_s), Some(end_s)) = (start_s, end_s)
+        && end_s > start_s
     {
-        return (Some(frame(a)), Some(b - a));
+        return (Some(frame(start_s)), Some(end_s - start_s));
     }
-    let length = get("length").filter(|&l| l != 0.0).or(limit.filter(|&l| l != 0.0));
-    match (a, b, length) {
-        (Some(a), _, _) => (Some(frame(a)), length),
-        (None, Some(b), Some(l)) => (Some(frame((b - l).max(0.0))), length),
-        _ => (None, length),
+    let given = |length_s: &f64| *length_s != 0.0;
+    let length_s = mark("length").filter(given).or(limit.filter(given));
+    match (start_s, end_s, length_s) {
+        (Some(start_s), _, _) => (Some(frame(start_s)), length_s),
+        (None, Some(end_s), Some(given_s)) => (Some(frame((end_s - given_s).max(0.0))), length_s),
+        _ => (None, length_s),
     }
 }
 
@@ -421,27 +521,28 @@ pub enum Outcome {
     Error(String),
 }
 
-fn review_request(r: ReviewRequest) -> Result<AnyReport, String> {
-    let kills = if r.stats_text.is_empty() {
-        KillTimes::Unpaired { hud: r.hud.as_ref() }
+fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
+    let kills = if request.stats_text.is_empty() {
+        KillTimes::Unpaired { hud: request.hud.as_ref() }
     } else {
-        KillTimes::Stats { name: &r.stats, text: &r.stats_text }
+        KillTimes::Stats { name: &request.stats, text: &request.stats_text }
     };
-    let outdated = r.tracks.version < REVIEW_VERSION;
-    if r.tracking {
-        let readings = VideoReadings { camera: &r.camera, countdown: &r.countdown };
-        let t = review_tracking(&r.tracks, kills, &r.video, r.limit, readings, r.run, r.faint)?;
-        Ok(AnyReport::Track(Box::new(TrackReport { outdated, ..t })))
+    let outdated = request.tracks.version < REVIEW_VERSION;
+    if request.tracking {
+        let readings = VideoReadings { camera: &request.camera, countdown: &request.countdown };
+        let (limit, run) = (request.limit, request.run);
+        let report = review_tracking(&request.tracks, kills, &request.video, limit, readings, run, request.faint)?;
+        Ok(AnyReport::Track(Box::new(TrackReport { outdated, ..report })))
     } else {
-        let c = review_clicks(&r.tracks, kills, &r.video, r.run, r.reload.as_ref())?;
-        Ok(AnyReport::Click(Box::new(Report { outdated, ..c.report })))
+        let reviewed = review_clicks(&request.tracks, kills, &request.video, request.run, request.reload.as_ref())?;
+        Ok(AnyReport::Click(Box::new(Report { outdated, ..reviewed.report })))
     }
 }
 
 /// A request (JSON) reviewed, as JSON.
 pub fn review_json(request: &[u8]) -> Vec<u8> {
     let outcome = serde_json::from_slice::<ReviewRequest>(request)
-        .map_err(|e| format!("The review request could not be read: {e}"))
+        .map_err(|error| format!("The review request could not be read: {error}"))
         .and_then(review_request)
         .map_or_else(Outcome::Error, Outcome::Report);
     serde_json::to_vec(&outcome).unwrap_or_default()
@@ -455,13 +556,13 @@ mod tests {
     /// python/retired/review.py's run_window: two marks settle the third; one takes the length given.
     #[test]
     fn the_run_window_as_python_reads_it() {
-        let w = |m: serde_json::Value, limit| run_window(&m, 60.0, limit);
-        assert_eq!(w(json!({"start": 2.0, "end": 12.0, "length": null}), Some(60.0)), (Some(120), Some(10.0)));
-        assert_eq!(w(json!({"start": 2.0, "end": null, "length": 5.0}), Some(60.0)), (Some(120), Some(5.0)));
-        assert_eq!(w(json!({"start": 2.0, "end": null, "length": null}), Some(60.0)), (Some(120), Some(60.0)));
-        assert_eq!(w(json!({"start": null, "end": 12.0, "length": 5.0}), None), (Some(420), Some(5.0)));
-        assert_eq!(w(json!({"start": null, "end": 3.0, "length": 5.0}), None), (Some(0), Some(5.0)));
-        assert_eq!(w(json!({"start": null, "end": null, "length": null}), Some(60.0)), (None, Some(60.0)));
-        assert_eq!(w(json!({"start": 9.0, "end": 3.0, "length": 0.0}), None), (Some(540), None));
+        let window = |marks: serde_json::Value, limit| run_window(&marks, 60.0, limit);
+        assert_eq!(window(json!({"start": 2.0, "end": 12.0, "length": null}), Some(60.0)), (Some(120), Some(10.0)));
+        assert_eq!(window(json!({"start": 2.0, "end": null, "length": 5.0}), Some(60.0)), (Some(120), Some(5.0)));
+        assert_eq!(window(json!({"start": 2.0, "end": null, "length": null}), Some(60.0)), (Some(120), Some(60.0)));
+        assert_eq!(window(json!({"start": null, "end": 12.0, "length": 5.0}), None), (Some(420), Some(5.0)));
+        assert_eq!(window(json!({"start": null, "end": 3.0, "length": 5.0}), None), (Some(0), Some(5.0)));
+        assert_eq!(window(json!({"start": null, "end": null, "length": null}), Some(60.0)), (None, Some(60.0)));
+        assert_eq!(window(json!({"start": 9.0, "end": 3.0, "length": 0.0}), None), (Some(540), None));
     }
 }
