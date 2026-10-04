@@ -2,7 +2,7 @@
 on validation crops). The exported graph includes the decoding that is awkward elsewhere (sigmoid and 3x3 peak finding),
 so a caller in any language only scans for cells over a threshold:
   input  "x"      float32 (1, 4, H, W)    RGB 0-1 and the fixed map 0/1; H, W multiples of 16 (1280 x 720 is fine)
-  output "score"  float32 (1, 1, H/4, W/4) the centre score where it is a local maximum, else 0
+  output "score"  float32 (1, 1, H/4, W/4) the center score where it is a local maximum, else 0
   output "reg"    float32 (1, 4, H/4, W/4) offset x, y within the cell (0-1), log width, log height (input px)
 The _u8in file takes the raw bytes instead: "rgb" uint8 (N, H, W, 3) and "fixed" uint8 (N, H, W), the same outputs
 for N frames at once (N is free: a browser runs several frames in one call).
@@ -17,6 +17,7 @@ Usage: python python/model/export.py test_out/vod_model/runs/small/best.pt [--ou
        fp32 file beside it frame by frame and in a batch)
 """
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -30,16 +31,31 @@ import torch.nn.functional as F
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import net  # noqa: E402
 
+HEIGHT_PX, WIDTH_PX = 720, 1280         # the frame the graphs are traced with
+OPSET = 17
+PEAK_WINDOW = 3                         # cells: the 3 x 3 peak finding
+EMBED_TOP = 100                         # the _embed graph's boxes, best first
+TRACE_FRAMES = 2                        # the _u8in graph is traced with 2 frames: no axis fixed to one frame
+BATCH_FRAMES = 4                        # the batch the _u8in check runs (the service and the browser send 4)
+SHIFT_PX = 37                           # the batch's other frames: the frame rolled by multiples of this
+SAME_REG = 1e-3                         # an export matches when its box values differ by no more than this
+SAME_IN_BATCH = 1e-4                    # a frame in a batch gives what it gives alone, within this
+CHECK_THRESHOLD = 0.3                   # the embed and fp16 checks' threshold
+CALIBRATION_CROPS = 64                  # validation crops the int8 quantization is calibrated on
+KB = 1024
+SPATIAL_AXES = {2: "h", 3: "w"}
+CELL_AXES = {2: "h4", 3: "w4"}
+
 
 class Exported(nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
 
-    def forward(self, x):
-        out = self.model(x)
+    def forward(self, frames):
+        out = self.model(frames)
         heat = torch.sigmoid(out[:, 0:1])
-        score = heat * (heat == F.max_pool2d(heat, 3, 1, 1)).float()
+        score = heat * (heat == F.max_pool2d(heat, PEAK_WINDOW, 1, 1)).float()
         return score, out[:, 1:5]
 
 
@@ -48,10 +64,10 @@ class Exported16(nn.Module):
         super().__init__()
         self.model = model.half()
 
-    def forward(self, x):
-        out = self.model(x.half()).float()
+    def forward(self, frames):
+        out = self.model(frames.half()).float()
         heat = torch.sigmoid(out[:, 0:1])
-        score = heat * (heat == F.max_pool2d(heat, 3, 1, 1)).float()
+        score = heat * (heat == F.max_pool2d(heat, PEAK_WINDOW, 1, 1)).float()
         return score, out[:, 1:5]
 
 
@@ -66,188 +82,218 @@ class ExportedU8(nn.Module):
     def forward(self, rgb, fixed):
         # the fixed map to float before its channel axis: onnxruntime's WebGPU build has no Unsqueeze for uint8, and a
         # node left on the CPU rules out graph capture (the same values either way)
-        x = torch.cat([rgb.permute(0, 3, 1, 2).float() / 255.0, fixed.float()[:, None]], 1)
-        return self.inner(x)
+        frames = torch.cat([rgb.permute(0, 3, 1, 2).float() / 255.0, fixed.float()[:, None]], 1)
+        return self.inner(frames)
 
 
 class ExportedEmbed(nn.Module):
     """Raw bytes in, boxes out: the uint8-input model followed by the top K peaks, so a caller reads K rows of
     (cx, cy, w, h, score), best first, and keeps those over its threshold. No map to scan."""
 
-    def __init__(self, model, k=100):
+    def __init__(self, model, k=EMBED_TOP):
         super().__init__()
         self.inner, self.k = ExportedU8(model), k
 
     def forward(self, rgb, fixed):
         score, reg = self.inner(rgb, fixed)
-        w4 = score.shape[3]
-        s, i = torch.topk(score.flatten(1), self.k, dim=1)                       # (1, K)
-        r = torch.gather(reg.flatten(2), 2, i[:, None].expand(-1, 4, -1))         # (1, 4, K)
-        xs, ys = (i % w4).float(), torch.div(i, w4, rounding_mode="floor").float()
-        dets = torch.stack([(xs + r[:, 0]) * 4, (ys + r[:, 1]) * 4, r[:, 2].exp(), r[:, 3].exp(), s], 2)
-        return dets                                                               # (1, K, 5)
+        cells_wide = score.shape[3]
+        scores, cells = torch.topk(score.flatten(1), self.k, dim=1)                          # (1, K)
+        values = torch.gather(reg.flatten(2), 2, cells[:, None].expand(-1, 4, -1))         # (1, 4, K)
+        xs, ys = (cells % cells_wide).float(), torch.div(cells, cells_wide, rounding_mode="floor").float()
+        dets = torch.stack([(xs + values[:, 0]) * net.STRIDE, (ys + values[:, 1]) * net.STRIDE, values[:, 2].exp(),
+                            values[:, 3].exp(), scores], 2)
+        return dets                                                                          # (1, K, 5)
+
+
+def byte_inputs(frames):
+    """Zero uint8 frames and fixed maps to trace the raw-bytes graphs with."""
+    return (torch.zeros(frames, HEIGHT_PX, WIDTH_PX, 3, dtype=torch.uint8),
+            torch.zeros(frames, HEIGHT_PX, WIDTH_PX, dtype=torch.uint8))
 
 
 def export_u8in(model, path):
     """The uint8-input graph, with a free batch axis. Traced with 2 frames, so nothing in it is fixed to one frame."""
-    torch.onnx.export(ExportedU8(model).eval(), (torch.zeros(2, 720, 1280, 3, dtype=torch.uint8),
-                                                 torch.zeros(2, 720, 1280, dtype=torch.uint8)), str(path),
+    torch.onnx.export(ExportedU8(model).eval(), byte_inputs(TRACE_FRAMES), str(path),
                       input_names=["rgb", "fixed"], output_names=["score", "reg"],
                       dynamic_axes={"rgb": {0: "n", 1: "h", 2: "w"}, "fixed": {0: "n", 1: "h", 2: "w"},
                                     "score": {0: "n", 2: "h4", 3: "w4"}, "reg": {0: "n", 2: "h4", 3: "w4"}},
-                      opset_version=17, dynamo=False)
+                      opset_version=OPSET, dynamo=False)
+
+
+def cpu_session(path):
+    import onnxruntime as ort
+    return ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
 
 
 def check_u8in(u8, f32):
     """The uint8-input graph against the fp32 one on a real frame, alone and as the second of a batch of 4 (the
     others different frames): the same outputs."""
-    import onnxruntime as ort
     import bench
     rgb, fixed = bench.sample()
-    xr = net.prepare(torch.from_numpy(rgb)[None], torch.from_numpy(fixed)[None])
-    s_o, r_o = ort.InferenceSession(str(f32), providers=["CPUExecutionProvider"]).run(None, {"x": xr.numpy()})
-    sess = ort.InferenceSession(str(u8), providers=["CPUExecutionProvider"])
-    s_u, r_u = sess.run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
-    print(f"uint8-input graph against fp32: max |reg| diff {np.abs(r_u - r_o).max():.2e}")
-    if np.abs(r_u - r_o).max() > 1e-3:
+    frame = net.prepare(torch.from_numpy(rgb)[None], torch.from_numpy(fixed)[None])
+    _, float_reg = cpu_session(f32).run(None, {"x": frame.numpy()})
+    session = cpu_session(u8)
+    byte_score, byte_reg = session.run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
+    print(f"uint8-input graph against fp32: max |reg| diff {np.abs(byte_reg - float_reg).max():.2e}")
+    if np.abs(byte_reg - float_reg).max() > SAME_REG:
         raise SystemExit("the uint8-input export does not match")
-    batch = np.stack([np.roll(rgb, 37 * k, axis=1) if k != 1 else rgb for k in range(4)])
-    fixed4 = np.repeat(fixed[None].astype(np.uint8), 4, axis=0)
-    s_b, r_b = sess.run(None, {"rgb": batch, "fixed": fixed4})
-    print(f"a frame in a batch of 4 against alone: max |score| diff {np.abs(s_b[1] - s_u[0]).max():.2e}, "
-          f"max |reg| diff {np.abs(r_b[1] - r_u[0]).max():.2e}")
-    if s_b.shape[0] != 4 or np.abs(r_b[1] - r_u[0]).max() > 1e-4:
+    batch = np.stack([np.roll(rgb, SHIFT_PX * k, axis=1) if k != 1 else rgb for k in range(BATCH_FRAMES)])
+    fixed_maps = np.repeat(fixed[None].astype(np.uint8), BATCH_FRAMES, axis=0)
+    batch_score, batch_reg = session.run(None, {"rgb": batch, "fixed": fixed_maps})
+    print(f"a frame in a batch of 4 against alone: max |score| diff {np.abs(batch_score[1] - byte_score[0]).max():.2e}, "
+          f"max |reg| diff {np.abs(batch_reg[1] - byte_reg[0]).max():.2e}")
+    if batch_score.shape[0] != BATCH_FRAMES or np.abs(batch_reg[1] - byte_reg[0]).max() > SAME_IN_BATCH:
         raise SystemExit("the batch axis changes the outputs")
 
 
-def calibration_reader(data_dir, n=64):
+def calibration_reader(data_dir, count=CALIBRATION_CROPS):
     from onnxruntime.quantization import CalibrationDataReader
 
-    files = sorted(Path(data_dir).glob("*.npz"))[::max(1, len(sorted(Path(data_dir).glob("*.npz"))) // n)][:n]
+    every = sorted(Path(data_dir).glob("*.npz"))
+    files = every[::max(1, len(every) // count)][:count]
 
     class Reader(CalibrationDataReader):
         def __init__(self):
-            self.it = iter(files)
+            self.remaining = iter(files)
 
         def get_next(self):
-            f = next(self.it, None)
-            if f is None:
+            file = next(self.remaining, None)
+            if file is None:
                 return None
-            z = np.load(f)
-            x = np.concatenate([z["rgb"].transpose(2, 0, 1)[None] / 255.0, z["fixed"][None, None]], 1)
-            return {"x": x.astype(np.float32)}
+            crop = np.load(file)
+            frame = np.concatenate([crop["rgb"].transpose(2, 0, 1)[None] / 255.0, crop["fixed"][None, None]], 1)
+            return {"x": frame.astype(np.float32)}
 
     return Reader()
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("checkpoint")
-    ap.add_argument("--out", default="python/model/exports")
-    ap.add_argument("--data", default="test_out/vod_model/data")
-    ap.add_argument("--u8in", action="store_true", help="only the _u8in file (the fp32 file must be beside it)")
-    ap.add_argument("--val", action="append", help="a dataset whose val split fits the score map (repeat it) "
-                    "[calibrate.VAL]; the threshold is picked on --data's val split")
-    a = ap.parse_args()
-    ck = torch.load(a.checkpoint, map_location="cpu", weights_only=False)
-    cfg = ck["config"]
-    model = net.build(cfg)
-    model.load_state_dict(ck["model"])
-    model.eval()
-    out = Path(a.out)
-    out.mkdir(parents=True, exist_ok=True)
-    name = cfg["name"]
-    f32 = out / f"detector_{name}_fp32.onnx"
-    if a.u8in:
-        u8 = out / f"detector_{name}_u8in.onnx"
-        export_u8in(model, u8)
-        check_u8in(u8, f32 if f32.exists() else Path(__file__).parent / "exports" / f32.name)
-        print(f"{u8}: {u8.stat().st_size / 1024:.1f} KB")
-        return
-    x = torch.zeros(1, 4, 720, 1280)
-    torch.onnx.export(Exported(model).eval(), (x,), str(f32), input_names=["x"], output_names=["score", "reg"],
-                      dynamic_axes={"x": {2: "h", 3: "w"}, "score": {2: "h4", 3: "w4"}, "reg": {2: "h4", 3: "w4"}},
-                      opset_version=17, dynamo=False)
-    m = onnx.load(str(f32))
-    m.metadata_props.add(key="config", value=json.dumps(cfg))
-    m.metadata_props.add(key="epoch", value=str(ck["epoch"]))
-    m.metadata_props.add(key="val", value=json.dumps(ck["val"]))
-    onnx.save(m, str(f32))
-    onnx.checker.check_model(str(f32))
-    # fp16: traced from PyTorch with the network in half precision and the decoding in fp32 (onnxconverter-common's
-    # converter breaks the decoding's Cast, and hangs when told to leave those nodes in fp32)
-    import copy
-    f16 = out / f"detector_{name}_fp16.onnx"
+def export_fp32(model, saved, path, frame):
+    """The fp32 graph, with the checkpoint's config, epoch and val numbers in its metadata."""
+    torch.onnx.export(Exported(model).eval(), (frame,), str(path), input_names=["x"], output_names=["score", "reg"],
+                      dynamic_axes={"x": SPATIAL_AXES, "score": CELL_AXES, "reg": CELL_AXES},
+                      opset_version=OPSET, dynamo=False)
+    graph = onnx.load(str(path))
+    graph.metadata_props.add(key="config", value=json.dumps(saved["config"]))
+    graph.metadata_props.add(key="epoch", value=str(saved["epoch"]))
+    graph.metadata_props.add(key="val", value=json.dumps(saved["val"]))
+    onnx.save(graph, str(path))
+    onnx.checker.check_model(str(path))
+
+
+def export_fp16(model, path, frame):
+    """fp16: traced from PyTorch with the network in half precision and the decoding in fp32 (onnxconverter-common's
+    converter breaks the decoding's Cast, and hangs when told to leave those nodes in fp32). Only with a GPU."""
     if torch.cuda.is_available():
-        torch.onnx.export(Exported16(copy.deepcopy(model)).eval().cuda(), (x.cuda(),), str(f16), input_names=["x"],
+        torch.onnx.export(Exported16(copy.deepcopy(model)).eval().cuda(), (frame.cuda(),), str(path), input_names=["x"],
                           output_names=["score", "reg"],
-                          dynamic_axes={"x": {2: "h", 3: "w"}, "score": {2: "h4", 3: "w4"}, "reg": {2: "h4", 3: "w4"}},
-                          opset_version=17, dynamo=False)
-    # uint8 in: rgb (N, H, W, 3) and fixed (N, H, W), both uint8, same outputs
-    u8 = out / f"detector_{name}_u8in.onnx"
-    export_u8in(model, u8)
-    # raw bytes in, the 100 best boxes out: "dets" float32 (1, 100, 5)
-    emb = out / f"detector_{name}_embed.onnx"
-    torch.onnx.export(ExportedEmbed(model).eval(), (torch.zeros(1, 720, 1280, 3, dtype=torch.uint8),
-                                                    torch.zeros(1, 720, 1280, dtype=torch.uint8)), str(emb),
+                          dynamic_axes={"x": SPATIAL_AXES, "score": CELL_AXES, "reg": CELL_AXES},
+                          opset_version=OPSET, dynamo=False)
+
+
+def export_embed(model, path):
+    """Raw bytes in, the 100 best boxes out: "dets" float32 (1, 100, 5)."""
+    torch.onnx.export(ExportedEmbed(model).eval(), byte_inputs(1), str(path),
                       input_names=["rgb", "fixed"], output_names=["dets"],
-                      dynamic_axes={"rgb": {1: "h", 2: "w"}, "fixed": {1: "h", 2: "w"}}, opset_version=17, dynamo=False)
+                      dynamic_axes={"rgb": {1: "h", 2: "w"}, "fixed": {1: "h", 2: "w"}}, opset_version=OPSET,
+                      dynamo=False)
+
+
+def export_int8(f32, path, out, name, data):
+    """int8: static QDQ quantization of the fp32 graph, calibrated on the dataset's val crops."""
     from onnxruntime.quantization import QuantFormat, QuantType, quantize_static
     from onnxruntime.quantization.shape_inference import quant_pre_process
-    pre = out / f"_pre_{name}.onnx"
-    quant_pre_process(str(f32), str(pre), skip_symbolic_shape=True)
-    i8 = out / f"detector_{name}_int8.onnx"
-    quantize_static(str(pre), str(i8), calibration_reader(Path(a.data) / "val"), quant_format=QuantFormat.QDQ,
+    prepared = out / f"_pre_{name}.onnx"
+    quant_pre_process(str(f32), str(prepared), skip_symbolic_shape=True)
+    quantize_static(str(prepared), str(path), calibration_reader(Path(data) / "val"), quant_format=QuantFormat.QDQ,
                     per_channel=True, activation_type=QuantType.QUInt8, weight_type=QuantType.QInt8)
-    pre.unlink(missing_ok=True)
-    # parity: ONNX fp32 against PyTorch on a real 1280 x 720 KovOBS frame (random noise is a poor test: it drives the
-    # activations far outside anything a frame produces, where tiny summation-order differences grow)
-    import onnxruntime as ort
+    prepared.unlink(missing_ok=True)
+
+
+def by_x(detections):
+    return detections[np.argsort(detections[:, 0])]
+
+
+def check_parity(model, files):
+    """ONNX fp32 against PyTorch on a real 1280 x 720 KovOBS frame (random noise is a poor test: it drives the
+    activations far outside anything a frame produces, where tiny summation-order differences grow), then the u8in,
+    embed and fp16 graphs against the fp32 one."""
     import bench
-    rgb, fixed = bench.sample()
-    xr = net.prepare(torch.from_numpy(rgb)[None], torch.from_numpy(fixed)[None])
-    with torch.no_grad():
-        s_t, r_t = Exported(model.eval()).eval()(xr)
-    s_o, r_o = ort.InferenceSession(str(f32), providers=["CPUExecutionProvider"]).run(None, {"x": xr.numpy()})
-    sd, rd = np.abs(s_o - s_t.numpy()).max(), np.abs(r_o - r_t.numpy()).max()
-    print(f"parity fp32 on a real frame: max |score| diff {sd:.2e}, max |reg| diff {rd:.2e}")
-    if rd > 1e-3:
-        raise SystemExit("the ONNX export does not match PyTorch")
-    check_u8in(u8, f32)
-    (dets,) = ort.InferenceSession(str(emb), providers=["CPUExecutionProvider"]).run(
-        None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
     import infer
-    want = infer.decode_np(s_o, r_o, 0.3)
-    got = dets[0][dets[0][:, 4] > 0.3]
-    order = lambda d: d[np.argsort(d[:, 0])]
-    if len(got) != len(want) or np.abs(order(got) - order(want)).max() > 1e-3:
+    rgb, fixed = bench.sample()
+    frame = net.prepare(torch.from_numpy(rgb)[None], torch.from_numpy(fixed)[None])
+    with torch.no_grad():
+        torch_score, torch_reg = Exported(model.eval()).eval()(frame)
+    score, reg = cpu_session(files["fp32"]).run(None, {"x": frame.numpy()})
+    score_diff, reg_diff = np.abs(score - torch_score.numpy()).max(), np.abs(reg - torch_reg.numpy()).max()
+    print(f"parity fp32 on a real frame: max |score| diff {score_diff:.2e}, max |reg| diff {reg_diff:.2e}")
+    if reg_diff > SAME_REG:
+        raise SystemExit("the ONNX export does not match PyTorch")
+    check_u8in(files["u8in"], files["fp32"])
+    (dets,) = cpu_session(files["embed"]).run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8)})
+    want = infer.decode_np(score, reg, CHECK_THRESHOLD)
+    got = dets[0][dets[0][:, 4] > CHECK_THRESHOLD]
+    if len(got) != len(want) or np.abs(by_x(got) - by_x(want)).max() > SAME_REG:
         raise SystemExit("the embed export does not match")
     print(f"embed graph: the same {len(got)} detections over 0.3")
-    if f16.exists():
-        s16, r16 = ort.InferenceSession(str(f16), providers=["CPUExecutionProvider"]).run(None, {"x": xr.numpy()})
-        print(f"fp16 against fp32 on a real frame: max |reg| diff where a target is {np.abs(r16 - r_o)[:, :, s_o[0, 0] > 0.3].max():.3f}")
-    for p in (f32, f16, u8, emb, i8):
-        if p.exists():
-            print(f"{p}: {p.stat().st_size / 1024:.1f} KB")
-    settings_file(u8, a)
+    if files["fp16"].exists():
+        _, half_reg = cpu_session(files["fp16"]).run(None, {"x": frame.numpy()})
+        print(f"fp16 against fp32 on a real frame: max |reg| diff where a target is "
+              f"{np.abs(half_reg - reg)[:, :, score[0, 0] > CHECK_THRESHOLD].max():.3f}")
 
 
-def settings_file(u8, a):
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("checkpoint")
+    parser.add_argument("--out", default="python/model/exports")
+    parser.add_argument("--data", default="test_out/vod_model/data")
+    parser.add_argument("--u8in", action="store_true", help="only the _u8in file (the fp32 file must be beside it)")
+    parser.add_argument("--val", action="append", help="a dataset whose val split fits the score map (repeat it) "
+                        "[calibrate.VAL]; the threshold is picked on --data's val split")
+    args = parser.parse_args()
+    saved = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    config = saved["config"]
+    model = net.build(config)
+    model.load_state_dict(saved["model"])
+    model.eval()
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    name = config["name"]
+    files = {kind: out / f"detector_{name}_{kind}.onnx" for kind in ("fp32", "fp16", "u8in", "embed", "int8")}
+    if args.u8in:
+        export_u8in(model, files["u8in"])
+        check_u8in(files["u8in"], files["fp32"] if files["fp32"].exists()
+                   else Path(__file__).parent / "exports" / files["fp32"].name)
+        print(f"{files['u8in']}: {files['u8in'].stat().st_size / KB:.1f} KB")
+        return
+    frame = torch.zeros(1, 4, HEIGHT_PX, WIDTH_PX)
+    export_fp32(model, saved, files["fp32"], frame)
+    export_fp16(model, files["fp16"], frame)
+    export_u8in(model, files["u8in"])                       # uint8 in: rgb (N, H, W, 3) and fixed (N, H, W)
+    export_embed(model, files["embed"])
+    export_int8(files["fp32"], files["int8"], out, name, args.data)
+    check_parity(model, files)
+    for path in (files["fp32"], files["fp16"], files["u8in"], files["embed"], files["int8"]):
+        if path.exists():
+            print(f"{path}: {path.stat().st_size / KB:.1f} KB")
+    settings_file(files["u8in"], args)
+
+
+def settings_file(u8, args):
     """The model's settings file, detector_<name>.json beside the exports: its scores put on the reference model's
     scale and its threshold there (calibrate.py), written only when the file does not exist yet. The numbers behind
     it go to python/model/reports/calibration_<name>.json."""
     import calibrate
     try:
-        s, report = calibrate.calibrate(u8, tuple(a.val or calibrate.VAL), a.data)
-    except SystemExit as e:                               # no validation crops on this computer
-        print(f"no settings file: {e}")
+        settings, report = calibrate.calibrate(u8, tuple(args.val or calibrate.VAL), args.data)
+    except SystemExit as error:                           # no validation crops on this computer
+        print(f"no settings file: {error}")
         return
-    print(f"settings: {json.dumps(s)}")
-    calibrate.write_settings(s, u8.parent)
-    rp = Path(__file__).resolve().parent / "reports" / f"calibration_{s['name']}.json"
-    rp.parent.mkdir(exist_ok=True)
-    json.dump(dict(settings=s, **report), open(rp, "w"), indent=1)
-    print(f"{rp}: the calibration's numbers")
+    print(f"settings: {json.dumps(settings)}")
+    calibrate.write_settings(settings, u8.parent)
+    report_path = Path(__file__).resolve().parent / "reports" / f"calibration_{settings['name']}.json"
+    report_path.parent.mkdir(exist_ok=True)
+    json.dump(dict(settings=settings, **report), open(report_path, "w"), indent=1)
+    print(f"{report_path}: the calibration's numbers")
 
 
 if __name__ == "__main__":
