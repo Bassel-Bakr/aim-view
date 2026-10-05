@@ -12,10 +12,13 @@ import { CoreModule, ShapesRequest } from '../modes/wasm/core-module';
 import { CropAnswerMap, CropImport, CropSets } from '../platform/crop-sets';
 import { queryValue, setQuery } from '../services/url-query';
 import { learn, suggest, Suggestion } from './crop-lessons';
-import { answerOf, DraftScene, sceneOfAnswer, sceneOfFix } from './crop-scene';
+import { answerOf, DraftScene, duplicated, sceneOfAnswer, sceneOfFix } from './crop-scene';
 
 /** A crop's side, in pixels (make_page.py's crops). */
 export const CROP_SIDE = 256;
+
+/** How far a copy lands from the shape it copies, down and to the right (crop pixels). */
+const COPY_SHIFT_PX = 6;
 
 /** The page shows a crop's marks, or edits them. */
 export type CropMode = 'view' | 'fix';
@@ -51,6 +54,8 @@ export class CropDraft {
   readonly selection = signal<string[]>([]);
   /** The kind of shape a drag on the wall draws. */
   readonly kind = signal<ShapeKind>('pill');
+  /** In a fix, a drag moves the view instead of drawing or moving shapes (the tools' Pan); taps still select. */
+  readonly panning = signal(false);
   readonly note = signal<CropNote | null>(null);
   readonly busy = signal(false);
   readonly list = computed<CropEntry[]>(() =>
@@ -98,8 +103,10 @@ export class CropDraft {
   constructor() {
     effect(() => setQuery({ folder: this.folder() ?? null, set: this.set() ?? null }));
     effect(() => this.openFirst());
+    // which crops are checked is known only once the answers are in: the crops often come first
     effect(() => {
       const list = this.list();
+      if (!this.loaded.hasValue() && !this.loaded.error()) return;
       untracked(() => this.toFirstUnchecked(list));
     });
   }
@@ -166,6 +173,15 @@ export class CropDraft {
   edit(change: (scene: DraftScene) => DraftScene): void {
     const draft = this.draft();
     if (draft) this.draft.set(change(draft));
+  }
+
+  /** The selected shapes copied a little down and to the right; the copies are selected, to drag into place. */
+  duplicate(): void {
+    const [draft, ids] = [this.draft(), this.selection()];
+    if (!draft || !ids.length) return;
+    const copy = duplicated(draft, ids, [COPY_SHIFT_PX, COPY_SHIFT_PX]);
+    this.draft.set(copy.scene);
+    this.selection.set(copy.copies);
   }
 
   /** Right or Can't tell, for what the crop shows (a suggestion taken as offered says so). */

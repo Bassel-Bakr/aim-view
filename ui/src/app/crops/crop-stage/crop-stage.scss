@@ -10,5 +10,10 @@
     @apply block w-full cursor-crosshair touch-none rounded-md bg-surface-1 select-none;
 
     aspect-ratio: 1;
+
+    // a drag pans: the tools' Pan, or Space held
+    &[data-pan='true'] {
+      @apply cursor-grab active:cursor-grabbing;
+    }
   }
 }

@@ -7,6 +7,7 @@ import {
   moved,
   onShape,
   resized,
+  scaled,
   turned,
   turnHandle,
 } from './shape-geometry';
@@ -59,6 +60,12 @@ describe('shape geometry', () => {
     expect(faceHandle(cube, 10)).toEqual([56, 44]);
     expect(faceHandle(shape({}), 10)).toBeNull();
     expect(onShape(cube, [65, 39], 0)).toBe(true);
+  });
+
+  it('scales a shape about a point, its face too, never below the smallest side', () => {
+    const cube = shape({ kind: 'box', face: [4, -2] });
+    expect(scaled(cube, 2, [40, 50])).toMatchObject({ box: [60, 50, 40, 20], face: [8, -4] });
+    expect(scaled(shape({}), 0.01, [50, 50]).box).toEqual([50, 50, 4, 2]);
   });
 
   it('gives the box round joined shapes', () => {

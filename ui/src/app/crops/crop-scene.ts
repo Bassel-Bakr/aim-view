@@ -8,7 +8,7 @@ import {
   ShapeKind,
   ShapeRole,
 } from '../api';
-import { boxAround } from '../shapes/shape-geometry';
+import { boxAround, CropPoint, scaled } from '../shapes/shape-geometry';
 import { CropFix } from './crop-lessons';
 
 /**
@@ -143,6 +143,53 @@ export function withDrawn(scene: DraftScene, kind: ShapeKind, box: CropBox): Dra
     )
     .map((shape) => shape.id);
   return removed(withShape(scene, kind, box), covered);
+}
+
+/** A scene with shapes copied, and the copies' ids. */
+export interface SceneCopy {
+  scene: DraftScene;
+  copies: string[];
+}
+
+/**
+ * The selected shapes copied, moved by (dx, dy): each copy keeps its kind, size, angle, face, role and depth, and is a
+ * drawn shape. Copies of shapes joined together are joined into a new target, and copies of occluders hide too.
+ */
+export function duplicated(
+  scene: DraftScene,
+  ids: readonly string[],
+  [dx, dy]: CropPoint,
+): SceneCopy {
+  const renamed = new Map<string, string>();
+  let shapes = scene.shapes;
+  for (const shape of scene.shapes.filter((one) => ids.includes(one.id))) {
+    const id = freshId({ ...scene, shapes });
+    const [cx, cy, width, height] = shape.box;
+    renamed.set(shape.id, id);
+    shapes = [...shapes, { ...shape, id, model: null, box: [cx + dx, cy + dy, width, height] }];
+  }
+  const copyOf = (id: string) => renamed.get(id) ?? id;
+  const targets = scene.targets
+    .map((group) => group.filter((id) => renamed.has(id)).map(copyOf))
+    .filter((group) => group.length > 1);
+  const occluders = scene.occluders.filter((id) => renamed.has(id)).map(copyOf);
+  return {
+    scene: {
+      ...scene,
+      shapes,
+      targets: [...scene.targets, ...targets],
+      occluders: [...scene.occluders, ...occluders],
+    },
+    copies: [...renamed.values()],
+  };
+}
+
+/** The selected shapes scaled together by a factor, about the middle of the box round them. */
+export function resizedAll(scene: DraftScene, ids: readonly string[], factor: number): DraftScene {
+  const chosen = scene.shapes.filter((shape) => ids.includes(shape.id));
+  if (!chosen.length) return scene;
+  const [cx, cy] = boxAround(chosen);
+  return changeEach(scene, ids, (shape) => scaled(shape, factor, [cx, cy]));
 }
 
 /** The scene with one shape replaced (same id). */

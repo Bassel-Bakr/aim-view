@@ -2,6 +2,7 @@ import {
   afterNextRender,
   afterRenderEffect,
   Component,
+  computed,
   DestroyRef,
   effect,
   ElementRef,
@@ -15,8 +16,8 @@ import { CropEntry, SceneView, Shape } from '../../api';
 import { CropSets } from '../../platform/crop-sets';
 import { CropPoint } from '../../shapes/shape-geometry';
 import { CROP_SIDE, CropDraft } from '../crop-draft';
-import { DraftScene, removed, uncrossed, withDrawn, withPoint } from '../crop-scene';
-import { CropGrip, dragged, gripAt, sketchBox } from './crop-grip';
+import { DraftScene, removed, resizedAll, uncrossed, withDrawn, withPoint } from '../crop-scene';
+import { CropGrip, dragged, gripAt, shapesAt, sketchBox } from './crop-grip';
 import {
   CropStyle,
   maskPicture,
@@ -36,9 +37,13 @@ interface StageZoom {
   top: number;
 }
 
-/** One finger's press: what it holds (null outside a fix: peek or pan), where it began, and the scene and zoom then. */
+/**
+ * One finger's press: what it holds (null outside a fix, or for the mouse's other buttons), whether a drag pans, where
+ * it began, and the scene and zoom then.
+ */
 interface StagePress {
   grip: CropGrip | null;
+  pans: boolean;
   screen: ScreenPoint;
   start: CropPoint;
   from: DraftScene | null;
@@ -69,6 +74,10 @@ const NO_ZOOM: StageZoom = { zoom: 1, left: 0, top: 0 };
 const MAX_ZOOM = 8;
 /** One wheel step zooms by this much. */
 const WHEEL_STEP = 1.25;
+/** One wheel step over the selected shapes resizes them by this much. */
+const RESIZE_STEP = 1.1;
+/** The mouse's middle and right buttons pan. */
+const PAN_BUTTONS = [1, 2];
 /** A finger moving this far (CSS pixels) drags; less is a tap. */
 const DRAG_PX = 6;
 /** A finger held this long (ms) without moving shows the crop without its marks. */
@@ -79,14 +88,18 @@ const PEEK_MS = 180;
  * pans a zoomed crop. In a fix: a drag on the wall draws a shape of the chosen kind, a drag on a shape moves it (with
  * the selection), and a shape selected alone shows handles: its corners resize it, its handle above turns it and a
  * box's square handle pulls out its third face. A tap selects or unselects a shape, brings a crossed-out box back, and
- * on the wall clears the selection or, with none, marks a tiny target. Two fingers (or the wheel) zoom and pan.
- * Delete removes the selected shapes.
+ * on the wall clears the selection or, with none, marks a tiny target. Two fingers (or the wheel) zoom and pan; the
+ * tools' Pan, Space, or the mouse's middle or right button make a drag pan; the wheel over the selected shapes resizes
+ * them. Delete removes the selected shapes, Ctrl+D duplicates them.
  */
 @Component({
   selector: 'app-crop-stage',
   templateUrl: './crop-stage.html',
   styleUrl: './crop-stage.scss',
-  host: { '(document:keydown)': 'handleKeydown($event)' },
+  host: {
+    '(document:keydown)': 'handleKeydown($event)',
+    '(document:keyup)': 'handleKeyup($event)',
+  },
 })
 export class CropStage {
   private readonly draft = inject(CropDraft);
@@ -96,6 +109,10 @@ export class CropStage {
   private readonly zoom = signal<StageZoom>(NO_ZOOM);
   private readonly sketch = signal<Shape | null>(null);
   private readonly peeking = signal(false);
+  /** Space is held: a drag pans. */
+  private readonly spaceHeld = signal(false);
+  /** Whether a drag pans now, for the cursor. */
+  protected readonly pans = computed(() => this.draft.panning() || this.spaceHeld());
   private readonly pointers = new Map<number, ScreenPoint>();
   private press: StagePress | null = null;
   private pinch: StagePinch | null = null;
@@ -194,7 +211,8 @@ export class CropStage {
   }
 
   protected pressStage(event: PointerEvent): void {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const panButton = event.pointerType === 'mouse' && PAN_BUTTONS.includes(event.button);
+    if (event.pointerType === 'mouse' && event.button !== 0 && !panButton) return;
     this.canvas().nativeElement.setPointerCapture(event.pointerId);
     const screen = this.at(event);
     this.pointers.set(event.pointerId, screen);
@@ -209,10 +227,18 @@ export class CropStage {
       this.draft.crop(),
     ];
     const grip =
-      scene && crop ? gripAt(scene, crop, this.draft.selection(), start, this.place().scale) : null;
-    this.press = { grip, screen, start, from: scene, zoom: this.zoom(), moved: false };
-    if (!grip)
+      scene && crop && !panButton
+        ? gripAt(scene, crop, this.draft.selection(), start, this.place().scale)
+        : null;
+    const pans = !grip || this.pans();
+    this.press = { grip, pans, screen, start, from: scene, zoom: this.zoom(), moved: false };
+    if (!scene && !panButton)
       this.peekTimer = setTimeout(() => this.peeking.set(this.press?.moved === false), PEEK_MS);
+  }
+
+  /** The middle button would start the browser's own scrolling: here it pans. */
+  protected holdMiddle(event: MouseEvent): void {
+    if (event.button === 1) event.preventDefault();
   }
 
   /** A second finger: whatever the first was doing is undone, and the two zoom and pan. */
@@ -278,7 +304,7 @@ export class CropStage {
 
   private dragTo(press: StagePress, screen: ScreenPoint): void {
     const grip = press.grip;
-    if (!grip) {
+    if (!grip || press.pans) {
       const [dx, dy] = [screen[0] - press.screen[0], screen[1] - press.screen[1]];
       this.zoom.set(
         this.clamped({ ...press.zoom, left: press.zoom.left + dx, top: press.zoom.top + dy }),
@@ -316,7 +342,8 @@ export class CropStage {
     this.peeking.set(false);
     this.sketch.set(null);
     if (press.grip && !press.moved) this.tap(press.grip, press.start);
-    else if (press.grip?.kind === 'draw') this.addDrawn(press.start, this.toCrop(this.at(event)));
+    else if (!press.pans && press.grip?.kind === 'draw')
+      this.addDrawn(press.start, this.toCrop(this.at(event)));
   }
 
   /** A tap: a shape is selected or unselected, a crossed-out box comes back, the wall clears or marks a point. */
@@ -350,12 +377,30 @@ export class CropStage {
     if (added) this.draft.selection.set([added.id]);
   }
 
-  /** The wheel zooms about the pointer. */
-  protected zoomWheel(event: WheelEvent): void {
+  /** The wheel over the selected shapes resizes them; elsewhere, or with Ctrl (a touchpad's pinch), it zooms. */
+  protected turnWheel(event: WheelEvent): void {
     event.preventDefault();
-    const [x, y] = this.at(event);
+    const larger = event.deltaY < 0;
+    if (!event.ctrlKey && this.resizeAt(this.at(event), larger ? RESIZE_STEP : 1 / RESIZE_STEP))
+      return;
+    this.zoomAt(this.at(event), larger ? WHEEL_STEP : 1 / WHEEL_STEP);
+  }
+
+  /** Resizes the selected shapes when the point is on one of them; false when it is not (or outside a fix). */
+  private resizeAt(screen: ScreenPoint, factor: number): boolean {
+    const [scene, ids] = [
+      this.draft.mode() === 'fix' ? this.draft.draft() : null,
+      this.draft.selection(),
+    ];
+    const under = scene ? shapesAt(scene, this.toCrop(screen), this.place().scale) : [];
+    if (!under.some((shape) => ids.includes(shape.id))) return false;
+    this.draft.edit((now) => resizedAll(now, ids, factor));
+    return true;
+  }
+
+  /** Zooms by a step about a point of the stage. */
+  private zoomAt([x, y]: ScreenPoint, step: number): void {
     const from = this.zoom();
-    const step = event.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP;
     const zoom = Math.min(Math.max(from.zoom * step, 1), MAX_ZOOM);
     const grow = zoom / from.zoom;
     this.zoom.set(
@@ -363,18 +408,33 @@ export class CropStage {
     );
   }
 
-  /** In a fix, Delete or Backspace removes the selected shapes and Escape unselects them; a field's keys are its own. */
+  /**
+   * In a fix: Delete or Backspace removes the selected shapes, Escape unselects them, Ctrl+D duplicates them, and a drag
+   * with Space held pans. A field's keys are its own.
+   */
   protected handleKeydown(event: KeyboardEvent): void {
-    if (
-      this.draft.mode() !== 'fix' ||
-      event.defaultPrevented ||
-      event.ctrlKey ||
-      event.metaKey ||
-      event.altKey
-    )
-      return;
+    if (this.draft.mode() !== 'fix' || event.defaultPrevented || event.altKey) return;
     if (event.target instanceof Element && event.target.closest('input, textarea, select, dialog'))
       return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault();
+      this.draft.duplicate();
+    } else if (event.key === ' ') {
+      // neither the focused button's click nor the page's scroll
+      event.preventDefault();
+      this.spaceHeld.set(true);
+    } else if (!event.ctrlKey && !event.metaKey) {
+      this.editByKey(event);
+    }
+  }
+
+  protected handleKeyup(event: KeyboardEvent): void {
+    if (event.key !== ' ' || !this.spaceHeld()) return;
+    event.preventDefault();
+    this.spaceHeld.set(false);
+  }
+
+  private editByKey(event: KeyboardEvent): void {
     const selection = this.draft.selection();
     if ((event.key === 'Delete' || event.key === 'Backspace') && selection.length) {
       event.preventDefault();

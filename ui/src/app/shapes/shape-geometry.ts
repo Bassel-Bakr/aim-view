@@ -1,4 +1,4 @@
-import { CropBox, Shape } from '../api';
+import { CropBox, FaceOffset, Shape } from '../api';
 
 /**
  * Editing a crop's shapes with the pointer: where a shape's corners and handles are, what a drag does to it, and its
@@ -114,6 +114,21 @@ export function turned(shape: Shape, [x, y]: CropPoint): Shape {
 export function faced(shape: Shape, [x, y]: CropPoint): Shape {
   const [cx, cy] = shape.box;
   return { ...shape, face: [x - cx, y - cy] };
+}
+
+/**
+ * A shape scaled about a point by a factor: its sides, its third face and its middle's distance from the point. No side
+ * gets smaller than MIN_SIDE_PX.
+ */
+export function scaled(shape: Shape, factor: number, [x, y]: CropPoint): Shape {
+  const [cx, cy, width, height] = shape.box;
+  const grow = Math.max(factor, MIN_SIDE_PX / Math.min(width, height));
+  const face: FaceOffset | null = shape.face && [shape.face[0] * grow, shape.face[1] * grow];
+  return {
+    ...shape,
+    box: [x + (cx - x) * grow, y + (cy - y) * grow, width * grow, height * grow],
+    face,
+  };
 }
 
 /** The box round shapes' corners (and far faces): [center x, center y, width, height]. */

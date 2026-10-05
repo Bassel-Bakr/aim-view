@@ -1,4 +1,5 @@
 import { HttpRequest } from '@angular/common/http';
+import { HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { CropAnswer, CropEntry, CropPage, SceneView } from '../api';
 import { answer, ApiRoutes, serverMode } from '../fake-api';
@@ -80,16 +81,29 @@ async function render(routes: ApiRoutes) {
     button?.click();
     await settle();
   };
-  const pointer = (type: string, [x, y]: Pixel) =>
-    canvas.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0 }));
-  const drag = (from: Pixel, to: Pixel) => {
-    pointer('pointerdown', from);
-    pointer('pointermove', to);
-    pointer('pointerup', to);
+  /** A pointer event of the mouse, with a button (0 the left, 2 the right). */
+  const pointer = (type: string, [x, y]: Pixel, button: number) => {
+    const event = new MouseEvent(type, { clientX: x, clientY: y, button });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    canvas.dispatchEvent(event);
+  };
+  const drag = (from: Pixel, to: Pixel, button = 0) => {
+    pointer('pointerdown', from, button);
+    pointer('pointermove', to, button);
+    pointer('pointerup', to, button);
     TestBed.tick();
   };
   const tap = (at: Pixel) => drag(at, at);
-  return { el, draft: TestBed.inject(CropDraft), click, drag, tap, settle };
+  const wheel = ([x, y]: Pixel, deltaY: number) => {
+    canvas.dispatchEvent(new WheelEvent('wheel', { clientX: x, clientY: y, deltaY }));
+    TestBed.tick();
+  };
+  const key = (name: string, ctrlKey: boolean) => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: name, ctrlKey }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: name, ctrlKey }));
+    TestBed.tick();
+  };
+  return { el, draft: TestBed.inject(CropDraft), click, drag, tap, wheel, key, settle };
 }
 
 describe('the Crops page', () => {
@@ -125,6 +139,37 @@ describe('the Crops page', () => {
     expect(saved.add).toEqual([[200, 165, 20, 30]]);
     expect(draft.mode()).toBe('view');
   });
+});
+
+describe("the Crops page's stage", () => {
+  afterEach(() => history.replaceState(null, '', '/'));
+
+  it('duplicates the selection with Ctrl+D, and the wheel over it resizes it', async () => {
+    const { draft, click, tap, wheel, key } = await render(fakeServer([]));
+    await click('Wrong');
+    tap([200, 200]);
+    key('d', true);
+    expect(draft.selection()).toEqual(['s1']);
+    const copy = () => draft.draft()?.shapes.find((shape) => shape.id === 's1');
+    expect(copy()?.box).toEqual([206, 206, 20, 20]);
+    wheel([206, 206], -100);
+    expect(copy()?.box).toEqual([206, 206, 22, 22]);
+    wheel([40, 40], -100);
+    expect(copy()?.box).toEqual([206, 206, 22, 22]);
+  });
+
+  it('pans with the right button and the Pan tool, and draws nothing then', async () => {
+    const { draft, click, drag, wheel } = await render(fakeServer([]));
+    await click('Wrong');
+    wheel([0, 0], -100);
+    drag([100, 100], [60, 60], 2);
+    expect(draft.draft()?.shapes).toHaveLength(1);
+    drag([100, 100], [120, 140]);
+    expect(draft.draft()?.shapes.at(-1)?.box).toEqual([120, 128, 16, 32]);
+    await click('Pan');
+    drag([30, 30], [90, 90]);
+    expect(draft.draft()?.shapes).toHaveLength(2);
+  });
 
   it("says Right for the model's shapes, and every crop is checked", async () => {
     const posted: CropAnswer[] = [];
@@ -134,5 +179,25 @@ describe('the Crops page', () => {
       ['right', 'c2.mp4', undefined],
     ]);
     expect(el.textContent).toContain('Every crop of this set is checked.');
+  });
+});
+
+describe('the Crops page state', () => {
+  afterEach(() => history.replaceState(null, '', '/'));
+
+  it('waits for the answers before it shows the first crop not checked', async () => {
+    history.replaceState(null, '', `/?page=crops&folder=${PAGE}&set=bars`);
+    TestBed.configureTestingModule({ providers: serverMode() });
+    const draft = TestBed.inject(CropDraft);
+    const http = TestBed.inject(HttpTestingController);
+    const reply = async (url: string, body: unknown) => {
+      TestBed.tick();
+      http.expectOne((req) => req.url === url).flush(body as object);
+      await new Promise((resolve) => setTimeout(resolve));
+      TestBed.tick();
+    };
+    await reply('/api/crops', [crop('c1'), crop('c2')]);
+    await reply('/api/crop_answers', { c1: OLD });
+    expect(draft.crop()?.id).toBe('c2');
   });
 });

@@ -1,9 +1,11 @@
 import { CropAnswer, CropEntry } from '../api';
 import {
   answerOf,
+  duplicated,
   inFront,
   joined,
   removed,
+  resizedAll,
   sceneOfAnswer,
   sceneOfFix,
   split,
@@ -76,7 +78,9 @@ describe('crop scenes', () => {
     expect(answer.scene?.shapes.find((shape) => shape.id === 's2')?.face).toEqual([3, -3]);
     expect(answer.scene?.occluders).toEqual(['s2']);
   });
+});
 
+describe('editing crop scenes', () => {
   it('joins shapes into one target, splits them, and gives them roles', () => {
     let scene = withDrawn(sceneOfFix(CROP, null), 'pill', [50, 80, 30, 30]);
     scene = withRole(joined(scene, ['m0', 's2']), ['m0'], 'head');
@@ -94,6 +98,33 @@ describe('crop scenes', () => {
     expect(scene.targets).toEqual([]);
     expect(scene.shapes.find((shape) => shape.id === 'm1')?.depth).toBe(1);
     expect(toggledOccluders(scene, ['m1']).occluders).toEqual([]);
+  });
+
+  it('duplicates shapes with their joins and occluders, as drawn shapes', () => {
+    let scene = joined(withDrawn(sceneOfFix(CROP, null), 'box', [20, 20, 10, 10]), ['m0', 's2']);
+    scene = withRole(scene, ['m0'], 'head');
+    scene = toggledOccluders(scene, ['m1']);
+    const copy = duplicated(scene, ['m0', 's2', 'm1'], [6, 6]);
+    expect(copy.copies).toEqual(['s3', 's4', 's5']);
+    const made = copy.scene.shapes.filter((shape) => copy.copies.includes(shape.id));
+    expect(made.map((shape) => [shape.kind, shape.box, shape.role, shape.model])).toEqual([
+      ['pill', [56, 56, 20, 20], 'head', null],
+      ['pill', [156, 156, 10, 30], null, null],
+      ['box', [26, 26, 10, 10], null, null],
+    ]);
+    expect(copy.scene.targets).toEqual([
+      ['m0', 's2'],
+      ['s3', 's5'],
+    ]);
+    expect(copy.scene.occluders).toEqual(['m1', 's4']);
+  });
+
+  it('resizes the selected shapes together, about the middle of the box round them', () => {
+    const scene = resizedAll(sceneOfFix(CROP, null), ['m0', 'm1'], 2);
+    expect(scene.shapes.map((shape) => shape.box)).toEqual([
+      [2.5, -2.5, 40, 40],
+      [202.5, 197.5, 20, 60],
+    ]);
   });
 
   it('crosses a model shape out and brings it back; a drawn one is deleted', () => {

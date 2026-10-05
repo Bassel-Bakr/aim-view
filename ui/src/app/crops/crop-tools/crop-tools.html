@@ -67,6 +67,7 @@
   <button
     type="button"
     appButton
+    class="tool-toggle"
     title="Not a target: something in front (a pillar, a health bar) that hides what is behind it"
     [attr.aria-pressed]="hiding()"
     [disabled]="!chosen().length"
@@ -83,9 +84,28 @@
   >
     Remove
   </button>
+  <button
+    type="button"
+    appButton
+    title="A copy of the selected shapes, a little down and to the right, to drag into place (Ctrl+D)"
+    [disabled]="!chosen().length"
+    (click)="draft.duplicate()"
+  >
+    Duplicate
+  </button>
+  <button
+    type="button"
+    appButton
+    class="tool-toggle"
+    title="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
+    [attr.aria-pressed]="draft.panning()"
+    (click)="togglePanning()"
+  >
+    Pan
+  </button>
 </div>
 <p class="tool-help">
   Drag on the crop to draw a {{ draft.kind() }}. Tap shapes to select them. Drag a corner to resize,
-  the round handle above to turn, a box's square handle to show its third face. Tap the wall for a
-  tiny target.
+  the round handle above to turn, a box's square handle to show its third face. The wheel over the
+  selected shapes resizes them, elsewhere it zooms. Tap the wall for a tiny target.
 </p>

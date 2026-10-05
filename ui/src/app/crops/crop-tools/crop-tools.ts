@@ -21,8 +21,8 @@ interface RoleChoice {
 
 /**
  * The tools of a fix, for the shapes selected on the stage: their kind (and the kind a drag draws), their role, joining
- * them into one target or splitting them, sending them in front or behind, making them hide what is behind them, and
- * removing them.
+ * them into one target or splitting them, sending them in front or behind, making them hide what is behind them,
+ * removing and duplicating them; and Pan, which makes a drag on the stage move the view.
  */
 @Component({
   selector: 'app-crop-tools',
@@ -93,5 +93,9 @@ export class CropTools {
   protected remove(): void {
     this.change(removed);
     this.draft.selection.set([]);
+  }
+
+  protected togglePanning(): void {
+    this.draft.panning.update((on) => !on);
   }
 }

@@ -13,6 +13,11 @@
     @apply text-xs text-muted;
   }
 
+  // Hides and Pan stay on until pressed again: pressed, they look it
+  .tool-toggle {
+    @apply aria-pressed:border-accent aria-pressed:bg-surface-3;
+  }
+
   .tool-help {
     @apply text-xs text-muted;
   }

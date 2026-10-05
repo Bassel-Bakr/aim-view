@@ -3,10 +3,12 @@
   #stage
   role="img"
   aria-label="The crop and its marks"
+  [attr.data-pan]="pans()"
   (pointerdown)="pressStage($event)"
+  (mousedown)="holdMiddle($event)"
   (pointermove)="movePointer($event)"
   (pointerup)="releasePointer($event)"
   (pointercancel)="releasePointer($event)"
-  (wheel)="zoomWheel($event)"
+  (wheel)="turnWheel($event)"
   (contextmenu)="$event.preventDefault()"
 ></canvas>
