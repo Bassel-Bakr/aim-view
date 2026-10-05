@@ -158,6 +158,19 @@ for k in 0 1 2 3; do python python/model/build_bars.py --part $k --parts 4 > $D/
 python python/model/crop_check/make_page.py $D/check_bars bars $D/data_bars --title "Health bars" --crossed-out "The model boxed this health bar (crossed out). Right if it is a bar and every target has a box."
 ```
 
+The user checked all 354 (every crossed-out box a bar; 127 boxes tightened, 6 false targets crossed out, 8 missed ones
+added). Their answers become the checked set. Then the recolored copies: KovaaK's lets the player pick the bar's color
+and hide the bot's name in it, but every recorded bar is orange or red. `recolor_bars.py` paints each train crop's
+fill 3 other colors (white and gray too) and hides the text in every other copy and in one more: 852 copies of the
+256 train crops, 84 of which have text. (`build_bars.py` took only colored fills when the set was built; it now takes
+any fill that is neither the wall's color nor the bot's, and gives the same 354 crops on these recordings.)
+
+```bash
+python python/model/crop_check/labels.py $D/check_bars $D/check_bars/answers/checks $D/data_bars/checked_phone.jsonl bars
+python python/model/checked_data.py --labels $D/data_bars/checked_phone.jsonl --out $D/data_bars_checked --tag chk_bars__
+python python/model/recolor_bars.py
+```
+
 ## 2. Train
 
 ```bash
@@ -288,6 +301,20 @@ python python/model/train.py python/model/configs/full_v7.json --data $D/data_v3
   --extra $D/data_robots_teacher_checked --repeat $D/repeat_full_v7.txt --times 3 --init $D/runs/full_v6/best.pt
 python python/model/export.py $D/runs/full_v7/best.pt
 python python/model/accept.py full_v7
+```
+
+full_v8: full_v7's recipe with the checked bars (`chk_bars__`, counted 3 times: `repeat_full_v8.txt` is
+`repeat_full_v7.txt` plus `chk_bars__ 3`) and their recolored copies (`chk_barcol`, once). It fails the contract's
+crosshair check; `full_v8_s2.json` and `full_v8_s3.json` are the same recipe with seeds 2 and 3:
+
+```bash
+python python/model/train.py python/model/configs/full_v8.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked --extra $D/data_mined_checked2 \
+  --extra $D/data_robots_checked --extra $D/data_crosshair_checked --extra $D/data_crosshair_turn_checked --extra $D/data_small_checked \
+  --extra $D/data_robots_teacher_checked --extra $D/data_bars_checked --extra $D/data_bars_recolored \
+  --repeat $D/repeat_full_v8.txt --times 3 --init $D/runs/full_v6/best.pt
+python python/model/export.py $D/runs/full_v8/best.pt
+python python/model/accept.py full_v8 --all
 ```
 
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
