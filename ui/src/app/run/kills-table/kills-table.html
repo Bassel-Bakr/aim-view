@@ -1,0 +1,72 @@
+<table class="flick-list-table">
+  <thead>
+    <tr>
+      @for (c of columns; track c.id) {
+        <th [title]="c.title" [attr.aria-sort]="sortOf(c.id)">
+          @if (c.sortValue) {
+            <button class="sort" type="button" (click)="sortBy(c.id)">
+              {{ c.label }}
+              <span class="sort-mark" aria-hidden="true">{{
+                sortOf(c.id) === 'ascending' ? '▲' : sortOf(c.id) === 'descending' ? '▼' : ''
+              }}</span>
+            </button>
+          } @else {
+            {{ c.label }}
+          }
+        </th>
+      }
+    </tr>
+  </thead>
+  <tbody>
+    @for (row of table.getRowModel().rows; track row.id) {
+      @if (row.getIsGrouped()) {
+        <tr class="group-row">
+          <th class="group-cell" scope="rowgroup" [attr.colspan]="columns.length">
+            <button
+              class="group-toggle"
+              type="button"
+              [attr.aria-expanded]="row.getIsExpanded()"
+              (click)="row.toggleExpanded()"
+            >
+              <span class="group-mark" aria-hidden="true">{{
+                row.getIsExpanded() ? '▾' : '▸'
+              }}</span>
+              {{ groupText(row) }}
+            </button>
+          </th>
+        </tr>
+      } @else {
+        @let r = row.original;
+        <tr
+          class="row"
+          [attr.data-n]="r.killNumber"
+          [attr.data-selected]="r.flick === selected() ? '' : null"
+          [attr.aria-current]="r.flick === selected() ? 'true' : null"
+        >
+          <td>
+            <button
+              class="play"
+              type="button"
+              [attr.aria-label]="'Play kill ' + r.killNumber"
+              (click)="playKill.emit(r.flick)"
+            >
+              {{ r.killNumber }}
+            </button>
+          </td>
+          <td>{{ r.distance }}</td>
+          <td>{{ r.ttk }}</td>
+          <td>{{ r.landed }}</td>
+          <td>{{ r.confirmation }}</td>
+          <td>{{ r.flickSpeed }}</td>
+          <td>{{ r.onTheMove }}</td>
+          <td [class.missed]="r.missed">{{ r.shots }}</td>
+          <td>{{ r.pathing }}</td>
+          <td class="steps" [title]="r.microSplit">{{ r.steps }}</td>
+          <td>{{ r.offCenter }}</td>
+          <td>{{ r.micros }}</td>
+          <td>{{ r.spawn }}</td>
+        </tr>
+      }
+    }
+  </tbody>
+</table>

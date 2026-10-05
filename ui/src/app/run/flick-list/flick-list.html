@@ -1,69 +1,19 @@
-<h3 class="head">Every flick <span class="hint">· click one to play it slowed down</span></h3>
-<div class="scroll" #scroll>
-  <table class="flick-list-table">
-    <thead>
-      <tr>
-        <th>Kill</th>
-        <th title="Distance to the target, and the way it was">Dist</th>
-        <th title="TTK: time to kill, in milliseconds">TTK ms</th>
-        <th
-          title="Flick landed: on target, an underflick (the degrees still to go) or an overflick (the degrees past the far edge)"
-        >
-          Landed
-        </th>
-        <th title="Confirmation: still on the target before the click, in milliseconds">Conf ms</th>
-        <th title="Flick speed: the highest speed in the flick, in degrees a second">Speed °/s</th>
-        <th title="Click on the move: the crosshair's speed at the click, in degrees a second">
-          On move °/s
-        </th>
-        <th>Shots</th>
-        <th title="Pathing: what picking this target cost against the fastest pick">Pathing</th>
-        <th
-          title="Reaction, flick (the main movement) and micro (from the flick's end onto the target, then settling; each row splits it on hover)"
-        >
-          React · Flick · Micro ms
-        </th>
-        <th
-          title="Click off center: how far the crosshair was from the target's center at the click"
-        >
-          Off ctr
-        </th>
-        <th title="Micros: separate movements after the flick">Micros</th>
-        <th title="Spawn: the target appeared after the flick began">Spawn</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (r of rows(); track r.killNumber) {
-        <tr
-          class="row"
-          [attr.data-n]="r.killNumber"
-          [attr.data-selected]="r.flick === focus.selected() ? '' : null"
-          [attr.aria-current]="r.flick === focus.selected() ? 'true' : null"
-        >
-          <td>
-            <button
-              class="play"
-              type="button"
-              [attr.aria-label]="'Play kill ' + r.killNumber"
-              (click)="focus.play(r.flick)"
-            >
-              {{ r.killNumber }}
-            </button>
-          </td>
-          <td>{{ r.distance }}</td>
-          <td>{{ r.ttk }}</td>
-          <td>{{ r.landed }}</td>
-          <td>{{ r.confirmation }}</td>
-          <td>{{ r.flickSpeed }}</td>
-          <td>{{ r.onTheMove }}</td>
-          <td [class.missed]="r.missed">{{ r.shots }}</td>
-          <td>{{ r.pathing }}</td>
-          <td class="steps" [title]="r.microSplit">{{ r.steps }}</td>
-          <td>{{ r.offCenter }}</td>
-          <td>{{ r.micros }}</td>
-          <td>{{ r.spawn }}</td>
-        </tr>
+<div class="head">
+  <h3 class="title">Every flick <span class="hint">· click one to play it slowed down</span></h3>
+  <label class="group-by">
+    Group by
+    <select class="group-select" #grouping (change)="groupBy(grouping.value)">
+      @for (g of groupings; track g.label) {
+        <option [value]="g.key ?? ''" [selected]="g.key === grouped()">{{ g.label }}</option>
       }
-    </tbody>
-  </table>
+    </select>
+  </label>
+</div>
+<div class="scroll" #scroll>
+  <app-kills-table
+    [rows]="rows()"
+    [selected]="focus.selected()"
+    [groupBy]="grouped()"
+    (playKill)="focus.play($event)"
+  />
 </div>
