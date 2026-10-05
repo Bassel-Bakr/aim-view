@@ -201,6 +201,15 @@ describe('the Crops page state', () => {
     await reply('/api/crop_answers', { c1: OLD });
     expect(draft.crop()?.id).toBe('c2');
   });
+
+  it('opens the crop a link names, checked or not, and keeps the one on show in the address', async () => {
+    history.replaceState(null, '', `/?page=crops&folder=${PAGE}&set=bars&crop=c1`);
+    const { draft } = await render(fakeServer([]));
+    expect(draft.crop()?.id).toBe('c1');
+    draft.go(1);
+    TestBed.tick();
+    expect(new URLSearchParams(location.search).get('crop')).toBe('c2');
+  });
 });
 
 describe("the Crops page's perfect circles and squares", () => {

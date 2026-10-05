@@ -40,6 +40,8 @@ export class CropDraft {
   private readonly core = inject(CoreModule);
   readonly folder = signal<string | undefined>(queryValue('folder') ?? undefined);
   readonly set = signal<string | undefined>(queryValue('set') ?? undefined);
+  /** The crop a link asked for (?crop=<id>), shown when its set's crops arrive, instead of the first unchecked. */
+  private wanted = queryValue('crop');
   readonly pages = this.sets.pages();
   readonly crops = this.sets.crops(this.folder, this.set);
   private readonly loaded = this.sets.answers(this.folder, this.set);
@@ -108,6 +110,7 @@ export class CropDraft {
         folder: this.folder() ?? null,
         set: this.set() ?? null,
         order: this.skipChecked() ? null : 'all',
+        crop: this.crop()?.id ?? null,
       }),
     );
     effect(() => this.openFirst());
@@ -130,10 +133,12 @@ export class CropDraft {
     this.set.set(first.set.set);
   }
 
-  /** A set's crops arrived: the first not yet checked shows. */
+  /** A set's crops arrived: the crop a link asked for shows, else the first not yet checked. */
   private toFirstUnchecked(list: readonly CropEntry[]): void {
+    const asked = list.findIndex((crop) => crop.id === this.wanted);
     const first = list.findIndex((crop) => !(crop.id in this.answers()));
-    this.index.set(first >= 0 ? first : 0);
+    if (list.length) this.wanted = null;
+    this.index.set(asked >= 0 ? asked : Math.max(first, 0));
     this.mode.set('view');
   }
 
