@@ -536,6 +536,51 @@ on the same tracks, full_v6 matches 55 of 55 and full_v3's numbers do not change
 
 Tracking is the one step back (within its limit). The gate's reports: `test_out/baselines/full_v6/`.
 
+## full_v7: the 2026-10-05 labels (not the default)
+
+full_v6 fine-tuned with the four sets checked on 2026-10-05 (REPRODUCE.md step 1), each counted 3 times: the
+crosshair's box (59 crops), the crosshair while the view turns (54), small targets (46), and Grounding DINO's robot
+boxes checked by eye (104). 73,588 training crops; val F1 0.9443, 0.9452 (best.pt, epoch 2), 0.9450, 0.9443.
+
+It passes the gate against full_v6, but its video-alone numbers are lower, and it is not the default:
+
+| Check | full_v7 | full_v6 | Allowed |
+| --- | --- | --- | --- |
+| Static kills, flicks (854) | 854, 849 | 854, 849 | 0, 4.6 |
+| Dynamic kills, flicks (797) | 796, 789 | 796, 788 | 0, 6.2 |
+| Switching kills, flicks (404) | 404, 398 | 404, 396 | 0, 5.8 |
+| Tracking gap: mean size, mean | 0.112, -0.074 | 0.141, -0.092 | 0.064, 0.091 |
+| Report (4 static runs) kills, flicks (496) | 496, 494 | 496, 494 | 0, 2.9 |
+| Video alone, all: recall, precision | 0.9420, 0.9585 | 0.9463, 0.9626 | 0.0066, 0.0055 |
+| Video alone, switching: recall | 0.8921 | 0.9147 | 0.0235 |
+
+The biggest loss is Pasu Switch Wide: 35 of 46 kills from the video alone (full_v6 46). The cause is bots' health
+bars. The model boxes a bar's orange fill at the edge of its threshold (scores 0.30 to 0.40). full_v7 does it more
+often: 169 boxes there against full_v6's 64. A bar's boxes make short tracks near the crosshair, which pull the
+run's typical target size down (39.5 px against 128), and with it how far from the crosshair a kill may land (0.65
+degrees against 0.97). The kills just outside that reach are lost.
+
+No one set causes it. Four more fine-tunes of full_v6, one without all four new sets (full_v6's own data again) and
+three each without one, box 98 to 131 bars on Pasu Switch Wide (boxes above a bigger box: almost all bars there), and
+lose up to 8 kills on 1wall 2targets xsmall valorant, where full_v6 finds 42 of 66. It is the run-to-run spread of a
+fine-tune on a score that sits at the threshold:
+
+| Model (video alone) | xsmall valorant | Pasu Switch Wide | VT Penta Bounce | Flow Fix Slow Start |
+| --- | --- | --- | --- | --- |
+| full_v6 | 42 of 66, 20 false | 46 of 46, 0 false | 54 of 58, 7 false | 123 of 125, 4 false |
+| full_v7 | 35, 17 false | 35, 1 false | 53, 10 false | 120, 7 false |
+| full_v6's data again | 36, 19 false | 46, 0 false | 54, 7 false | 121, 8 false |
+| full_v7 without the crosshair sets | 42, 19 false | 46, 0 false | 54, 7 false | 122, 4 false |
+| full_v7 without the teacher's robots | 34, 21 false | 46, 0 false | 53, 7 false | 124, 4 false |
+| full_v7 without the small targets | 36, 18 false | 46, 0 false | 53, 8 false | 121, 8 false |
+
+Two fixes in the matcher were tried and left out. Counting only long tracks for the typical size gave Pasu Switch
+Wide back but cost full_v6 precision (0.0009). Dropping a box that sits above a bigger one, under
+half its area, gave full_v7 all 46 Pasu kills but dropped real targets elsewhere: the head of mccoyfrozentrack's
+two-sphere bots (full_v6: 9 of 19 kills to 2) and a target beside another (full_v3's Smoothbot flicks 47 to 29). A
+bar's box differs from those by its pixels (orange, none of the bot's color: `python/model/build_bars.py`), so the
+fix belongs in the detector: crops of bars the model boxes, the box crossed out.
+
 ## Current best model
 
 **full_v6** (2026-10-05, the section above), threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX. Static,

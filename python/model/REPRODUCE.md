@@ -125,6 +125,39 @@ python python/model/crop_check/labels.py test_out/vod_model/check_robots test_ou
 python python/model/checked_data.py --labels test_out/vod_model/hand_robots/checked_phone.jsonl --out test_out/vod_model/data_robots_checked --tag chk_robot_ --leave-out train/Switching_Humanoid_-_120529.50_-_2026.10_a3b9a0_002.npz,train/OW_Mirror_-_2591.96_-_2026.10.05-02.51.4_f649f4_006.npz
 ```
 
+full_v7's four sets (2026-10-05), checked on the phone page: the crosshair's box while the view is still
+(`hand_crosshair2`, 71 crops, the robot page's Crosshair tab), the crosshair while the view turns
+(`hand_crosshair_targeted`, 63, its Crosshair, turning tab), small targets (`hand_small`, 46, the teacher page's
+Small tab), and Grounding DINO's robot boxes (`teacher_robots`, 104: GDINO base, the prompt "humanoid robot .
+person ." at 0.5, checked on the teacher page, `check_teacher/`). The crops were made by the session's scripts, kept
+in `test_out/vod_model/scripts_2026-10-05/` (`crosshair_crops.py`, `crosshair_turning.py`, `teacher_crops.py`; the
+small targets by `hand_crops.py`). Crops of the scenarios in `data_v3`'s val and test splits are left out (Animicro
+Euphoric Basic, 12 crops; 1w4ts Voltaic, 9), as `leave_out_full_v7.json` lists them:
+
+```bash
+D=test_out/vod_model
+python python/model/crop_check/labels.py $D/check_robots $D/check_robots/answers_crosshair/checks $D/hand_crosshair2/checked_phone.jsonl crosshair
+python python/model/crop_check/labels.py $D/check_robots $D/check_robots/answers_crosshair_turning/checks $D/hand_crosshair_targeted/checked_phone.jsonl crosshair_turning
+python python/model/crop_check/labels.py $D/check_teacher $D/check_teacher/answers_small/checks $D/hand_small/checked_phone.jsonl small
+python python/model/crop_check/labels.py $D/check_teacher $D/check_teacher/answers/checks $D/teacher_robots/checked_phone.jsonl robots_gdino
+leave() { python -c "import json, sys; print(','.join(json.load(open('$D/leave_out_full_v7.json'))[sys.argv[1]]))" $1; }
+python python/model/checked_data.py --labels $D/hand_crosshair2/checked_phone.jsonl --out $D/data_crosshair_checked --tag chk_cross_ --leave-out $(leave hand_crosshair2)
+python python/model/checked_data.py --labels $D/hand_crosshair_targeted/checked_phone.jsonl --out $D/data_crosshair_turn_checked --tag chk_cturn_ --leave-out $(leave hand_crosshair_targeted)
+python python/model/checked_data.py --labels $D/hand_small/checked_phone.jsonl --out $D/data_small_checked --tag chk_small_
+python python/model/checked_data.py --labels $D/teacher_robots/checked_phone.jsonl --out $D/data_robots_teacher_checked --tag chk_rteach
+```
+
+The health-bar set (2026-10-05): bots' health bars the model boxes, the box crossed out (`build_bars.py`'s docstring
+has the rules). It reads build_mined.py's reviews (full_v3's tracks of 215 recordings, the checks' runs left out) and
+boxes their frames again with full_v7, the model that boxes bars most. The four parts run at once, and give the same
+crops as one run: 354 crops of 63 recordings (256 train, 59 val, 39 test). Then the check page
+(its Health bars tab, `check_bars/`):
+
+```bash
+for k in 0 1 2 3; do python python/model/build_bars.py --part $k --parts 4 > $D/build_bars_$k.log 2>&1 & done; wait
+python python/model/crop_check/make_page.py $D/check_bars bars $D/data_bars --title "Health bars" --crossed-out "The model boxed this health bar (crossed out). Right if it is a bar and every target has a box."
+```
+
 ## 2. Train
 
 ```bash
@@ -242,6 +275,19 @@ python python/model/train.py python/model/configs/full_v6.json --data $D/data_v3
   --extra $D/data_robots_checked --repeat $D/repeat_full_v6.txt --times 3 --init $D/runs/full_v3/best.pt
 python python/model/export.py $D/runs/full_v6/best.pt
 python python/model/accept.py full_v6
+```
+
+full_v7: full_v6 fine-tuned with full_v7's four sets (step 1), each counted 3 times (`repeat_full_v7.txt` is
+`repeat_full_v6.txt` plus `chk_cross_ 3`, `chk_cturn_ 3`, `chk_small_ 3` and `chk_rteach 3`). It passes the gate but
+is not the default (MODEL_STATUS.md):
+
+```bash
+python python/model/train.py python/model/configs/full_v7.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked --extra $D/data_mined_checked2 \
+  --extra $D/data_robots_checked --extra $D/data_crosshair_checked --extra $D/data_crosshair_turn_checked --extra $D/data_small_checked \
+  --extra $D/data_robots_teacher_checked --repeat $D/repeat_full_v7.txt --times 3 --init $D/runs/full_v6/best.pt
+python python/model/export.py $D/runs/full_v7/best.pt
+python python/model/accept.py full_v7
 ```
 
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
