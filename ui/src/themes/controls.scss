@@ -39,17 +39,17 @@
 
   .card-label,
   .card-title {
-    @apply block truncate text-xs font-strong tracking-wide text-muted uppercase;
+    @apply block text-xs font-strong tracking-wide text-balance wrap-break-word text-muted uppercase;
   }
 
   .card-value,
   .card-reading {
-    @apply block truncate font-display text-kpi leading-tight font-bold tabular-nums;
+    @apply block font-display text-kpi leading-tight font-bold text-balance wrap-break-word tabular-nums;
   }
 
   // An empty line keeps its height, so every card is as tall as the others
   .card-detail {
-    @apply block min-h-lh truncate text-sm text-muted;
+    @apply block min-h-lh text-sm text-balance wrap-break-word text-muted;
   }
 
   .card-why {

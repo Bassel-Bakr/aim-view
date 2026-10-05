@@ -22,15 +22,15 @@
   }
 
   .tile-label {
-    @apply truncate text-xs font-strong tracking-wide text-muted uppercase;
+    @apply text-xs font-strong tracking-wide text-balance wrap-break-word text-muted uppercase;
   }
 
   .tile-value {
-    @apply truncate font-display text-kpi leading-tight font-bold tabular-nums;
+    @apply font-display text-kpi leading-tight font-bold text-balance wrap-break-word tabular-nums;
   }
 
   // An empty note keeps its line, so every tile is as tall as the others
   .tile-note {
-    @apply min-h-lh truncate text-sm text-muted;
+    @apply min-h-lh text-sm text-balance wrap-break-word text-muted;
   }
 }
