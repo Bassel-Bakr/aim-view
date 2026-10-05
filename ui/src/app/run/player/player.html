@@ -5,12 +5,7 @@
 <!-- In full screen these fill the screen, and the panels come after them -->
 <div class="view">
   <div class="frame">
-    <div
-      class="screen"
-      [style.--screen-ratio]="aspect()"
-      (mousemove)="pointAt($event)"
-      (mouseleave)="stopPointing()"
-    >
+    <div class="screen" #screenBox [style.--screen-ratio]="aspect()">
       <video
         class="video"
         #video

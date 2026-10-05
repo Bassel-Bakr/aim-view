@@ -116,6 +116,7 @@ export class Player {
   private readonly faint = inject(FaintCutoff);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly screenBox = viewChild.required<ElementRef<HTMLElement>>('screenBox');
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('overlay');
   private readonly clockText = viewChild.required<ElementRef<HTMLElement>>('clock');
@@ -161,7 +162,11 @@ export class Player {
     });
   }
 
-  /** Starts following the video's frames: the overlay, the clock and the seek bar redraw on each one. */
+  /**
+   * Starts following the video's frames (the overlay, the clock and the seek bar redraw on each one) and the mouse over
+   * it. The mouse is listened to here, not in the template: a template's listener runs change detection on every move,
+   * where only a new track under the mouse needs it (its signal).
+   */
   private follow(): void {
     const video = this.video().nativeElement;
     this.playback.attach(video);
@@ -169,10 +174,17 @@ export class Player {
     const cancel = everyFrame(video, (seconds) => this.playback.frame(seconds));
     const resize = new ResizeObserver(() => this.draw(this.playback.time));
     resize.observe(this.canvas().nativeElement);
+    const box = this.screenBox().nativeElement;
+    const point = (event: MouseEvent) => this.pointAt(event);
+    const leave = () => this.stopPointing();
+    box.addEventListener('mousemove', point);
+    box.addEventListener('mouseleave', leave);
     this.destroyRef.onDestroy(() => {
       cancel();
       resize.disconnect();
       stop();
+      box.removeEventListener('mousemove', point);
+      box.removeEventListener('mouseleave', leave);
       this.playback.attach(null);
     });
   }
@@ -235,7 +247,7 @@ export class Player {
   }
 
   /** The track under the mouse, with its scores, for the cut-off. */
-  protected pointAt(event: MouseEvent): void {
+  private pointAt(event: MouseEvent): void {
     const report = this.report();
     const all = this.faint.allTracks();
     const faintScores = this.faint.scores();
@@ -255,7 +267,7 @@ export class Player {
     if ((hover?.text ?? null) !== (this.faint.hover()?.text ?? null)) this.faint.hover.set(hover);
   }
 
-  protected stopPointing(): void {
+  private stopPointing(): void {
     if (this.faint.hover()) this.faint.hover.set(null);
   }
 

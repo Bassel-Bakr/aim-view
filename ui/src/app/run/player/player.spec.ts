@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { afterEveryRender, Component, EnvironmentInjector } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ClickReport, TrackReport } from '../../api';
 import { answer, serverMode } from '../../fake-api';
@@ -188,5 +188,22 @@ describe('Player filling the window', () => {
     expect(filling()).toBe(false);
     expect(escape.defaultPrevented).toBe(true);
     expect(draft.open()).toBe(true);
+  });
+});
+
+describe('Player hover', () => {
+  it('runs no change detection while the mouse moves over the video', async () => {
+    const { player, settle } = await render();
+    let renders = 0;
+    afterEveryRender(() => (renders += 1), { injector: TestBed.inject(EnvironmentInjector) });
+    await settle();
+    const before = renders;
+    const screen = player.querySelector('.screen') as HTMLElement;
+    for (const x of [10, 20, 30]) {
+      screen.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 10, bubbles: true }));
+    }
+    screen.dispatchEvent(new MouseEvent('mouseleave'));
+    await settle();
+    expect(renders).toBe(before);
   });
 });
