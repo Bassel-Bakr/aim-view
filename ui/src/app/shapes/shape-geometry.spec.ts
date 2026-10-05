@@ -58,15 +58,18 @@ describe('shape geometry', () => {
     expect(evened(shape({})).box).toEqual([50, 50, 15, 15]);
   });
 
-  it('turns toward the finger, moves, and gives a box its third face', () => {
+  it('turns toward the finger, moves, and gives a box or a pill its third face', () => {
     expect(turned(shape({}), [60, 50]).angle).toBe(90);
     expect(turned(shape({}), [50, 40]).angle).toBe(0);
     expect(moved(shape({}), [3, -2]).box).toEqual([53, 48, 20, 10]);
     const cube = faced(shape({ kind: 'box' }), [56, 44]);
     expect(cube.face).toEqual([6, -6]);
     expect(faceHandle(cube, 10)).toEqual([56, 44]);
-    expect(faceHandle(shape({}), 10)).toBeNull();
+    expect(faceHandle(shape({}), 10)).toEqual([70, 35]);
     expect(onShape(cube, [65, 39], 0)).toBe(true);
+    const deepPill = faced(shape({}), [70, 50]);
+    expect(onShape(deepPill, [79, 50], 0) && !onShape(shape({}), [79, 50], 0)).toBe(true);
+    expect(boxAround([deepPill])).toEqual([60, 50, 40, 10]);
   });
 
   it('scales a shape about a point, its face too, never below the smallest side', () => {

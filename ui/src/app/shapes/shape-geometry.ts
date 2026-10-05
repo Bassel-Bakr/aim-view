@@ -48,20 +48,20 @@ export function corners(shape: Shape): CropPoint[] {
   ];
 }
 
-/** A box's far corners: its corners moved by its third face; none for a pill or a flat box. */
+/** A shape's far corners: its frame's corners moved by its third face; none for a flat shape. */
 export function farCorners(shape: Shape): CropPoint[] {
-  const face = shape.kind === 'box' ? shape.face : null;
+  const face = shape.face;
   return face ? corners(shape).map(([x, y]) => [x + face[0], y + face[1]]) : [];
 }
 
-/** Whether a point is on a shape (its frame, or a box's far face), `slack` pixels round it counting too. */
+/** Whether a point is on a shape (its frame, or its far end's), `slack` pixels round it counting too. */
 export function onShape(shape: Shape, point: CropPoint, slack: number): boolean {
   const [, , width, height] = shape.box;
   const inFrame = (at: CropPoint) => {
     const [along, across] = toOwn(shape, at);
     return Math.abs(along) <= width / 2 + slack && Math.abs(across) <= height / 2 + slack;
   };
-  const face = shape.kind === 'box' ? shape.face : null;
+  const face = shape.face;
   return inFrame(point) || (face !== null && inFrame([point[0] - face[0], point[1] - face[1]]));
 }
 
@@ -70,9 +70,8 @@ export function turnHandle(shape: Shape, reach: number): CropPoint {
   return toCrop(shape, [0, -shape.box[3] / 2 - reach]);
 }
 
-/** Where a box's face handle is: its far face's middle, or beside its top right corner before it has one. */
-export function faceHandle(shape: Shape, reach: number): CropPoint | null {
-  if (shape.kind !== 'box') return null;
+/** Where a shape's face handle is: its far end's middle, or beside its top right corner before it has one. */
+export function faceHandle(shape: Shape, reach: number): CropPoint {
   const [cx, cy, width, height] = shape.box;
   if (shape.face) return [cx + shape.face[0], cy + shape.face[1]];
   return toCrop(shape, [width / 2 + reach, -height / 2 - reach]);
@@ -124,7 +123,7 @@ export function turned(shape: Shape, [x, y]: CropPoint): Shape {
   return { ...shape, angle: Math.round(((degrees % 360) + 360) % 360) };
 }
 
-/** A box given a third face whose middle is at a point. */
+/** A shape given a third face whose middle is at a point. */
 export function faced(shape: Shape, [x, y]: CropPoint): Shape {
   const [cx, cy] = shape.box;
   return { ...shape, face: [x - cx, y - cy] };
@@ -154,19 +153,53 @@ export function boxAround(shapes: readonly Shape[]): CropBox {
   return [(x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0];
 }
 
+/** A pill's turned round-ended frame as a path, moved by an offset (its far end's: its third face). */
+function tracePill(context: CanvasRenderingContext2D, shape: Shape, [dx, dy]: FaceOffset): void {
+  const [cx, cy, width, height] = shape.box;
+  context.save();
+  context.translate(cx + dx, cy + dy);
+  context.rotate(radians(shape.angle));
+  context.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
+  context.restore();
+}
+
+/**
+ * The two lines joining a pill to its far end: its edges along the face, where the line through each side of the pill
+ * parallel to the face touches it.
+ */
+function pillSides(shape: Shape, [dx, dy]: FaceOffset): CropPoint[] {
+  const [, , width, height] = shape.box;
+  const radius = Math.min(width, height) / 2;
+  const half = Math.max(width, height) / 2 - radius;
+  const ends = [-half, half].map((along) =>
+    toCrop(shape, width >= height ? [along, 0] : [0, along]),
+  );
+  const length = Math.hypot(dx, dy) || 1;
+  const [nx, ny] = [-dy / length, dx / length];
+  const reach = ([x, y]: CropPoint) => x * nx + y * ny;
+  const [low, high] = reach(ends[0]) <= reach(ends[1]) ? ends : [ends[1], ends[0]];
+  return [
+    [high[0] + radius * nx, high[1] + radius * ny],
+    [low[0] - radius * nx, low[1] - radius * ny],
+  ];
+}
+
 /**
  * A shape's outline as a path, the context drawing in crop pixels: a pill as its turned round-ended frame, a box as
- * its turned frame, and with a third face its far face and the edges joining them (a cube's wireframe).
+ * its turned frame, and with a third face its far end and the edges joining them (a cube's or a cylinder's
+ * wireframe).
  */
 export function tracePath(context: CanvasRenderingContext2D, shape: Shape): void {
   context.beginPath();
   if (shape.kind === 'pill') {
-    const [cx, cy, width, height] = shape.box;
-    context.save();
-    context.translate(cx, cy);
-    context.rotate(radians(shape.angle));
-    context.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
-    context.restore();
+    tracePill(context, shape, [0, 0]);
+    const face = shape.face;
+    if (!face) return;
+    tracePill(context, shape, face);
+    for (const [x, y] of pillSides(shape, face)) {
+      context.moveTo(x, y);
+      context.lineTo(x + face[0], y + face[1]);
+    }
     return;
   }
   const near = corners(shape);

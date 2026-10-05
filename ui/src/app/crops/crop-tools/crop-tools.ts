@@ -15,6 +15,20 @@ import {
   withRole,
 } from '../crop-scene';
 
+/** A shape button: the kind it gives, flat or 3D (with a third face), and its words. */
+interface ShapeChoice {
+  kind: ShapeKind;
+  deep: boolean;
+  name: string;
+}
+
+const SHAPES: readonly ShapeChoice[] = [
+  { kind: 'pill', deep: false, name: 'Pill' },
+  { kind: 'box', deep: false, name: 'Box' },
+  { kind: 'pill', deep: true, name: '3D pill' },
+  { kind: 'box', deep: true, name: '3D box' },
+];
+
 /** A role button: the role it gives (null: none) and its words. */
 interface RoleChoice {
   role: ShapeRole | null;
@@ -34,8 +48,7 @@ interface RoleChoice {
 })
 export class CropTools {
   protected readonly draft = inject(CropDraft);
-  protected readonly kinds: readonly ShapeKind[] = ['pill', 'box'];
-  protected readonly kindNames: Readonly<Record<ShapeKind, string>> = { pill: 'Pill', box: 'Box' };
+  protected readonly shapes = SHAPES;
   protected readonly roles: readonly RoleChoice[] = [
     { role: null, name: 'None' },
     { role: 'head', name: 'Head' },
@@ -45,11 +58,13 @@ export class CropTools {
     const ids = this.draft.selection();
     return (this.draft.draft()?.shapes ?? []).filter((shape) => ids.includes(shape.id));
   });
-  /** The kind pressed: the selected shapes' when they share one, else the kind a drag draws. */
-  protected readonly kind = computed<ShapeKind>(() => {
-    const kinds = new Set(this.chosen().map((shape) => shape.kind));
-    const [only] = kinds;
-    return kinds.size === 1 ? only : this.draft.kind();
+  /** The shape a drag draws. */
+  protected readonly drawing = computed(() => shapeName(this.draft.kind(), this.draft.deep()));
+  /** The shape pressed: the selected shapes' when they share one, else the one a drag draws. */
+  protected readonly pressed = computed(() => {
+    const names = new Set(this.chosen().map((shape) => shapeName(shape.kind, shape.face !== null)));
+    const [only] = names;
+    return names.size === 1 ? only : this.drawing();
   });
   /** The role the selected shapes share; undefined when they differ or none is selected. */
   protected readonly role = computed<ShapeRole | null | undefined>(() => {
@@ -67,9 +82,10 @@ export class CropTools {
     if (ids.length) this.draft.edit((scene) => change(scene, ids));
   }
 
-  protected useKind(kind: ShapeKind): void {
-    this.draft.kind.set(kind);
-    this.change((scene, ids) => withKind(scene, ids, kind));
+  protected useShape(choice: ShapeChoice): void {
+    this.draft.kind.set(choice.kind);
+    this.draft.deep.set(choice.deep);
+    this.change((scene, ids) => withKind(scene, ids, choice.kind, choice.deep));
   }
 
   protected useRole(role: ShapeRole | null): void {
@@ -104,4 +120,8 @@ export class CropTools {
   protected togglePanning(): void {
     this.draft.panning.update((on) => !on);
   }
+}
+
+function shapeName(kind: ShapeKind, deep: boolean): string {
+  return SHAPES.find((choice) => choice.kind === kind && choice.deep === deep)?.name ?? kind;
 }

@@ -1,6 +1,7 @@
 //! The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets are 3D). A pill
-//! (a sphere is a pill with equal sides) and a box (a square or a cube; a cube seen at an angle gets a third face, so
-//! its outline is a hexagon), each turned to any angle. Shapes are joined into targets (a bot's head and body), ordered
+//! (a sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a
+//! third face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep
+//! pill's the pill swept back to its far end. Shapes are joined into targets (a bot's head and body), ordered
 //! front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them
 //! (occluders: the crosshair, a pillar, an overlay).
 //!
@@ -160,8 +161,18 @@ fn pill_parts(shape: &Shape) -> (f64, f64) {
     (radius, shape.frame[2].max(shape.frame[3]) / 2.0 - radius)
 }
 
-/// A pill's outline: two half circles joined, ARC_POINTS a half circle.
+/// A pill's outline: two half circles joined, ARC_POINTS a half circle; with a third face, the hull of the pill and
+/// the pill moved by the face.
 fn pill_outline(shape: &Shape) -> Vec<[f64; 2]> {
+    let near = flat_pill_outline(shape);
+    match shape.face {
+        None => near,
+        Some([dx, dy]) => convex_hull(near.iter().flat_map(|point| [*point, [point[0] + dx, point[1] + dy]]).collect()),
+    }
+}
+
+/// A pill's outline without its third face.
+fn flat_pill_outline(shape: &Shape) -> Vec<[f64; 2]> {
     let (radius, half) = pill_parts(shape);
     let wide = shape.frame[2] >= shape.frame[3];
     let mut points = Vec::with_capacity(2 * (ARC_POINTS + 1));
@@ -199,11 +210,44 @@ fn in_convex(polygon: &[[f64; 2]], x: f64, y: f64) -> bool {
     polygon.len() >= 3
 }
 
-/// Whether a crop point is inside a shape: a pill holds the points within its radius of its middle segment; a box
-/// those in its turned rectangle, or in its outline when it has a third face.
+/// A pill's middle segment on the crop, its two ends.
+fn pill_segment(shape: &Shape) -> [[f64; 2]; 2] {
+    let (_, half) = pill_parts(shape);
+    let end = |sign: f64| {
+        if shape.frame[2] >= shape.frame[3] { to_crop(shape, sign * half, 0.0) } else { to_crop(shape, 0.0, sign * half) }
+    };
+    [end(-1.0), end(1.0)]
+}
+
+/// The distance from a point to a segment, in crop pixels.
+fn segment_distance([x, y]: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let (along_x, along_y) = (b[0] - a[0], b[1] - a[1]);
+    let length_sq = along_x * along_x + along_y * along_y;
+    let share =
+        if length_sq > 0.0 { (((x - a[0]) * along_x + (y - a[1]) * along_y) / length_sq).clamp(0.0, 1.0) } else { 0.0 };
+    (x - a[0] - share * along_x).hypot(y - a[1] - share * along_y)
+}
+
+/// Whether a crop point is in a pill with a third face: within its radius of the parallelogram its middle segment
+/// sweeps on the way to its far end.
+fn in_deep_pill(shape: &Shape, [dx, dy]: [f64; 2], x: f64, y: f64) -> bool {
+    let (radius, _) = pill_parts(shape);
+    let [a, b] = pill_segment(shape);
+    let sweep = [a, b, [b[0] + dx, b[1] + dy], [a[0] + dx, a[1] + dy]];
+    let area = (b[0] - a[0]) * dy - (b[1] - a[1]) * dx;
+    if area.abs() > f64::EPSILON && in_convex(&sweep, x, y) {
+        return true;
+    }
+    (0..sweep.len()).any(|i| segment_distance([x, y], sweep[i], sweep[(i + 1) % sweep.len()]) <= radius)
+}
+
+/// Whether a crop point is inside a shape: a pill holds the points within its radius of its middle segment (of the
+/// band it sweeps to its far end, with a third face); a box those in its turned rectangle, or in its outline when it
+/// has a third face.
 pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
     match (shape.kind, shape.face) {
-        (ShapeKind::Pill, _) => {
+        (ShapeKind::Pill, Some(face)) => in_deep_pill(shape, face, x, y),
+        (ShapeKind::Pill, None) => {
             let (radius, half) = pill_parts(shape);
             let (along, across) = to_own(shape, x, y);
             let (long, short) = if shape.frame[2] >= shape.frame[3] { (along, across) } else { (across, along) };
@@ -458,6 +502,21 @@ mod tests {
         assert_eq!(outline(&cube).len(), 6, "a cube seen at an angle is a hexagon");
         let turned = Shape { angle: 45.0, ..square };
         assert!(contains(&turned, 50.0, 50.0 - 13.0) && !contains(&turned, 41.0, 41.0));
+    }
+
+    #[test]
+    fn a_pill_with_a_third_face_covers_the_band_to_its_far_end() {
+        let pill = shape("p", ShapeKind::Pill, [40.0, 64.0, 10.0, 30.0], 0);
+        let deep = Shape { face: Some([20.0, -10.0]), ..pill.clone() };
+        assert!(contains(&deep, 50.0, 59.0) && !contains(&pill, 50.0, 59.0), "the band between the ends");
+        assert!(contains(&deep, 60.0, 54.0 - 14.0), "the far end's round top");
+        assert!(!contains(&deep, 60.0, 54.0 - 16.0) && !contains(&deep, 40.0, 64.0 + 16.0), "past either end");
+        assert!(!contains(&deep, 36.0, 44.0), "the corner the sweep leaves out");
+        let ball = Shape { face: Some([10.0, 0.0]), ..shape("s", ShapeKind::Pill, [40.0, 40.0, 10.0, 10.0], 0) };
+        assert!(contains(&ball, 54.9, 40.0) && !contains(&ball, 40.0, 45.5), "a sphere swept is a pill");
+        let [x0, y0, x1, y1] = bounds(&deep);
+        assert!((x0 - 35.0).abs() < 1e-9 && (x1 - 65.0).abs() < 1e-9, "{x0} {x1}");
+        assert!((y0 - 39.0).abs() < 1e-9 && (y1 - 79.0).abs() < 1e-9, "{y0} {y1}");
     }
 
     #[test]

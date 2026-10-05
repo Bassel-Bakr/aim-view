@@ -123,10 +123,24 @@ export function freshId(scene: DraftScene): string {
   return `s${next}`;
 }
 
-/** The scene with a new shape on top of the others. */
-export function withShape(scene: DraftScene, kind: ShapeKind, box: CropBox): DraftScene {
+/** How far back a new 3D shape's far end sits: this share of its frame, up and to the right (its top and side show). */
+const DEPTH_SHARE = 0.25;
+
+/** A third face for a shape seen at an angle: its far end up and to the right by a share of its frame. */
+export function defaultFace(box: CropBox): FaceOffset {
+  return [tenth(DEPTH_SHARE * box[2]), tenth(-DEPTH_SHARE * box[3])];
+}
+
+/** The scene with a new shape on top of the others; deep: a 3D one, with a third face. */
+export function withShape(
+  scene: DraftScene,
+  kind: ShapeKind,
+  box: CropBox,
+  deep = false,
+): DraftScene {
   const depth = Math.max(0, ...scene.shapes.map((shape) => shape.depth));
-  const shape: Shape = { ...pill(freshId(scene), box, null), kind, depth };
+  const face = deep ? defaultFace(box) : null;
+  const shape: Shape = { ...pill(freshId(scene), box, null), kind, face, depth };
   return { ...scene, shapes: [...scene.shapes, shape] };
 }
 
@@ -134,7 +148,12 @@ export function withShape(scene: DraftScene, kind: ShapeKind, box: CropBox): Dra
  * The scene with a shape drawn on top: it replaces the model shapes whose middle it covers (a box too small or off,
  * or a target found in pieces), which are crossed out, as the claude.ai page did. A tap on a cross brings one back.
  */
-export function withDrawn(scene: DraftScene, kind: ShapeKind, box: CropBox): DraftScene {
+export function withDrawn(
+  scene: DraftScene,
+  kind: ShapeKind,
+  box: CropBox,
+  deep = false,
+): DraftScene {
   const [cx, cy, width, height] = box;
   const covered = scene.shapes
     .filter(
@@ -142,7 +161,7 @@ export function withDrawn(scene: DraftScene, kind: ShapeKind, box: CropBox): Dra
         model !== null && Math.abs(x - cx) <= width / 2 && Math.abs(y - cy) <= height / 2,
     )
     .map((shape) => shape.id);
-  return removed(withShape(scene, kind, box), covered);
+  return removed(withShape(scene, kind, box, deep), covered);
 }
 
 /** A scene with shapes copied, and the copies' ids. */
@@ -212,12 +231,17 @@ export function changeEach(
   };
 }
 
-/** The selected shapes made one kind (a pill has no third face). */
-export function withKind(scene: DraftScene, ids: readonly string[], kind: ShapeKind): DraftScene {
+/** The selected shapes made one kind, flat or 3D (deep: keeping a third face, or given one). */
+export function withKind(
+  scene: DraftScene,
+  ids: readonly string[],
+  kind: ShapeKind,
+  deep = false,
+): DraftScene {
   return changeEach(scene, ids, (shape) => ({
     ...shape,
     kind,
-    face: kind === 'pill' ? null : shape.face,
+    face: deep ? (shape.face ?? defaultFace(shape.box)) : null,
   }));
 }
 

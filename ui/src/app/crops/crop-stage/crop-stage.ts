@@ -17,7 +17,15 @@ import { CropSets } from '../../platform/crop-sets';
 import { listenQuietly } from '../../services/listen-quietly';
 import { CropPoint } from '../../shapes/shape-geometry';
 import { CROP_SIDE, CropDraft } from '../crop-draft';
-import { DraftScene, removed, resizedAll, uncrossed, withDrawn, withPoint } from '../crop-scene';
+import {
+  defaultFace,
+  DraftScene,
+  removed,
+  resizedAll,
+  uncrossed,
+  withDrawn,
+  withPoint,
+} from '../crop-scene';
 import { CropDrag, CropGrip, dragged, gripAt, shapesAt, sketchBox } from './crop-grip';
 import {
   CropStyle,
@@ -87,9 +95,9 @@ const PEEK_MS = 180;
 /**
  * The crop on show and its shapes, on a canvas. Outside a fix, a held finger peeks under the marks and a moving one
  * pans a zoomed crop. In a fix: a drag on the wall draws a shape of the chosen kind, a drag on a shape moves it (with
- * the selection), and a shape selected alone shows handles: its corners resize it, its handle above turns it and a
- * box's square handle pulls out its third face. A tap selects or unselects a shape, brings a crossed-out box back, and
- * on the wall clears the selection or, with none, marks a tiny target. Two fingers (or the wheel) zoom and pan; the
+ * the selection), and a shape selected alone shows handles: its corners resize it, its handle above turns it and its
+ * square handle pulls out its third face (a 3D box's or pill's far end). A tap selects or unselects a shape, brings a
+ * crossed-out box back, and on the wall clears the selection or, with none, marks a tiny target. Two fingers (or the wheel) zoom and pan; the
  * tools' Pan, Space, or the mouse's middle or right button make a drag pan; the wheel over the selected shapes resizes
  * them. Shift while drawing or resizing keeps a shape's two sides equal (a perfect circle or square). Delete removes the
  * selected shapes, Ctrl+D duplicates them.
@@ -322,8 +330,9 @@ export class CropStage {
     if (grip.kind === 'draw') {
       const box = sketchBox(drag);
       const kind = this.draft.kind();
+      const face = box && this.draft.deep() ? defaultFace(box) : null;
       this.sketch.set(
-        box && { id: '', kind, box, angle: 0, face: null, depth: 0, role: null, model: null },
+        box && { id: '', kind, box, angle: 0, face, depth: 0, role: null, model: null },
       );
       return;
     }
@@ -382,7 +391,7 @@ export class CropStage {
   private addDrawn(drag: CropDrag): void {
     const box = sketchBox(drag);
     if (!box) return;
-    this.draft.edit((scene) => withDrawn(scene, this.draft.kind(), box));
+    this.draft.edit((scene) => withDrawn(scene, this.draft.kind(), box, this.draft.deep()));
     const added = this.draft.draft()?.shapes.at(-1);
     if (added) this.draft.selection.set([added.id]);
   }

@@ -184,7 +184,7 @@ function dot(
   context.stroke();
 }
 
-/** The selected shape's handles, at the same size on screen at any zoom: corners, the turn handle, a box's face. */
+/** The selected shape's handles, at the same size on screen at any zoom: corners, the turn handle, the face's. */
 function paintHandles(
   context: CanvasRenderingContext2D,
   picture: StagePicture,

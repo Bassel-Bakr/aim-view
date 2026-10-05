@@ -633,10 +633,11 @@ reviewed at once (one decoder is the limit, in the browser and natively alike), 
 ## src/shapes.rs
 
 The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets are 3D). A pill (a
-sphere is a pill with equal sides) and a box (a square or a cube; a cube seen at an angle gets a third face, so its
-outline is a hexagon), each turned to any angle. Shapes are joined into targets (a bot's head and body), ordered front
-to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them (occluders: the
-crosshair, a pillar, an overlay).
+sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a third
+face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep pill's the
+pill swept back to its far end. Shapes are joined into targets (a bot's head and body), ordered front to back by depth
+(a shape hides the parts of shapes behind it), and some only hide what is behind them (occluders: the crosshair, a
+pillar, an overlay).
 
 - `ShapeKind` (enum): KovaaK's target shapes.
 - `ShapeRole` (enum): The part of a bot a shape stands for.

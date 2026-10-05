@@ -54,8 +54,9 @@ export class CropDraft {
   readonly mode = signal<CropMode>('view');
   readonly draft = signal<DraftScene | null>(null);
   readonly selection = signal<string[]>([]);
-  /** The kind of shape a drag on the wall draws. */
+  /** The kind of shape a drag on the wall draws, and whether a 3D one (with a third face). */
   readonly kind = signal<ShapeKind>('pill');
+  readonly deep = signal(false);
   /** In a fix, a drag moves the view instead of drawing or moving shapes (the tools' Pan); taps still select. */
   readonly panning = signal(false);
   /** After an answer, the next crop not checked shows; off (?order=all), the next crop in order, checked or not. */

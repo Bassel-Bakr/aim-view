@@ -36,7 +36,7 @@ export interface CropDrag {
   even: boolean;
 }
 
-/** A selected shape's handles: its corners, its turn handle, and a box's face handle. */
+/** A selected shape's handles: its corners, its turn handle, and its face handle. */
 export interface ShapeHandles {
   corners: CropPoint[];
   turn: CropPoint;
@@ -120,7 +120,7 @@ export function gripAt(
 
 /**
  * The scene as a drag leaves it, from the scene at the press: a corner resizes its shape (its sides kept equal with
- * Shift), the turn handle turns it, the face handle gives a box its third face, and a shape moves (with the rest of the
+ * Shift), the turn handle turns it, the face handle gives it a third face, and a shape moves (with the rest of the
  * selection when it is selected).
  */
 export function dragged(

@@ -13,6 +13,7 @@ import {
   uncrossed,
   withChanged,
   withDrawn,
+  withKind,
   withRole,
 } from './crop-scene';
 
@@ -77,6 +78,17 @@ describe('crop scenes', () => {
     expect(answer.add).toEqual([[100, 60, 10, 10]]);
     expect(answer.scene?.shapes.find((shape) => shape.id === 's2')?.face).toEqual([3, -3]);
     expect(answer.scene?.occluders).toEqual(['s2']);
+  });
+});
+
+describe('3D crop shapes', () => {
+  it('draws a 3D shape with its far end up and to the right, and makes shapes flat or 3D', () => {
+    let scene = withDrawn(sceneOfFix(CROP, null), 'box', [50, 80, 40, 20], true);
+    expect(scene.shapes.at(-1)?.face).toEqual([10, -5]);
+    scene = withKind(scene, ['s2'], 'pill', true);
+    expect(scene.shapes.at(-1)).toEqual(expect.objectContaining({ kind: 'pill', face: [10, -5] }));
+    expect(withKind(scene, ['s2'], 'pill').shapes.at(-1)?.face).toBeNull();
+    expect(withKind(scene, ['m0'], 'box', true).shapes[0].face).not.toBeNull();
   });
 });
 
