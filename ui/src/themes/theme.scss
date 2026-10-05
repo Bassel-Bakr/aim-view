@@ -110,6 +110,9 @@
   --cell-padding: 5px 12px 5px 0;
   --swatch-size: 10px;
   --scrollbar-size: 10px;
+  // The scrollbar's thumb: plain to see on every surface, lighter under the pointer
+  --scrollbar-thumb: #4a525e;
+  --scrollbar-thumb-hover: #6b7482;
   --swatch-radius: 2px;
   --disabled-opacity: 0.5;
   --switch-width: 26px;
@@ -201,6 +204,8 @@ $letter-spacing-tight: var(--letter-spacing-tight);
 $letter-spacing-wide: var(--letter-spacing-wide);
 $cell-padding: var(--cell-padding);
 $scrollbar-size: var(--scrollbar-size);
+$scrollbar-thumb: var(--scrollbar-thumb);
+$scrollbar-thumb-hover: var(--scrollbar-thumb-hover);
 
 $line-width: var(--line-width);
 $line-width-strong: var(--line-width-strong);

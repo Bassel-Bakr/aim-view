@@ -89,11 +89,23 @@
   ::-webkit-scrollbar-thumb {
     border: t.$line-width-strong solid t.$surface-0;
     border-radius: t.$scrollbar-size;
-    background: t.$surface-3;
+    background: t.$scrollbar-thumb;
+
+    &:hover {
+      background: t.$scrollbar-thumb-hover;
+    }
   }
 
   ::-webkit-scrollbar-track {
     background: transparent;
+  }
+
+  // Firefox has no ::-webkit-scrollbar: the same thumb through the standard property (set only there, as Chrome
+  // would drop its own styling above for it)
+  @supports not selector(::-webkit-scrollbar) {
+    :root {
+      scrollbar-color: t.$scrollbar-thumb transparent;
+    }
   }
 
   :focus-visible {
