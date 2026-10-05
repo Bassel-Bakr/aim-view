@@ -23,6 +23,7 @@ pub mod review;
 pub mod scenario;
 pub mod scipy;
 pub mod session;
+pub mod shapes;
 pub mod statistics;
 pub mod stats_file;
 pub mod summary;

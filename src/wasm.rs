@@ -442,6 +442,16 @@ pub unsafe extern "C" fn cutoff_crops(request: *const u8, len: usize) -> *mut u8
     bytes_out(crate::faint::cutoff_json(unsafe { std::slice::from_raw_parts(request, len) }))
 }
 
+/// What a crop's shapes show (src/shapes.rs): the request as JSON ({scene, width, height}), the answer as JSON (a
+/// `SceneView`, or {error}). Free the result as `tracker_finish`'s.
+///
+/// # Safety
+/// `request` must hold `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn shapes_visible(request: *const u8, len: usize) -> *mut u8 {
+    bytes_out(crate::shapes::visible_json(unsafe { std::slice::from_raw_parts(request, len) }))
+}
+
 /// A camera watch for a recording (src/camera.rs), its tiles kept clear of the recording's excluded areas and of the
 /// fixed map: `areas_len` boxes as shares of the frame, [x0, y0, x1, y1] each (f64), KovOBS's layout when there are
 /// none (python/retired/review.py's camera mask); `fixed`: 1280 * 720 bytes, 1 fixed.
