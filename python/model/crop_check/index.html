@@ -379,6 +379,11 @@ function draw() {
     g.setLineDash([7, 5]);
     g.globalAlpha = alpha * 0.45; g.lineWidth = 3.5; g.strokeStyle = css("--box-under"); path(); g.stroke();
     g.globalAlpha = alpha; g.lineWidth = 2; g.strokeStyle = color; path(); g.stroke();
+    // the box's own sides, lighter and finer: a target that is no circle or pill (a robot) is fitted to them
+    const sides = () => { g.beginPath(); g.rect(x0, y0, ww, hh); };
+    g.setLineDash([4, 4]);
+    g.globalAlpha = alpha * 0.3; g.lineWidth = 2.5; g.strokeStyle = css("--box-under"); sides(); g.stroke();
+    g.globalAlpha = alpha * 0.75; g.lineWidth = 1.25; g.strokeStyle = color; sides(); g.stroke();
     g.setLineDash([]); g.globalAlpha = 1;
   };
   const gap = 3;
