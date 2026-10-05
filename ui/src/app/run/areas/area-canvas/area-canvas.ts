@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { AreaRect } from '../../../api';
+import { listenQuietly } from '../../../services/listen-quietly';
 import { AreaDraft } from '../area-draft';
 import {
   AreaStyle,
@@ -63,9 +64,11 @@ export class AreaCanvas {
 
   constructor() {
     afterNextRender(() => {
+      const canvas = this.canvas().nativeElement;
       const resize = new ResizeObserver(() => this.draw());
-      resize.observe(this.canvas().nativeElement);
+      resize.observe(canvas);
       this.destroyRef.onDestroy(() => resize.disconnect());
+      listenQuietly(canvas, 'pointermove', (event) => this.movePointer(event), this.destroyRef);
     });
     afterRenderEffect(() => {
       this.draft.boxes();
@@ -150,7 +153,7 @@ export class AreaCanvas {
     });
   }
 
-  protected movePointer(event: PointerEvent): void {
+  private movePointer(event: PointerEvent): void {
     const point = this.at(event);
     const size = this.size();
     const grip = this.grip();

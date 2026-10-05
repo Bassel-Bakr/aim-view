@@ -18,8 +18,6 @@
     [attr.aria-label]="'Crosshair speed over the flick. ' + title()"
     [attr.aria-valuemax]="flickMs()"
     [attr.viewBox]="m ? '0 0 ' + m.size.width + ' ' + m.size.height : null"
-    (pointermove)="showPoint($event)"
-    (pointerleave)="hidePoint()"
     (click)="goToPoint($event)"
     (keydown)="stepWithKeys($event)"
   >

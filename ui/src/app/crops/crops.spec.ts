@@ -1,5 +1,6 @@
 import { HttpRequest } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
+import { afterEveryRender, EnvironmentInjector } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { CropAnswer, CropEntry, CropPage, SceneView } from '../api';
 import { answer, ApiRoutes, serverMode } from '../fake-api';
@@ -246,5 +247,23 @@ describe('the Crops page order', () => {
     await click('Right');
     expect(draft.crop()?.id).toBe('c2');
     expect(location.search).toContain('order=all');
+  });
+});
+
+describe("the Crops page's stage and change detection", () => {
+  afterEach(() => history.replaceState(null, '', '/'));
+
+  it('runs none while the pointer moves over the crop with no button down', async () => {
+    const { el, click, settle } = await render(fakeServer([]));
+    await click('Wrong');
+    let renders = 0;
+    afterEveryRender(() => (renders += 1), { injector: TestBed.inject(EnvironmentInjector) });
+    await settle();
+    const before = renders;
+    const canvas = el.querySelector('canvas') as HTMLCanvasElement;
+    for (const x of [10, 20, 30])
+      canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: 10 }));
+    await settle();
+    expect(renders).toBe(before);
   });
 });

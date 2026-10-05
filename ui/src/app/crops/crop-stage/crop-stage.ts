@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { CropEntry, SceneView, Shape } from '../../api';
 import { CropSets } from '../../platform/crop-sets';
+import { listenQuietly } from '../../services/listen-quietly';
 import { CropPoint } from '../../shapes/shape-geometry';
 import { CROP_SIDE, CropDraft } from '../crop-draft';
 import { DraftScene, removed, resizedAll, uncrossed, withDrawn, withPoint } from '../crop-scene';
@@ -132,9 +133,14 @@ export class CropStage {
 
   constructor() {
     afterNextRender(() => {
+      const canvas = this.canvas().nativeElement;
       const resize = new ResizeObserver(() => this.draw());
-      resize.observe(this.canvas().nativeElement);
+      resize.observe(canvas);
       this.destroyRef.onDestroy(() => resize.disconnect());
+      listenQuietly(canvas, 'pointermove', (event) => this.movePointer(event), this.destroyRef);
+      listenQuietly(canvas, 'wheel', (event) => this.turnWheel(event), this.destroyRef, {
+        passive: false,
+      });
     });
     effect(() => {
       this.draft.crop();
@@ -263,7 +269,7 @@ export class CropStage {
     if (from && press.moved) this.draft.edit(() => from);
   }
 
-  protected movePointer(event: PointerEvent): void {
+  private movePointer(event: PointerEvent): void {
     if (!this.pointers.has(event.pointerId)) return;
     const screen = this.at(event);
     this.pointers.set(event.pointerId, screen);
@@ -382,7 +388,7 @@ export class CropStage {
   }
 
   /** The wheel over the selected shapes resizes them; elsewhere, or with Ctrl (a touchpad's pinch), it zooms. */
-  protected turnWheel(event: WheelEvent): void {
+  private turnWheel(event: WheelEvent): void {
     event.preventDefault();
     const larger = event.deltaY < 0;
     if (!event.ctrlKey && this.resizeAt(this.at(event), larger ? RESIZE_STEP : 1 / RESIZE_STEP))

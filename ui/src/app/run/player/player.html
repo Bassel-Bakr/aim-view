@@ -46,7 +46,6 @@
         [max]="playback.duration()"
         (pointerdown)="startSeeking()"
         (pointerup)="stopSeeking()"
-        (input)="seekTo(seek.valueAsNumber)"
       />
     </div>
     <span class="time" aria-hidden="true">{{ end() }}</span>

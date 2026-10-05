@@ -14,6 +14,7 @@ import {
 import { ClickReport } from '../../api';
 import { arrow } from '../../format';
 import { FlickFocus } from '../flick-focus';
+import { listenQuietly } from '../../services/listen-quietly';
 import { Playback } from '../playback';
 import { ChartSize, frameAt, speedChart, SpeedChartModel, xOf, yOf } from './speed-chart-model';
 
@@ -73,7 +74,10 @@ export class SpeedChart {
       const { width, height } = entry.contentRect;
       if (width && height) this.size.set({ width, height });
     });
-    resize.observe(this.svg().nativeElement);
+    const svg = this.svg().nativeElement;
+    resize.observe(svg);
+    listenQuietly(svg, 'pointermove', (event) => this.showPoint(event), this.destroyRef);
+    listenQuietly(svg, 'pointerleave', () => this.hidePoint(), this.destroyRef);
     this.destroyRef.onDestroy(() => {
       stop();
       resize.disconnect();
@@ -123,7 +127,7 @@ export class SpeedChart {
     return ((event.clientX - bounds.left) * model.size.width) / bounds.width;
   }
 
-  protected showPoint(event: PointerEvent): void {
+  private showPoint(event: PointerEvent): void {
     const model = this.model();
     const marker = this.marker()?.nativeElement;
     const tip = this.tip()?.nativeElement;
@@ -141,7 +145,7 @@ export class SpeedChart {
     tip.style.left = `${(xOf(model, frame) / model.size.width) * 100}%`;
   }
 
-  protected hidePoint(): void {
+  private hidePoint(): void {
     this.marker()?.nativeElement.setAttribute('visibility', 'hidden');
     const tip = this.tip()?.nativeElement;
     if (tip) tip.hidden = true;

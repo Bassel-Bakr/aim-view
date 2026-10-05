@@ -27,6 +27,7 @@ import {
   PathFlags,
   readOverlayStyle,
 } from './overlay';
+import { listenQuietly } from '../../services/listen-quietly';
 
 const OVERLAY_KEY = 'aimview-overlay';
 const FASTEST_KEY = 'aimview-fastest';
@@ -163,9 +164,9 @@ export class Player {
   }
 
   /**
-   * Starts following the video's frames (the overlay, the clock and the seek bar redraw on each one) and the mouse over
-   * it. The mouse is listened to here, not in the template: a template's listener runs change detection on every move,
-   * where only a new track under the mouse needs it (its signal).
+   * Starts following the video's frames (the overlay, the clock and the seek bar redraw on each one), the mouse over
+   * it and the seek bar being dragged, these outside the template (listenQuietly): only a new track under the mouse
+   * needs change detection, through its signal.
    */
   private follow(): void {
     const video = this.video().nativeElement;
@@ -175,16 +176,14 @@ export class Player {
     const resize = new ResizeObserver(() => this.draw(this.playback.time));
     resize.observe(this.canvas().nativeElement);
     const box = this.screenBox().nativeElement;
-    const point = (event: MouseEvent) => this.pointAt(event);
-    const leave = () => this.stopPointing();
-    box.addEventListener('mousemove', point);
-    box.addEventListener('mouseleave', leave);
+    listenQuietly(box, 'mousemove', (event) => this.pointAt(event), this.destroyRef);
+    listenQuietly(box, 'mouseleave', () => this.stopPointing(), this.destroyRef);
+    const seek = this.seekBar().nativeElement;
+    listenQuietly(seek, 'input', () => this.playback.seek(seek.valueAsNumber), this.destroyRef);
     this.destroyRef.onDestroy(() => {
       cancel();
       resize.disconnect();
       stop();
-      box.removeEventListener('mousemove', point);
-      box.removeEventListener('mouseleave', leave);
       this.playback.attach(null);
     });
   }
@@ -289,10 +288,6 @@ export class Player {
 
   protected startSeeking(): void {
     this.seeking = true;
-  }
-
-  protected seekTo(seconds: number): void {
-    this.playback.seek(seconds);
   }
 
   protected stopSeeking(): void {

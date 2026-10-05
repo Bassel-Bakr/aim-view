@@ -192,7 +192,7 @@ describe('Player filling the window', () => {
 });
 
 describe('Player hover', () => {
-  it('runs no change detection while the mouse moves over the video', async () => {
+  it('runs no change detection while the mouse moves over the video or the seek bar is dragged', async () => {
     const { player, settle } = await render();
     let renders = 0;
     afterEveryRender(() => (renders += 1), { injector: TestBed.inject(EnvironmentInjector) });
@@ -203,6 +203,11 @@ describe('Player hover', () => {
       screen.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 10, bubbles: true }));
     }
     screen.dispatchEvent(new MouseEvent('mouseleave'));
+    const seek = player.querySelector('.seek') as HTMLInputElement;
+    for (const step of [1, 2]) {
+      seek.value = String(step);
+      seek.dispatchEvent(new Event('input'));
+    }
     await settle();
     expect(renders).toBe(before);
   });

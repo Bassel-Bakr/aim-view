@@ -6,9 +6,7 @@
   [attr.data-pan]="pans()"
   (pointerdown)="pressStage($event)"
   (mousedown)="holdMiddle($event)"
-  (pointermove)="movePointer($event)"
   (pointerup)="releasePointer($event)"
   (pointercancel)="releasePointer($event)"
-  (wheel)="turnWheel($event)"
   (contextmenu)="$event.preventDefault()"
 ></canvas>
