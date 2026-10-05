@@ -16,6 +16,9 @@ Then open http://127.0.0.1:8770/. Ctrl+C stops the server.
 
 `bun run dev:server` (the Angular dev server) sends `/api` and `/video` to port 8770, so it works with this server
 as it did with Python's. The server's own UI build is then not needed.
+`bun run dev:server:lan` does the same, open to the local network: another machine opens
+http://<this machine's IP>:4200 (an IP, not a name: the dev server may refuse names it does not know). Only port 4200
+need be reachable; the dev server passes the API on to this server on 127.0.0.1.
 
 ## Settings
 

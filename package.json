@@ -6,6 +6,7 @@
     "dev": "bun run dev:browser",
     "dev:browser": "bun run assets && bun run --cwd ui start --configuration browser",
     "dev:server": "bun run assets && bun run --cwd ui start --configuration server",
+    "dev:server:lan": "bun run dev:server --host 0.0.0.0",
     "dev:desktop": "bun run assets && bun run --cwd ui start --configuration desktop",
     "build": "bun run build:browser && bun run build:server && bun run build:desktop",
     "build:browser": "bun run assets --release && bun run --cwd ui build --configuration production,browser",

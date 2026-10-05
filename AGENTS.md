@@ -38,6 +38,7 @@ python python/model/crop_check/make_page.py <page> <set> <crops>   # a set of cr
                                                # (crop_check/README.md)
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
+bun run dev:server:lan                         # the same, open to the local network (http://<this machine's IP>:4200)
 bun run build                                  # every mode's build: ui/dist/browser, server, desktop
 bun run app                                    # the desktop app (Tauri 2, desktop/) on the desktop build's dev server
 bun run build:app                              # its installer: target/release/bundle/nsis/

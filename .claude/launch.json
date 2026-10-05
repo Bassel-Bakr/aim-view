@@ -36,6 +36,17 @@
       "port": 4201
     },
     {
+      "name": "ui-server-lan",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev:server:lan",
+        "--port",
+        "4202"
+      ],
+      "port": 4202
+    },
+    {
       "name": "model-web",
       "runtimeExecutable": "python",
       "runtimeArgs": [
