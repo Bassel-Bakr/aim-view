@@ -376,14 +376,13 @@ function draw() {
       if (Math.max(ww, hh) > 1.4 * Math.min(ww, hh)) g.roundRect(x0, y0, ww, hh, Math.min(ww, hh) / 2);
       else g.ellipse(X(cx), Y(cy), ww / 2, hh / 2, 0, 0, 2 * Math.PI);
     };
-    g.setLineDash([7, 5]);
-    g.globalAlpha = alpha * 0.45; g.lineWidth = 3.5; g.strokeStyle = css("--box-under"); path(); g.stroke();
-    g.globalAlpha = alpha; g.lineWidth = 2; g.strokeStyle = color; path(); g.stroke();
-    // the box's own sides, lighter and finer: a target that is no circle or pill (a robot) is fitted to them
+    // and the box's own sides, drawn alike: a target that is no circle or pill (a robot) is fitted to them
     const sides = () => { g.beginPath(); g.rect(x0, y0, ww, hh); };
-    g.setLineDash([4, 4]);
-    g.globalAlpha = alpha * 0.3; g.lineWidth = 2.5; g.strokeStyle = css("--box-under"); sides(); g.stroke();
-    g.globalAlpha = alpha * 0.75; g.lineWidth = 1.25; g.strokeStyle = color; sides(); g.stroke();
+    g.setLineDash([7, 5]);
+    for (const shape of [path, sides]) {
+      g.globalAlpha = alpha * 0.45; g.lineWidth = 3.5; g.strokeStyle = css("--box-under"); shape(); g.stroke();
+      g.globalAlpha = alpha; g.lineWidth = 2; g.strokeStyle = color; shape(); g.stroke();
+    }
     g.setLineDash([]); g.globalAlpha = 1;
   };
   const gap = 3;
