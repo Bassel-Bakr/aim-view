@@ -30,6 +30,9 @@ aimview-tool scenarios [library options]
 aimview-tool lookup [library options] [--video FILE]... [--id ID]... [--run SCENARIO STAMP]...
     Videos (their recording's id, folder and stats file; for a video outside the library, the stats file its name
     gives), recordings by id, and the stats files of runs by scenario and time stamp.
+aimview-tool crop-labels PAGE [--sets SET...] [library options]
+    The training labels of a check folder's answers drawn on the Crops page (src/shapes.rs): by crop id, each
+    target's visible box, its shapes and roles, the ignore boxes and the targets' pixels as run lengths.
 aimview-tool review VIDEO --out FOLDER [review options] [library options]
     The video reviewed as the app reviews a recording, without touching the library's reviews: tracks.json,
     readings.json, hud.json and report.json in FOLDER, and {seconds, out, report} on stdout.
@@ -99,6 +102,8 @@ const LIBRARY: Options = &[
 ];
 
 const LOOKUP: Options = &[("video", Takes::One), ("id", Takes::One), ("run", Takes::Two)];
+
+const CROP_LABELS: Options = &[("sets", Takes::Many)];
 
 const REVIEW: Options = &[
     ("out", Takes::One),
@@ -521,6 +526,10 @@ fn answer(command: &str, line: &Line) -> Result<Value, Failure> {
         "recordings" => recordings(&library),
         "scenarios" => Ok(library.scenarios()),
         "lookup" => Ok(lookup(&library, line)),
+        "crop-labels" => {
+            let sets: Vec<String> = line.all("sets").flatten().cloned().collect();
+            library.crop_labels(line.free.first().map_or("", String::as_str), &sets)
+        }
         _ => review_video(&library, line),
     }
 }
@@ -535,6 +544,7 @@ fn main() -> ExitCode {
     let options: &[Options] = match command.as_str() {
         "recordings" | "scenarios" => &[LIBRARY],
         "lookup" => &[LIBRARY, LOOKUP],
+        "crop-labels" => &[LIBRARY, CROP_LABELS],
         "review" => &[LIBRARY, REVIEW],
         "help" | "--help" | "-h" => {
             print!("{USAGE}");
@@ -546,7 +556,7 @@ fn main() -> ExitCode {
         Ok(line) => line,
         Err(error) => return usage(&error),
     };
-    if command != "review" && !line.free.is_empty() {
+    if !matches!(command.as_str(), "review" | "crop-labels") && !line.free.is_empty() {
         return usage(&format!("{command} takes no value {}", line.free[0]));
     }
     match answer(command, &line) {

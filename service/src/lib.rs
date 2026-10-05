@@ -5,7 +5,8 @@
 //!
 //! config.rs: what a library needs to know. api.rs: the API's routes. library/: the recordings, their stats files, the
 //! settings and models, the reviews and their reports. areas.rs, finder.rs: the areas a review leaves out and the area
-//! finder. faint.rs: the faint-target cut-off. labels.rs: the labelling queues. mouse.rs: the mouse logs' measures.
+//! finder. faint.rs: the faint-target cut-off. labels.rs: the labelling queues. crops.rs: the check folders of
+//! detector crops and their answers (the Crops page). mouse.rs: the mouse logs' measures.
 //! review.rs, detector.rs, video.rs, ffmpeg.rs: the native review. report.rs: the report the core works out.
 //! run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them. ytdlp.rs: yt-dlp, for
 //! recordings added from a link. disk.rs: the file system and the clock.
@@ -17,6 +18,7 @@
 pub mod api;
 pub mod areas;
 pub mod config;
+pub mod crops;
 #[cfg(feature = "native")]
 pub mod detector;
 pub mod disk;

@@ -57,3 +57,13 @@ pub struct AreaBox(pub f64, pub f64, pub f64, pub f64, pub String);
 #[derive(TS)]
 #[ts(export)]
 pub struct Switch(pub usize, pub usize, pub usize);
+
+/// A box on a crop: center x, center y, width, height (crop pixels; a shape's before it is turned).
+#[derive(TS)]
+#[ts(export)]
+pub struct CropBox(pub f64, pub f64, pub f64, pub f64);
+
+/// Where a box's far face sits from its near one: x, y (crop pixels).
+#[derive(TS)]
+#[ts(export)]
+pub struct FaceOffset(pub f64, pub f64);

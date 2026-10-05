@@ -38,11 +38,12 @@ pub struct Shape {
     pub id: String,
     pub kind: ShapeKind,
     #[serde(rename = "box")]
-    #[cfg_attr(feature = "ts", ts(rename = "box"))]
+    #[cfg_attr(feature = "ts", ts(rename = "box", as = "crate::typescript::CropBox"))]
     pub frame: [f64; 4],
     #[serde(default)]
     pub angle: f64,
     #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::FaceOffset>"))]
     pub face: Option<[f64; 2]>,
     #[serde(default)]
     pub depth: i32,
@@ -65,15 +66,17 @@ pub struct Scene {
 }
 
 /// One target as the scene shows it: its shapes, the box round its visible pixels ([center x, center y, width,
-/// height]; None when none shows), whether something hides all of it, and its visible pixels as run lengths
-/// (`runs`).
+/// height]; None when none shows), the box round all its shapes (hidden parts too), whether something hides all of
+/// it, and its visible pixels as run lengths (`runs`).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TargetView {
     pub shapes: Vec<String>,
     #[serde(rename = "box")]
-    #[cfg_attr(feature = "ts", ts(rename = "box"))]
+    #[cfg_attr(feature = "ts", ts(rename = "box", as = "Option<crate::typescript::CropBox>"))]
     pub frame: Option<[f64; 4]>,
+    #[cfg_attr(feature = "ts", ts(as = "crate::typescript::CropBox"))]
+    pub whole: [f64; 4],
     pub hidden: bool,
     pub runs: Vec<u32>,
 }
@@ -345,15 +348,17 @@ pub fn visible(scene: &Scene, width: usize, height: usize) -> SceneView {
         let (union, seen) = group_pixels(scene, &masks, &group, width * height);
         let (covered, shown) = (count(&union), count(&seen));
         let members: Vec<&Shape> = group.iter().map(|&i| &scene.shapes[i]).collect();
+        let whole = shapes_box(&members);
         let frame = match shown {
             0 => None,
-            _ if shown == covered => Some(shapes_box(&members)),
+            _ if shown == covered => Some(whole),
             _ => mask_box(&seen, width),
         };
         all.iter_mut().zip(&seen).for_each(|(pixel, &set)| *pixel |= set);
         targets.push(TargetView {
             shapes: members.iter().map(|shape| shape.id.clone()).collect(),
             frame,
+            whole,
             hidden: covered > 0 && shown == 0,
             runs: runs(&seen),
         });
@@ -481,6 +486,7 @@ mod tests {
         let scene = Scene { shapes: vec![small, wall], occluders: vec!["o".into()], ..Scene::default() };
         let view = visible(&scene, SIDE, SIDE);
         assert!(view.targets[0].hidden && view.targets[0].frame.is_none());
+        assert_eq!(view.targets[0].whole, [50.0, 50.0, 6.0, 6.0], "its shapes' box, for an ignore box");
         assert!(from_runs(&view.mask, SIDE * SIDE).iter().all(|&set| set == 0));
     }
 

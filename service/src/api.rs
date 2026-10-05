@@ -138,6 +138,12 @@ fn special_answer(library: &Library, route: &Route) -> Option<ApiResponse> {
     if !route.post && route.path == "/api/find_areas" {
         return Some(page_find_areas(library, route));
     }
+    if !route.post && route.path == "/api/crop_image" {
+        return Some(match crop_ids(route).and_then(|(page, id)| library.crop_image(&page, &id)) {
+            Ok(png) => ApiResponse::new(OK, "image/png", png),
+            Err(failure) => json_response(Err(failure)),
+        });
+    }
     if route.path == "/api/tracks" {
         return Some(match route.id().map(|id| library.tracks(&id)) {
             Ok(Some(bytes)) => ApiResponse::new(OK, JSON, bytes),
@@ -186,6 +192,10 @@ fn get_answer(library: &Library, route: &Route) -> Answer<Value> {
         "/api/label_queue" => library.label_queue(),
         "/api/faint" => id().map(|id| library.faint(&id)),
         "/api/faint_queue" => library.faint_queue(),
+        "/api/crop_pages" => library.crop_pages(),
+        "/api/crops" => crop_set(route).and_then(|(page, set)| library.crops(&page, &set)),
+        "/api/crop_answers" => crop_set(route).and_then(|(page, set)| library.crop_answers(&page, &set)),
+        "/api/crop_export" => page(route).and_then(|page| library.export_crop_answers(&page)),
         path => Err(Failure::missing(format!("not found: {path}"))),
     }
 }
@@ -221,6 +231,8 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/faint_skip" => id().and_then(|id| library.skip_faint(&id)),
         "/api/faint_submit" => id().and_then(|id| library.submit_faint(&id, offset(route.query("offset"))?)),
         "/api/area_examples" => library.set_examples(body),
+        "/api/crop_answer" => crop_ids(route).and_then(|(page, id)| library.save_crop_answer(&page, &id, body)),
+        "/api/crop_import" => page(route).and_then(|page| library.import_crop_answers(&page, body)),
         #[cfg(not(feature = "native"))]
         "/api/folder" => library.choose_vods(&route.query("path").unwrap_or_default()),
         #[cfg(not(feature = "native"))]
@@ -244,6 +256,21 @@ fn upload(library: &Library, route: &Route) -> Answer<Value> {
         Some(file) => library.upload_file(&name, recording.as_deref(), file),
         None => library.upload(&name, recording.as_deref(), route.request.body),
     }
+}
+
+/// The check folder a Crops request is about (page=).
+fn page(route: &Route) -> Answer<String> {
+    route.query("page").ok_or_else(|| Failure::bad("page= is missing"))
+}
+
+/// A check folder and one of its sets (page=, set=).
+fn crop_set(route: &Route) -> Answer<(String, String)> {
+    Ok((page(route)?, route.query("set").ok_or_else(|| Failure::bad("set= is missing"))?))
+}
+
+/// A check folder and one of its crops (page=, id=).
+fn crop_ids(route: &Route) -> Answer<(String, String)> {
+    Ok((page(route)?, route.id()?))
 }
 
 /// A cut-off's offset from the query (python/server.py: `float(q.get("offset", 0.3))`).

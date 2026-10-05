@@ -85,6 +85,11 @@ pub struct Folders {
     pub cutoff: PathBuf,
     /// The raw mouse logs.
     pub mouse: PathBuf,
+    /// The check folders of detector crops (crops.rs): every folder in it in the app's layout, the check_* ones in
+    /// Python's (where vod_model/ holds the detector's training data beside them).
+    pub crops: PathBuf,
+    /// The start a folder's name needs to be a check folder.
+    pub crop_prefix: &'static str,
 }
 
 impl Layout {
@@ -97,6 +102,8 @@ impl Layout {
                 uploads: data.join("uploads"),
                 cutoff: data.join("cutoff"),
                 mouse: data.join("mouse"),
+                crops: data.join("crops"),
+                crop_prefix: "",
             },
             Layout::Python => Folders {
                 files: data.join("vod_app"),
@@ -104,6 +111,8 @@ impl Layout {
                 uploads: data.join("vod_uploads"),
                 cutoff: data.join("vod_model").join("hand").join("cutoff"),
                 mouse: data.join("mouse"),
+                crops: data.join("vod_model"),
+                crop_prefix: "check_",
             },
         }
     }
