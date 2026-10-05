@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 # build output: Rust, Bun, wasm-pack, Angular, Tauri
 target/
+.bacon-locations
 node_modules/
 /pkg/
 ui/dist/

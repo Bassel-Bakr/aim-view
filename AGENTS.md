@@ -9,7 +9,10 @@ parts (`python/model/old_review.py`), so a change to the review is made once, in
 `python/README.md` (how the review works) and `python/model/MODEL_STATUS.md` (the detector's results and limits).
 Every command to rebuild the detector is in
 `python/model/REPRODUCE.md`. Every benchmark, its baseline and when to rerun it are in `BENCH.md`: check it before
-running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing.
+running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing. Where
+each thing lives in the Rust code is in `CODEMAP.md` (every file's header comment and public items, made by
+`tests/code_map.rs`): read its file list before a Rust change, search the rest, and follow calls with rust-analyzer's
+call hierarchy instead of reading whole files.
 
 It was copied from the Flow Fix project (`D:\Projects\flowfix`, folder `vod/`) on 2026-10-02, with its caches and
 training data in `test_out/` (ignored by git). Its `vod/` folder became `python/` here. The layout is in `README.md`
@@ -46,6 +49,10 @@ bun run test:ui                                # the UI's tests
 bun run lint:ui                                # ESLint (angular-eslint's recommended set, plus the rules below)
 bun run format                                 # Prettier, over ui/
 cargo clippy --workspace --all-targets         # the Rust lints (Cargo.toml, clippy.toml)
+bacon                                          # the same lints on every save (bacon.toml; t: the quick tests), its
+                                               # errors and warnings in .bacon-locations
+CODE_MAP_WRITE=1 cargo test --profile quick --test code_map   # CODEMAP.md again, after a Rust file's header comment
+                                               # or public items change (the test fails until then)
 python -m ruff check python                    # the Python lints (ruff.toml)
 cargo test --profile quick                     # the Rust core, checked against Python's results (test_out/parity/)
                                                # (--release gives the same results; its builds take 40 s, quick's 3 s)

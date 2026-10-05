@@ -1,0 +1,24 @@
+# bacon (dystroy.org/bacon): watches the Rust code and runs a job on each save. `bacon` starts clippy over the
+# workspace, as AGENTS.md's lint command; keys switch jobs (c clippy, t the quick tests; `bacon check` for check). Its
+# jobs build into target/bacon, so they never wait on the build lock of a cargo command run by hand, nor it on them.
+# Each run's errors and warnings go to .bacon-locations (git-ignored), one per line, for tools to read.
+
+default_job = "clippy"
+env.CARGO_TARGET_DIR = "target/bacon"
+
+[jobs.clippy]
+command = ["cargo", "clippy", "--workspace", "--all-targets"]
+need_stdout = false
+
+[jobs.check]
+command = ["cargo", "check", "--workspace", "--all-targets"]
+need_stdout = false
+
+[jobs.test]
+command = ["cargo", "test", "--profile", "quick"]
+need_stdout = true
+
+[exports.locations]
+auto = true
+path = ".bacon-locations"
+line_format = "{kind} {path}:{line}:{column} {message}"
