@@ -1,5 +1,5 @@
 import { Service } from '@angular/core';
-import { AreaRect, TrackFrame, Tracks } from '../../api';
+import { AreaRect, Scene, SceneView, TrackFrame, Tracks } from '../../api';
 import { CutoffRow } from '../web-files/cutoff-labels';
 import { Core } from './core';
 import { HudReading, RunPart, VideoReadings } from './review-messages';
@@ -32,6 +32,13 @@ export interface CutoffCrop {
   row: CutoffRow;
 }
 
+/** What a crop's shapes show (src/shapes.rs `visible`) is asked for: the scene, on a crop of width x height. */
+export interface ShapesRequest {
+  scene: Scene;
+  width: number;
+  height: number;
+}
+
 /** Why the core made nothing. */
 interface CoreRefusal {
   error: string;
@@ -52,7 +59,7 @@ type TextCall = (core: Core, ptr: number, len: number) => number;
 
 /**
  * The review core on the page itself, for what the page works out besides the review service: a review's runs joined
- * (the tracking runs in workers) and a cut-off's crops.
+ * (the tracking runs in workers), a cut-off's crops, and what a crop's shapes show (the Crops page, in every mode).
  */
 @Service()
 export class CoreModule {
@@ -96,6 +103,20 @@ export class CoreModule {
       core.exports.joining_finish(joining, ptr, len),
     );
     return JSON.parse(core.takeOutcome(joined)) as JoinedReview;
+  }
+
+  /**
+   * What a crop's shapes show (src/shapes.rs `visible`): each target's visible pixels and box, as the training labels
+   * get them (aimview-tool crop-labels uses the same code). Rejects a scene the core refuses.
+   */
+  async shapesVisible(request: ShapesRequest): Promise<SceneView> {
+    const text = await this.call(
+      (core, ptr, len) => core.exports.shapes_visible(ptr, len),
+      JSON.stringify(request),
+    );
+    const out = JSON.parse(text) as SceneView | CoreRefusal;
+    if ('error' in out) throw new Error(out.error);
+    return out;
   }
 
   /** The crops a submitted cut-off's labels take, as Python's hand_crops.py picks them: src/faint.rs. */

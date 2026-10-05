@@ -1,0 +1,91 @@
+<div class="tool-row">
+  <span id="crop-kind-label" class="tool-label">Shape</span>
+  <div class="segmented" role="group" aria-labelledby="crop-kind-label">
+    @for (k of kinds; track k) {
+      <button
+        type="button"
+        class="segmented-option"
+        [attr.aria-pressed]="kind() === k"
+        (click)="useKind(k)"
+      >
+        {{ kindNames[k] }}
+      </button>
+    }
+  </div>
+  <span id="crop-role-label" class="tool-label">Role</span>
+  <div class="segmented" role="group" aria-labelledby="crop-role-label">
+    @for (r of roles; track r.name) {
+      <button
+        type="button"
+        class="segmented-option"
+        [attr.aria-pressed]="role() === r.role"
+        [disabled]="!chosen().length"
+        (click)="useRole(r.role)"
+      >
+        {{ r.name }}
+      </button>
+    }
+  </div>
+</div>
+<div class="tool-row">
+  <button
+    type="button"
+    appButton
+    title="One target made of the selected shapes (a head and a body)"
+    [disabled]="chosen().length < 2"
+    (click)="join()"
+  >
+    Join
+  </button>
+  <button
+    type="button"
+    appButton
+    title="Each selected shape a target of its own"
+    [disabled]="!chosen().length"
+    (click)="splitApart()"
+  >
+    Split
+  </button>
+  <button
+    type="button"
+    appButton
+    title="In front of every other shape: it hides what it covers"
+    [disabled]="!chosen().length"
+    (click)="bring(true)"
+  >
+    Front
+  </button>
+  <button
+    type="button"
+    appButton
+    title="Behind every other shape: what covers it hides it"
+    [disabled]="!chosen().length"
+    (click)="bring(false)"
+  >
+    Back
+  </button>
+  <button
+    type="button"
+    appButton
+    title="Not a target: something in front (a pillar, a health bar) that hides what is behind it"
+    [attr.aria-pressed]="hiding()"
+    [disabled]="!chosen().length"
+    (click)="toggleHiding()"
+  >
+    Hides
+  </button>
+  <button
+    type="button"
+    appButton
+    title="A model shape is crossed out (no target there); a drawn one is deleted"
+    [disabled]="!chosen().length"
+    (click)="remove()"
+  >
+    Remove
+  </button>
+</div>
+<p class="tool-help">
+  Drag on the crop to draw a {{ draft.kind() }}. Tap shapes to select them. Drag a corner to resize,
+  the round handle above to turn, a box's square handle to show its third face. Tap the wall for a
+  tiny target.
+</p>

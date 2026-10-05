@@ -1,5 +1,6 @@
 import { withInterceptors, withXhr } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
+import { CropSets } from '../platform/crop-sets';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
 import { Mode } from '../platform/mode';
 import { Labelling } from '../platform/labelling';
@@ -10,6 +11,7 @@ import { ReviewEngine } from '../platform/review-engine';
 import { ScoreHistory } from '../platform/score-history';
 import { StatsFiles } from '../platform/stats-files';
 import { ServerAreaLabels } from './http/server-area-labels';
+import { ServerCropSets } from './http/server-crop-sets';
 import { ServerFaintCutoffs } from './http/server-faint-cutoffs';
 import { ServerLabelling } from './http/server-labelling';
 import { ServerModels } from './http/server-models';
@@ -38,5 +40,6 @@ export const MODE: Mode = {
     { provide: Labelling, useExisting: ServerLabelling },
     { provide: AreaLabels, useExisting: ServerAreaLabels },
     { provide: FaintCutoffs, useExisting: ServerFaintCutoffs },
+    { provide: CropSets, useExisting: ServerCropSets },
   ],
 };

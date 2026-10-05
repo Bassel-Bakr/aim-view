@@ -11,6 +11,18 @@
     height: 100vh;
   }
 
+  // The Crops page takes the whole width (a phone's screen)
+  :host([data-page='crops']) {
+    grid-template:
+      'top' l.$top-bar-height
+      'crops' minmax(0, 1fr)
+      / minmax(0, 1fr);
+  }
+
+  .crops {
+    grid-area: crops;
+  }
+
   .top {
     grid-area: top;
   }
@@ -26,7 +38,7 @@
 
 @layer components {
   .top {
-    @apply flex items-center gap-7 border-b border-border px-6;
+    @apply flex min-w-0 items-center gap-7 border-b border-border px-6;
 
     background: l.$surface-bar;
   }

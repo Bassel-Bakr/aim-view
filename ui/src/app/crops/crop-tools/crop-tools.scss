@@ -1,0 +1,19 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply flex flex-col gap-4;
+  }
+
+  .tool-row {
+    @apply flex flex-wrap items-center gap-3;
+  }
+
+  .tool-label {
+    @apply text-xs text-muted;
+  }
+
+  .tool-help {
+    @apply text-xs text-muted;
+  }
+}

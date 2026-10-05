@@ -28,6 +28,7 @@ export interface CoreExports {
   scenario_facts(text: number, len: number): number;
   review_report(request: number, len: number): number;
   cutoff_crops(request: number, len: number): number;
+  shapes_visible(request: number, len: number): number;
   camera_new(fixed: number): number;
   camera_new_areas(areas: number, count: number, fixed: number): number;
   camera_add(camera: number, yuv: number, rgb: number): void;

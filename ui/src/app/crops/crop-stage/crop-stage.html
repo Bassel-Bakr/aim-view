@@ -1,0 +1,12 @@
+<canvas
+  class="stage"
+  #stage
+  role="img"
+  aria-label="The crop and its marks"
+  (pointerdown)="pressStage($event)"
+  (pointermove)="movePointer($event)"
+  (pointerup)="releasePointer($event)"
+  (pointercancel)="releasePointer($event)"
+  (wheel)="zoomWheel($event)"
+  (contextmenu)="$event.preventDefault()"
+></canvas>

@@ -1,0 +1,14 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply block;
+  }
+
+  // Square, as the crops are; the finger draws and zooms, so the page does not scroll under it
+  .stage {
+    @apply block w-full cursor-crosshair touch-none rounded-md bg-surface-1 select-none;
+
+    aspect-ratio: 1;
+  }
+}

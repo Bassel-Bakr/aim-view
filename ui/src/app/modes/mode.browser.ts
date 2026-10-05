@@ -1,5 +1,6 @@
 import { withInterceptors } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
+import { CropSets } from '../platform/crop-sets';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
 import { Mode } from '../platform/mode';
 import { Labelling } from '../platform/labelling';
@@ -12,6 +13,7 @@ import { StatsFiles } from '../platform/stats-files';
 import { ServerModels } from './http/server-models';
 import { ServerScoreHistory } from './http/server-score-history';
 import { BrowserAreaLabels } from './service/browser-area-labels';
+import { BrowserCropSets } from './service/browser-crop-sets';
 import { BrowserFaintCutoffs } from './service/browser-faint-cutoffs';
 import { BrowserLabelling } from './service/browser-labelling';
 import { BrowserMouseLogs } from './service/browser-mouse-logs';
@@ -40,5 +42,6 @@ export const MODE: Mode = {
     { provide: Labelling, useExisting: BrowserLabelling },
     { provide: AreaLabels, useExisting: BrowserAreaLabels },
     { provide: FaintCutoffs, useExisting: BrowserFaintCutoffs },
+    { provide: CropSets, useExisting: BrowserCropSets },
   ],
 };

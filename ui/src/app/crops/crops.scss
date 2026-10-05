@@ -1,0 +1,67 @@
+@reference '../../tailwind.css';
+
+@layer components {
+  // The page scrolls; the answer bar stays at the bottom, where a thumb reaches it
+  :host {
+    @apply flex min-h-0 flex-col;
+  }
+
+  // The scrollbar's room is kept, so the stage does not move when the tools appear under it
+  .page {
+    @apply mx-auto flex w-full max-w-(--crop-page-width) min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pt-6 pb-8;
+
+    scrollbar-gutter: stable;
+  }
+
+  .head {
+    @apply flex flex-wrap items-center gap-4;
+  }
+
+  .title {
+    @apply font-display text-xl font-bold;
+  }
+
+  .folder {
+    @apply min-h-(--control-height) min-w-0 rounded-md border border-border-strong bg-surface-2 px-4 text-primary;
+  }
+
+  .actions {
+    @apply ml-auto flex flex-wrap gap-3;
+  }
+
+  .sets {
+    @apply flex-wrap self-start;
+  }
+
+  .progress {
+    @apply flex items-center gap-4 text-xs text-secondary tabular-nums;
+  }
+
+  .meter {
+    @apply h-(--crop-meter-height) flex-1 overflow-hidden rounded-pill bg-surface-2;
+  }
+
+  .meter-fill {
+    @apply block h-full bg-accent;
+  }
+
+  .about {
+    @apply text-xs break-words text-muted;
+  }
+
+  .status {
+    @apply text-sm text-secondary;
+  }
+
+  .note {
+    @apply text-xs text-secondary;
+  }
+
+  .failed {
+    @apply text-xs text-warning;
+  }
+
+  .bar {
+    @apply flex flex-wrap justify-center gap-3 border-t border-border bg-surface-1 px-6 py-4;
+  }
+}

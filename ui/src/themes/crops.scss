@@ -1,0 +1,26 @@
+// Module tokens: the Crops page (checking the detector's crops). The stage is a canvas, which reads the --crop-
+// variables when it first draws (crops/crop-stage/crop-paint.ts).
+
+@mixin tokens {
+  // A shape's line, by what it is: the model's, drawn, a head, a body, an occluder (hides what is behind it)
+  --crop-model: #f2c94c;
+  --crop-drawn: #4cc9f0;
+  --crop-head: #ff7eb6;
+  --crop-body: #7bd88f;
+  --crop-occluder: #b39dff;
+  // A model box crossed out (no target there), and the box round a joined target
+  --crop-crossed: rgba(255, 92, 92, 0.9);
+  --crop-target: rgba(255, 255, 255, 0.85);
+  // Under every line, so it shows on any wall
+  --crop-under: rgba(0, 0, 0, 0.6);
+  // The pixels the targets show, as the training data will have them
+  --crop-visible: rgba(76, 201, 240, 0.3);
+  --crop-handle: #fff;
+  --crop-line-width: 1.5;
+  --crop-line-width-selected: 3;
+  --crop-handle-radius: 5;
+
+  // The page: its widest, and the progress meter's height
+  --crop-page-width: 560px;
+  --crop-meter-height: 4px;
+}

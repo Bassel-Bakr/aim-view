@@ -11,31 +11,50 @@
     </svg>
     Aim View
   </span>
-  <app-model-panel />
-  <app-label-menu />
-  <app-cutoff-menu />
-  <app-mouse-switch />
-  <app-upload class="upload" />
-</header>
-<app-recordings />
-<main class="main">
-  @if (library.selected(); as r) {
-    <!-- The run page and everything on it load when a recording is first opened, not with the list -->
-    @defer (on immediate) {
-      <app-run [recording]="r" />
-    }
-  } @else {
-    <section class="empty">
-      <h2 class="empty-title">Pick a recording</h2>
-      <p>Choose a run on the left. The arrow keys move through the list.</p>
-      <p>
-        Or add one from this computer, with its stats .csv: use Upload, or drop the files on the
-        page. {{ library.source.addedFilesGo }}
-      </p>
-      <p>
-        Runs with a stats file (challenge mode) get the full review. Without one, the review reads
-        KovaaK's session HUD when it is on screen, and otherwise finds the kills in the video alone.
-      </p>
-    </section>
+  <button
+    type="button"
+    class="chip"
+    title="Check the detector's crops: say if it found every target, and fix its shapes"
+    [attr.aria-pressed]="pages.crops()"
+    (click)="pages.toggleCrops()"
+  >
+    Crops
+  </button>
+  @if (!pages.crops()) {
+    <app-model-panel />
+    <app-label-menu />
+    <app-cutoff-menu />
+    <app-mouse-switch />
+    <app-upload class="upload" />
   }
-</main>
+</header>
+@if (pages.crops()) {
+  <!-- The Crops page loads when it is first opened -->
+  @defer (on immediate) {
+    <app-crops class="crops" />
+  }
+} @else {
+  <app-recordings />
+  <main class="main">
+    @if (library.selected(); as r) {
+      <!-- The run page and everything on it load when a recording is first opened, not with the list -->
+      @defer (on immediate) {
+        <app-run [recording]="r" />
+      }
+    } @else {
+      <section class="empty">
+        <h2 class="empty-title">Pick a recording</h2>
+        <p>Choose a run on the left. The arrow keys move through the list.</p>
+        <p>
+          Or add one from this computer, with its stats .csv: use Upload, or drop the files on the
+          page. {{ library.source.addedFilesGo }}
+        </p>
+        <p>
+          Runs with a stats file (challenge mode) get the full review. Without one, the review reads
+          KovaaK's session HUD when it is on screen, and otherwise finds the kills in the video
+          alone.
+        </p>
+      </section>
+    }
+  </main>
+}

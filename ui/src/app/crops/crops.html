@@ -1,0 +1,175 @@
+<div class="page">
+  <header class="head">
+    <h2 class="title">Crops</h2>
+    @if (folders().length > 1) {
+      <select #folder class="folder" aria-label="Check folder" (change)="openFolder(folder)">
+        @for (p of folders(); track p.page) {
+          <option [value]="p.page" [selected]="p.page === draft.folder()">{{ p.page }}</option>
+        }
+      </select>
+    } @else if (draft.folder(); as f) {
+      <span class="pill">{{ f }}</span>
+    }
+    <span class="actions">
+      @if (canAddFolder) {
+        <button
+          type="button"
+          appButton
+          title="Add a check folder make_page.py wrote: the browser keeps a copy"
+          (click)="folderInput.click()"
+        >
+          Add folder
+        </button>
+        <input #folderInput type="file" webkitdirectory hidden (change)="addFolder(folderInput)" />
+      }
+      <button
+        type="button"
+        appButton
+        title="Save this folder's answers as one file, to import on the review server"
+        [disabled]="!draft.folder()"
+        (click)="exportAnswers()"
+      >
+        Export
+      </button>
+      <button
+        type="button"
+        appButton
+        title="Load answers a browser exported: a crop's newer answer wins"
+        [disabled]="!draft.folder()"
+        (click)="importInput.click()"
+      >
+        Import
+      </button>
+      <input
+        #importInput
+        type="file"
+        accept=".json,application/json"
+        hidden
+        (change)="importAnswers(importInput)"
+      />
+    </span>
+  </header>
+
+  @if (working(); as w) {
+    <p [class]="w.failed ? 'failed' : 'note'" [attr.role]="w.failed ? 'alert' : 'status'">
+      {{ w.text }}
+    </p>
+  }
+
+  @if (folderSets().length > 1) {
+    <div class="segmented sets" role="group" aria-label="Sets">
+      @for (s of folderSets(); track s.set) {
+        <button
+          type="button"
+          class="segmented-option"
+          [attr.aria-pressed]="s.set === draft.set()"
+          (click)="draft.open(draft.folder() ?? '', s.set)"
+        >
+          {{ s.title }}
+        </button>
+      }
+    </div>
+  }
+
+  @if (draft.list().length) {
+    <div class="progress">
+      <span>{{ draft.answered() }} / {{ draft.list().length }} checked</span>
+      <span class="meter" aria-hidden="true">
+        <span class="meter-fill" [style.width.%]="checkedShare()"></span>
+      </span>
+    </div>
+  }
+
+  @if (draft.crop(); as crop) {
+    <p class="about">
+      {{ draft.index() + 1 }} of {{ draft.list().length }} · {{ crop.folder }} · {{ crop.kind }}
+      @if (crop.why.length) {
+        · {{ crop.why.join(', ') }}
+      }
+    </p>
+    @if (crop.preset && draft.setInfo()?.crossedOut; as crossedNote) {
+      <p class="about">{{ crossedNote }}</p>
+    }
+    <app-crop-stage />
+    <p class="status" role="status">{{ status() }}</p>
+    @if (draft.mode() === 'fix') {
+      <app-crop-tools />
+    }
+  } @else if (draft.list().length) {
+    <p class="status">Every crop of this set is checked.</p>
+  } @else if (!folders().length && draft.pages.hasValue()) {
+    <p class="status">
+      No check folder yet: make_page.py writes one (python/model/crop_check/README.md).
+      @if (canAddFolder) {
+        Add it here with Add folder.
+      }
+    </p>
+  }
+
+  @if (draft.note(); as n) {
+    <p [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">
+      {{ n.text }}
+    </p>
+  }
+</div>
+
+<nav class="bar" aria-label="Answer">
+  @if (draft.mode() === 'fix') {
+    <button type="button" appButton (click)="draft.cancel()">Cancel</button>
+    <button
+      type="button"
+      appButton
+      intent="primary"
+      [disabled]="draft.busy()"
+      (click)="draft.saveFix()"
+    >
+      Save
+    </button>
+  } @else {
+    <button type="button" appButton [disabled]="draft.index() === 0" (click)="draft.go(-1)">
+      Back
+    </button>
+    <button
+      type="button"
+      appButton
+      intent="primary"
+      [disabled]="!draft.crop() || draft.busy()"
+      (click)="draft.judge('right')"
+    >
+      Right
+    </button>
+    <button
+      type="button"
+      appButton
+      title="Fix the shapes: draw, move, join, remove"
+      [disabled]="!draft.crop() || draft.busy()"
+      (click)="draft.fix()"
+    >
+      Wrong
+    </button>
+    <button
+      type="button"
+      appButton
+      [disabled]="!draft.crop() || draft.busy()"
+      (click)="draft.judge('unsure')"
+    >
+      Can't tell
+    </button>
+    <button
+      type="button"
+      appButton
+      [disabled]="draft.index() >= draft.list().length - 1"
+      (click)="draft.go(1)"
+    >
+      Next
+    </button>
+    <button
+      type="button"
+      appButton
+      [disabled]="draft.answered() === draft.list().length"
+      (click)="draft.nextUnchecked()"
+    >
+      Next unchecked
+    </button>
+  }
+</nav>

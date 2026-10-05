@@ -8,6 +8,7 @@
 @use 'themes/areas';
 @use 'themes/faint';
 @use 'themes/progress-chart';
+@use 'themes/crops';
 
 // The tokens' values. Unlayered, so they win over anything Tailwind sets on :root.
 :root {
@@ -21,6 +22,7 @@
   @include areas.tokens;
   @include faint.tokens;
   @include progress-chart.tokens;
+  @include crops.tokens;
 }
 
 // Page-wide element styles go in Tailwind's base layer and component styles in its components layer, so a utility

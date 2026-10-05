@@ -1,6 +1,7 @@
 import { computed, effect, inject, Service, signal } from '@angular/core';
 import { Recording } from '../api';
 import { RecordingSource } from '../platform/recording-source';
+import { queryValue, setQuery } from './url-query';
 
 /**
  * The recordings, from wherever this mode keeps them (RecordingSource), and the one that is open. The open one is kept
@@ -10,7 +11,7 @@ import { RecordingSource } from '../platform/recording-source';
 export class Library {
   readonly source = inject(RecordingSource);
   readonly all = this.source.recordings;
-  readonly selectedId = signal<string | null>(new URLSearchParams(location.search).get('id'));
+  readonly selectedId = signal<string | null>(queryValue('id'));
   readonly selected = computed<Recording | null>(() => {
     const id = this.selectedId();
     return this.all().find((recording) => recording.id === id) ?? null;
@@ -20,7 +21,7 @@ export class Library {
     effect(() => {
       const id = this.selectedId();
       const shared = id !== null && this.source.lasting(id);
-      history.replaceState(null, '', shared ? `?id=${encodeURIComponent(id)}` : location.pathname);
+      setQuery({ id: shared ? id : null });
     });
   }
 }
