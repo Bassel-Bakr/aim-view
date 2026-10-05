@@ -108,6 +108,24 @@
     }
   }
 
+  // The picture-in-picture window's page (floating-player.ts moves the player's video into it): the video centered on
+  // black
+  .pip-body {
+    display: grid;
+    min-height: 100vh;
+    margin: 0;
+    background: player.$pip-background;
+    place-items: center;
+
+    // the player's video, as large as the window allows, its overlay over it
+    > .screen {
+      width: min(100vw, 100vh * var(--screen-ratio));
+      margin: auto;
+      border-radius: 0;
+      box-shadow: none;
+    }
+  }
+
   :focus-visible {
     outline: t.$focus-width solid t.$accent;
     outline-offset: t.$focus-offset;

@@ -155,4 +155,15 @@
   .full-toggle[aria-pressed='true'] {
     @apply border-accent bg-accent-pressed;
   }
+
+  // The video floating in the page's corner (in the top layer, as a popover): small, its overlay with it
+  .screen:popover-open {
+    position: fixed;
+    inset: auto p.$mini-player-inset p.$mini-player-inset auto;
+    width: p.$mini-player-width;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: p.$mini-player-shadow;
+  }
 }

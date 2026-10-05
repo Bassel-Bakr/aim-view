@@ -4,7 +4,7 @@
 
 <!-- In full screen these fill the screen, and the panels come after them -->
 <div class="view">
-  <div class="frame">
+  <div class="frame" #frameBox [style.min-height.px]="floating.placeholder()">
     <div class="screen" #screenBox [style.--screen-ratio]="aspect()">
       <video
         class="video"
@@ -22,6 +22,9 @@
       ></video>
       <canvas class="canvas" #overlay aria-hidden="true"></canvas>
       <ng-content select="[screen]" />
+      @if (floating.docked()) {
+        <app-mini-bar (toPlayer)="floating.backToPlayer()" (dismiss)="floating.close()" />
+      }
     </div>
   </div>
 
@@ -99,5 +102,17 @@
     >
       Full screen
     </button>
+    @if (floating.canWindow) {
+      <button
+        class="full-toggle"
+        type="button"
+        appButton
+        title="The video, with what is drawn on it, in a window of its own that stays over other windows"
+        [attr.aria-pressed]="floating.inWindow()"
+        (click)="toggleWindow()"
+      >
+        Picture in picture
+      </button>
+    }
   </div>
 </div>

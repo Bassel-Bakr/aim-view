@@ -13,6 +13,12 @@
   --kill-mark-width: 1px;
   --kill-mark-height: 5px;
   --kill-mark: var(--text-muted);
+  // The video floating in the page's corner while the player is scrolled away (floating-player.ts)
+  --mini-player-width: min(360px, 55vw);
+  --mini-player-inset: 16px;
+  --mini-player-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --mini-bar-bg: rgba(0, 0, 0, 0.6);
+  --pip-background: #000;
 
   --overlay-font: var(--font-size-xs) var(--font-family);
   --overlay-crosshair: rgba(255, 255, 255, 0.35);
@@ -37,3 +43,8 @@ $seek-height: var(--seek-height);
 $kill-mark-width: var(--kill-mark-width);
 $kill-mark-height: var(--kill-mark-height);
 $kill-mark: var(--kill-mark);
+$mini-player-width: var(--mini-player-width);
+$mini-player-inset: var(--mini-player-inset);
+$mini-player-shadow: var(--mini-player-shadow);
+$mini-bar-bg: var(--mini-bar-bg);
+$pip-background: var(--pip-background);

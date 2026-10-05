@@ -6,6 +6,7 @@ import {
   DestroyRef,
   ElementRef,
   inject,
+  Injector,
   input,
   signal,
   untracked,
@@ -28,6 +29,8 @@ import {
   readOverlayStyle,
 } from './overlay';
 import { listenQuietly } from '../../services/listen-quietly';
+import { FloatingPlayer } from './floating-player';
+import { MiniBar } from './mini-bar/mini-bar';
 
 const OVERLAY_KEY = 'aimview-overlay';
 const FASTEST_KEY = 'aimview-fastest';
@@ -97,7 +100,7 @@ export function markPositions(report: Report | null, duration: number): number[]
  */
 @Component({
   selector: 'app-player',
-  imports: [Button],
+  imports: [Button, MiniBar],
   templateUrl: './player.html',
   styleUrl: './player.scss',
   host: {
@@ -117,6 +120,7 @@ export class Player {
   private readonly faint = inject(FaintCutoff);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly frameBox = viewChild.required<ElementRef<HTMLElement>>('frameBox');
   private readonly screenBox = viewChild.required<ElementRef<HTMLElement>>('screenBox');
   private readonly video = viewChild.required<ElementRef<HTMLVideoElement>>('video');
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('overlay');
@@ -135,6 +139,12 @@ export class Player {
   private readonly windowed = signal(false);
   /** The player fills the screen, or the window. */
   protected readonly full = computed(() => this.screen() || this.windowed());
+  /** The video floating: docked in the page's corner while the player is scrolled away, or in its own window. */
+  protected readonly floating = new FloatingPlayer(
+    this.playback,
+    () => this.full(),
+    inject(Injector),
+  );
   protected readonly clicking = computed(() => isClickReport(this.report()));
   protected readonly marks = computed(() => markPositions(this.report(), this.playback.duration()));
   /** The video's length, in whole seconds: the seek bar's end. */
@@ -180,6 +190,12 @@ export class Player {
     listenQuietly(box, 'mouseleave', () => this.stopPointing(), this.destroyRef);
     const seek = this.seekBar().nativeElement;
     listenQuietly(seek, 'input', () => this.playback.seek(seek.valueAsNumber), this.destroyRef);
+    this.floating.attach({
+      frame: this.frameBox().nativeElement,
+      screen: box,
+      video,
+      redraw: () => this.draw(this.playback.time),
+    });
     this.destroyRef.onDestroy(() => {
       cancel();
       resize.disconnect();
@@ -307,6 +323,10 @@ export class Player {
   protected toggleMine(): void {
     this.showMine.update((on) => !on);
     localStorage.setItem(MINE_KEY, this.showMine() ? '1' : '0');
+  }
+
+  protected toggleWindow(): void {
+    void this.floating.toggleWindow();
   }
 
   /** Fills the screen with the player, or leaves full screen. Where the browser refuses, the player fills the window. */
