@@ -213,11 +213,13 @@ let lessons = null;     // per recording: what the fixes so far say, worked out 
  *  and the score below which every box was crossed out while every box above it was kept. */
 function learn() {
   const per = new Map();
-  const get = (f) => per.get(f) || (per.set(f, { pairs: [], removed: [], kept: [] }), per.get(f));
+  const get = (f) => per.get(f) || (per.set(f, { pairs: [], removed: [], kept: [], wholes: [] }), per.get(f));
   for (const [id, a] of checks) {
     const c = byId.get(id);
     if (!c || setInfo[c.set]?.learn === false || a.verdict === "unsure" || a.suggested) continue;
     const L = get(c.folder), edit = a.edit || {}, remove = a.remove || [], replaced = new Set();
+    const whole = wholeFix(c, a);
+    if (whole) L.wholes.push(whole);
     for (const [i, e] of Object.entries(edit)) L.pairs.push([c.boxes[i], e]);
     for (const d of (a.add || []).filter((b) => b.length === 4)) {
       // a box drawn over a crossed-out one corrects it: the nearest crossed-out box whose center it covers
@@ -249,8 +251,57 @@ function learn() {
     if (L.removed.length >= 2 && L.kept.length >= 2 && Math.max(...L.removed) < Math.min(...L.kept)) {
       out.cut = (Math.max(...L.removed) + Math.min(...L.kept)) / 2;
     }
-    if (out.fix || out.cut !== undefined) lessons.set(f, out);
+    // a target the model sees in pieces (a robot): 3 fixes or more that drew one box over all of them
+    if (L.wholes.length >= WHOLE_FIXES) {
+      out.whole = {
+        w: median(L.wholes.map((x) => x.w)), h: median(L.wholes.map((x) => x.h)),
+        ox: median(L.wholes.map((x) => x.ox)), oy: median(L.wholes.map((x) => x.oy)), n: L.wholes.length,
+      };
+    }
+    if (out.fix || out.cut !== undefined || out.whole) lessons.set(f, out);
   }
+}
+
+/** Fixes that drew one box over a target the model saw in pieces teach one box per target. */
+const WHOLE_FIXES = 3;
+/** Pieces belong to the same target when their centers are this many of its boxes' sizes apart, or less. */
+const SAME_TARGET = 0.75;
+const CROP_SIDE = 256;
+
+/** The box around a set of boxes: [x0, y0, x1, y1]. */
+function around(boxes) {
+  return [Math.min(...boxes.map((b) => b[0] - b[2] / 2)), Math.min(...boxes.map((b) => b[1] - b[3] / 2)),
+          Math.max(...boxes.map((b) => b[0] + b[2] / 2)), Math.max(...boxes.map((b) => b[1] + b[3] / 2))];
+}
+
+/** An answer that crossed out every model box and drew one box covering all their centers: the drawn box's size, and
+ *  where its center sat from the pieces' (in its own sizes). Null for any other answer. */
+function wholeFix(c, a) {
+  const remove = a.remove || [], drawn = (a.add || []).filter((b) => b.length === 4);
+  if (!c.boxes.length || remove.length !== c.boxes.length || drawn.length !== 1) return null;
+  const [cx, cy, w, h] = drawn[0];
+  if (!c.boxes.every((b) => Math.abs(b[0] - cx) <= w / 2 && Math.abs(b[1] - cy) <= h / 2)) return null;
+  const [x0, y0, x1, y1] = around(c.boxes);
+  return { w, h, ox: (cx - (x0 + x1) / 2) / w, oy: (cy - (y0 + y1) / 2) / h };
+}
+
+/** The model's boxes in groups, one group per target: a box joins a group when its center is near the group's first. */
+function targetGroups(boxes, w, h) {
+  const groups = [];
+  for (const b of boxes) {
+    const g = groups.find((g) => Math.abs(g[0][0] - b[0]) <= SAME_TARGET * w && Math.abs(g[0][1] - b[1]) <= SAME_TARGET * h);
+    if (g) g.push(b); else groups.push([b]);
+  }
+  return groups;
+}
+
+/** One box per target over the model's pieces, as the whole-target lesson draws them. */
+function wholeBoxes(c, W) {
+  return targetGroups(c.boxes, W.w, W.h).map((g) => {
+    const [x0, y0, x1, y1] = around(g);
+    const cx = Math.min(Math.max((x0 + x1) / 2 + W.ox * W.w, 0), CROP_SIDE), cy = Math.min(Math.max((y0 + y1) / 2 + W.oy * W.h, 0), CROP_SIDE);
+    return [cx, cy, W.w, W.h].map(r1);
+  });
 }
 
 /** The fixes so far, applied to a crop not yet answered: its boxes corrected and the low scores crossed out. */
@@ -261,6 +312,9 @@ function suggestion(c) {
   if (!lessons || !c || setInfo[c.set]?.learn === false || checks.has(c.id)) return null;
   const L = lessons.get(c.folder);
   if (!L) return null;
+  if (L.whole && c.boxes.length) {
+    return { remove: c.boxes.map((_, i) => i), edit: {}, add: wholeBoxes(c, L.whole), lesson: L, whole: true };
+  }
   const remove = [], edit = {};
   c.boxes.forEach((b, i) => {
     if (L.cut !== undefined && c.scores[i] !== undefined && c.scores[i] < L.cut) remove.push(i);
@@ -568,6 +622,11 @@ function render() {
     line.className = "adjusted";
     line.textContent = setInfo[c.set]?.crossedOut || "The crossed-out box is where the model saw a target that isn't one. Right agrees; if it is a real target, tap Wrong, then tap the box to bring it back.";
     $("note").append(line);
+  } else if (sug && sug.whole) {
+    const W = sug.lesson.whole, line = document.createElement("div");
+    line.className = "adjusted";
+    line.textContent = `Drawn from your fixes on this recording: one box per target over the model's pieces, ${Math.round(W.w)} x ${Math.round(W.h)} (the middle of your ${W.n} boxes). Right keeps it as shown; Wrong to fix it.`;
+    $("note").append(line);
   } else if (sug) {
     const L = sug.lesson, parts = [];
     if (L.fix && Object.keys(sug.edit).length) parts.push(`boxes ${Math.round(L.fix.sw * 100)}% wide and ${Math.round(L.fix.sh * 100)}% tall, from ${L.fix.n} of your fixes`);
@@ -626,7 +685,7 @@ function doneText() {
 
 $("b-right").onclick = () => {
   const sug = suggestion(current());
-  save("right", sug ? { remove: sug.remove, add: [], edit: sug.edit, suggested: true } : null);
+  save("right", sug ? { remove: sug.remove, add: sug.add || [], edit: sug.edit, suggested: true } : null);
 };
 $("b-unsure").onclick = () => save("unsure");
 $("b-wrong").onclick = () => {

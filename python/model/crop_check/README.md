@@ -9,7 +9,10 @@ your answers as you go.
 - `index.html`: the page. The crop fills the width and the verdicts sit at the bottom, for one thumb. Zoom with two
   fingers, move and resize a box, draw a new one, tap a point for a target too small to draw, or tap a box to cross it
   out. A dashed guide shows each box's edge. After 3 or more fixes on a recording agree (sizes within 35%), the page
-  offers the same fix on its next crops; an answer taken as offered does not teach it again. One tab per set.
+  offers the same fix on its next crops; an answer taken as offered does not teach it again. A target the model sees
+  in pieces (a robot) has a lesson of its own: after 3 fixes on a recording that crossed out every piece and drew one
+  box over them, the page offers one box per group of pieces, with the size and the place over the pieces of the
+  middle of those boxes. One tab per set.
 - `make_page.py`: adds a set of crops to a page folder (a tab), and copies the page there.
 - `labels.py`: turns the answers into labels that `checked_data.py` reads.
 
