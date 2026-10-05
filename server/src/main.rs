@@ -65,7 +65,7 @@ fn main() -> ExitCode {
 /// to print.
 async fn run(settings: Settings, file: Option<PathBuf>) -> Result<(), String> {
     let address = listen_address(&settings).await?;
-    let access = access::Access::new(&[address], settings.token.clone())?;
+    let access = access::Access::new(&[address], settings.token.clone(), settings.dev)?;
     if let Some(path) = &file {
         println!("settings: {}", path.display());
     }
@@ -116,7 +116,16 @@ fn print_settings(settings: &Settings, api: &dyn Api, access: &access::Access) {
     if !settings.ui.join("index.html").is_file() {
         println!("no UI build in {} (bun run build:server): only the API answers", settings.ui.display());
     }
-    let access_note = if access.has_token() { "with its token" } else { "this machine only" };
+    let access_note = if access.is_open_network() {
+        "dev mode: open to the local network without a token"
+    } else if access.has_token() {
+        "with its token"
+    } else {
+        "this machine only"
+    };
+    if settings.dev && settings.token.is_some() {
+        println!("dev mode: the token is not used");
+    }
     println!("Aim View: {} ({access_note}; Ctrl+C stops it)", settings.url());
 }
 

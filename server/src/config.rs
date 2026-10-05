@@ -117,6 +117,10 @@ pub struct Flags {
     /// The access token: letters, digits and - . _ ~. Prefer the settings file: a flag shows in the process list
     #[arg(long)]
     pub token: Option<String>,
+    /// Dev mode: no token. On a network address (--host 0.0.0.0), any device on the local network gets in; only on a
+    /// network you trust [default: off]
+    #[arg(long)]
+    pub dev: bool,
 }
 
 /// A path as given, empty too (clap's own parser refuses an empty one).
@@ -141,6 +145,7 @@ pub struct FileSettings {
     pub ffmpeg: Option<PathBuf>,
     pub ui: Option<PathBuf>,
     pub token: Option<String>,
+    pub dev: Option<bool>,
 }
 
 /// The settings the server runs with.
@@ -158,6 +163,8 @@ pub struct Settings {
     pub ffmpeg: FfmpegChoice,
     pub ui: PathBuf,
     pub token: Option<String>,
+    /// Dev mode: no token (access.rs).
+    pub dev: bool,
 }
 
 /// The repo this server was built from (the defaults point into it).
@@ -197,6 +204,7 @@ impl Settings {
             ffmpeg: FfmpegChoice::Auto(repo.join("test_out").join("ffmpeg")),
             ui: repo.join("ui").join("dist").join("server").join("browser"),
             token: None,
+            dev: false,
         }
     }
 
@@ -291,6 +299,7 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
         ffmpeg,
         ui: path(flags.ui, file.ui).unwrap_or(defaults.ui),
         token,
+        dev: flags.dev || file.dev.unwrap_or(defaults.dev),
     })
 }
 

@@ -34,6 +34,7 @@ With no settings, the server runs on the machine Aim View is made on:
 | ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg/` in the data folder; `path` for the PATH's only |
 | UI build | `--ui` | the repo's `ui/dist/server/browser` |
 | Token | `--token` | none |
+| Dev mode: no token ("Access") | `--dev` | off (TOML: `dev = true`) |
 
 The same settings can go in a TOML file: `--config <file>`, or `aimview-server.toml` in the current folder. A flag
 overrides the file. A relative path in the file starts at the file's folder. Write Windows paths in single quotes,
@@ -112,6 +113,12 @@ every request must carry it:
 - a browser: open `http://<server>:8770/?token=<token>` once. The server sets a cookie and the browser sends it from
   then on. Other sites' pages cannot use the cookie (it is `SameSite=Strict` and `HttpOnly`).
 - a program: send the header `Authorization: Bearer <token>`.
+
+Dev mode (`--dev`, or `dev = true` in the settings file) uses no token at all. With `host = "0.0.0.0"`, any device on
+the local network gets in by this machine's address or name (`http://192.168.1.111:8770/`, `http://my-pc:8770/`,
+`http://my-pc.local:8770/`). A web site's name that points at this machine is still refused (DNS rebinding), and so is
+a request from another site's page. Any device on the network can then review, upload, download links and read the
+recordings, so keep it to a network you trust. A token in the settings file is not used while dev mode is on.
 
 A token holds letters, digits and `- . _ ~`. Make it long and random, for example
 `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Put it in the settings file rather than on the

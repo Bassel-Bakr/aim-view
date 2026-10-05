@@ -3,7 +3,8 @@
 //! rebinding, no cross-site requests but a loopback page's: the UI in browser mode, on http://localhost:4200, asks
 //! the server to download a link, and may read the answers: `loopback_caller`). With a token, every request carries
 //! it: `Authorization: Bearer <token>`, or the cookie that visiting `/?token=<token>` once sets (SameSite=Strict, so
-//! other sites' requests do not carry it).
+//! other sites' requests do not carry it). In dev mode no token is used: on a network address, any device on the
+//! local network gets in, by an address or a machine's name (still no rebinding, and no other site's page).
 //!
 //! In: the addresses the server listens on and its token (main.rs), then each request's method, URI and headers
 //! (http.rs). Out: a `Verdict` per request, which http.rs acts on.
@@ -29,6 +30,8 @@ pub enum Verdict {
 
 pub struct Access {
     token: Option<String>,
+    /// Dev mode on an address other machines reach: they get in without a token.
+    open_network: bool,
 }
 
 /// Whether two byte strings are equal, in a time that does not depend on where they differ.
@@ -36,20 +39,35 @@ fn equal_in_constant_time(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |difference, (x, y)| difference | (x ^ y)) == 0
 }
 
+/// A Host header's name or address without its port or brackets, lower case: ::1, [::1]:8770, [::1], 127.0.0.1:8770
+/// and localhost:8770 give ::1, ::1, ::1, 127.0.0.1 and localhost.
+fn host_name(host: &str) -> String {
+    let host = host.trim().to_ascii_lowercase();
+    match host.strip_prefix('[') {
+        _ if host.parse::<IpAddr>().is_ok() => host,
+        Some(rest) => rest.split(']').next().unwrap_or_default().to_string(),
+        None => host.rsplit_once(':').map_or(host.clone(), |(name, port)| {
+            if port.bytes().all(|b| b.is_ascii_digit()) { name.to_string() } else { host.clone() }
+        }),
+    }
+}
+
 /// A host name or address (with or without its port) that stays on this machine.
 fn is_loopback_host(host: &str) -> bool {
-    let host = host.trim().to_ascii_lowercase();
-    // ::1, [::1]:8770, [::1], 127.0.0.1:8770, localhost
-    let name = match host.strip_prefix('[') {
-        _ if host.parse::<IpAddr>().is_ok() => host.as_str(),
-        Some(rest) => rest.split(']').next().unwrap_or_default(),
-        None => host.rsplit_once(':').map_or(host.as_str(), |(name, port)| {
-            if port.bytes().all(|b| b.is_ascii_digit()) { name } else { host.as_str() }
-        }),
-    };
+    let name = host_name(host);
     name == "localhost"
         || name.ends_with(".localhost")
         || name.parse::<IpAddr>().is_ok_and(|ip| ip.to_canonical().is_loopback())
+}
+
+/// A host a device on the local network opens the server by: this machine's, an address (192.168.1.111:8770), a
+/// machine's name (my-pc) or its name on the local network (my-pc.local). A web site's name (evil.example) is none,
+/// so a site whose name points at this machine (DNS rebinding) is still refused.
+fn is_local_network_host(host: &str) -> bool {
+    let name = host_name(host);
+    is_loopback_host(host)
+        || name.parse::<IpAddr>().is_ok()
+        || (!name.is_empty() && (!name.contains('.') || name.ends_with(".local")))
 }
 
 /// An Origin header's page is on this machine (http://localhost:4200, http://127.0.0.1:8770, ...).
@@ -118,6 +136,21 @@ fn check_this_machine(host: Option<&str>, origin: Option<&str>) -> Verdict {
     Verdict::Pass
 }
 
+/// Dev mode, open to the local network without a token: a request that names a local network host, from no page,
+/// a page on this machine or the server's own page.
+fn check_local_network(host: Option<&str>, origin: Option<&str>) -> Verdict {
+    if !host.is_some_and(is_local_network_host) {
+        return Verdict::Refuse {
+            status: StatusCode::FORBIDDEN,
+            reason: "open the server by this machine's address or name on the local network",
+        };
+    }
+    if origin.is_some_and(is_loopback_origin) {
+        return Verdict::Pass;
+    }
+    check_own_page(host, origin)
+}
+
 /// With the token's cookie: the browser sends the cookie by itself, so only the server's own pages (or no page) pass.
 fn check_own_page(host: Option<&str>, origin: Option<&str>) -> Verdict {
     let own = match (origin, host) {
@@ -140,18 +173,27 @@ fn set_cookie(path: &str, rest: &str, token: &str) -> Verdict {
 }
 
 impl Access {
-    /// The access a server on `addrs` gets: refused when other machines can reach it and it has no token.
-    pub fn new(addrs: &[SocketAddr], token: Option<String>) -> Result<Access, String> {
+    /// The access a server on `addrs` gets: refused when other machines can reach it and it has no token, unless in
+    /// dev mode (`dev`), which uses no token at all.
+    pub fn new(addrs: &[SocketAddr], token: Option<String>, dev: bool) -> Result<Access, String> {
+        if dev {
+            return Ok(Access { token: None, open_network: !all_loopback(addrs) });
+        }
         if token.is_none() && !all_loopback(addrs) {
             return Err("the server would be open to other machines: give it a token (--token, or token = \"...\" in \
-                        the settings file), or listen on 127.0.0.1"
+                        the settings file), listen on 127.0.0.1, or run it in dev mode (--dev, or dev = true)"
                 .into());
         }
-        Ok(Access { token })
+        Ok(Access { token, open_network: false })
     }
 
     pub fn has_token(&self) -> bool {
         self.token.is_some()
+    }
+
+    /// Whether other machines get in without a token (dev mode on a network address).
+    pub fn is_open_network(&self) -> bool {
+        self.open_network
     }
 
     /// Whether a request may go on.
@@ -163,7 +205,7 @@ impl Access {
             return Verdict::Refuse { status: StatusCode::FORBIDDEN, reason: "a request from another site" };
         }
         let Some(token) = &self.token else {
-            return check_this_machine(host, origin);
+            return if self.open_network { check_local_network(host, origin) } else { check_this_machine(host, origin) };
         };
         let is_token = |given: &str| equal_in_constant_time(given.as_bytes(), token.as_bytes());
         if bearer_token(headers).is_some_and(is_token) {
@@ -217,16 +259,16 @@ mod tests {
 
     #[test]
     fn another_machine_can_reach_the_server_only_with_a_token() {
-        assert!(Access::new(&lan(), None).is_err());
-        assert!(Access::new(&["192.168.1.20:8770".parse().unwrap()], None).is_err());
-        assert!(Access::new(&lan(), Some(TOKEN.into())).is_ok());
-        assert!(Access::new(&loopback(), None).is_ok());
-        assert!(Access::new(&["[::1]:8770".parse().unwrap()], None).is_ok());
+        assert!(Access::new(&lan(), None, false).is_err());
+        assert!(Access::new(&["192.168.1.20:8770".parse().unwrap()], None, false).is_err());
+        assert!(Access::new(&lan(), Some(TOKEN.into()), false).is_ok());
+        assert!(Access::new(&loopback(), None, false).is_ok());
+        assert!(Access::new(&["[::1]:8770".parse().unwrap()], None, false).is_ok());
     }
 
     #[test]
     fn without_a_token_only_this_machine_gets_in() {
-        let a = Access::new(&loopback(), None).unwrap();
+        let a = Access::new(&loopback(), None, false).unwrap();
         for host in ["127.0.0.1:8770", "localhost:4200", "[::1]:8770", "LOCALHOST", "app.localhost:8770"] {
             assert_eq!(check(&a, Method::GET, "/api/vods", &[("host", host)]), Verdict::Pass, "{host}");
         }
@@ -270,7 +312,7 @@ mod tests {
 
     #[test]
     fn the_token_in_the_header() {
-        let a = Access::new(&lan(), Some(TOKEN.into())).unwrap();
+        let a = Access::new(&lan(), Some(TOKEN.into()), false).unwrap();
         let host = ("host", "192.168.1.20:8770");
         let ok = format!("Bearer {TOKEN}");
         assert_eq!(check(&a, Method::POST, "/api/analyse?id=x", &[host, ("authorization", &ok)]), Verdict::Pass);
@@ -284,7 +326,7 @@ mod tests {
 
     #[test]
     fn the_token_in_the_query_sets_the_cookie_and_the_cookie_lets_the_browser_in() {
-        let a = Access::new(&lan(), Some(TOKEN.into())).unwrap();
+        let a = Access::new(&lan(), Some(TOKEN.into()), false).unwrap();
         let host = ("host", "192.168.1.20:8770");
         let verdict = check(&a, Method::GET, &format!("/?token={TOKEN}"), &[host]);
         let Verdict::SetCookie { location, cookie } = verdict else { panic!("no cookie: {verdict:?}") };
@@ -308,6 +350,44 @@ mod tests {
         let stale = format!("{COOKIE_NAME}=old-token");
         let verdict = check(&a, Method::GET, "/api/vods", &[host, ("cookie", &stale)]);
         assert_eq!(refused(&verdict), Some(StatusCode::UNAUTHORIZED));
+    }
+
+    #[test]
+    fn dev_mode_lets_the_local_network_in_without_a_token() {
+        let a = Access::new(&lan(), Some(TOKEN.into()), true).unwrap();
+        assert!(a.is_open_network() && !a.has_token(), "dev mode uses no token, even when one is set");
+        for host in ["192.168.1.111:8770", "10.0.0.5", "[fe80::1]:8770", "my-pc:8770", "my-pc.local:8770", "localhost"] {
+            assert_eq!(check(&a, Method::GET, "/api/vods", &[("host", host)]), Verdict::Pass, "{host}");
+        }
+        // the server's own page, and the UI in browser mode on this machine
+        let own = [("host", "192.168.1.111:8770"), ("origin", "http://192.168.1.111:8770")];
+        assert_eq!(check(&a, Method::POST, "/api/analyse?id=x", &own), Verdict::Pass);
+        let browser = [("host", "127.0.0.1:8770"), ("origin", "http://localhost:4200"), ("sec-fetch-site", "cross-site")];
+        assert_eq!(check(&a, Method::POST, "/api/link", &browser), Verdict::Pass);
+        // DNS rebinding: a web site's name that points at this machine
+        let rebound = [("host", "evil.example:8770")];
+        assert_eq!(refused(&check(&a, Method::GET, "/api/vods", &rebound)), Some(StatusCode::FORBIDDEN));
+        assert!(refused(&check(&a, Method::GET, "/", &[])).is_some(), "no host");
+        // another site's page
+        let cross = [("host", "192.168.1.111:8770"), ("origin", "https://evil.example")];
+        assert_eq!(refused(&check(&a, Method::POST, "/api/analyse?id=x", &cross)), Some(StatusCode::FORBIDDEN));
+        let cross = [("host", "192.168.1.111:8770"), ("sec-fetch-site", "cross-site")];
+        assert_eq!(refused(&check(&a, Method::GET, "/video?id=x", &cross)), Some(StatusCode::FORBIDDEN));
+        // on a loopback address dev mode is this machine only, as without a token
+        let here = Access::new(&loopback(), None, true).unwrap();
+        assert!(!here.is_open_network());
+        let lan_host = [("host", "192.168.1.111:8770")];
+        assert_eq!(refused(&check(&here, Method::GET, "/api/vods", &lan_host)), Some(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn local_network_names() {
+        for host in ["192.168.1.2:8770", "[::2]:1", "my-pc", "MY-PC.local:8770", "localhost", "127.0.0.1"] {
+            assert!(is_local_network_host(host), "{host}");
+        }
+        for host in ["", "example.com", "evil.example:8770", "my-pc.local.evil.example", "localhost.example.com"] {
+            assert!(!is_local_network_host(host), "{host}");
+        }
     }
 
     #[test]

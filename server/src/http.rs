@@ -315,7 +315,7 @@ mod tests {
     fn app(token: Option<&str>) -> (Arc<Echo>, Router) {
         let echo = Arc::new(Echo::default());
         let addrs = ["127.0.0.1:8770".parse().unwrap()];
-        let access = Access::new(&addrs, token.map(String::from)).unwrap();
+        let access = Access::new(&addrs, token.map(String::from), false).unwrap();
         (echo.clone(), router(Arc::new(App { api: echo, access, ui: ui() })))
     }
 
