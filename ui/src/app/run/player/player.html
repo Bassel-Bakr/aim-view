@@ -17,6 +17,7 @@
         (play)="playback.paused.set(false)"
         (pause)="playback.paused.set(true)"
         (loadedmetadata)="loadedMetadata()"
+        (ratechange)="playback.followRate()"
         (seeked)="showSeekedFrame()"
       ></video>
       <canvas class="canvas" #overlay aria-hidden="true"></canvas>

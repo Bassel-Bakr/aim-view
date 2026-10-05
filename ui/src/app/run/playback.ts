@@ -6,6 +6,16 @@ export type FrameListener = (seconds: number) => void;
 export const RATES = [1, 0.5, 0.25, 0.125];
 
 /**
+ * Plays a video at a speed, and makes it the speed a newly loaded video starts at: loading a video (another recording
+ * in the same player) resets its speed to the default, which left the speed buttons saying one speed and the video
+ * playing another.
+ */
+function applyRate(video: HTMLVideoElement, rate: number): void {
+  video.defaultPlaybackRate = rate;
+  video.playbackRate = rate;
+}
+
+/**
  * The video: playing, seeking and speed, and the frame on screen. The frame changes up to 120 times a second, so it is
  * not a signal: what follows it (the overlay, the timeline's playhead, the clock) registers a listener and writes to
  * its canvas or element directly, without change detection.
@@ -35,7 +45,7 @@ export class Playback {
     this.video = video;
     this.time = 0;
     this.stopAt = null;
-    if (video) video.playbackRate = this.rate();
+    if (video) applyRate(video, this.rate());
   }
 
   onFrame(listener: FrameListener): () => void {
@@ -91,6 +101,11 @@ export class Playback {
 
   setRate(rate: number): void {
     this.rate.set(rate);
-    if (this.video) this.video.playbackRate = rate;
+    if (this.video) applyRate(this.video, rate);
+  }
+
+  /** The video's speed changed (the browser's own controls, a picture-in-picture window): the buttons follow it. */
+  followRate(): void {
+    if (this.video) this.rate.set(this.video.playbackRate);
   }
 }
