@@ -1,6 +1,8 @@
 """A training set from crops checked by eye (label_check.py's checked.jsonl format, as the phone page writes it): each
 crop's npz copied with its boxes replaced by the checked ones ("skip": no target there, no boxes) and its target mask
-made again from them (the ellipse that fills each box, as build_data.py's model labels and build_mined.py make it).
+made again: a row drawn on the app's Crops page brings its targets' visible pixels ("mask", from the core: see
+crop_check/labels.py), any other gets the ellipse that fills each box (as build_data.py's model labels and
+build_mined.py make it).
 The rest of the npz is kept as it is, and so is the crop's split (train/, val/, test/). Crops checked "unsure" are
 left out, and so are the files --leave-out names (a slip on the label page). A row's "covered" boxes (a target
 hidden under the crosshair) go into the npz as "ignore": train.py learns neither a target nor wall there. The
@@ -43,6 +45,17 @@ def ellipse_mask(boxes):
     return target_mask
 
 
+def mask_of(runs):
+    """The target mask from run lengths over the crop's rows, the first of pixels not set (the core's shapes::runs)."""
+    flat = np.zeros(CROP * CROP, np.uint8)
+    start = 0
+    for index, length in enumerate(runs):
+        if index % 2:
+            flat[start:start + length] = 1
+        start += length
+    return flat.reshape(CROP, CROP)
+
+
 def write_crop(source, out, tag, file, row, counts):
     """One checked crop's npz in its split folder of `out`, its boxes and mask replaced and its covered boxes added."""
     crop = np.load(source / file)
@@ -54,8 +67,9 @@ def write_crop(source, out, tag, file, row, counts):
         extra["ignore"] = np.array(row["covered"], np.float32).reshape(-1, BOX_VALUES)
         counts["ignore boxes"] += len(extra["ignore"])
     kept = {key: crop[key] for key in crop.files if key not in ("boxes", "tmask")}
-    np.savez_compressed(out / split / f"{tag}{Path(file).name}", **kept, tmask=ellipse_mask(boxes), boxes=boxes,
-                        **extra)
+    drawn = row.get("mask") is not None and row["verdict"] == "correct"
+    tmask = mask_of(row["mask"]) if drawn else ellipse_mask(boxes)
+    np.savez_compressed(out / split / f"{tag}{Path(file).name}", **kept, tmask=tmask, boxes=boxes, **extra)
     counts[split] += 1
     counts["boxes"] += len(boxes)
     counts["without targets"] += len(boxes) == 0
