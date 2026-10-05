@@ -583,7 +583,7 @@ fix belongs in the detector: crops of bars the model boxes, the box crossed out.
 
 ## Current best model
 
-**full_v6** (2026-10-05, the section above), threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX. Static,
+**full_v6** (2026-10-05, "full_v6: the robots" above), threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX. Static,
 dynamic, switching, tracking and robots. small_v13 (32,037 parameters, 134.5 KB) is the small one, for speed. full_v3
 was the best before it.
 

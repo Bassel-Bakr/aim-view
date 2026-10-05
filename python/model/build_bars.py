@@ -7,8 +7,9 @@ The recordings: build_mined.py's reviews (full_v3's tracks, <mined>/reviews/), t
 bot). Those frames are decoded once per recording (ffmpeg, from the start: frame numbers equal the review's) and run
 through --model (the PyTorch export) at BOX_THRESHOLD. A box there is a bar when it sits above a bigger box (at most
 half its area, its center within the bot's width, 0.4 to 2 bot heights higher), its pixels are not the bot's (at most
-BOT_LIKE_SHARE within BOT_COLOR_DIFF of the bot's middle color, and SATURATED_SHARE of them colored: a bar's fill), and
-it is part of a strip running sideways (runs_sideways). A bot's head or a target beside another is the bot's own
+BOT_LIKE_SHARE within BOT_COLOR_DIFF of the bot's middle color, and DISTINCT_SHARE of them neither the bot's color nor
+the wall's: a bar's fill, of any color, as KovaaK's lets the player pick it), and it is part of a strip running
+sideways (runs_sideways). A bot's head or a target beside another is the bot's own
 color, so it is never taken (both are on Pasu Switch Wide and mccoyfrozentrack), nor is a small colored target beside
 a bot (the wall is on both its sides).
 
@@ -49,8 +50,7 @@ BAR_AREA_SHARE = 0.5
 BAR_ABOVE = (0.4, 2.0)                  # the bar's center above the bot's, in bot heights
 BOT_COLOR_DIFF = 40                     # a pixel within this of the bot's middle color (each channel) is the bot's
 BOT_LIKE_SHARE = 0.1                    # a bar has at most this share of the bot's color
-SATURATED = 60                          # a pixel whose channels differ by more than this is colored
-SATURATED_SHARE = 0.4                   # a bar has at least this share colored
+DISTINCT_SHARE = 0.4                    # a bar has at least this share neither the wall's color nor the bot's
 WIDE_BAR = 2.5                          # a box this many times wider than tall covers a bar's whole strip
 STRIP_SHARE = 0.5                       # else at least this share beside it is the strip's (the rest of the bar)
 MIN_REACH_PX = 3                        # how far beside the box the strip is looked for, at least
@@ -77,33 +77,48 @@ def pixels(rgb, box, inset=0.0):
 
 
 def is_bar(rgb, bar, bot):
-    """A box above a bot whose pixels are colored and none of them the bot's, on a strip running sideways."""
+    """A box above a bot whose pixels are neither the bot's color nor the wall's, on a strip running sideways. The
+    fill may be any color, white and gray too: KovaaK's lets the player pick it."""
     if not above(bar, bot):
         return False
     color = np.median(pixels(rgb, bot, inset=0.25), 0)
+    wall = wall_color(rgb, bar)
     patch = pixels(rgb, bar)
     bot_like = np.mean(np.abs(patch - color).max(1) < BOT_COLOR_DIFF)
-    colored = np.mean(patch.max(1) - patch.min(1) > SATURATED)
-    return bot_like <= BOT_LIKE_SHARE and colored >= SATURATED_SHARE and runs_sideways(rgb, bar, color)
+    distinct = np.mean(unlike(patch, wall, color))
+    return bot_like <= BOT_LIKE_SHARE and distinct >= DISTINCT_SHARE and runs_sideways(rgb, bar, color, wall)
 
 
-def runs_sideways(rgb, bar, bot_color):
-    """Whether a box is part of a horizontal strip, as a bar's fill is: the box is wide, or beside it (one box width
-    left or right, in its middle rows) STRIP_SHARE of the pixels are neither the wall's color (the median a box height
-    above it) nor the bot's. A small colored target beside a bot has the wall on both sides."""
+def unlike(colors, wall, bot_color):
+    """Which of the (n, 3) colors differ from both the wall's and the bot's (by more than BOT_COLOR_DIFF in a
+    channel)."""
+    return (np.abs(colors - wall).max(1) > BOT_COLOR_DIFF) & (np.abs(colors - bot_color).max(1) > BOT_COLOR_DIFF)
+
+
+def wall_color(rgb, bar):
+    """The wall's color round a box: the median of a band a box height above it, as wide as the box and a box width
+    either side."""
     cx, cy, width, height = bar[:4]
-    if width >= WIDE_BAR * height:
-        return True
     x0, x1 = int(round(cx - width / 2)), int(round(cx + width / 2))
     reach, gap = max(int(round(width)), MIN_REACH_PX), max(int(round(height)), MIN_GAP_PX)
     top = max(0, int(cy - height / 2) - 2 * gap)
     wall_area = rgb[top:max(top + 1, int(cy - height / 2) - gap), max(0, x0 - reach):x1 + reach]
-    wall = np.median(wall_area.reshape(-1, 3), 0)
+    return np.median(wall_area.reshape(-1, 3).astype(float), 0)
+
+
+def runs_sideways(rgb, bar, bot_color, wall):
+    """Whether a box is part of a horizontal strip, as a bar's fill is: the box is wide, or beside it (one box width
+    left or right, in its middle rows) STRIP_SHARE of the pixels are neither the wall's color nor the bot's. A small
+    colored target beside a bot has the wall on both sides."""
+    cx, cy, width, height = bar[:4]
+    if width >= WIDE_BAR * height:
+        return True
+    x0, x1 = int(round(cx - width / 2)), int(round(cx + width / 2))
+    reach = max(int(round(width)), MIN_REACH_PX)
     rows = slice(max(0, int(cy - height / 4)), int(cy + height / 4) + 1)
     for cols in (slice(max(0, x0 - reach), max(0, x0 - 1)), slice(x1 + 2, x1 + 1 + reach)):
         side = rgb[rows, cols].reshape(-1, 3).astype(float)
-        strip = (np.abs(side - wall).max(1) > BOT_COLOR_DIFF) & (np.abs(side - bot_color).max(1) > BOT_COLOR_DIFF)
-        if len(side) and strip.mean() >= STRIP_SHARE:
+        if len(side) and unlike(side, wall, bot_color).mean() >= STRIP_SHARE:
             return True
     return False
 
