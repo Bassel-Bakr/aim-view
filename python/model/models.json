@@ -8,7 +8,7 @@
     {"key": "tracking", "name": "Tracking", "what": "time on the bot minus the stats file's accuracy: mean, and mean size (nearer 0 is better)"}
   ],
   "checked_on": "Recordings no model trained on, against their stats files (eval_moving.py).",
-  "default": "full_v6",
+  "default": "full_v8_s3",
   "models": {
     "full_v3": {
       "params": 80765, "kb": 324.4,
@@ -27,12 +27,14 @@
       "checks": {"static": [854, 849], "moving": [1200, 1184], "tracking": [-0.092, 0.141]},
       "accepted": "2026-10-05: python/model/reports/accept_full_v6.json (the app's native review)"
     },
-    "full_v8_orange": {
+    "full_v8_s3": {
       "params": 80765, "kb": 324.4,
-      "trained": "full_v6 fine-tuned with the 2026-10-05 labels and 354 health-bar crops checked by eye, the bar crossed out: orange and red bars only.",
+      "trained": "full_v6 fine-tuned with the 2026-10-05 labels (crosshair, small targets, robots) and 354 health-bar crops checked by eye, with copies in other colors and without their text: a bar is never a target. Seed 3 of the recipe.",
       "speed_ms": {"gpu": 1.37, "cpu": 6.0, "browser": 24.1},
-      "best": "Taught that bots' health bars are no targets.",
-      "weak": "Not gated: its gate was stopped. Never shown a bar of another color."
+      "best": "Tracking nearest the stats files of any model (mean gap size 0.099 against full_v6's 0.141), 4 more dynamic and switching flicks than full_v6, and no health bar taken for a target: Pasu Switch Wide 46 of 46 kills from the video alone (full_v7 35).",
+      "weak": "Video alone a little below full_v6 (recall 0.9459 against 0.9463, precision 0.9608 against 0.9626). Targets as small as the crosshair: 1wall 2targets xsmall valorant 38 of 66 kills (full_v6 42).",
+      "checks": {"static": [854, 848], "moving": [1200, 1188], "tracking": [-0.056, 0.099]},
+      "accepted": "2026-10-05: python/model/reports/accept_full_v8_s3.json (the app's native review)"
     },
     "hand": {
       "label": "Hand-written",

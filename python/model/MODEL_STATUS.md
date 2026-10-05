@@ -581,16 +581,46 @@ two-sphere bots (full_v6: 9 of 19 kills to 2) and a target beside another (full_
 bar's box differs from those by its pixels (orange, none of the bot's color: `python/model/build_bars.py`), so the
 fix belongs in the detector: crops of bars the model boxes, the box crossed out.
 
+## full_v8: health bars of any color (2026-10-05)
+
+full_v7's recipe with the health-bar set: 354 crops of bars the model boxes (`build_bars.py`), each checked by the
+user (every crossed-out box a bar; 127 boxes tightened, 6 false targets crossed out, 8 missed ones added), counted 3
+times, and 852 copies of the 256 train crops with the bar painted other colors and, in every other copy, its text
+hidden (`recolor_bars.py`): KovaaK's lets the player pick the bar's color and hide the bot's name, but every recorded
+bar is orange or red. A trial on the crops before the check (orange only) gave Pasu Switch Wide back (46 of 46) in all
+three of its seeds.
+
+Seeds swing a fine-tune of full_v6 more than any one set does, so the recipe was trained 3 times. Seed 1 fails the
+contract's crosshair check (it boxes the crosshair while the view turns on 6.2% of the turning pairs of 1wall
+6targets extra small 849.91, full_v6 0.94%; the check allows 2 points). Seeds 2 and 3 pass the gate; seed 3 is the
+best and is the default:
+
+| Check | full_v8_s3 | full_v8_s2 | full_v6 | Allowed |
+| --- | --- | --- | --- | --- |
+| Contract | meets it | meets it | meets it | every check |
+| Static kills, flicks (854) | 854, 848 | 854, 848 | 854, 849 | 0, 4.6 |
+| Dynamic kills, flicks (797) | 796, 789 | 796, 792 | 796, 788 | 0, 6.2 |
+| Switching kills, flicks (404) | 404, 399 | 404, 398 | 404, 396 | 0, 5.8 |
+| Tracking gap: mean size, mean | 0.099, -0.056 | 0.112, -0.070 | 0.141, -0.092 | 0.064, 0.091 |
+| Report (4 static runs) kills, flicks (496) | 496, 494 | 496, 494 | 496, 494 | 0, 2.9 |
+| Video alone, all: recall, precision | 0.9459, 0.9608 | 0.9450, 0.9608 | 0.9463, 0.9626 | 0.0066, 0.0055 |
+| Gate | PASS | PASS | | |
+
+On the video alone, full_v8_s3 finds 10 more of Tile Frenzy 180's kills with no false one, and all 46 of Pasu
+Switch Wide's (2 false). It loses most on targets as small as the crosshair (1wall 2targets xsmall valorant: 38 of 66
+against 42), as most fine-tunes of full_v6 do (34 to 38; one ablation kept 42), and on mccoyfrozentrack (6 of 19 against 9). The
+gate's reports: `python/model/reports/accept_full_v8_s3.json`, `test_out/baselines/full_v8_auto/` for the trial.
+
 ## Current best model
 
-**full_v6** (2026-10-05, "full_v6: the robots" above), threshold 0.3. 80,765 parameters; 324.4 KB as fp32 ONNX. Static,
-dynamic, switching, tracking and robots. small_v13 (32,037 parameters, 134.5 KB) is the small one, for speed. full_v3
-was the best before it.
+**full_v8_s3** (2026-10-05, "full_v8: health bars of any color" above), threshold 0.3. 80,765 parameters; 324.4 KB as
+fp32 ONNX. Static, dynamic, switching, tracking, robots, and never a health bar. small_v13 (32,037 parameters, 134.5
+KB) is the small one, for speed. full_v6 was the best before it.
 
-- To embed (KovOBS, the browser, any language): `python/model/exports/detector_full_v6_embed.onnx` (or
+- To embed (KovOBS, the browser, any language): `python/model/exports/detector_full_v8_s3_embed.onnx` (or
   `detector_small_v13_embed.onnx`). Raw RGB bytes and the fixed map in, the 100 best boxes out.
-- With the plain float input (any ONNX runtime, the HTTP server): `detector_full_v6_fp32.onnx`.
-- The checkpoint: `test_out/vod_model/runs/full_v6/best.pt`.
+- With the plain float input (any ONNX runtime, the HTTP server): `detector_full_v8_s3_fp32.onnx`.
+- The checkpoint: `test_out/vod_model/runs/full_v8_s3/best.pt`.
 
 The checks of earlier models below were made with small_v11 as the best.
 

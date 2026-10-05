@@ -88,5 +88,19 @@
       ]
     },
     "retired": "2026-10-05: dropped from the picker by the user"
+  },
+  "full_v8_orange": {
+    "label": "full_v8_orange (trial)",
+    "params": 80765,
+    "kb": 324.4,
+    "trained": "full_v6 fine-tuned with the 2026-10-05 labels and 354 health-bar crops checked by eye, the bar crossed out: orange and red bars only.",
+    "speed_ms": {
+      "gpu": 1.37,
+      "cpu": 6.0,
+      "browser": 24.1
+    },
+    "best": "Taught that bots' health bars are no targets.",
+    "weak": "Not gated: its gate was stopped. Never shown a bar of another color.",
+    "retired": "2026-10-05: replaced in the picker by full_v8_s3 (the same recipe with bars of every color, gated)"
   }
 }
