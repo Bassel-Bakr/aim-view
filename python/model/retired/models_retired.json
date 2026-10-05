@@ -26,5 +26,67 @@
     "best": "Tracking a little nearer the stats files than full_v3, and 3 more static flicks measured (the acceptance gate, MODEL_STATUS.md).",
     "weak": "A trial: it fails the acceptance gate on kills matched. Smoothbot Switch Robots matches 51 of 56 kills (full_v3 54); its robots need more training data.",
     "retired": "2026-10-05: dropped from the picker by the user"
+  },
+  "small_v11": {
+    "params": 32037,
+    "kb": 134.5,
+    "trained": "Static runs only, with KovaaK's own crosshairs drawn in.",
+    "speed_ms": {
+      "gpu": 0.71,
+      "cpu": 4.0,
+      "browser": 14.2
+    },
+    "best": "Static runs and uploads: the most flicks measured on static runs and on the uploads and the Aim Lab run.",
+    "weak": "It never saw a moving bot, so it cannot track, and it measures the fewest flicks on dynamic and switching runs.",
+    "checks": {
+      "static": [
+        854,
+        846
+      ],
+      "moving": [
+        1092,
+        1009
+      ],
+      "uploads": [
+        997,
+        990
+      ],
+      "tracking": [
+        -0.161,
+        0.211
+      ]
+    },
+    "retired": "2026-10-05: dropped from the picker by the user"
+  },
+  "small_v13": {
+    "params": 32037,
+    "kb": 134.5,
+    "trained": "Every scenario kind: static, dynamic, switching and tracking.",
+    "speed_ms": {
+      "gpu": 0.71,
+      "cpu": 4.0,
+      "browser": 14.2
+    },
+    "best": "Nearly full_v3's results at less than half the compute. The one for the CPU, the browser and KovOBS.",
+    "weak": "Tracking a little further from the stats files, mostly on one run (Air Tracking 180).",
+    "checks": {
+      "static": [
+        854,
+        844
+      ],
+      "moving": [
+        1096,
+        1048
+      ],
+      "uploads": [
+        997,
+        984
+      ],
+      "tracking": [
+        -0.035,
+        0.086
+      ]
+    },
+    "retired": "2026-10-05: dropped from the picker by the user"
   }
 }
