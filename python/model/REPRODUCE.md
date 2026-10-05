@@ -90,6 +90,10 @@ python python/model/build_mined.py --out test_out/vod_model/data_mined --pick 10
 python python/model/label_check.py --data test_out/vod_model/check_mined --n 100 --port 8775 --out test_out/vod_model/check_mined/checked.jsonl
 ```
 
+Checks from 2026-10-05 on use the app's Crops page (crop_check/README.md): its answers land in the check folder's
+`answers/checks/`, the same place, and labels.py takes the shapes drawn there from the core (each target's box, the
+boxes of targets hidden entirely, and the visible pixels, which checked_data.py makes the `tmask`).
+
 Both sets checked by eye, as training sets (2026-10-04, full_v4's data). The user checked every crop of both on the
 phone page (`checked_phone.jsonl` in each set, label_check's format). `checked_data.py` copies each crop with its boxes
 replaced by the checked ones ("skip": no target, no boxes) and its target mask made again from them (the ellipse that

@@ -33,8 +33,9 @@ python python/model/eval_video_alone.py [model]  # the video-alone kill finder o
                                                # (tracks kept per model; --retrack after a change to the tracking)
 python python/model/accept.py <name> [--list]  # the acceptance gate: the contract and the three checks above against
                                                # the best model's; --list adds a passing model to models.json
-python python/model/crop_check/make_page.py <page> <set> <crops>   # a set of crops for the phone check page;
-                                               # labels.py turns its answers into labels (crop_check/README.md)
+python python/model/crop_check/make_page.py <page> <set> <crops>   # a set of crops for the app's Crops page
+                                               # (?page=crops); labels.py turns its answers into labels
+                                               # (crop_check/README.md)
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
 bun run build                                  # every mode's build: ui/dist/browser, server, desktop
@@ -281,6 +282,15 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   recording's HUD; `examples/review.rs` reviews one request. A review keeps the version that made it (src/track.rs
   `REVIEW_VERSION`, 3 since `link` repairs a false camera turn; 2 was the HUD): a report from an older one says `outdated` and the run page asks for a new
   review.
+  The Crops page (the top bar's Crops, `?page=crops`; ui/src/app/crops/, platform/crop-sets.ts, service/src/crops.rs)
+  checks the detector's crops on the phone: the check folders make_page.py writes (test_out/vod_model/check_*; in
+  browser mode and the desktop app, the data folder's crops/), Right, Wrong or Can't tell for each crop, and a fix
+  drawn with KovaaK's shapes (src/shapes.rs: pills and boxes, turned, a box's third face, joined into targets with
+  head and body roles, front to back, occluders). The core works out what each target shows, for the page's tint and
+  for the labels (`aimview-tool crop-labels`, which labels.py runs). Routes: /api/crop_pages, /api/crops,
+  /api/crop_answers, /api/crop_image, /api/crop_answer, /api/crop_export and /api/crop_import (browser mode exports
+  its answers as one file, the review server imports it; a crop's newer answer wins). The claude.ai page's answers
+  load on it unchanged.
   The faint-target cut-off (the run page's Cut-off and the top bar's Cut-off queue; platform/faint-cutoffs.ts, the
   core's src/faint.rs) works in every mode: the service keeps it (faint.json), and the core measures a tracking run
   without the tracks it cuts (`faint` in the review request: equal to Python's on 5 tracking runs at 3 offsets,
