@@ -232,6 +232,18 @@ python python/model/export.py $D/runs/full_v5/best.pt
 python python/model/accept.py full_v5
 ```
 
+full_v6: full_v5's recipe with the robot set (step 1, `data_robots_checked`), its crops counted 3 times too
+(`repeat_full_v6.txt` is `repeat_full_v4.txt` plus `chk_robot_ 3`). It passes the gate with the matching rule of
+01214c5 (a kill reaches a target's box):
+
+```bash
+python python/model/train.py python/model/configs/full_v6.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked --extra $D/data_mined_checked2 \
+  --extra $D/data_robots_checked --repeat $D/repeat_full_v6.txt --times 3 --init $D/runs/full_v3/best.pt
+python python/model/export.py $D/runs/full_v6/best.pt
+python python/model/accept.py full_v6
+```
+
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
 and forked from any snapshot with `<new config> --fork test_out/vod_model/runs/<name>/snapshots/<snapshot>.pt`.
 
