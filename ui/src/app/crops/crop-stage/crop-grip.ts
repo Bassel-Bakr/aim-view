@@ -29,6 +29,13 @@ export interface CropGrip {
   index: number;
 }
 
+/** A drag: where it began and where it is (crop pixels), and whether Shift keeps a shape's two sides equal. */
+export interface CropDrag {
+  start: CropPoint;
+  point: CropPoint;
+  even: boolean;
+}
+
 /** A selected shape's handles: its corners, its turn handle, and a box's face handle. */
 export interface ShapeHandles {
   corners: CropPoint[];
@@ -112,19 +119,19 @@ export function gripAt(
 }
 
 /**
- * The scene as a drag leaves it, from the scene at the press: a corner resizes its shape, the turn handle turns it, the
- * face handle gives a box its third face, and a shape moves (with the rest of the selection when it is selected).
+ * The scene as a drag leaves it, from the scene at the press: a corner resizes its shape (its sides kept equal with
+ * Shift), the turn handle turns it, the face handle gives a box its third face, and a shape moves (with the rest of the
+ * selection when it is selected).
  */
 export function dragged(
   from: DraftScene,
   grip: CropGrip,
   selection: readonly string[],
-  start: CropPoint,
-  point: CropPoint,
+  { start, point, even }: CropDrag,
 ): DraftScene {
   const held = from.shapes.find((shape) => shape.id === grip.id);
   if (!held) return from;
-  if (grip.kind === 'corner') return withChanged(from, resized(held, grip.index, point));
+  if (grip.kind === 'corner') return withChanged(from, resized(held, grip.index, point, even));
   if (grip.kind === 'turn') return withChanged(from, turned(held, point));
   if (grip.kind === 'face') return withChanged(from, faced(held, point));
   if (grip.kind !== 'move') return from;
@@ -132,10 +139,17 @@ export function dragged(
   return changeEach(from, ids, (shape) => moved(shape, [point[0] - start[0], point[1] - start[1]]));
 }
 
-/** The box a drag on the wall draws, to a tenth of a pixel; null when it is too small to be a shape. */
-export function sketchBox([x0, y0]: CropPoint, [x1, y1]: CropPoint): CropBox | null {
-  const [width, height] = [Math.abs(x1 - x0), Math.abs(y1 - y0)];
+/**
+ * The box a drag on the wall draws, to a tenth of a pixel; null when it is too small to be a shape. With Shift (`even`)
+ * both sides take the longer one, from where the drag began toward the pointer: a perfect circle or square.
+ */
+export function sketchBox({ start: [x0, y0], point: [x1, y1], even }: CropDrag): CropBox | null {
+  const side = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+  const [endX, endY] = even
+    ? [x0 + Math.sign(x1 - x0) * side, y0 + Math.sign(y1 - y0) * side]
+    : [x1, y1];
+  const [width, height] = [Math.abs(endX - x0), Math.abs(endY - y0)];
   if (width < MIN_SIDE_PX || height < MIN_SIDE_PX) return null;
   const tenth = (value: number) => Math.round(value * 10) / 10;
-  return [tenth((x0 + x1) / 2), tenth((y0 + y1) / 2), tenth(width), tenth(height)];
+  return [tenth((x0 + endX) / 2), tenth((y0 + endY) / 2), tenth(width), tenth(height)];
 }

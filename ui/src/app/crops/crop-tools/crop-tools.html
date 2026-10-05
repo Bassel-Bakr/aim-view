@@ -96,6 +96,15 @@
   <button
     type="button"
     appButton
+    title="Both sides the same: a perfect circle or square (also: hold Shift while drawing or resizing)"
+    [disabled]="!chosen().length"
+    (click)="evenSides()"
+  >
+    Equal sides
+  </button>
+  <button
+    type="button"
+    appButton
     class="tool-toggle"
     title="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
     [attr.aria-pressed]="draft.panning()"
@@ -107,5 +116,6 @@
 <p class="tool-help">
   Drag on the crop to draw a {{ draft.kind() }}. Tap shapes to select them. Drag a corner to resize,
   the round handle above to turn, a box's square handle to show its third face. The wheel over the
-  selected shapes resizes them, elsewhere it zooms. Tap the wall for a tiny target.
+  selected shapes resizes them, elsewhere it zooms. Shift while drawing or resizing makes a perfect
+  circle or square. Tap the wall for a tiny target.
 </p>

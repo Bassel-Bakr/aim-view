@@ -4,6 +4,7 @@ import {
   corners,
   faced,
   faceHandle,
+  evened,
   moved,
   onShape,
   resized,
@@ -49,6 +50,12 @@ describe('shape geometry', () => {
     near(corners(after)[0][1], corners(before)[0][1]);
     near(corners(after)[2][0], 70);
     near(corners(after)[2][1], 70);
+  });
+
+  it('keeps both sides equal with Shift, or evens them to their mean', () => {
+    const even = resized(shape({}), 2, [70, 60], true);
+    expect(even.box).toEqual([55, 60, 30, 30]);
+    expect(evened(shape({})).box).toEqual([50, 50, 15, 15]);
   });
 
   it('turns toward the finger, moves, and gives a box its third face', () => {

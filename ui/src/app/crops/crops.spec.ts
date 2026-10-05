@@ -82,15 +82,15 @@ async function render(routes: ApiRoutes) {
     await settle();
   };
   /** A pointer event of the mouse, with a button (0 the left, 2 the right). */
-  const pointer = (type: string, [x, y]: Pixel, button: number) => {
-    const event = new MouseEvent(type, { clientX: x, clientY: y, button });
+  const pointer = (type: string, [x, y]: Pixel, button: number, shiftKey: boolean) => {
+    const event = new MouseEvent(type, { clientX: x, clientY: y, button, shiftKey });
     Object.defineProperty(event, 'pointerType', { value: 'mouse' });
     canvas.dispatchEvent(event);
   };
-  const drag = (from: Pixel, to: Pixel, button = 0) => {
-    pointer('pointerdown', from, button);
-    pointer('pointermove', to, button);
-    pointer('pointerup', to, button);
+  const drag = (from: Pixel, to: Pixel, button = 0, shift = false) => {
+    pointer('pointerdown', from, button, shift);
+    pointer('pointermove', to, button, shift);
+    pointer('pointerup', to, button, shift);
     TestBed.tick();
   };
   const tap = (at: Pixel) => drag(at, at);
@@ -199,5 +199,20 @@ describe('the Crops page state', () => {
     await reply('/api/crops', [crop('c1'), crop('c2')]);
     await reply('/api/crop_answers', { c1: OLD });
     expect(draft.crop()?.id).toBe('c2');
+  });
+});
+
+describe("the Crops page's perfect circles and squares", () => {
+  afterEach(() => history.replaceState(null, '', '/'));
+
+  it('draws a perfect circle with Shift, and evens a selected shape with Equal sides', async () => {
+    const { draft, click, drag } = await render(fakeServer([]));
+    await click('Wrong');
+    drag([10, 10], [30, 50], 0, true);
+    expect(draft.draft()?.shapes.at(-1)?.box).toEqual([30, 30, 40, 40]);
+    drag([120, 120], [140, 160]);
+    expect(draft.draft()?.shapes.at(-1)?.box).toEqual([130, 140, 20, 40]);
+    await click('Equal sides');
+    expect(draft.draft()?.shapes.at(-1)?.box).toEqual([130, 140, 30, 30]);
   });
 });

@@ -78,8 +78,11 @@ export function faceHandle(shape: Shape, reach: number): CropPoint | null {
   return toCrop(shape, [width / 2 + reach, -height / 2 - reach]);
 }
 
-/** A shape resized by one corner (0 to 3, as `corners`) dragged to a point: the opposite corner stays put. */
-export function resized(shape: Shape, corner: number, point: CropPoint): Shape {
+/**
+ * A shape resized by one corner (0 to 3, as `corners`) dragged to a point: the opposite corner stays put. `even`: both
+ * sides the same, the longer one (Shift: a perfect circle or square).
+ */
+export function resized(shape: Shape, corner: number, point: CropPoint, even = false): Shape {
   const signs: OwnPoint[] = [
     [-1, -1],
     [1, -1],
@@ -90,11 +93,22 @@ export function resized(shape: Shape, corner: number, point: CropPoint): Shape {
   const [, , width, height] = shape.box;
   const fixed: OwnPoint = [(-signW * width) / 2, (-signH * height) / 2];
   const [along, across] = toOwn(shape, point);
-  const newWidth = Math.max(MIN_SIDE_PX, signW * (along - fixed[0]));
-  const newHeight = Math.max(MIN_SIDE_PX, signH * (across - fixed[1]));
+  const [pulledWidth, pulledHeight] = [
+    Math.max(MIN_SIDE_PX, signW * (along - fixed[0])),
+    Math.max(MIN_SIDE_PX, signH * (across - fixed[1])),
+  ];
+  const longer = Math.max(pulledWidth, pulledHeight);
+  const [newWidth, newHeight] = even ? [longer, longer] : [pulledWidth, pulledHeight];
   const middle: OwnPoint = [fixed[0] + (signW * newWidth) / 2, fixed[1] + (signH * newHeight) / 2];
   const [cx, cy] = toCrop(shape, middle);
   return { ...shape, box: [cx, cy, newWidth, newHeight] };
+}
+
+/** A shape with both sides the same, their mean, about its middle: a pill becomes a circle, a box a square. */
+export function evened(shape: Shape): Shape {
+  const [cx, cy, width, height] = shape.box;
+  const side = (width + height) / 2;
+  return { ...shape, box: [cx, cy, side, side] };
 }
 
 /** A shape moved by (dx, dy). */

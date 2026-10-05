@@ -2,7 +2,9 @@ import { Component, computed, inject } from '@angular/core';
 import { Shape, ShapeKind, ShapeRole } from '../../api';
 import { Button } from '../../controls/button';
 import { CropDraft } from '../crop-draft';
+import { evened } from '../../shapes/shape-geometry';
 import {
+  changeEach,
   DraftScene,
   inFront,
   joined,
@@ -22,7 +24,7 @@ interface RoleChoice {
 /**
  * The tools of a fix, for the shapes selected on the stage: their kind (and the kind a drag draws), their role, joining
  * them into one target or splitting them, sending them in front or behind, making them hide what is behind them,
- * removing and duplicating them; and Pan, which makes a drag on the stage move the view.
+ * removing and duplicating them, giving them equal sides; and Pan, which makes a drag on the stage move the view.
  */
 @Component({
   selector: 'app-crop-tools',
@@ -93,6 +95,10 @@ export class CropTools {
   protected remove(): void {
     this.change(removed);
     this.draft.selection.set([]);
+  }
+
+  protected evenSides(): void {
+    this.change((scene, ids) => changeEach(scene, ids, evened));
   }
 
   protected togglePanning(): void {

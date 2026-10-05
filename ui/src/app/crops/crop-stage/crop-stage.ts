@@ -17,7 +17,7 @@ import { CropSets } from '../../platform/crop-sets';
 import { CropPoint } from '../../shapes/shape-geometry';
 import { CROP_SIDE, CropDraft } from '../crop-draft';
 import { DraftScene, removed, resizedAll, uncrossed, withDrawn, withPoint } from '../crop-scene';
-import { CropGrip, dragged, gripAt, shapesAt, sketchBox } from './crop-grip';
+import { CropDrag, CropGrip, dragged, gripAt, shapesAt, sketchBox } from './crop-grip';
 import {
   CropStyle,
   maskPicture,
@@ -90,7 +90,8 @@ const PEEK_MS = 180;
  * box's square handle pulls out its third face. A tap selects or unselects a shape, brings a crossed-out box back, and
  * on the wall clears the selection or, with none, marks a tiny target. Two fingers (or the wheel) zoom and pan; the
  * tools' Pan, Space, or the mouse's middle or right button make a drag pan; the wheel over the selected shapes resizes
- * them. Delete removes the selected shapes, Ctrl+D duplicates them.
+ * them. Shift while drawing or resizing keeps a shape's two sides equal (a perfect circle or square). Delete removes the
+ * selected shapes, Ctrl+D duplicates them.
  */
 @Component({
   selector: 'app-crop-stage',
@@ -282,7 +283,7 @@ export class CropStage {
       clearTimeout(this.peekTimer);
       this.peeking.set(false);
     }
-    this.dragTo(press, screen);
+    this.dragTo(press, screen, event.shiftKey);
   }
 
   private movePinch(pinch: StagePinch): void {
@@ -302,7 +303,7 @@ export class CropStage {
     );
   }
 
-  private dragTo(press: StagePress, screen: ScreenPoint): void {
+  private dragTo(press: StagePress, screen: ScreenPoint, even: boolean): void {
     const grip = press.grip;
     if (!grip || press.pans) {
       const [dx, dy] = [screen[0] - press.screen[0], screen[1] - press.screen[1]];
@@ -311,9 +312,9 @@ export class CropStage {
       );
       return;
     }
-    const point = this.toCrop(screen);
+    const drag = { start: press.start, point: this.toCrop(screen), even };
     if (grip.kind === 'draw') {
-      const box = sketchBox(press.start, point);
+      const box = sketchBox(drag);
       const kind = this.draft.kind();
       this.sketch.set(
         box && { id: '', kind, box, angle: 0, face: null, depth: 0, role: null, model: null },
@@ -321,8 +322,7 @@ export class CropStage {
       return;
     }
     const from = press.from;
-    if (from)
-      this.draft.edit(() => dragged(from, grip, this.draft.selection(), press.start, point));
+    if (from) this.draft.edit(() => dragged(from, grip, this.draft.selection(), drag));
   }
 
   protected releasePointer(event: PointerEvent): void {
@@ -343,7 +343,11 @@ export class CropStage {
     this.sketch.set(null);
     if (press.grip && !press.moved) this.tap(press.grip, press.start);
     else if (!press.pans && press.grip?.kind === 'draw')
-      this.addDrawn(press.start, this.toCrop(this.at(event)));
+      this.addDrawn({
+        start: press.start,
+        point: this.toCrop(this.at(event)),
+        even: event.shiftKey,
+      });
   }
 
   /** A tap: a shape is selected or unselected, a crossed-out box comes back, the wall clears or marks a point. */
@@ -369,8 +373,8 @@ export class CropStage {
   }
 
   /** A shape drawn on the wall: added, and selected alone so the tools act on it. */
-  private addDrawn(start: CropPoint, end: CropPoint): void {
-    const box = sketchBox(start, end);
+  private addDrawn(drag: CropDrag): void {
+    const box = sketchBox(drag);
     if (!box) return;
     this.draft.edit((scene) => withDrawn(scene, this.draft.kind(), box));
     const added = this.draft.draft()?.shapes.at(-1);
