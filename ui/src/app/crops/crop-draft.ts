@@ -207,16 +207,21 @@ export class CropDraft {
     return this.keep(answerOf(crop, draft, 'wrong', false));
   }
 
-  /** Keeps an answer, then shows the next crop (not yet checked, or in order); a failure says why and stays. */
+  /**
+   * Keeps an answer, then shows the next crop: the next not yet checked, or the next in order when Skip checked is off
+   * or the crop was answered before. A failure says why and stays.
+   */
   private async keep(answer: CropAnswer): Promise<void> {
     const [crop, folder] = [this.crop(), this.folder()];
     if (!crop || !folder) return;
+    // going over checked crops again: the next one in order, not the end of a set that is all checked
+    const again = crop.id in this.answers();
     this.busy.set(true);
     try {
       const kept = await this.sets.save(folder, crop.id, answer);
       this.saved.update((saved) => ({ ...saved, [crop.id]: kept }));
       this.note.set(null);
-      if (this.skipChecked()) this.nextUnchecked();
+      if (this.skipChecked() && !again) this.nextUnchecked();
       else this.go(1);
     } catch (error) {
       this.note.set({ text: `That answer was not saved: ${messageOf(error)}`, failed: true });

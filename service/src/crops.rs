@@ -20,6 +20,8 @@ use crate::library::{Answer, Failure, Library};
 /// to (answers*/checks), read too.
 const ANSWERS: &str = "answers";
 const CHECKS: &str = "checks";
+/// Where an answer goes when its crop is answered again (beside answers/checks/): nothing the user said is lost.
+const REPLACED: &str = "replaced";
 /// A crop's side in pixels (make_page.py's crops are 256 x 256).
 pub const CROP_PX: usize = 256;
 /// A crop's added mark: a box [cx, cy, w, h], or a tapped point [x, y].
@@ -319,7 +321,7 @@ impl Library {
     }
 }
 
-/// A scene answer's training label: its verdict, set and file; per target its visible box, the box round all its
+/// A scene answer's training label: its verdict, set, file and time; per target its visible box, the box round all its
 /// shapes, whether it is hidden entirely and its shapes (kinds, roles); the boxes of the targets that show, the boxes
 /// of those hidden entirely (training's ignore boxes), and the pixels of every target (training's tmask) as run
 /// lengths.
@@ -337,7 +339,8 @@ fn scene_label(answer: &CropAnswer, scene: &Scene) -> Value {
     let boxes: Vec<[f64; 4]> = view.targets.iter().filter_map(|target| target.frame).collect();
     let ignore: Vec<[f64; 4]> = view.targets.iter().filter(|target| target.hidden).map(|target| target.whole).collect();
     json!({
-        "verdict": answer.verdict, "set": answer.set, "file": answer.file, "targets": targets, "boxes": boxes,
+        "verdict": answer.verdict, "set": answer.set, "file": answer.file, "at": answer.at, "targets": targets,
+        "boxes": boxes,
         "ignore": ignore, "mask": view.mask,
     })
 }
@@ -356,14 +359,31 @@ impl Library {
     }
 }
 
-/// Writes a crop's answer into the folder's answers/checks/, through a temporary file renamed into place.
+/// Writes a crop's answer into the folder's answers/checks/, through a temporary file renamed into place. The answer
+/// it replaces moves to answers/replaced/ first.
 fn write_answer(folder: &Path, id: &str, answer: &CropAnswer) -> Answer<()> {
     let dir = folder.join(ANSWERS).join(CHECKS);
     crate::disk::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec_pretty(answer).map_err(|error| error.to_string())?;
     let (temporary, path) = (dir.join(format!("{id}.json.part")), dir.join(format!("{id}.json")));
     crate::disk::write(&temporary, bytes).map_err(|error| error.to_string())?;
+    keep_replaced(folder, id, &path)?;
     crate::disk::rename(&temporary, &path).map_err(|error| error.to_string().into())
+}
+
+/// Moves the answer at `path`, when there is one, to answers/replaced/<id>.<its time in ms>.json (a number after it
+/// when that name is taken), where the page and the labels do not read it.
+fn keep_replaced(folder: &Path, id: &str, path: &Path) -> Answer<()> {
+    if !crate::disk::is_file(path) {
+        return Ok(());
+    }
+    let dir = folder.join(ANSWERS).join(REPLACED);
+    crate::disk::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let at = read_answer(path).map_or(0.0, |answer| answer.at.round());
+    let name = |copy: usize| if copy == 0 { format!("{id}.{at}.json") } else { format!("{id}.{at}.{copy}.json") };
+    let free = (0..).map(|copy| dir.join(name(copy))).find(|place| !crate::disk::exists(place));
+    let place = free.ok_or_else(|| "no free name in answers/replaced".to_string())?;
+    crate::disk::rename(path, place).map_err(|error| error.to_string().into())
 }
 
 #[cfg(test)]
@@ -447,6 +467,23 @@ mod tests {
         let mut no_box = answer(8.0);
         no_box["remove"] = json!([2]);
         assert!(library.save_crop_answer(PAGE, "bars.train.a", no_box.to_string().as_bytes()).is_err());
+        let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn an_answer_given_again_keeps_the_one_it_replaces() {
+        let (library, folder) = library("again");
+        library.save_crop_answer(PAGE, "bars.train.a", answer(7.0).to_string().as_bytes()).unwrap();
+        library.save_crop_answer(PAGE, "bars.train.a", answer(8.0).to_string().as_bytes()).unwrap();
+        library.save_crop_answer(PAGE, "bars.train.a", answer(8.0).to_string().as_bytes()).unwrap();
+        let replaced = folder.join("answers").join("replaced");
+        let mut names: Vec<String> = std::fs::read_dir(&replaced)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["bars.train.a.7.json", "bars.train.a.8.json"]);
+        assert_eq!(library.crop_answers(PAGE, "bars").unwrap()["bars.train.a"]["at"], 8.0, "replaced ones are not read");
         let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
     }
 

@@ -220,18 +220,28 @@ describe("the Crops page's perfect circles and squares", () => {
 describe('the Crops page order', () => {
   afterEach(() => history.replaceState(null, '', '/'));
 
-  it('after an answer, skips checked crops, or with Skip checked off goes on in order', async () => {
+  it('skips checked crops after a first answer, and goes on in order after one given again', async () => {
+    const routes: ApiRoutes = {
+      ...fakeServer([]),
+      '/api/crops': [crop('c1'), crop('c2'), crop('c3'), crop('c4')],
+      '/api/crop_answers': { c2: OLD, c3: OLD },
+    };
+    const { draft, click } = await render(routes);
+    expect(draft.crop()?.id).toBe('c1');
+    await click('Right');
+    expect(draft.crop()?.id).toBe('c4');
+    draft.index.set(0);
+    await click('Right');
+    expect(draft.crop()?.id).toBe('c2');
+  });
+
+  it('with Skip checked off, a first answer goes on in order too', async () => {
     const routes: ApiRoutes = {
       ...fakeServer([]),
       '/api/crops': [crop('c1'), crop('c2'), crop('c3')],
-      '/api/crop_answers': { c1: OLD, c2: OLD },
+      '/api/crop_answers': { c2: OLD },
     };
     const { draft, click } = await render(routes);
-    expect(draft.crop()?.id).toBe('c3');
-    draft.index.set(0);
-    await click('Right');
-    expect(draft.crop()?.id).toBe('c3');
-    draft.index.set(0);
     await click('Skip checked');
     await click('Right');
     expect(draft.crop()?.id).toBe('c2');
