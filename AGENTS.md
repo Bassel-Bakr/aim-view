@@ -177,7 +177,8 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 
 ## State (2026-10-02)
 
-- The detector is full_v3 (`infer.BEST`), trained on every scenario kind; small_v13 is the small one for speed.
+- The detector is full_v6 (`infer.BEST`, models.json's default since 2026-10-05), trained on every scenario kind and
+  on robots boxed whole; small_v13 is the small one for speed.
 - The plan: the app runs three ways from one code base (browser only, browser with the review server, desktop). The UI
   is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
   desktop app (Tauri 2) and as WebAssembly for the browser. The ground truth is KovaaK's stats files, not Python: a

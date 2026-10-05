@@ -8,7 +8,7 @@
     {"key": "tracking", "name": "Tracking", "what": "time on the bot minus the stats file's accuracy: mean, and mean size (nearer 0 is better)"}
   ],
   "checked_on": "Recordings no model trained on, against their stats files (eval_moving.py).",
-  "default": "full_v3",
+  "default": "full_v6",
   "models": {
     "full_v3": {
       "params": 80765, "kb": 324.4,
@@ -49,6 +49,15 @@
       "best": "Static runs and uploads: the most flicks measured on static runs and on the uploads and the Aim Lab run.",
       "weak": "It never saw a moving bot, so it cannot track, and it measures the fewest flicks on dynamic and switching runs.",
       "checks": {"static": [854, 846], "moving": [1092, 1009], "uploads": [997, 990], "tracking": [-0.161, 0.211]}
+    },
+    "full_v6": {
+      "params": 80765, "kb": 324.4,
+      "trained": "full_v3 fine-tuned on full_v5's checked crops and 309 robot crops checked by eye, one box per whole robot.",
+      "speed_ms": {"gpu": 1.37, "cpu": 6.0, "browser": 24.1},
+      "best": "Boxes a robot whole: Smoothbot Switch Robots matches 55 of 55 kills. Passes the acceptance gate against full_v3 (MODEL_STATUS.md).",
+      "weak": "Tracking a little farther from the stats files than full_v3 (mean gap size 0.141 against 0.117, within the gate's limit).",
+      "checks": {"static": [854, 849], "moving": [1200, 1184], "tracking": [-0.092, 0.141]},
+      "accepted": "2026-10-05: python/model/reports/accept_full_v6.json (the app's native review)"
     },
     "hand": {
       "label": "Hand-written",
