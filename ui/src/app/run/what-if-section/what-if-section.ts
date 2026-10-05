@@ -1,4 +1,6 @@
 import { Component, computed, input } from '@angular/core';
+import { DataColumn, TableGrouping } from '../../data-table/data-column';
+import { DataTable } from '../../data-table/data-table';
 
 /** A what-if line as shown: the change, its gains (one per gain column) and why it would help. */
 export interface WhatIfLine {
@@ -19,19 +21,49 @@ export interface WhatIfTable {
   groups: WhatIfGroup[];
 }
 
+/** A line as the table holds it: with its group's name ('' for lines under no heading). */
+export interface WhatIfRow extends WhatIfLine {
+  group: string;
+}
+
+const BY_HEADING: TableGrouping<WhatIfRow> = { label: 'Heading', key: (row) => row.group };
+
 /**
- * A report's "What would raise your ..." section: the heading, the note (the content) and the lines by group. Nothing
- * when there are no lines.
+ * A report's "What would raise your ..." section: the heading, the note (the content) and the lines by group, in the
+ * app's data table: the change, its gains (sortable) and why, a prose column wide enough to read. Nothing when there
+ * are no lines.
  */
 @Component({
   selector: 'app-what-if-section',
+  imports: [DataTable],
   templateUrl: './what-if-section.html',
   styleUrl: './what-if-section.scss',
 })
 export class WhatIfSection {
   readonly heading = input.required<string>();
   readonly table = input.required<WhatIfTable>();
-
-  /** A group heading spans the change, the gains and the why. */
-  protected readonly span = computed(() => this.table().columns.length + 2);
+  protected readonly grouping = BY_HEADING;
+  protected readonly rows = computed(() =>
+    this.table().groups.flatMap((group) =>
+      group.lines.map((line) => ({ ...line, group: group.name ?? '' })),
+    ),
+  );
+  protected readonly columns = computed((): DataColumn<WhatIfRow>[] => [
+    { id: 'what', header: 'Change', text: (row) => row.what, rowHeader: true },
+    ...this.table().columns.map((header, index): DataColumn<WhatIfRow> => ({
+      id: `gain-${index}`,
+      header,
+      text: (row) => row.gains[index] ?? '',
+      tone: () => 'value',
+    })),
+    {
+      id: 'how',
+      header: 'Why',
+      text: (row) => row.how,
+      prose: true,
+      sortable: false,
+      tone: () => 'muted',
+    },
+  ]);
+  protected readonly rowId = (row: WhatIfRow): string => `${row.group}/${row.what}`;
 }

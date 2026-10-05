@@ -25,8 +25,9 @@
   --budget-radius: 4px;
   --flick-list-width: 580px;
   --flick-list-stacked-height: 420px;
-  // the flick list's cells: tighter than the page's tables, so its columns fit the player's width
-  --flick-list-cell-padding: 5px 4px 5px 0;
+  // the flick list's cells: tighter than the page's tables, and its table's edges as far in as its head's
+  --flick-list-cell-padding: 6px 10px 6px 0;
+  --flick-list-inset: 14px;
   // the picked flick's row: a bar of the accent at its left edge
   --selected-edge: inset 2px 0 0 var(--accent);
   --speed-chart-height: 150px;
@@ -56,6 +57,7 @@ $side-width: var(--side-width);
 $side-min-width: var(--side-min-width);
 $flick-list-stacked-height: var(--flick-list-stacked-height);
 $flick-list-cell-padding: var(--flick-list-cell-padding);
+$flick-list-inset: var(--flick-list-inset);
 // Below this width of the run page the flick list goes under the video. A container query cannot read a CSS
 // variable, so this one value is Sass only.
 $stack-width: 1080px;

@@ -41,7 +41,8 @@ async function render() {
   fixture.componentRef.setInput('rows', ROWS);
   await fixture.whenStable();
   const el = fixture.nativeElement as HTMLElement;
-  const order = () => [...el.querySelectorAll('tr.row')].map((tr) => tr.getAttribute('data-n'));
+  const order = () =>
+    [...el.querySelectorAll('tr.data-row')].map((tr) => tr.getAttribute('data-id'));
   const header = (label: string) =>
     [...el.querySelectorAll('th')].find((th) =>
       th.textContent?.trim().startsWith(label),
@@ -68,16 +69,18 @@ describe('the kills table', () => {
 
   it('groups the kills, each group with its count and median TTK, and folds a group away', async () => {
     const { fixture, el, order, click } = await render();
-    fixture.componentRef.setInput('groupBy', 'landed');
+    const menu = el.querySelector('select') as HTMLSelectElement;
+    menu.value = 'How the flick landed';
+    menu.dispatchEvent(new Event('change'));
     await fixture.whenStable();
     const groups = () =>
-      [...el.querySelectorAll('.group-toggle')].map((b) => b.textContent?.trim());
+      [...el.querySelectorAll('.data-group-toggle')].map((b) => b.textContent?.trim());
     expect(groups()).toEqual([
       expect.stringContaining('On target · 2 kills · median TTK 600 ms'),
       expect.stringContaining('Underflick · 1 kill · median TTK 300 ms'),
     ]);
     expect(order()).toEqual(['1', '3', '2']);
-    await click(el.querySelector('.group-toggle'));
+    await click(el.querySelector('.data-group-toggle'));
     expect(order()).toEqual(['2']);
   });
 
@@ -85,7 +88,7 @@ describe('the kills table', () => {
     const { fixture, el, click } = await render();
     const played: Flick[] = [];
     fixture.componentInstance.playKill.subscribe((flick) => played.push(flick));
-    await click(el.querySelector('tr[data-n="3"] .play'));
+    await click(el.querySelector('tr[data-id="3"] .data-pick'));
     expect(played).toEqual([ROWS[2].flick]);
   });
 });

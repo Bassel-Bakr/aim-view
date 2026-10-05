@@ -2,36 +2,12 @@
   <section [attr.aria-label]="heading()">
     <h3>{{ heading() }}</h3>
     <p class="section-note"><ng-content /></p>
-    <div class="what-if-scroll">
-      <table class="what-if">
-        <thead>
-          <tr>
-            <th>Change</th>
-            @for (c of table().columns; track c) {
-              <th>{{ c }}</th>
-            }
-            <th class="how">Why</th>
-          </tr>
-        </thead>
-        @for (g of table().groups; track $index) {
-          <tbody>
-            @if (g.name) {
-              <tr>
-                <th class="group" scope="rowgroup" [attr.colspan]="span()">{{ g.name }}</th>
-              </tr>
-            }
-            @for (l of g.lines; track l.what) {
-              <tr>
-                <td>{{ l.what }}</td>
-                @for (v of l.gains; track $index) {
-                  <td class="gain">{{ v }}</td>
-                }
-                <td class="how">{{ l.how }}</td>
-              </tr>
-            }
-          </tbody>
-        }
-      </table>
-    </div>
+    <app-data-table
+      [label]="heading()"
+      [rows]="rows()"
+      [columns]="columns()"
+      [rowId]="rowId"
+      [grouping]="grouping"
+    />
   </section>
 }

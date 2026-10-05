@@ -4,29 +4,4 @@
   :host {
     @apply contents;
   }
-
-  // On a phone the table scrolls sideways in its own box, not the page
-  .what-if-scroll {
-    @apply overflow-x-auto;
-  }
-
-  .what-if {
-    @apply w-full;
-  }
-
-  .group {
-    @apply pt-8 text-left text-sm text-primary;
-  }
-
-  .gain {
-    @apply font-strong text-value;
-  }
-
-  td.how {
-    @apply text-muted;
-  }
-
-  .how {
-    @apply text-left whitespace-normal;
-  }
 }

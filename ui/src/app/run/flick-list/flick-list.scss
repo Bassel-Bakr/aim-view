@@ -1,3 +1,4 @@
+@use 'themes/report' as r;
 @reference '../../../tailwind.css';
 
 @layer components {
@@ -17,15 +18,12 @@
     @apply font-regular text-muted;
   }
 
-  .group-by {
-    @apply flex items-center gap-3 text-xs text-muted;
-  }
+  // The table's tools and first column line up with the head; the table scrolls in its own box
+  .kills {
+    --table-edge-inset: #{r.$flick-list-inset};
+    --table-max-height: #{r.$flick-list-stacked-height};
+    --table-cell-padding: #{r.$flick-list-cell-padding};
 
-  .group-select {
-    @apply min-h-(--control-height-sm) rounded-md border border-border-strong bg-surface-2 px-3 text-sm text-primary;
-  }
-
-  .scroll {
-    @apply max-h-(--flick-list-stacked-height) overflow-auto;
+    @apply block pt-3;
   }
 }

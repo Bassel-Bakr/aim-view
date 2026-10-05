@@ -50,28 +50,11 @@
       <details class="each">
         <summary class="each-toggle">Each kill</summary>
         <div class="kills">
-          <table>
-            <thead>
-              <tr>
-                <th>Kill</th>
-                <th>Click at</th>
-                @for (c of columns; track c) {
-                  <th>{{ c }}</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of rows(); track row.killNumber) {
-                <tr>
-                  <td>{{ row.killNumber }}</td>
-                  <td>{{ row.at }}</td>
-                  @for (cell of row.cells; track $index) {
-                    <td>{{ cell }}</td>
-                  }
-                </tr>
-              }
-            </tbody>
-          </table>
+          <app-data-table
+            label="Each kill, from the mouse log"
+            [rows]="rows()"
+            [columns]="columns"
+          />
         </div>
       </details>
     } @else if (shown(); as s) {

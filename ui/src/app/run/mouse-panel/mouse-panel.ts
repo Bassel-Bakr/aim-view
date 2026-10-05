@@ -1,6 +1,8 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { Button } from '../../controls/button';
 import { errorMessage, Recording } from '../../api';
+import { DataColumn } from '../../data-table/data-column';
+import { DataTable } from '../../data-table/data-table';
 import { formatDegrees, formatNumber, formatSpeed } from '../../format';
 import { MouseKill, MouseMeasureKey, MouseRun } from '../../mouse-api';
 import { MouseLogs } from '../../platform/mouse-logs';
@@ -84,6 +86,21 @@ const KILL_COLUMNS: readonly MouseMeasureKey[] = [
   'dist_deg',
 ];
 
+/** The table's columns: the kill, its click's time, then each measure and the micros, their meaning on hover. */
+const TABLE_COLUMNS: readonly DataColumn<MouseKillRow>[] = [
+  { id: 'kill', header: 'Kill', text: (row) => String(row.killNumber), rowHeader: true },
+  { id: 'at', header: 'Click at', text: (row) => row.at },
+  ...[
+    ...KILL_COLUMNS.map((key) => MEASURES[key]),
+    { label: 'Micros', why: 'Separate movements after the flick' },
+  ].map((measure, index): DataColumn<MouseKillRow> => ({
+    id: `measure-${index}`,
+    header: measure.label,
+    title: measure.why,
+    text: (row) => row.cells[index] ?? '',
+  })),
+];
+
 /** The run's measures as cards: the median of each, with its p10 and p90. */
 export function mouseCards(run: MouseRun): MouseCard[] {
   return run.spreads.map((spread) => {
@@ -144,7 +161,7 @@ export function mouseNotes(run: MouseRun): string {
  * user adds the log here; the desktop app finds its own.
  */
 @Component({
-  imports: [Button],
+  imports: [Button, DataTable],
   selector: 'app-mouse-panel',
   templateUrl: './mouse-panel.html',
   styleUrl: './mouse-panel.scss',
@@ -155,7 +172,7 @@ export class MousePanel {
   protected readonly measures = this.logs.measures(() => this.recording().id);
   protected readonly busy = signal(false);
   protected readonly message = signal<MouseMessage | null>(null);
-  protected readonly columns = [...KILL_COLUMNS.map((key) => MEASURES[key].label), 'Micros'];
+  protected readonly columns = TABLE_COLUMNS;
 
   protected readonly shown = computed(() =>
     this.measures.hasValue() ? (this.measures.value() ?? null) : null,

@@ -33,63 +33,15 @@
 <div class="split">
   <section aria-label="By distance">
     <h3>By distance</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Distance</th>
-          <th>Flicks</th>
-          <th>Median TTK</th>
-          <th>Reaction</th>
-          <th>Underflicks</th>
-          <th>Overflicks</th>
-          <th>Confirmation</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (r of byDistance(); track r.band) {
-          <tr>
-            <td>{{ r.band }}</td>
-            <td>{{ r.flicks }}</td>
-            <td>{{ r.kill }}</td>
-            <td>{{ r.reaction }}</td>
-            <td>{{ r.short }}</td>
-            <td>{{ r.past }}</td>
-            <td>{{ r.still }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
+    <app-data-table label="Kills by distance" [rows]="byDistance()" [columns]="distanceColumns" />
   </section>
   <section aria-label="By direction">
     <h3>By direction</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Toward</th>
-          <th>Flicks</th>
-          <th>Median TTK</th>
-          <th>Distance</th>
-          <th title="Median time beyond what the distance predicts (Fitts' law fitted to the run)">
-            For its distance
-          </th>
-          <th>Underflicks</th>
-          <th>Overflicks</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (r of byDirection(); track r.toward) {
-          <tr>
-            <td>{{ r.toward }}</td>
-            <td>{{ r.flicks }}</td>
-            <td>{{ r.kill }}</td>
-            <td>{{ r.distance }}</td>
-            <td>{{ r.beyond }}</td>
-            <td>{{ r.short }}</td>
-            <td>{{ r.past }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
+    <app-data-table
+      label="Kills by direction"
+      [rows]="byDirection()"
+      [columns]="directionColumns"
+    />
   </section>
 </div>
 

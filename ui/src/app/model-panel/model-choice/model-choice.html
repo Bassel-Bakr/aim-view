@@ -40,69 +40,68 @@
   }
 }
 @if (table(); as t) {
-  <div class="scroll">
-    <table class="model-panel-table">
-      <thead>
-        <tr>
-          <td></td>
-          @for (c of t.columns; track c.name) {
-            <th class="column" scope="col">
-              {{ c.label }}
-              @if (c.isDefault) {
-                <span appBadge>default</span>
-              }
-              @if (c.inUse) {
-                <span appBadge tone="good">in use</span>
-              }
-            </th>
+  <app-data-table
+    class="models"
+    label="The models"
+    [rows]="lines()"
+    [columns]="columns()"
+    [rowId]="lineId"
+    [sortable]="false"
+  >
+    <ng-template appHeader="*" let-name>
+      @let c = columnOf(name);
+      @if (c) {
+        <span class="column">
+          {{ c.label }}
+          @if (c.isDefault) {
+            <span appBadge>default</span>
           }
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of t.rows; track row.label) {
-          <tr>
-            <th class="row-head" scope="row">
-              {{ row.label }}
-              @if (row.about) {
-                <span class="about">{{ row.about }}</span>
-              }
-            </th>
-            @for (cell of row.cells; track $index) {
-              <td [class]="row.prose ? 'prose' : cell.best ? 'best' : 'cell'">
-                @if (cell.text === null) {
-                  <span class="muted">–</span>
-                } @else {
-                  {{ cell.text }}
-                  @if (cell.detail) {
-                    <span class="muted">· {{ cell.detail }}</span>
-                  }
-                  @if (cell.best) {
-                    <span class="sr-only">(best)</span>
-                  }
-                }
-              </td>
-            }
-          </tr>
+          @if (c.inUse) {
+            <span appBadge tone="good">in use</span>
+          }
+        </span>
+      }
+    </ng-template>
+    <ng-template appCell="measure" [appCellRows]="lines()" let-line>
+      @if (line.kind === 'measure') {
+        {{ line.row.label }}
+        @if (line.row.about) {
+          <span class="about">{{ line.row.about }}</span>
         }
-        <tr>
-          <th scope="row"><span class="sr-only">Pick</span></th>
-          @for (c of t.columns; track c.name) {
-            <td class="cell">
-              @if (c.inUse) {
-                <span class="muted">In use</span>
-              } @else if (c.available) {
-                <button type="button" appButton [disabled]="switching()" (click)="use(c.name)">
-                  Use {{ c.useLabel }}
-                </button>
-              } @else {
-                <span class="muted">{{ t.unavailable }}</span>
-              }
-            </td>
-          }
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      } @else {
+        <span class="sr-only">Pick</span>
+      }
+    </ng-template>
+    <ng-template appCell="*" [appCellRows]="lines()" let-line let-name="column">
+      @let c = columnOf(name);
+      @if (line.kind === 'pick') {
+        @if (c?.inUse) {
+          <span class="muted">In use</span>
+        } @else if (c?.available) {
+          <button type="button" appButton [disabled]="switching()" (click)="use(name)">
+            Use {{ c?.useLabel }}
+          </button>
+        } @else {
+          <span class="muted">{{ t.unavailable }}</span>
+        }
+      } @else {
+        @let cell = cellOf(line.row, name);
+        @if (cell === null || cell.text === null) {
+          <span class="muted">–</span>
+        } @else {
+          <span [class]="line.row.prose ? 'prose' : cell.best ? 'best' : null">
+            {{ cell.text }}
+            @if (cell.detail) {
+              <span class="muted">· {{ cell.detail }}</span>
+            }
+            @if (cell.best) {
+              <span class="sr-only">(best)</span>
+            }
+          </span>
+        }
+      }
+    </ng-template>
+  </app-data-table>
   <p class="section-note">{{ t.notes }}</p>
   @if (t.older.length) {
     <details class="older">

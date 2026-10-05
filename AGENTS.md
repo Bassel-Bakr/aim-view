@@ -153,8 +153,15 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   `.section-note`, `.color-swatch`). A variant is a data attribute (`&[data-intent='primary']`), set by the control's
   directive in `ui/src/app/controls/` from a typed input (`<button appButton intent="primary">`, `<span appBadge
   tone="good">`), so templates get completion and type checks. A variant's selector is more specific than the base,
-  so it overrides it with no class merging. A class name must not be a Tailwind utility (`table`, `grid`, `hidden`):
-  Tailwind would add the utility too. The old tailwind-variants modules are in `ui/retired/themes/`.
+  so it overrides it with no class merging. A class name must not be a Tailwind utility (`table`, `grid`, `hidden`,
+  `table-row`, `table-cell`): Tailwind would add the utility too. The old tailwind-variants modules are in
+  `ui/retired/themes/`.
+- **Every table is the data table** (`ui/src/app/data-table/`, `<app-data-table>`): rows and typed columns
+  (`DataColumn`) in, TanStack Table's sorting, grouping and column hiding inside, after the Goldman Sachs design system's
+  data grid guidance (headers on one line and stuck to the top, numbers to the right, prose columns wide enough to read,
+  a Columns menu, the first column stuck to the left, cards on a phone). A column's cells can be the user's own
+  templates (`appCell`, `appHeader`). Its styles are global (`ui/src/themes/data-table.scss`, tokens in `table.scss`),
+  as the other shared controls' are. No hand-written `<table>`.
 - **Angular's style guide** (angular.dev/style-guide, the 2025 one, still current in Angular 22). Folders by feature
   (`recordings/`, `run/`, with each part in its own folder); a service that more than one feature uses goes in
   `services/`, a service only one feature uses stays in that feature. File names follow their class (`stamp-pipe.ts`

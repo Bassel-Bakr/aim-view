@@ -1,19 +1,9 @@
 <div class="head">
   <h3 class="title">Every flick <span class="hint">· click one to play it slowed down</span></h3>
-  <label class="group-by">
-    Group by
-    <select class="group-select" #grouping (change)="groupBy(grouping.value)">
-      @for (g of groupings; track g.label) {
-        <option [value]="g.key ?? ''" [selected]="g.key === grouped()">{{ g.label }}</option>
-      }
-    </select>
-  </label>
 </div>
-<div class="scroll" #scroll>
-  <app-kills-table
-    [rows]="rows()"
-    [selected]="focus.selected()"
-    [groupBy]="grouped()"
-    (playKill)="focus.play($event)"
-  />
-</div>
+<app-kills-table
+  class="kills"
+  [rows]="rows()"
+  [selected]="focus.selected()"
+  (playKill)="focus.play($event)"
+/>

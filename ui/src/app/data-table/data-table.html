@@ -1,0 +1,164 @@
+@if (columnMenu() || groupings().length > 0) {
+  <div class="data-tools">
+    @if (groupings().length > 0) {
+      <label class="data-tool">
+        Group by
+        <select class="data-control" #choice (change)="groupBy(choice.value)">
+          <option value="" [selected]="chosen() === null">Nothing</option>
+          @for (g of groupings(); track g.label) {
+            <option [value]="g.label" [selected]="g === chosen()">{{ g.label }}</option>
+          }
+        </select>
+      </label>
+    }
+    @if (columnMenu()) {
+      <button class="data-control" type="button" #menuButton [attr.popovertarget]="menuId">
+        Columns <span aria-hidden="true">▾</span>
+      </button>
+      <div
+        class="data-menu"
+        popover
+        [id]="menuId"
+        #menu
+        (beforetoggle)="placeMenu(menuButton, menu)"
+      >
+        @for (c of columns(); track c.id) {
+          <label class="data-menu-choice">
+            <input
+              type="checkbox"
+              [checked]="isShown(c.id)"
+              [disabled]="isShown(c.id) && shown().length === 1"
+              (change)="toggleColumn(c.id)"
+            />
+            {{ c.header }}
+          </label>
+        }
+      </div>
+    }
+  </div>
+}
+<div class="data-scroll" #scroll>
+  <table
+    class="data-table"
+    [attr.aria-label]="label() || null"
+    [attr.data-sticky-first]="stickyFirst() ? '' : null"
+    [attr.data-pickable]="pickLabel() ? '' : null"
+  >
+    <thead>
+      <tr>
+        @for (c of shown(); track c.id) {
+          <th
+            scope="col"
+            [attr.title]="c.title ?? null"
+            [attr.aria-sort]="sortOf(c.id)"
+            [attr.data-align]="alignOf(c.id)"
+            [attr.data-prose]="c.prose ? '' : null"
+          >
+            @let header = headerTemplate(c.id);
+            @if (header) {
+              <ng-container
+                [ngTemplateOutlet]="header"
+                [ngTemplateOutletContext]="{ $implicit: c.id }"
+              />
+            } @else if (canSort(c)) {
+              <button class="data-sort" type="button" (click)="sortBy(c.id)">
+                {{ c.header }}
+                <span
+                  class="data-sort-mark"
+                  [attr.data-idle]="sortOf(c.id) ? null : ''"
+                  aria-hidden="true"
+                  >{{ sortMark(c.id) }}</span
+                >
+              </button>
+            } @else {
+              {{ c.header }}
+            }
+          </th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of table.getRowModel().rows; track row.id) {
+        @if (row.getIsGrouped()) {
+          @if (groupName(row) !== '') {
+            <tr class="data-group-row">
+              <th class="data-group-cell" scope="rowgroup" [attr.colspan]="shown().length">
+                <button
+                  class="data-group-toggle"
+                  type="button"
+                  [attr.aria-expanded]="row.getIsExpanded()"
+                  (click)="row.toggleExpanded()"
+                >
+                  <span class="data-group-mark" aria-hidden="true">{{
+                    row.getIsExpanded() ? '▾' : '▸'
+                  }}</span>
+                  {{ groupLabel(row) }}
+                </button>
+              </th>
+            </tr>
+          }
+        } @else {
+          @let item = row.original;
+          <tr
+            class="data-row"
+            [attr.data-id]="row.id"
+            [attr.data-selected]="row.id === selectedId() ? '' : null"
+            [attr.aria-current]="row.id === selectedId() ? 'true' : null"
+            (click)="pickRow(item)"
+          >
+            @for (c of shown(); track c.id; let first = $first) {
+              @if (c.rowHeader) {
+                <th
+                  scope="row"
+                  class="data-cell"
+                  [attr.data-label]="c.header"
+                  [attr.data-align]="alignOf(c.id)"
+                  [attr.data-prose]="c.prose ? '' : null"
+                  [attr.data-tone]="c.tone?.(item) ?? null"
+                  [attr.title]="c.tip?.(item) ?? null"
+                >
+                  <ng-container
+                    [ngTemplateOutlet]="content"
+                    [ngTemplateOutletContext]="{ $implicit: c, row: item, first }"
+                  />
+                </th>
+              } @else {
+                <td
+                  class="data-cell"
+                  [attr.data-label]="c.header"
+                  [attr.data-align]="alignOf(c.id)"
+                  [attr.data-prose]="c.prose ? '' : null"
+                  [attr.data-tone]="c.tone?.(item) ?? null"
+                  [attr.title]="c.tip?.(item) ?? null"
+                >
+                  <ng-container
+                    [ngTemplateOutlet]="content"
+                    [ngTemplateOutletContext]="{ $implicit: c, row: item, first }"
+                  />
+                </td>
+              }
+            }
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>
+
+<!-- A cell's content: the column's template or its text; in a picked table's first column, inside the row's button -->
+<ng-template #content let-c let-item="row" let-first="first">
+  @let custom = cellTemplate(c.id);
+  @let pickWords = pickLabel();
+  @if (first && pickWords) {
+    <button class="data-pick" type="button" [attr.aria-label]="pickWords(item)">
+      {{ c.text(item) }}
+    </button>
+  } @else if (custom) {
+    <ng-container
+      [ngTemplateOutlet]="custom"
+      [ngTemplateOutletContext]="{ $implicit: item, column: c.id }"
+    />
+  } @else {
+    {{ c.text(item) }}
+  }
+</ng-template>

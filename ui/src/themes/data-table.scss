@@ -1,0 +1,199 @@
+// The data table's styles (app/data-table/), global as the other shared controls' are (controls.scss), each rule
+// inside app-data-table and its classes named data-*, so they reach neither the rest of the page nor the cell
+// templates of the table's user. A global stylesheet of its own (angular.json), Sass first, then Tailwind: @reference
+// gives @apply the token theme. Its tokens are in table.scss.
+@use 'table' as t;
+@use 'layout' as l;
+@reference '../tailwind.css';
+
+@layer components {
+  app-data-table {
+    @apply block max-w-full min-w-0;
+
+    .data-tools {
+      @apply mb-3 flex flex-wrap items-center justify-end gap-x-6 gap-y-2 px-(--table-edge-inset) text-xs text-muted;
+    }
+
+    .data-tool {
+      @apply flex items-center gap-3;
+    }
+
+    .data-control {
+      @apply min-h-(--control-height-sm) rounded-md border border-border-strong bg-surface-2 px-3 text-sm text-primary hover:bg-surface-3;
+    }
+
+    // In the top layer, placed under its button (DataTable.placeMenu)
+    .data-menu {
+      @apply fixed m-0 w-(--table-menu-width) flex-col gap-1 rounded-md border border-border-strong bg-surface-2 p-4 text-sm text-primary;
+      inset: auto;
+      box-shadow: t.$menu-shadow;
+
+      &:popover-open {
+        @apply flex;
+      }
+    }
+
+    .data-menu-choice {
+      @apply flex cursor-pointer items-center gap-3 rounded-sm px-2 py-1 hover:bg-surface-3;
+    }
+
+    .data-scroll {
+      @apply max-h-(--table-max-height) max-w-full overflow-auto;
+    }
+
+    .data-table {
+      @apply w-full;
+    }
+
+    th,
+    td {
+      padding: t.$cell-padding;
+    }
+
+    :is(th, td):first-child {
+      @apply pl-(--table-edge-inset);
+    }
+
+    // A cell of several lines (prose, a model's notes) reads from the top, as its row's other cells do
+    .data-cell {
+      @apply align-top;
+    }
+
+    [data-align='start'] {
+      @apply text-left;
+    }
+
+    [data-align='end'] {
+      @apply text-right;
+    }
+
+    [data-prose] {
+      @apply max-w-(--table-prose-max-width) min-w-(--table-prose-min-width) text-left whitespace-normal;
+    }
+
+    thead th {
+      @apply sticky top-0 z-1 bg-(--table-header-bg) align-bottom tracking-wide uppercase;
+    }
+
+    .data-sort {
+      @apply inline-flex items-center gap-1 tracking-wide uppercase hover:text-primary;
+    }
+
+    .data-sort-mark {
+      @apply text-accent;
+
+      &[data-idle] {
+        @apply text-muted opacity-0;
+      }
+    }
+
+    .data-sort:hover .data-sort-mark,
+    .data-sort:focus-visible .data-sort-mark {
+      @apply opacity-100;
+    }
+
+    // A row's color, which its first cell paints too when it stays in view sideways
+    .data-row {
+      --row-bg: #{t.$row-bg};
+
+      &:hover {
+        --row-bg: #{t.$row-hover};
+
+        background-color: var(--row-bg);
+      }
+
+      &[data-selected] {
+        --row-bg: #{t.$row-selected};
+
+        background-color: var(--row-bg);
+
+        > :first-child {
+          @apply inset-shadow-(--selected-edge);
+        }
+      }
+    }
+
+    [data-pickable] .data-row {
+      @apply cursor-pointer;
+    }
+
+    .data-pick {
+      @apply text-left;
+    }
+
+    [data-sticky-first] :is(th, td):first-child {
+      @apply sticky left-0 bg-(--row-bg);
+    }
+
+    [data-sticky-first] thead th:first-child {
+      @apply z-2 bg-(--table-header-bg);
+    }
+
+    .data-cell[data-tone='value'] {
+      @apply font-strong text-value;
+    }
+
+    .data-cell[data-tone='good'] {
+      @apply font-strong text-good-text;
+    }
+
+    .data-cell[data-tone='attention'] {
+      @apply text-attention-text;
+    }
+
+    .data-cell[data-tone='muted'] {
+      @apply text-muted;
+    }
+
+    .data-group-cell {
+      @apply border-t border-border bg-(--table-group-bg) text-left normal-case;
+    }
+
+    .data-group-toggle {
+      @apply flex w-full items-center gap-3 text-left text-sm font-strong text-primary;
+    }
+
+    .data-group-mark {
+      @apply text-muted;
+    }
+
+    // On a phone each row is a card: a cell a line, its column's name to the left
+    @media (width <= l.$narrow-width) {
+      .data-table,
+      tbody,
+      .data-row,
+      .data-group-row,
+      .data-cell,
+      .data-group-cell {
+        @apply block;
+      }
+
+      thead {
+        @apply sr-only;
+      }
+
+      .data-row {
+        @apply mb-3 rounded-md border border-border py-2;
+      }
+
+      .data-row > .data-cell {
+        @apply static flex min-w-0 justify-between gap-4 border-0 px-5 py-1 text-right whitespace-normal;
+
+        &::before {
+          @apply w-(--table-card-label-width) flex-none text-left text-xs tracking-wide text-muted uppercase;
+
+          content: attr(data-label);
+        }
+
+        // prose under its name, read from the left
+        &[data-prose] {
+          @apply max-w-none min-w-0 flex-col gap-1 text-left;
+
+          &::before {
+            @apply w-auto;
+          }
+        }
+      }
+    }
+  }
+}

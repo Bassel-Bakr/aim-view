@@ -24,6 +24,6 @@
   </p>
   <!-- The models and the choice load on their own (fetched ahead when the page is idle) when it first opens, and stay -->
   @defer (when opened(); prefetch on idle) {
-    <app-model-choice />
+    <app-model-choice #choice />
   }
 </dialog>

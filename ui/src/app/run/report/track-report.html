@@ -45,28 +45,7 @@
         How you did while the bot moved each way: the share of the time it moved that way, your time
         on it, your usual distance from its middle line, and whether you trailed or led it.
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Target moving</th>
-            <th>Time</th>
-            <th>On target</th>
-            <th>Distance from the line</th>
-            <th>Behind or ahead</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (r of m.rows; track r.moving) {
-            <tr>
-              <td>{{ r.moving }}</td>
-              <td>{{ r.time }}</td>
-              <td>{{ r.on }}</td>
-              <td>{{ r.distance }}</td>
-              <td>{{ r.lag }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
+      <app-data-table label="By the target's direction" [rows]="m.rows" [columns]="motionColumns" />
     }
   </section>
 }

@@ -16,7 +16,8 @@ import { ModelChoice } from './model-choice/model-choice';
 export class ModelPanel {
   protected readonly models = inject(Models);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
-  private readonly choice = viewChild(ModelChoice);
+  // found by its name, not its class: a class here would load ModelChoice with the panel, not in its @defer block
+  private readonly choice = viewChild<ModelChoice>('choice');
   protected readonly deviceLabels = DEVICE_LABELS;
   /**
    * The dialog has been opened: its body loads then and stays, so closing and opening again build nothing (making and

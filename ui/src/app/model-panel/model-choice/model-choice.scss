@@ -14,36 +14,24 @@
     @apply text-xs text-muted;
   }
 
-  .scroll {
-    @apply flex-none overflow-x-auto;
-  }
-
-  .model-panel-table {
-    @apply w-full;
+  .models {
+    @apply flex-none;
   }
 
   .column {
-    @apply align-bottom text-sm text-primary;
-  }
-
-  .row-head {
-    @apply align-top;
+    @apply inline-flex flex-wrap items-center justify-end gap-2 text-sm text-primary normal-case;
   }
 
   .about {
     @apply block font-regular whitespace-normal;
   }
 
-  .cell {
-    @apply align-top;
-  }
-
   .best {
-    @apply align-top font-strong text-good-text;
+    @apply font-strong text-good-text;
   }
 
   .prose {
-    @apply w-(--model-prose-width) min-w-(--model-prose-width) text-left align-top whitespace-normal text-secondary;
+    @apply block w-(--model-prose-width) min-w-(--model-prose-width) text-left whitespace-normal text-secondary;
   }
 
   .muted {

@@ -1,0 +1,39 @@
+// Module tokens: the data tables (app/data-table/), after the Goldman Sachs design system's data grid guidance:
+// headers on one line and stuck to the top while the table scrolls, numbers to the right in even digits, prose columns
+// wide enough to read, the first column stuck to the left while the table scrolls sideways, and on a phone each row
+// as a card.
+
+@mixin tokens {
+  --table-cell-padding: 6px 14px 6px 0;
+  // the first column's room at the table's left edge, and the tools' at both edges: none on the page, a card's padding
+  // inside one
+  --table-edge-inset: 0px;
+  --table-header-bg: var(--surface-1);
+  --table-row-bg: var(--surface-1);
+  --table-row-hover: var(--surface-2);
+  --table-row-selected: var(--surface-3);
+  --table-group-bg: var(--surface-2);
+  // a prose column (a sentence or more) never narrower than this, and it wraps beyond the widest
+  --table-prose-min-width: 280px;
+  --table-prose-max-width: 560px;
+  --table-menu-width: 240px;
+  --table-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  // how tall a table's own box grows before it scrolls; none: as tall as its rows
+  --table-max-height: none;
+  // a card's label column, when each row is a card (on a phone)
+  --table-card-label-width: 42%;
+}
+
+$cell-padding: var(--table-cell-padding);
+$edge-inset: var(--table-edge-inset);
+$header-bg: var(--table-header-bg);
+$row-bg: var(--table-row-bg);
+$row-hover: var(--table-row-hover);
+$row-selected: var(--table-row-selected);
+$group-bg: var(--table-group-bg);
+$prose-min-width: var(--table-prose-min-width);
+$prose-max-width: var(--table-prose-max-width);
+$menu-width: var(--table-menu-width);
+$menu-shadow: var(--table-menu-shadow);
+$max-height: var(--table-max-height);
+$card-label-width: var(--table-card-label-width);
