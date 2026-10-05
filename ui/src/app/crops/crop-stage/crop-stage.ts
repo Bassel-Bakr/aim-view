@@ -26,7 +26,7 @@ import {
   withDrawn,
   withPoint,
 } from '../crop-scene';
-import { CropDrag, CropGrip, dragged, gripAt, shapesAt, sketchBox } from './crop-grip';
+import { CropDrag, CropGrip, dragged, gripAt, handleReach, shapesAt, sketchBox } from './crop-grip';
 import {
   CropStyle,
   maskPicture,
@@ -243,7 +243,14 @@ export class CropStage {
     ];
     const grip =
       scene && crop && !panButton
-        ? gripAt(scene, crop, this.draft.selection(), start, this.place().scale)
+        ? gripAt(
+            scene,
+            crop,
+            this.draft.selection(),
+            start,
+            this.place().scale,
+            handleReach(event.pointerType),
+          )
         : null;
     const pans = !grip || this.pans();
     this.press = { grip, pans, screen, start, from: scene, zoom: this.zoom(), moved: false };

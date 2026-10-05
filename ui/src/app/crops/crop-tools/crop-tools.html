@@ -105,6 +105,26 @@
   <button
     type="button"
     appButton
+    title="Turn the selected shapes 15° to the left, each about its middle"
+    aria-label="Turn left 15°"
+    [disabled]="!chosen().length"
+    (click)="turn(-TURN_STEP)"
+  >
+    ↺ 15°
+  </button>
+  <button
+    type="button"
+    appButton
+    title="Turn the selected shapes 15° to the right, each about its middle"
+    aria-label="Turn right 15°"
+    [disabled]="!chosen().length"
+    (click)="turn(TURN_STEP)"
+  >
+    ↻ 15°
+  </button>
+  <button
+    type="button"
+    appButton
     class="tool-toggle"
     title="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
     [attr.aria-pressed]="draft.panning()"

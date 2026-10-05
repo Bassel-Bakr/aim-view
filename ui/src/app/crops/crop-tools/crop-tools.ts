@@ -2,7 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { Shape, ShapeKind, ShapeRole } from '../../api';
 import { Button } from '../../controls/button';
 import { CropDraft } from '../crop-draft';
-import { evened } from '../../shapes/shape-geometry';
+import { evened, turnedBy } from '../../shapes/shape-geometry';
 import {
   changeEach,
   DraftScene,
@@ -22,6 +22,9 @@ interface ShapeChoice {
   name: string;
 }
 
+/** A Turn button's step, in degrees. */
+const TURN_STEP_DEG = 15;
+
 const SHAPES: readonly ShapeChoice[] = [
   { kind: 'pill', deep: false, name: 'Pill' },
   { kind: 'box', deep: false, name: 'Box' },
@@ -38,7 +41,8 @@ interface RoleChoice {
 /**
  * The tools of a fix, for the shapes selected on the stage: their kind (and the kind a drag draws), their role, joining
  * them into one target or splitting them, sending them in front or behind, making them hide what is behind them,
- * removing and duplicating them, giving them equal sides; and Pan, which makes a drag on the stage move the view.
+ * removing and duplicating them, giving them equal sides, turning them 15° at a time; and Pan, which makes a drag on the
+ * stage move the view.
  */
 @Component({
   selector: 'app-crop-tools',
@@ -49,6 +53,7 @@ interface RoleChoice {
 export class CropTools {
   protected readonly draft = inject(CropDraft);
   protected readonly shapes = SHAPES;
+  protected readonly TURN_STEP = TURN_STEP_DEG;
   protected readonly roles: readonly RoleChoice[] = [
     { role: null, name: 'None' },
     { role: 'head', name: 'Head' },
@@ -115,6 +120,11 @@ export class CropTools {
 
   protected evenSides(): void {
     this.change((scene, ids) => changeEach(scene, ids, evened));
+  }
+
+  /** Turns each selected shape about its middle, clockwise on screen for a positive step. */
+  protected turn(degrees: number): void {
+    this.change((scene, ids) => changeEach(scene, ids, (shape) => turnedBy(shape, degrees)));
   }
 
   protected togglePanning(): void {

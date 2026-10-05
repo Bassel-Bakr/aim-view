@@ -10,6 +10,7 @@ import {
   resized,
   scaled,
   turned,
+  turnedBy,
   turnHandle,
 } from './shape-geometry';
 
@@ -70,6 +71,17 @@ describe('shape geometry', () => {
     const deepPill = faced(shape({}), [70, 50]);
     expect(onShape(deepPill, [79, 50], 0) && !onShape(shape({}), [79, 50], 0)).toBe(true);
     expect(boxAround([deepPill])).toEqual([60, 50, 40, 10]);
+  });
+
+  it("turns a 3D shape's far end with it, by a step or toward the finger", () => {
+    const deep = shape({ face: [10, 0] });
+    const quarter = turnedBy(deep, 90);
+    expect(quarter.angle).toBe(90);
+    expect(quarter.face?.map((value) => Math.round(value * 1e6) / 1e6)).toEqual([0, 10]);
+    expect(turnedBy(shape({ angle: 10 }), -15).angle).toBe(355);
+    const followed = turned(deep, [60, 50]);
+    expect(followed.angle).toBe(90);
+    expect(followed.face?.map((value) => Math.round(value * 1e6) / 1e6)).toEqual([0, 10]);
   });
 
   it('scales a shape about a point, its face too, never below the smallest side', () => {

@@ -119,8 +119,24 @@ export function moved(shape: Shape, [dx, dy]: CropPoint): Shape {
 /** A shape turned so its turn handle points at a point (its frame's top toward it), to a whole degree. */
 export function turned(shape: Shape, [x, y]: CropPoint): Shape {
   const [cx, cy] = shape.box;
-  const degrees = (Math.atan2(y - cy, x - cx) * 180) / Math.PI + 90;
-  return { ...shape, angle: Math.round(((degrees % 360) + 360) % 360) };
+  const degrees = Math.round((Math.atan2(y - cy, x - cx) * 180) / Math.PI + 90);
+  return turnedBy(shape, degrees - shape.angle);
+}
+
+/**
+ * A shape turned about its middle by some degrees, clockwise on screen: its far end (a 3D shape's) turns with it, so
+ * the whole shape turns.
+ */
+export function turnedBy(shape: Shape, degrees: number): Shape {
+  const angle = (((shape.angle + degrees) % 360) + 360) % 360;
+  if (!shape.face) return { ...shape, angle };
+  const [dx, dy] = shape.face;
+  const turn = radians(degrees);
+  const face: FaceOffset = [
+    dx * Math.cos(turn) - dy * Math.sin(turn),
+    dx * Math.sin(turn) + dy * Math.cos(turn),
+  ];
+  return { ...shape, angle, face };
 }
 
 /** A shape given a third face whose middle is at a point. */

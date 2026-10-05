@@ -45,8 +45,14 @@ export interface ShapeHandles {
 
 /** How far the turn and face handles sit from a shape, in screen pixels. */
 const HANDLE_REACH_PX = 22;
-/** How near a finger must come to a handle to take it, in screen pixels. */
+/** How near a mouse must come to a handle to take it, in screen pixels; a finger, which covers more, TOUCH_HIT_PX. */
 const HANDLE_HIT_PX = 16;
+const TOUCH_HIT_PX = 30;
+
+/** How near a pointer of a type ('mouse', 'pen', 'touch') must come to a handle to take it, in screen pixels. */
+export function handleReach(pointerType: string): number {
+  return pointerType === 'touch' ? TOUCH_HIT_PX : HANDLE_HIT_PX;
+}
 /** How near a finger must come to a shape's edge to take it, in screen pixels. */
 const SHAPE_SLACK_PX = 6;
 
@@ -98,10 +104,10 @@ export function gripAt(
   selection: readonly string[],
   point: CropPoint,
   scale: number,
+  reachPx = HANDLE_HIT_PX,
 ): CropGrip {
   const near = (handle: CropPoint | null) =>
-    handle !== null &&
-    Math.hypot(handle[0] - point[0], handle[1] - point[1]) * scale <= HANDLE_HIT_PX;
+    handle !== null && Math.hypot(handle[0] - point[0], handle[1] - point[1]) * scale <= reachPx;
   const shape = handled(scene, selection);
   if (shape) {
     const handles = handlesOf(shape, scale);
