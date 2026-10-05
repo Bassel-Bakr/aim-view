@@ -9,6 +9,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::RangeInclusive;
 
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +49,8 @@ const AFTER_KILL_FRAMES: i64 = 2;
 /// A track's distance from a kill: its degrees from the crosshair plus this many for each second from the kill's time.
 const DEG_PER_SECOND_OFF: f64 = 4.0;
 /// The farthest a killed target's center may be from the crosshair (degrees), unless its blob's radius plus RIM_DEG
-/// is farther: a big target can be hit at its rim.
+/// is farther: a big target can be hit at its rim. A target with a box may also be killed with the crosshair within
+/// RIM_DEG of its box: a tall one (a robot) is hit at its head, far from its center.
 const MAX_KILL_DISTANCE_DEG: f64 = 1.5;
 const RIM_DEG: f64 = 0.25;
 /// A track last seen more than EARLY_FRAMES before the kill costs EARLY_COST_DEG more; one that never leaves a
@@ -222,17 +224,19 @@ fn chain(track: u32, before: &HashMap<u32, u32>) -> Vec<u32> {
     chain
 }
 
-/// Each track's places and blob areas by frame, with the tracks in the order they first appear (tracks split off by
-/// `repair` come last).
+/// Each track's places, blob areas and box sizes (degrees, in tracks that have them) by frame, with the tracks in the
+/// order they first appear (tracks split off by `repair` come last).
 struct TrackIndex {
     ids: Vec<u32>,
     places: HashMap<u32, Places>,
     areas: HashMap<u32, BTreeMap<i64, i64>>,
+    sizes: HashMap<u32, BTreeMap<i64, (f64, f64)>>,
 }
 
 impl TrackIndex {
     fn new(frames: &[TrackFrame]) -> TrackIndex {
-        let mut index = TrackIndex { ids: Vec::new(), places: HashMap::new(), areas: HashMap::new() };
+        let mut index =
+            TrackIndex { ids: Vec::new(), places: HashMap::new(), areas: HashMap::new(), sizes: HashMap::new() };
         for frame in frames {
             let areas: Vec<i64> = if frame.a.is_empty() { vec![0; frame.t.len()] } else { frame.a.clone() };
             for (&(track, x, y), area) in frame.t.iter().zip(areas) {
@@ -242,8 +246,21 @@ impl TrackIndex {
                 index.places.entry(track).or_default().insert(frame.i as i64, (x, y));
                 index.areas.entry(track).or_default().insert(frame.i as i64, area);
             }
+            for (track, _, _, size) in sized_boxes(frame) {
+                index.sizes.entry(track).or_default().insert(frame.i as i64, size);
+            }
         }
         index
+    }
+
+    /// Whether the crosshair is within RIM_DEG of the track's box on one of `frames`.
+    fn box_reaches(&self, track: u32, frames: RangeInclusive<i64>) -> bool {
+        let Some(sizes) = self.sizes.get(&track) else { return false };
+        let places = &self.places[&track];
+        sizes.range(frames).any(|(frame, &(width, height))| {
+            let (x, y) = places[frame];
+            x.abs() <= width / 2.0 + RIM_DEG && y.abs() <= height / 2.0 + RIM_DEG
+        })
     }
 
     fn first(&self, track: u32) -> i64 {
@@ -705,15 +722,16 @@ impl Kills<'_> {
     }
 
     /// The track nearest the crosshair and the kill: seen from `window` frames before the kill to AFTER_KILL_FRAMES
-    /// after, at its frame nearest both, within MAX_KILL_DISTANCE_DEG (or its blob's radius and RIM_DEG), with costs
-    /// for being early and for never leaving a crosshair spot. `last` is set to the frame picked for each track
-    /// looked at.
+    /// after, at its frame nearest both, within MAX_KILL_DISTANCE_DEG (or its blob's radius and RIM_DEG, or with the
+    /// crosshair within RIM_DEG of its box on a frame seen), with costs for being early and for never leaving a
+    /// crosshair spot. `last` is set to the frame picked for each track looked at.
     fn nearest_track(&self, kill_frame: i64, window: i64, last: &mut i64) -> Option<u32> {
         let (index, fps) = (self.index, self.fps);
         let mut best: Option<(u32, f64)> = None;
+        let around_kill = kill_frame - window..=kill_frame + AFTER_KILL_FRAMES;
         for &track in &index.ids {
             let places = &index.places[&track];
-            let mut seen = places.range(kill_frame - window..=kill_frame + AFTER_KILL_FRAMES).map(|(&frame, _)| frame);
+            let mut seen = places.range(around_kill.clone()).map(|(&frame, _)| frame);
             let Some(first_seen) = seen.next() else { continue };
             // its frame nearest the crosshair and the kill: a track can go on past the kill and move off
             let score = |frame: i64| {
@@ -726,7 +744,8 @@ impl Kills<'_> {
             *last = nearest.0;
             let distance = hypot(places[last].0, places[last].1);
             let radius = blob_radius_deg(index.areas[&track][last] as f64);
-            if distance > MAX_KILL_DISTANCE_DEG.max(radius + RIM_DEG) {
+            let reached = distance <= MAX_KILL_DISTANCE_DEG.max(radius + RIM_DEG);
+            if !reached && !index.box_reaches(track, around_kill.clone()) {
                 continue;
             }
             let cost = distance
@@ -1320,6 +1339,26 @@ mod tests {
         for (area, matched) in [(40, 0), (1000, 1)] {
             let frames = (0..20)
                 .map(|i| TrackFrame { i, shift: (0.0, 0.0), t: vec![(1, 1.8, 0.0)], a: vec![area], wh: None, s: None })
+                .collect();
+            let tracks = Tracks { fps: 60.0, frames, version: 0 };
+            assert_eq!(match_times(&tracks, &[10.0 / 60.0], &[1], 0.25, Some(0.0)).0.len(), matched);
+        }
+    }
+
+    #[test]
+    fn a_tall_target_hit_at_its_head_is_the_killed_one() {
+        // the kill on frame 10, a robot's box (1.5 x 5 degrees) centered 2.6 degrees below the crosshair: its blob's
+        // radius cannot reach the crosshair, its box can (the crosshair 0.1 degrees past its top edge)
+        for (size, matched) in [(None, 0), (Some((1.5, 5.0)), 1)] {
+            let frames = (0..20)
+                .map(|i| TrackFrame {
+                    i,
+                    shift: (0.0, 0.0),
+                    t: vec![(1, 0.3, -2.6)],
+                    a: vec![600],
+                    wh: size.map(|size| vec![size]),
+                    s: None,
+                })
                 .collect();
             let tracks = Tracks { fps: 60.0, frames, version: 0 };
             assert_eq!(match_times(&tracks, &[10.0 / 60.0], &[1], 0.25, Some(0.0)).0.len(), matched);
