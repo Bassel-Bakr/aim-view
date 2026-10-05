@@ -216,3 +216,25 @@ describe("the Crops page's perfect circles and squares", () => {
     expect(draft.draft()?.shapes.at(-1)?.box).toEqual([130, 140, 30, 30]);
   });
 });
+
+describe('the Crops page order', () => {
+  afterEach(() => history.replaceState(null, '', '/'));
+
+  it('after an answer, skips checked crops, or with Skip checked off goes on in order', async () => {
+    const routes: ApiRoutes = {
+      ...fakeServer([]),
+      '/api/crops': [crop('c1'), crop('c2'), crop('c3')],
+      '/api/crop_answers': { c1: OLD, c2: OLD },
+    };
+    const { draft, click } = await render(routes);
+    expect(draft.crop()?.id).toBe('c3');
+    draft.index.set(0);
+    await click('Right');
+    expect(draft.crop()?.id).toBe('c3');
+    draft.index.set(0);
+    await click('Skip checked');
+    await click('Right');
+    expect(draft.crop()?.id).toBe('c2');
+    expect(location.search).toContain('order=all');
+  });
+});

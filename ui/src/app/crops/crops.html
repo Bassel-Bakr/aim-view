@@ -77,6 +77,17 @@
       <span class="meter" aria-hidden="true">
         <span class="meter-fill" [style.width.%]="checkedShare()"></span>
       </span>
+      <button
+        type="button"
+        role="switch"
+        class="switch"
+        title="After an answer, go to the next crop not checked yet. Off: the next crop in order, checked or not"
+        [attr.aria-checked]="draft.skipChecked()"
+        (click)="toggleSkipChecked()"
+      >
+        <span class="switch-knob" aria-hidden="true"></span>
+        Skip checked
+      </button>
     </div>
   }
 
@@ -115,61 +126,69 @@
 
 <nav class="bar" aria-label="Answer">
   @if (draft.mode() === 'fix') {
-    <button type="button" appButton (click)="draft.cancel()">Cancel</button>
-    <button
-      type="button"
-      appButton
-      intent="primary"
-      [disabled]="draft.busy()"
-      (click)="draft.saveFix()"
-    >
-      Save
-    </button>
+    <div class="bar-row">
+      <button type="button" appButton (click)="draft.cancel()">Cancel</button>
+      <button
+        type="button"
+        appButton
+        intent="primary"
+        [disabled]="draft.busy()"
+        (click)="draft.saveFix()"
+      >
+        Save
+      </button>
+    </div>
   } @else {
-    <button type="button" appButton [disabled]="draft.index() === 0" (click)="draft.go(-1)">
-      Back
-    </button>
-    <button
-      type="button"
-      appButton
-      intent="primary"
-      [disabled]="!draft.crop() || draft.busy()"
-      (click)="draft.judge('right')"
-    >
-      Right
-    </button>
-    <button
-      type="button"
-      appButton
-      title="Fix the shapes: draw, move, join, remove"
-      [disabled]="!draft.crop() || draft.busy()"
-      (click)="draft.fix()"
-    >
-      Wrong
-    </button>
-    <button
-      type="button"
-      appButton
-      [disabled]="!draft.crop() || draft.busy()"
-      (click)="draft.judge('unsure')"
-    >
-      Can't tell
-    </button>
-    <button
-      type="button"
-      appButton
-      [disabled]="draft.index() >= draft.list().length - 1"
-      (click)="draft.go(1)"
-    >
-      Next
-    </button>
-    <button
-      type="button"
-      appButton
-      [disabled]="draft.answered() === draft.list().length"
-      (click)="draft.nextUnchecked()"
-    >
-      Next unchecked
-    </button>
+    <div class="bar-row">
+      <button
+        type="button"
+        appButton
+        intent="primary"
+        [disabled]="!draft.crop() || draft.busy()"
+        (click)="draft.judge('right')"
+      >
+        Right
+      </button>
+      <button
+        type="button"
+        appButton
+        title="Fix the shapes: draw, move, join, remove"
+        [disabled]="!draft.crop() || draft.busy()"
+        (click)="draft.fix()"
+      >
+        Wrong
+      </button>
+      <button
+        type="button"
+        appButton
+        [disabled]="!draft.crop() || draft.busy()"
+        (click)="draft.judge('unsure')"
+      >
+        Can't tell
+      </button>
+    </div>
+    <div class="bar-row" data-moves>
+      <button type="button" appButton [disabled]="draft.index() === 0" (click)="draft.go(-1)">
+        Back
+      </button>
+      <span class="bar-forward">
+        <button
+          type="button"
+          appButton
+          [disabled]="draft.index() >= draft.list().length - 1"
+          (click)="draft.go(1)"
+        >
+          Next
+        </button>
+        <button
+          type="button"
+          appButton
+          [disabled]="draft.answered() === draft.list().length"
+          (click)="draft.nextUnchecked()"
+        >
+          Next unchecked
+        </button>
+      </span>
+    </div>
   }
 </nav>

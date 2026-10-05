@@ -56,6 +56,8 @@ export class CropDraft {
   readonly kind = signal<ShapeKind>('pill');
   /** In a fix, a drag moves the view instead of drawing or moving shapes (the tools' Pan); taps still select. */
   readonly panning = signal(false);
+  /** After an answer, the next crop not checked shows; off (?order=all), the next crop in order, checked or not. */
+  readonly skipChecked = signal(queryValue('order') !== 'all');
   readonly note = signal<CropNote | null>(null);
   readonly busy = signal(false);
   readonly list = computed<CropEntry[]>(() =>
@@ -101,7 +103,13 @@ export class CropDraft {
   });
 
   constructor() {
-    effect(() => setQuery({ folder: this.folder() ?? null, set: this.set() ?? null }));
+    effect(() =>
+      setQuery({
+        folder: this.folder() ?? null,
+        set: this.set() ?? null,
+        order: this.skipChecked() ? null : 'all',
+      }),
+    );
     effect(() => this.openFirst());
     // which crops are checked is known only once the answers are in: the crops often come first
     effect(() => {
@@ -199,7 +207,7 @@ export class CropDraft {
     return this.keep(answerOf(crop, draft, 'wrong', false));
   }
 
-  /** Keeps an answer, then shows the next crop not yet checked; a failure says why and stays. */
+  /** Keeps an answer, then shows the next crop (not yet checked, or in order); a failure says why and stays. */
   private async keep(answer: CropAnswer): Promise<void> {
     const [crop, folder] = [this.crop(), this.folder()];
     if (!crop || !folder) return;
@@ -208,7 +216,8 @@ export class CropDraft {
       const kept = await this.sets.save(folder, crop.id, answer);
       this.saved.update((saved) => ({ ...saved, [crop.id]: kept }));
       this.note.set(null);
-      this.nextUnchecked();
+      if (this.skipChecked()) this.nextUnchecked();
+      else this.go(1);
     } catch (error) {
       this.note.set({ text: `That answer was not saved: ${messageOf(error)}`, failed: true });
     } finally {

@@ -60,6 +60,10 @@ export class Crops {
       : "The model's shapes. Is every target found, and only targets?";
   });
 
+  protected toggleSkipChecked(): void {
+    this.draft.skipChecked.update((on) => !on);
+  }
+
   protected openFolder(select: HTMLSelectElement): void {
     const page = this.folders().find((one) => one.page === select.value);
     const first = page?.sets.find((set) => set.answered < set.count) ?? page?.sets[0];
