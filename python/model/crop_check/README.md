@@ -65,12 +65,14 @@ the crop's `tmask`).
 2. Make the page, once per set:
    `python python/model/crop_check/make_page.py <page folder> <set> <picks.jsonl or folder> --title "..."`.
    Keep the page folder under `test_out/vod_model/`, beside the crops.
-3. You check the crops on the Crops page, on your phone. Its answers land in `<page folder>/answers/checks/`.
+3. You check the crops on the Crops page, on your phone. Its answers land in `<page folder>/answers/checks/`;
+   an answer given again moves the one it replaces to `answers/replaced/`.
    (On the claude.ai page instead: Claude publishes `index.html` as an Artifact with the `db` capability, collection
    `checks`, and the files `publish_<set>_<n>.json` lists, then saves the answers with the ArtifactData tool, `list`
    with `out_dir` `<page folder>/answers`.)
 4. `python python/model/crop_check/labels.py <page folder> <page folder>/answers/checks <out jsonl> <set> ...`
-   (`--prefer <set>` lets a second pass's answers win; `--point-size crop` sizes a tapped point by the crop's own
+   (`--also <folder>` adds more answers folders, a crop's newest answer winning, as the Crops page shows it;
+   `--prefer <set>` lets a second pass's answers win; `--point-size crop` sizes a tapped point by the crop's own
    boxes instead of the recording's).
 5. Keep the out jsonl beside the crops: it is your labelled data (AGENTS.md, "Data the user labelled").
    `checked_data.py` builds the training set from it.

@@ -2,9 +2,10 @@
 crop, its file relative to the crops' source, as checked_data.py reads it.
 
 Usage: python python/model/crop_check/labels.py <page folder> <answers folder> <out jsonl> <set> [<set> ...]
-       [--prefer SET] [--point-size folder|crop]
+       [--also <answers folder> ...] [--prefer SET] [--point-size folder|crop]
 
-<answers folder> holds one <crop id>.json per answer: the page folder's answers/checks/ for the app's Crops page, or
+<answers folder> (and each --also folder; a crop answered in several takes its newest answer, by `at`, as the Crops
+page shows it) holds one <crop id>.json per answer: the page folder's answers/checks/ for the app's Crops page, or
 the claude.ai page's `checks` collection as Claude's ArtifactData tool saves it (list with out_dir). An answer drawn on
 the Crops page carries its scene (shapes joined into targets, occluders): its labels come from the core
 (aimview-tool crop-labels, which reads the page folder's answers*/checks/; the page folder must be test_out's
@@ -30,11 +31,16 @@ ANSWER_FIELDS = ("verdict", "remove", "add", "edit", "suggested", "scene")
 PYTHON = Path(__file__).resolve().parents[2]   # python/, where aimview_tools.py is
 
 
-def read_answers(folder):
+def read_answers(folders):
+    """Each crop's answer from the folders: where several hold one, the newest (`at`)."""
     answers = {}
-    for path in folder.glob("*.json"):
-        saved = json.loads(path.read_text())
-        answers[path.stem] = saved.get("data", saved)
+    for folder in folders:
+        for path in folder.glob("*.json"):
+            saved = json.loads(path.read_text())
+            answer = saved.get("data", saved)
+            held = answers.get(path.stem)
+            if held is None or answer.get("at", 0) > held.get("at", 0):
+                answers[path.stem] = answer
     return answers
 
 
@@ -45,7 +51,14 @@ def scene_labels(page, answers):
         return {}
     sys.path.insert(0, str(PYTHON))
     import aimview_tools
-    return aimview_tools.run("crop-labels", page.name, "--data", page.resolve().parent.parent)["labels"]
+    labels = aimview_tools.run("crop-labels", page.name, "--data", page.resolve().parent.parent)["labels"]
+    # the tool reads every answers*/checks of the page: its label must be of the answer chosen here
+    for crop_id, answer in answers.items():
+        label = labels.get(crop_id)
+        if answer.get("scene") and (label is None or label["at"] != answer.get("at")):
+            raise SystemExit(f"{crop_id}: the core labelled another answer than this one (a newer answer in an answers "
+                             "folder not given? add it with --also)")
+    return labels
 
 
 def applied(crop, answer, label):
@@ -75,11 +88,12 @@ def main():
     parser.add_argument("answers", type=Path)
     parser.add_argument("out", type=Path)
     parser.add_argument("sets", nargs="+")
+    parser.add_argument("--also", type=Path, nargs="+", default=[], help="more answers folders")
     parser.add_argument("--prefer")
     parser.add_argument("--point-size", choices=("folder", "crop"), default="folder")
     args = parser.parse_args()
     crops = {crop["id"]: crop for crop in json.loads((args.page / "crops.json").read_text())}
-    answers = read_answers(args.answers)
+    answers = read_answers([args.answers, *args.also])
     labels = scene_labels(args.page, answers)
     preferred = {crop["file"]: crop for crop in crops.values() if crop["set"] == args.prefer and crop["id"] in answers}
     final = {}
