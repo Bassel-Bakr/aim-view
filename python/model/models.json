@@ -27,6 +27,13 @@
       "checks": {"static": [854, 849], "moving": [1200, 1184], "tracking": [-0.092, 0.141]},
       "accepted": "2026-10-05: python/model/reports/accept_full_v6.json (the app's native review)"
     },
+    "full_v8_orange": {
+      "params": 80765, "kb": 324.4,
+      "trained": "full_v6 fine-tuned with the 2026-10-05 labels and 354 health-bar crops checked by eye, the bar crossed out: orange and red bars only.",
+      "speed_ms": {"gpu": 1.37, "cpu": 6.0, "browser": 24.1},
+      "best": "Taught that bots' health bars are no targets.",
+      "weak": "Not gated: its gate was stopped. Never shown a bar of another color."
+    },
     "hand": {
       "label": "Hand-written",
       "trained": "No training: the rule-based finder in review.py. The first training labels came from it.",
