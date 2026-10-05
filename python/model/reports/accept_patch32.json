@@ -1,0 +1,91 @@
+{
+ "model": "patch32",
+ "best": "full_v6",
+ "date": "2026-10-05",
+ "passed": false,
+ "files": {
+  "model": {
+   "export": "3b095619f33df9b81cb8f8fac5a226bac599ea066d5648247782bf27fcbff15c",
+   "settings": "371cc161a38a34405437c3b77b64403b48ff7621c3eeeb5d7457c6a17c489f64"
+  },
+  "best": {
+   "export": "cd43af2aa43ef87f00d7371a2f6beb63a7c18a337b0ab4a756406993dea180ae",
+   "settings": "7c52cf7b2fb5ce6fc7300f4c657b8f31a03ffb7fbffca92b282f11afe7d15efa"
+  },
+  "programs": null
+ },
+ "limits": {
+  "draws": 400,
+  "standard_deviations": 2.0,
+  "seed": 0,
+  "kills_matched": "no drop",
+  "flicks_recall_precision": "2 SD of the best model's share over draws of its kills",
+  "tracking": "2 SD of the best model's number over draws of the runs"
+ },
+ "contract": {
+  "passed": false,
+  "report": "test_out\\vod_model\\accept\\patch32\\contract.json",
+  "checks": {
+   "export": true,
+   "crosshair": false,
+   "screen_fixed": true,
+   "boxes_per_frame": true,
+   "box_fit": true,
+   "one_box": true,
+   "under_crosshair": true,
+   "calibrated": true,
+   "targets_found": true
+  },
+  "failed": [
+   "crosshair: pairs over full_v6's: 0.0172 of all (allowed 0.005)",
+   "crosshair: recordings 1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4: 0.0411 against full_v6's 0.0 (allowed gap 0.02)",
+   "crosshair: recordings 1wall 6targets extra small - 889.26 - 2026.10.01: 0.057 against full_v6's 0.0 (allowed gap 0.02)"
+  ]
+ },
+ "checks": [
+  {
+   "check": "contract",
+   "kind": "all",
+   "model": "fails",
+   "best": "",
+   "difference": "",
+   "allowed": "every check",
+   "unit": "",
+   "passed": false
+  }
+ ],
+ "not_run": [
+  "moving switching",
+  "moving dynamic",
+  "moving static",
+  "report",
+  "moving tracking",
+  "video alone"
+ ],
+ "model_results": {
+  "moving": {},
+  "report": {},
+  "video_alone": {},
+  "video_alone_left_out": {},
+  "fresh": {
+   "moving_tracked": [],
+   "report_reviewed": false,
+   "video_alone_tracked": 0
+  },
+  "seconds": 0.0
+ },
+ "best_results": {
+  "moving": {},
+  "report": {},
+  "video_alone": {},
+  "video_alone_left_out": {},
+  "fresh": {
+   "moving_tracked": [],
+   "report_reviewed": false,
+   "video_alone_tracked": 0
+  },
+  "seconds": 0.0
+ },
+ "listed": null,
+ "default_lines": []
+}
