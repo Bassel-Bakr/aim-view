@@ -53,6 +53,7 @@
             [attr.aria-sort]="sortOf(c.id)"
             [attr.data-align]="alignOf(c.id)"
             [attr.data-prose]="c.prose ? '' : null"
+            [attr.data-wrap]="c.wrap ? '' : null"
           >
             @let header = headerTemplate(c.id);
             @if (header) {
@@ -114,6 +115,7 @@
                   [attr.data-label]="c.header"
                   [attr.data-align]="alignOf(c.id)"
                   [attr.data-prose]="c.prose ? '' : null"
+                  [attr.data-wrap]="c.wrap ? '' : null"
                   [attr.data-tone]="c.tone?.(item) ?? null"
                   [attr.title]="c.tip?.(item) ?? null"
                 >
@@ -128,6 +130,7 @@
                   [attr.data-label]="c.header"
                   [attr.data-align]="alignOf(c.id)"
                   [attr.data-prose]="c.prose ? '' : null"
+                  [attr.data-wrap]="c.wrap ? '' : null"
                   [attr.data-tone]="c.tone?.(item) ?? null"
                   [attr.title]="c.tip?.(item) ?? null"
                 >

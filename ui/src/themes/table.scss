@@ -11,11 +11,16 @@
   --table-header-bg: var(--surface-1);
   --table-row-bg: var(--surface-1);
   --table-row-hover: var(--surface-2);
-  --table-row-selected: var(--surface-3);
+  // the picked row: the accent mixed into the row's color (solid, so a first column stuck over others hides them), and
+  // a bar of the accent at its left edge
+  --table-row-selected: color-mix(in srgb, var(--accent) 18%, var(--surface-1));
+  --table-selected-edge: inset 3px 0 0 var(--accent);
   --table-group-bg: var(--surface-2);
   // a prose column (a sentence or more) never narrower than this, and it wraps beyond the widest
   --table-prose-min-width: 280px;
   --table-prose-max-width: 560px;
+  // a column of words that may take two lines (a what-if change, a model measure) never narrower than this
+  --table-wrap-min-width: 160px;
   --table-menu-width: 240px;
   --table-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
   // how tall a table's own box grows before it scrolls; none: as tall as its rows
@@ -30,6 +35,7 @@ $header-bg: var(--table-header-bg);
 $row-bg: var(--table-row-bg);
 $row-hover: var(--table-row-hover);
 $row-selected: var(--table-row-selected);
+$selected-edge: var(--table-selected-edge);
 $group-bg: var(--table-group-bg);
 $prose-min-width: var(--table-prose-min-width);
 $prose-max-width: var(--table-prose-max-width);

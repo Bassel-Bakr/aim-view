@@ -45,7 +45,12 @@
         How you did while the bot moved each way: the share of the time it moved that way, your time
         on it, your usual distance from its middle line, and whether you trailed or led it.
       </p>
-      <app-data-table label="By the target's direction" [rows]="m.rows" [columns]="motionColumns" />
+      <app-data-table
+        cards="medium"
+        label="By the target's direction"
+        [rows]="m.rows"
+        [columns]="motionColumns"
+      />
     }
   </section>
 }

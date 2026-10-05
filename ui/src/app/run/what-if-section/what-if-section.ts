@@ -26,12 +26,13 @@ export interface WhatIfRow extends WhatIfLine {
   group: string;
 }
 
-const BY_HEADING: TableGrouping<WhatIfRow> = { label: 'Heading', key: (row) => row.group };
+const BY_KIND: TableGrouping<WhatIfRow> = { label: 'Kind of change', key: (row) => row.group };
+const GROUPINGS: readonly TableGrouping<WhatIfRow>[] = [BY_KIND];
 
 /**
- * A report's "What would raise your ..." section: the heading, the note (the content) and the lines by group, in the
- * app's data table: the change, its gains (sortable) and why, a prose column wide enough to read. Nothing when there
- * are no lines.
+ * A report's "What would raise your ..." section: the heading, the note (the content) and the lines by group (its Group
+ * by menu turns the groups off), in the app's data table: the change, its gains (sortable) and why, a prose column wide
+ * enough to read; cards where the page is narrower than 720 px. Nothing when there are no lines.
  */
 @Component({
   selector: 'app-what-if-section',
@@ -42,14 +43,15 @@ const BY_HEADING: TableGrouping<WhatIfRow> = { label: 'Heading', key: (row) => r
 export class WhatIfSection {
   readonly heading = input.required<string>();
   readonly table = input.required<WhatIfTable>();
-  protected readonly grouping = BY_HEADING;
+  protected readonly grouping = BY_KIND;
+  protected readonly groupings = GROUPINGS;
   protected readonly rows = computed(() =>
     this.table().groups.flatMap((group) =>
       group.lines.map((line) => ({ ...line, group: group.name ?? '' })),
     ),
   );
   protected readonly columns = computed((): DataColumn<WhatIfRow>[] => [
-    { id: 'what', header: 'Change', text: (row) => row.what, rowHeader: true },
+    { id: 'what', header: 'Change', text: (row) => row.what, rowHeader: true, wrap: true },
     ...this.table().columns.map((header, index): DataColumn<WhatIfRow> => ({
       id: `gain-${index}`,
       header,

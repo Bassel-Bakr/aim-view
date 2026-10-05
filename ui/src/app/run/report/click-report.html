@@ -33,11 +33,17 @@
 <div class="split">
   <section aria-label="By distance">
     <h3>By distance</h3>
-    <app-data-table label="Kills by distance" [rows]="byDistance()" [columns]="distanceColumns" />
+    <app-data-table
+      cards="medium"
+      label="Kills by distance"
+      [rows]="byDistance()"
+      [columns]="distanceColumns"
+    />
   </section>
   <section aria-label="By direction">
     <h3>By direction</h3>
     <app-data-table
+      cards="medium"
       label="Kills by direction"
       [rows]="byDirection()"
       [columns]="directionColumns"

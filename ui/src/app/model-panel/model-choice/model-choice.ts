@@ -64,6 +64,7 @@ export class ModelChoice {
       header: '',
       text: (line) => (line.kind === 'measure' ? line.row.label : 'Pick'),
       rowHeader: true,
+      wrap: true,
       align: 'start',
     },
     ...(this.table()?.columns ?? []).map((column, index): DataColumn<ModelLine> => ({

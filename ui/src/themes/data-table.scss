@@ -3,8 +3,52 @@
 // templates of the table's user. A global stylesheet of its own (angular.json), Sass first, then Tailwind: @reference
 // gives @apply the token theme. Its tokens are in table.scss.
 @use 'table' as t;
-@use 'layout' as l;
 @reference '../tailwind.css';
+
+// The main area's widths below which a table's rows become cards (a container query cannot read a CSS variable)
+$card-widths: (
+  narrow: 520px,
+  medium: 720px,
+  wide: 960px,
+);
+
+// Each row a card: a cell a line, its column's name to the left, prose under its name
+@mixin cards {
+  .data-table,
+  tbody,
+  .data-row,
+  .data-group-row,
+  .data-cell,
+  .data-group-cell {
+    @apply block;
+  }
+
+  thead {
+    @apply sr-only;
+  }
+
+  .data-row {
+    @apply mb-3 rounded-md border border-border py-2;
+  }
+
+  .data-row > .data-cell {
+    @apply static flex max-w-none min-w-0 justify-between gap-4 border-0 px-5 py-1 text-right whitespace-normal;
+
+    &::before {
+      @apply w-(--table-card-label-width) flex-none text-left text-xs tracking-wide text-muted uppercase;
+
+      content: attr(data-label);
+    }
+
+    &[data-prose] {
+      @apply flex-col gap-1 text-left;
+
+      &::before {
+        @apply w-auto;
+      }
+    }
+  }
+}
 
 @layer components {
   app-data-table {
@@ -71,6 +115,10 @@
       @apply max-w-(--table-prose-max-width) min-w-(--table-prose-min-width) text-left whitespace-normal;
     }
 
+    [data-wrap] {
+      @apply min-w-(--table-wrap-min-width) whitespace-normal;
+    }
+
     thead th {
       @apply sticky top-0 z-1 bg-(--table-header-bg) align-bottom tracking-wide uppercase;
     }
@@ -108,7 +156,7 @@
         background-color: var(--row-bg);
 
         > :first-child {
-          @apply inset-shadow-(--selected-edge);
+          box-shadow: t.$selected-edge;
         }
       }
     }
@@ -156,43 +204,14 @@
     .data-group-mark {
       @apply text-muted;
     }
+  }
 
-    // On a phone each row is a card: a cell a line, its column's name to the left
-    @media (width <= l.$narrow-width) {
-      .data-table,
-      tbody,
-      .data-row,
-      .data-group-row,
-      .data-cell,
-      .data-group-cell {
-        @apply block;
-      }
-
-      thead {
-        @apply sr-only;
-      }
-
-      .data-row {
-        @apply mb-3 rounded-md border border-border py-2;
-      }
-
-      .data-row > .data-cell {
-        @apply static flex min-w-0 justify-between gap-4 border-0 px-5 py-1 text-right whitespace-normal;
-
-        &::before {
-          @apply w-(--table-card-label-width) flex-none text-left text-xs tracking-wide text-muted uppercase;
-
-          content: attr(data-label);
-        }
-
-        // prose under its name, read from the left
-        &[data-prose] {
-          @apply max-w-none min-w-0 flex-col gap-1 text-left;
-
-          &::before {
-            @apply w-auto;
-          }
-        }
+  // Where a table has too little room for its columns, each row is a card, by the room the page's main area has (its
+  // container): a table says from which width (DataTable.cards)
+  @each $name, $width in $card-widths {
+    @container (width <= #{$width}) {
+      app-data-table[data-cards='#{$name}'] {
+        @include cards;
       }
     }
   }

@@ -9,6 +9,9 @@ export type CellTone = 'value' | 'good' | 'attention' | 'muted';
 /** Where a column's cells sit: numbers to the end, words to the start. */
 export type CellAlign = 'start' | 'end';
 
+/** From which width of the page's main area a table's rows become cards: 520, 720 or 960 px (data-table.scss). */
+export type CardWidth = 'narrow' | 'medium' | 'wide';
+
 /** What a column sorts by: a number, words, or nothing (sorted last). */
 export type SortValue = number | string | undefined;
 
@@ -32,6 +35,8 @@ export interface DataColumn<Row> {
   align?: CellAlign;
   /** A sentence or more: wrapped, at least a readable width. Every other cell stays on one line. */
   prose?: boolean;
+  /** Words that may take two lines when the table is short of room (a change's name). */
+  wrap?: boolean;
   /** The row's name (a header cell for its row, which screen readers read with each cell). */
   rowHeader?: boolean;
   /** Hidden until the Columns menu shows it. */

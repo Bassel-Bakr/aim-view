@@ -33,6 +33,7 @@ import {
 import { DataCell, DataCellContext, DataHeader, DataHeaderContext } from './data-cell';
 import {
   alignOf,
+  CardWidth,
   CellAlign,
   compareSortValues,
   DataColumn,
@@ -48,11 +49,11 @@ import {
  * column's header sorts it (again: the other way, a third time: back to the rows' order); a grouping (fixed, or
  * picked in the Group by menu) puts the rows under group rows that fold them away, each with its count and summary;
  * the Columns menu shows and hides columns, kept in this browser. Headers and cells stay on one line, except prose
- * columns, which wrap at a readable width; numbers sit to the right in even digits. The header row stays in view when
- * the table scrolls in its own box (as tall as --table-max-height), the first column too when it scrolls sideways
- * (stickyFirst), and on a phone each row is a card. A picked row (pickLabel: its first cell becomes a button; a click
- * anywhere on the row picks it) is sent out (pick); the selected one is marked and kept in view inside the table's
- * box, never scrolling the page. A column's cells and header can be templates of the table's user (data-cell.ts). Its
+ * columns, which wrap at a readable width, and words that may wrap; numbers sit to the right in even digits. The
+ * header row stays in view when the table scrolls in its own box (as tall as --table-max-height), the first column too
+ * when it scrolls sideways (stickyFirst), and where the page's main area is narrower than the table's cards width
+ * each row is a card. A picked row (pickLabel: its first cell becomes a button; a click anywhere on the row picks it)
+ * is sent out (pick); the selected one is marked and kept in view inside the table's box, never scrolling the page. A column's cells and header can be templates of the table's user (data-cell.ts). Its
  * styles are global (themes/data-table.scss), as the other shared controls' are.
  */
 
@@ -79,6 +80,7 @@ let nextMenu = 0;
 @Component({
   selector: 'app-data-table',
   imports: [NgTemplateOutlet],
+  host: { '[attr.data-cards]': 'cards()' },
   templateUrl: './data-table.html',
 })
 export class DataTable<Row extends RowData> {
@@ -96,6 +98,8 @@ export class DataTable<Row extends RowData> {
   /** The Columns menu, which shows and hides columns; kept in this browser under storageKey when there is one. */
   readonly columnMenu = input(false);
   readonly storageKey = input<string | null>(null);
+  /** From which width of the page's main area the rows become cards; null: never (the table scrolls sideways). */
+  readonly cards = input<CardWidth | null>('narrow');
   /** The first column stays in view when the table scrolls sideways. */
   readonly stickyFirst = input(false);
   readonly selectedId = input<string | null>(null);
