@@ -208,15 +208,17 @@ KOVAAKS_CROSSHAIRS = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrain
 _REAL = {}
 
 
-def real_crosshairs(folder):
+def real_crosshairs(folder, device="cpu"):
     """The crosshair images a KovaaK's install has (RGBA PNGs: 45 here, from small dots to big circles), as float
-    tensors 4 x h x w, loaded once. Empty when the folder is missing."""
-    if folder not in _REAL:
+    tensors 4 x h x w, loaded once per device (a copy to the GPU for each crosshair drawn would wait for it). Empty
+    when the folder is missing."""
+    key = (folder, str(device))
+    if key not in _REAL:
         from PIL import Image
         files = sorted(Path(folder).glob("*.png")) if folder and Path(folder).is_dir() else []
-        _REAL[folder] = [torch.from_numpy(np.asarray(Image.open(file).convert("RGBA"), np.float32) / 255)
-                         .permute(2, 0, 1) for file in files]
-    return _REAL[folder]
+        _REAL[key] = [torch.from_numpy(np.asarray(Image.open(file).convert("RGBA"), np.float32) / 255)
+                      .permute(2, 0, 1).to(device) for file in files]
+    return _REAL[key]
 
 
 def paste_real(image, fixed, crop, cx, cy, picture):
@@ -286,24 +288,28 @@ def crosshairs(image, fixed, boxes, counts, share=0.5, on_target=0.5, jitter=0.0
     batch, _, size, _ = image.shape
     device = image.device
     yy, xx = torch.meshgrid(torch.arange(size, device=device), torch.arange(size, device=device), indexing="ij")
+    # the boxes read once on the CPU, and the pixels painted with where() rather than a mask's index: neither makes
+    # the loop wait for the GPU crop by crop
+    boxes = boxes.cpu()
     for crop in range(batch):
         if random.random() > share:
             continue
         cx, cy = crosshair_center(boxes, counts, crop, size, on_target, jitter)
-        pictures = real_crosshairs(folder) if real else []
+        pictures = real_crosshairs(folder, device) if real else []
         if pictures and random.random() < real:
             paste_real(image, fixed, crop, cx, cy, real_picture(pictures, device))
             continue
         drawn = drawn_shape(xx - cx, yy - cy)
         color = torch.rand(3, 1, device=device)
-        image[crop][:, drawn] = color
-        fixed[crop, 0][drawn] = 1
+        image[crop] = torch.where(drawn, color[:, :, None], image[crop])
+        fixed[crop, 0].masked_fill_(drawn, 1)
         if random.random() < outline:
             grow = random.choice(OUTLINE_SIZES)
             edge = (F.max_pool2d(drawn[None, None].float(), grow, 1, grow // 2)[0, 0] > 0) & ~drawn
             dark = random.random() < DARK_OUTLINE_SHARE
-            image[crop][:, edge] = torch.rand(3, 1, device=device) * (DARK_OUTLINE if dark else 1.0)
-            fixed[crop, 0][edge] = 1
+            edge_color = torch.rand(3, 1, device=device) * (DARK_OUTLINE if dark else 1.0)
+            image[crop] = torch.where(edge, edge_color[:, :, None], image[crop])
+            fixed[crop, 0].masked_fill_(edge, 1)
     return image, fixed
 
 
@@ -365,7 +371,7 @@ def targets(boxes, counts, size):
     batch = boxes.shape[0]
     cells = size // net.STRIDE
     device = boxes.device
-    valid = torch.arange(boxes.shape[1], device=device)[None] < counts[:, None]
+    valid = torch.arange(boxes.shape[1], device=device)[None] < counts.to(device)[:, None]
     centers = boxes[..., :2] / net.STRIDE
     sides = boxes[..., 2:].clamp(min=1.0)
     sigma = (SIGMA_SIZE * sides.max(-1).values / net.STRIDE).clamp(min=MIN_SIGMA)
@@ -377,12 +383,17 @@ def targets(boxes, counts, size):
     center_cells = centers.floor().long().clamp(0, cells - 1)
     peak = torch.zeros(batch, 1, cells, cells, device=device)
     reg = torch.zeros(batch, 4, cells, cells, device=device)
-    for crop in range(batch):
-        for j in range(int(counts[crop])):
-            x, y = center_cells[crop, j]
-            peak[crop, 0, y, x] = 1
-            reg[crop, :, y, x] = torch.stack([centers[crop, j, 0] - x, centers[crop, j, 1] - y,
-                                              sides[crop, j, 0].log(), sides[crop, j, 1].log()])
+    # every box's cell at once, its crop and slot found on the CPU (counts is there) and the cells read back in one
+    # copy; where two boxes share a cell the later one's values stand, as writing them box by box left them
+    crops, slots = (torch.arange(boxes.shape[1])[None] < counts.cpu()[:, None]).nonzero(as_tuple=True)
+    cells_xy = center_cells.cpu()[crops, slots]
+    keys = ((crops * cells + cells_xy[:, 1]) * cells + cells_xy[:, 0]).tolist()
+    last = sorted({key: i for i, key in enumerate(keys)}.values())
+    crops, slots, cells_xy = crops[last].to(device), slots[last].to(device), cells_xy[last].to(device)
+    x, y = cells_xy[:, 0], cells_xy[:, 1]
+    peak[crops, 0, y, x] = 1
+    reg[crops, :, y, x] = torch.stack([centers[crops, slots, 0] - x, centers[crops, slots, 1] - y,
+                                       sides[crops, slots, 0].log(), sides[crops, slots, 1].log()], 1)
     heatmap = torch.maximum(heatmap, peak)
     return heatmap, peak, reg
 
@@ -419,8 +430,8 @@ def loss_fn(out, heatmap, peak, reg, config, keep=None):
     offset = (F.l1_loss(out[:, 1:3].float(), reg[:, 0:2], reduction="none") * at_peaks[:, :2]).sum() / positives
     size = (F.l1_loss(out[:, 3:5].float(), reg[:, 2:4], reduction="none") * at_peaks[:, 2:]).sum() / positives
     weights = config["loss"]
-    return focal + weights["offset"] * offset + weights["size"] * size, dict(focal=focal.item(), offset=offset.item(),
-                                                                            size=size.item())
+    return focal + weights["offset"] * offset + weights["size"] * size, dict(focal=focal.detach(), offset=offset.detach(),
+                                                                            size=size.detach())
 
 
 # ---- metrics --------------------------------------------------------------------------------------------------------
@@ -605,7 +616,7 @@ class Trainer:
     def save(self, epoch, batch):
         """The whole state, at a batch boundary (batch = batches done in this epoch)."""
         state = dict(model=self.model.state_dict(), opt=self.optimizer.state_dict(), sched=self.scheduler.state_dict(),
-                     config=self.config, args=self.args, epoch=epoch, batch=batch, best=self.best, tot=self.total,
+                     config=self.config, args=self.args, epoch=epoch, batch=batch, best=self.best, tot=float(self.total),
                      params=self.params,
                      rng=dict(python=random.getstate(), numpy=np.random.get_state(), torch=torch.get_rng_state(),
                               cuda=torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None))
@@ -616,7 +627,8 @@ class Trainer:
 
     def step(self, batch):
         """One optimizer step on a batch; returns its loss."""
-        rgb, fixed, target_mask, boxes, counts, ignore = (value.to(self.device, non_blocking=True) for value in batch)
+        rgb, fixed, target_mask, boxes, ignore = (batch[part].to(self.device, non_blocking=True) for part in (0, 1, 2, 3, 5))
+        counts = batch[4]     # kept on the CPU: the loops over the crops read it without waiting for the GPU
         inputs, boxes, ignore = augment(rgb, fixed, target_mask, boxes.clone(), counts, self.config, ignore)
         heatmap, peak, reg = targets(boxes, counts, inputs.shape[-1])
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
@@ -627,7 +639,8 @@ class Trainer:
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), CLIP_NORM)
         self.optimizer.step()
         self.scheduler.step()
-        return loss.item()
+        # left on the GPU, in float64 so the epoch's sum equals Python's: reading it each step would wait for the GPU
+        return loss.detach().double()
 
     def train_epoch(self, epoch):
         """One epoch's batches, from where a resumed run stopped; the batches done, or None when paused or
@@ -657,7 +670,7 @@ class Trainer:
     def end_epoch(self, epoch, done, started, log):
         """The epoch's validation numbers logged and printed, its checkpoints, and the state saved."""
         val = evaluate(self.model, self.val_loader, self.device)
-        row = dict(epoch=epoch + 1, loss=round(self.total / max(1, done), 4), seconds=round(time.time() - started, 1),
+        row = dict(epoch=epoch + 1, loss=round(float(self.total) / max(1, done), 4), seconds=round(time.time() - started, 1),
                    **val)
         log.write(json.dumps(row) + "\n")
         log.flush()
