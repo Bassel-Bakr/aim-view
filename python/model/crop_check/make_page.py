@@ -18,6 +18,7 @@ Prints how to publish it: the Artifact tool takes at most 255 files a publish an
 """
 import argparse
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -33,11 +34,17 @@ def rounded(boxes):
     return [[round(float(value), 1) for value in box] for box in boxes]
 
 
+def page_id(name):
+    """A crop's id with every character the page's database refuses in a document id (an apostrophe, a space) made
+    "_": "Cartoon's Micro" could not be saved."""
+    return re.sub(r"[^A-Za-z0-9_\-.~:@+]", "_", name)
+
+
 def entry(set_name, file, crop, folder="", kind="", why=(), rule=None):
     """A crop's entry in crops.json; `file` is its path relative to the source."""
     boxes = rounded(crop["boxes"])
     row = {
-        "id": f"{set_name}.{file.replace('/', '.').removesuffix('.npz')}", "set": set_name, "file": file,
+        "id": page_id(f"{set_name}.{file.replace('/', '.').removesuffix('.npz')}"), "set": set_name, "file": file,
         "folder": folder, "kind": kind, "why": list(why), "rule": rule, "boxes": boxes,
         "scores": [round(float(score), 2) for score in crop["scores"]] if "scores" in crop.files else [],
     }
