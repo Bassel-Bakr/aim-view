@@ -18,7 +18,7 @@ use crate::geometry::{H, W, blob_radius_deg, to_deg};
 use crate::measure::DEFAULT_TARGET_RADIUS_DEG;
 use crate::python::hypot;
 use crate::statistics::median;
-use crate::track::{TrackFrame, Tracks, spikes};
+use crate::track::{TrackFrame, TrackPoint, Tracks, spikes, view_shift_between};
 
 /// A point of a target's path: frame, x and y (degrees from the crosshair).
 pub type PathPoint = (i64, f64, f64);
@@ -521,6 +521,120 @@ fn sized_boxes(frame: &TrackFrame) -> impl Iterator<Item = SizedBox> + '_ {
     frame.wh.iter().flat_map(|sizes| frame.t.iter().zip(sizes).map(|(&(track, x, y), &size)| (track, x, y, size)))
 }
 
+/// The crosshair spot and the size of the detector's box there (degrees): the median width and height of the boxes on
+/// the spot while the camera turns (the crosshair never changes). None when the detector does not mark the crosshair.
+fn crosshair_box(frames: &[TrackFrame]) -> Option<((f64, f64), (f64, f64))> {
+    let &center = crosshair_spots(frames).first()?;
+    let on_spot = |x: f64, y: f64| hypot(x - center.0, y - center.1) < ON_SPOT_DEG;
+    let (mut widths, mut heights) = (Vec::new(), Vec::new());
+    for frame in frames.iter().filter(|frame| turning(frame)) {
+        for (_, _, _, (width, height)) in sized_boxes(frame).filter(|&(_, x, y, _)| on_spot(x, y)) {
+            widths.push(width);
+            heights.push(height);
+        }
+    }
+    (!widths.is_empty()).then(|| (center, (median(&widths), median(&heights))))
+}
+
+/// A box at the crosshair is far smaller than the run's targets when its width and height are each at most their
+/// median's divided by this: too small to be one of them hidden under the crosshair.
+const TARGET_OVER_CROSSHAIR: f64 = 2.0;
+/// The fewest such boxes at the crosshair that say the detector marks it.
+const CROSSHAIR_BOXES: usize = 10;
+/// The detector's box on the crosshair sits within this of the crosshair's center (degrees): its center wanders by a
+/// pixel or two (0.15 degrees on ww3t Voltaic 203).
+const CROSSHAIR_REACH_DEG: f64 = 0.25;
+
+/// The size of the detector's box on the crosshair (degrees), from the boxes at the crosshair's center (ON_SPOT_DEG)
+/// far smaller than the run's targets (TARGET_OVER_CROSSHAIR; the targets' size is the median of the boxes elsewhere):
+/// their median width and height. None when there are fewer than CROSSHAIR_BOXES of them.
+fn small_crosshair_box(frames: &[TrackFrame], center: (f64, f64)) -> Option<(f64, f64)> {
+    let on_spot = |x: f64, y: f64| hypot(x - center.0, y - center.1) < ON_SPOT_DEG;
+    let (mut widths, mut heights) = (Vec::new(), Vec::new());
+    for (_, _, _, (width, height)) in frames.iter().flat_map(sized_boxes).filter(|&(_, x, y, _)| !on_spot(x, y)) {
+        widths.push(width);
+        heights.push(height);
+    }
+    if widths.is_empty() {
+        return None;
+    }
+    let most = (median(&widths) / TARGET_OVER_CROSSHAIR, median(&heights) / TARGET_OVER_CROSSHAIR);
+    let (mut small_widths, mut small_heights) = (Vec::new(), Vec::new());
+    for (_, _, _, (width, height)) in frames.iter().flat_map(sized_boxes).filter(|&(_, x, y, _)| on_spot(x, y)) {
+        if width <= most.0 && height <= most.1 {
+            small_widths.push(width);
+            small_heights.push(height);
+        }
+    }
+    (small_widths.len() >= CROSSHAIR_BOXES).then(|| (median(&small_widths), median(&small_heights)))
+}
+
+/// The tracks without the crosshair's boxes, in a run whose targets are far bigger than it (`small_crosshair_box`):
+/// there a box of the crosshair's size (SAME_SIZE) at the crosshair's center cannot be a target hidden under the
+/// crosshair, so it is the crosshair, with the camera turning or still (the user's rule, 2026-10-05: the size gap is
+/// enough when it is big). A track that runs through such boxes is split there: a killed target's track that the
+/// tracker handed to the crosshair's box ends at its last box, and what comes after the boxes is a track of its own. A
+/// run whose targets are near the crosshair's size keeps every box, for `without_crosshair_ends` to judge.
+pub fn without_crosshair_boxes(tracks: &Tracks) -> Cow<'_, Tracks> {
+    let frames = &tracks.frames;
+    let center = crosshair_center();
+    let Some(crosshair) = small_crosshair_box(frames, center) else { return Cow::Borrowed(tracks) };
+    let on_spot = |x: f64, y: f64| hypot(x - center.0, y - center.1) < CROSSHAIR_REACH_DEG;
+    let near_size = |size: f64, crosshair_size: f64| (size - crosshair_size).abs() <= SAME_SIZE * crosshair_size;
+    let is_crosshair = |&(_, x, y): &TrackPoint, &(width, height): &(f64, f64)| {
+        on_spot(x, y) && near_size(width, crosshair.0) && near_size(height, crosshair.1)
+    };
+    let mut out = tracks.clone();
+    let mut next_id = frames.iter().flat_map(|frame| frame.t.iter().map(|point| point.0)).max().map_or(0, |id| id + 1);
+    // each split track's id from its last split on, and the tracks whose latest point was a crosshair box
+    let (mut renamed, mut broken): (HashMap<u32, u32>, HashSet<u32>) = (HashMap::new(), HashSet::new());
+    for frame in &mut out.frames {
+        let Some(sizes) = frame.wh.as_mut() else { continue };
+        let keeps: Vec<bool> =
+            frame.t.iter().zip(sizes.iter()).map(|(point, size)| !is_crosshair(point, size)).collect();
+        if keeps.contains(&false) {
+            keep_marked(sizes, &keeps);
+        }
+        for (point, &keep) in frame.t.iter_mut().zip(&keeps) {
+            if !keep {
+                broken.insert(point.0);
+            } else if broken.remove(&point.0) {
+                renamed.insert(point.0, next_id);
+                next_id += 1;
+            }
+            if let Some(&id) = renamed.get(&point.0) {
+                point.0 = id;
+            }
+        }
+        if keeps.contains(&false) {
+            keep_marked(&mut frame.t, &keeps);
+            keep_marked(&mut frame.a, &keeps);
+            if let Some(scores) = frame.s.as_mut() {
+                keep_marked(scores, &keeps);
+            }
+        }
+    }
+    if broken.is_empty() && renamed.is_empty() {
+        return Cow::Borrowed(tracks);
+    }
+    reshift(&mut out.frames, frames);
+    Cow::Owned(out)
+}
+
+/// The view's shift worked out again (`track::view_shift_between`) on each frame that had a crosshair box left out, or
+/// whose frame before had one: the tracker paired the crosshair's box, which stays put on screen, with the boxes around
+/// it, and could find a turn that was not there (ww3t Voltaic 203: 2.8 degrees one way at a flick, from the crosshair's
+/// box and a target that had just appeared). No pairing left: no turn.
+fn reshift(kept: &mut [TrackFrame], original: &[TrackFrame]) {
+    let places = |frame: &TrackFrame| -> Vec<(f64, f64)> { frame.t.iter().map(|&(_, x, y)| (x, y)).collect() };
+    let lost: Vec<bool> = kept.iter().zip(original).map(|(frame, before)| frame.t.len() != before.t.len()).collect();
+    for i in 1..kept.len() {
+        if lost[i] || lost[i - 1] {
+            kept[i].shift = view_shift_between(&places(&kept[i - 1]), &places(&kept[i])).unwrap_or((0.0, 0.0));
+        }
+    }
+}
+
 /// The tracks without the end of each one that turns into the crosshair's box: where the detector marks the crosshair,
 /// the tracker hands it the killed target's track, which runs on until the camera turns (the box stays put on screen).
 /// A box is the crosshair's on the spot (`crosshair_spots`, within ON_SPOT_DEG) with the size of the crosshair's box
@@ -531,19 +645,8 @@ fn sized_boxes(frame: &TrackFrame) -> impl Iterator<Item = SizedBox> + '_ {
 /// which cannot be told from it.
 pub fn without_crosshair_ends(tracks: &Tracks) -> Cow<'_, Tracks> {
     let frames = &tracks.frames;
-    let Some(&center) = crosshair_spots(frames).first() else { return Cow::Borrowed(tracks) };
+    let Some((center, crosshair)) = crosshair_box(frames) else { return Cow::Borrowed(tracks) };
     let on_spot = |x: f64, y: f64| hypot(x - center.0, y - center.1) < ON_SPOT_DEG;
-    let (mut widths, mut heights) = (Vec::new(), Vec::new());
-    for frame in frames.iter().filter(|frame| turning(frame)) {
-        for (_, _, _, (width, height)) in sized_boxes(frame).filter(|&(_, x, y, _)| on_spot(x, y)) {
-            widths.push(width);
-            heights.push(height);
-        }
-    }
-    if widths.is_empty() {
-        return Cow::Borrowed(tracks);
-    }
-    let crosshair = (median(&widths), median(&heights));
     let near_size = |size: f64, crosshair_size: f64| (size - crosshair_size).abs() <= SAME_SIZE * crosshair_size;
     let crosshair_sized = |(width, height): (f64, f64)| near_size(width, crosshair.0) && near_size(height, crosshair.1);
     // each track's last box that is not the crosshair's (its frame, and whether it has the crosshair's size), and end
@@ -622,7 +725,8 @@ pub fn match_times(
     window: f64,
     offset: Option<f64>,
 ) -> (Vec<Flick>, MatchInfo) {
-    let tracks = &*without_crosshair_ends(tracks);
+    let without_boxes = without_crosshair_boxes(tracks);
+    let tracks = &*without_crosshair_ends(&without_boxes);
     let fps = tracks.fps;
     let index = TrackIndex::new(&tracks.frames);
     let ends = crosshair_ends(&index, tracks.frames.len() as i64);
@@ -1235,7 +1339,7 @@ fn video_flicks(index: &TrackIndex, kills: &[Candidate]) -> Vec<Flick> {
 /// its target's track. "Near" is the target's radius (from the tracks' median blob area) plus RIM_DEG, and at least
 /// AT_CROSSHAIR_DEG.
 pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
-    let tracks = without_ghosts(&without_crosshair_ends(tracks));
+    let tracks = without_ghosts(&without_crosshair_ends(&without_crosshair_boxes(tracks)));
     let (fps, frames) = (tracks.fps, &tracks.frames);
     let mut index = TrackIndex::new(frames);
     let typical_area = index.typical_area();
@@ -1367,18 +1471,20 @@ mod tests {
 
     #[test]
     fn a_target_handed_to_the_crosshairs_box_ends_where_it_was_last_seen() {
-        // the detector boxes the crosshair (0.6 degrees) at the center while the camera turns; a target (1.4 degrees)
-        // comes to the crosshair and dies on frame 50, and its track runs on over the crosshair's box until frame 55.
-        // When the camera turns on frame 56, the box stayed after the target: the kill is on frame 50. When the camera
-        // is still and the box is gone, the box went with the target: the kill is on frame 55.
+        // the detector boxes the crosshair (0.6 degrees) at the center while the camera turns; a target comes to the
+        // crosshair and dies on frame 50, and its track runs on over the crosshair's box until frame 55. A target of
+        // 1.4 degrees is clearly bigger than the crosshair's box, so that box is the crosshair: the kill is on frame
+        // 50, the camera turning after it or not. A target of 0.9 degrees is not: when the camera turns on frame 56,
+        // the box stayed after the target (the kill is on frame 50); when the camera is still and the box is gone, the
+        // box went with the target (the kill is on frame 55).
         let center = crosshair_center();
-        for (turns, kill) in [(true, 50), (false, 55)] {
+        for (target, turns, kill) in [(1.4, true, 50), (1.4, false, 50), (0.9, true, 50), (0.9, false, 55)] {
             let frames = (0..70usize)
                 .map(|i| {
                     let crosshair = (1000 + i as u32, center.0, center.1, 0.6);
                     let (shift, boxes) = match i {
                         ..40 => ((0.3, 0.0), vec![crosshair]),
-                        40..=50 => ((0.0, 0.0), vec![(1, 0.5 - 0.04 * (i - 40) as f64, 0.0, 1.4)]),
+                        40..=50 => ((0.0, 0.0), vec![(1, 0.5 - 0.04 * (i - 40) as f64, 0.0, target)]),
                         51..=55 => ((0.0, 0.0), vec![(1, center.0, center.1, 0.6)]),
                         56..60 if turns => ((0.5, 0.0), vec![crosshair]),
                         _ => ((0.0, 0.0), vec![]),

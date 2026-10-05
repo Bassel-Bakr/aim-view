@@ -219,10 +219,16 @@ const AGREE_SEARCH_DEG: f64 = 0.36;
 /// is a candidate; the one most pairings agree with (within 0.35 degrees) wins, and the shift is their mean. None when
 /// no pairing is close enough, or there are too many to compare (over 2500).
 fn view_shift(prev: &[Tracked], now: &[Spot]) -> Option<(f64, f64)> {
-    let moves: Vec<(f64, f64)> = prev
-        .iter()
-        .flat_map(|before| now.iter().map(move |spot| (spot.x - before.spot.x, spot.y - before.spot.y)))
-        .collect();
+    let before: Vec<(f64, f64)> = prev.iter().map(|tracked| (tracked.spot.x, tracked.spot.y)).collect();
+    let after: Vec<(f64, f64)> = now.iter().map(|spot| (spot.x, spot.y)).collect();
+    view_shift_between(&before, &after)
+}
+
+/// `view_shift` on places alone (degrees): src/matching.rs works the view's shift out again with it, where it has
+/// left the crosshair's boxes out.
+pub fn view_shift_between(before: &[(f64, f64)], after: &[(f64, f64)]) -> Option<(f64, f64)> {
+    let moves: Vec<(f64, f64)> =
+        before.iter().flat_map(|&(x0, y0)| after.iter().map(move |&(x1, y1)| (x1 - x0, y1 - y0))).collect();
     // np.hypot: the C library's, as f64::hypot is
     let close: Vec<bool> = moves.iter().map(|(dx, dy)| dx.hypot(*dy) <= MAX_PAIRING_DEG).collect();
     if !close.iter().any(|&is_close| is_close) || moves.len() > MAX_PAIRINGS {
