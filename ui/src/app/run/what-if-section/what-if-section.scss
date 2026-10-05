@@ -5,6 +5,11 @@
     @apply contents;
   }
 
+  // On a phone the table scrolls sideways in its own box, not the page
+  .what-if-scroll {
+    @apply overflow-x-auto;
+  }
+
   .what-if {
     @apply w-full;
   }

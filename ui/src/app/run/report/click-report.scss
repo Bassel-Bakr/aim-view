@@ -21,7 +21,12 @@
     @apply mb-2 grid grid-cols-(--cards-columns) gap-5;
   }
 
+  // Side by side where they fit; on a phone each table as wide as the page, scrolling sideways when it is wider
   .split {
     @apply flex flex-wrap gap-20;
+
+    > section {
+      @apply max-w-full min-w-0 overflow-x-auto;
+    }
   }
 }

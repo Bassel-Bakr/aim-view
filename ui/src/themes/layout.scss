@@ -7,6 +7,13 @@
   --surface-bar: #0a0c0f;
   --empty-width: 560px;
   --empty-offset: 12vh;
+  // At this width and below (a phone) the app takes its narrow layout: the recordings list is a drawer over the page.
+  // pages.ts reads it; $narrow-width below is the same value, for media queries, which cannot read a variable.
+  --narrow-width: 767px;
+  // The recordings drawer stays over the page's own layers (the video, its overlay, the floating player)
+  --layer-drawer: 30;
+  // The main area's side padding on a narrow screen
+  --main-narrow-padding: 12px;
 }
 
 $top-bar-height: var(--top-bar-height);
@@ -14,3 +21,6 @@ $sidebar-width: var(--sidebar-width);
 $surface-bar: var(--surface-bar);
 $empty-width: var(--empty-width);
 $empty-offset: var(--empty-offset);
+$narrow-width: 767px;
+$layer-drawer: var(--layer-drawer);
+$main-narrow-padding: var(--main-narrow-padding);

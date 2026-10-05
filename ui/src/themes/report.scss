@@ -37,7 +37,8 @@
   --chart-dot-selected: 5px;
   --chart-faint-opacity: 0.18;
   --chart-hover-opacity: 0.75;
-  --charts-columns: repeat(auto-fit, minmax(420px, 1fr));
+  // two or more side by side where they fit, one as wide as the page on a phone
+  --charts-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   --issue-attention: var(--warning);
   --issue-fine: var(--good-text);
 }

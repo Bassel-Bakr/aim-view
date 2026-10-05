@@ -11,6 +11,18 @@
     height: 100vh;
   }
 
+  // The recordings list closed: the run page takes the whole width
+  :host([data-list='closed']) {
+    grid-template:
+      'top' l.$top-bar-height
+      'main' minmax(0, 1fr)
+      / minmax(0, 1fr);
+
+    app-recordings {
+      display: none;
+    }
+  }
+
   // The Crops page takes the whole width (a phone's screen)
   :host([data-page='crops']) {
     grid-template:
@@ -51,6 +63,14 @@
     @apply size-(--icon-size) text-accent;
   }
 
+  .list-toggle {
+    @apply -ml-3 grid size-(--control-height) flex-none place-items-center rounded-md text-secondary hover:bg-surface-2 hover:text-primary aria-expanded:text-accent;
+  }
+
+  .list-icon {
+    @apply size-(--icon-size);
+  }
+
   .upload {
     @apply flex min-w-0 flex-1 flex-row-reverse items-center gap-5;
   }
@@ -68,5 +88,43 @@
 
   .empty-title {
     @apply font-display text-title font-bold text-primary;
+  }
+}
+
+// A narrow screen (a phone): one column; the recordings list is a drawer over the page, the top bar scrolls sideways
+// rather than spilling over, and the brand is its logo alone
+@media (width <= l.$narrow-width) {
+  @layer components {
+    :host,
+    :host([data-list='closed']) {
+      grid-template:
+        'top' l.$top-bar-height
+        'main' minmax(0, 1fr)
+        / minmax(0, 1fr);
+    }
+
+    app-recordings {
+      position: fixed;
+      inset: l.$top-bar-height 0 0;
+      z-index: l.$layer-drawer;
+    }
+
+    .top {
+      @apply gap-5 overflow-x-auto px-4;
+
+      scrollbar-width: none;
+
+      > * {
+        @apply flex-none;
+      }
+    }
+
+    .brand-name {
+      @apply sr-only;
+    }
+
+    .main {
+      padding-inline: l.$main-narrow-padding;
+    }
   }
 }

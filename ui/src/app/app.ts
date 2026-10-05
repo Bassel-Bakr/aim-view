@@ -15,7 +15,10 @@ import { Upload } from './upload/upload';
   imports: [Upload, ModelPanel, LabelMenu, CutoffMenu, MouseSwitch, Recordings, Run, Crops],
   templateUrl: './app.html',
   styleUrl: './app.scss',
-  host: { '[attr.data-page]': "pages.crops() ? 'crops' : 'review'" },
+  host: {
+    '[attr.data-page]': "pages.crops() ? 'crops' : 'review'",
+    '[attr.data-list]': "pages.listOpen() ? 'open' : 'closed'",
+  },
 })
 export class App {
   protected readonly library = inject(Library);
