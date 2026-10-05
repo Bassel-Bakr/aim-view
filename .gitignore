@@ -12,3 +12,5 @@ ui/.angular/
 desktop/gen/schemas/
 # the copy from flowfix
 _copy_*.log
+# the review server's settings: they hold its access token (server/README.md, "Access")
+aimview-server.toml
