@@ -1,3 +1,4 @@
+@use 'themes/crops' as c;
 @reference '../../tailwind.css';
 
 @layer components {
@@ -61,20 +62,23 @@
     @apply text-xs text-warning;
   }
 
-  // The answers on top; moving through the crops on a row of its own, Back at the left, away from Right
+  // The answers on top; moving through the crops on a row of its own, so Back is not beside Right
   .bar {
     @apply flex flex-col gap-3 border-t border-border bg-surface-1 px-6 py-4;
   }
 
   .bar-row {
     @apply flex flex-wrap justify-center gap-3;
-
-    &[data-moves] {
-      @apply justify-between;
-    }
   }
 
-  .bar-forward {
-    @apply flex flex-wrap gap-3;
+  // Wrong in red, so it is never taken for Right
+  .verdict-wrong {
+    border-color: c.$crop-wrong;
+    background: c.$crop-wrong;
+    color: c.$crop-on-wrong;
+
+    &:hover:enabled {
+      background: c.$crop-wrong-hover;
+    }
   }
 }

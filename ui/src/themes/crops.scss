@@ -20,7 +20,16 @@
   --crop-line-width-selected: 3;
   --crop-handle-radius: 5;
 
+  // The Wrong button: red, apart from Right's cyan
+  --crop-wrong: #d9363e;
+  --crop-wrong-hover: #e85a60;
+  --crop-on-wrong: #fff;
+
   // The page: its widest, and the progress meter's height
   --crop-page-width: 560px;
   --crop-meter-height: 4px;
 }
+
+$crop-wrong: var(--crop-wrong);
+$crop-wrong-hover: var(--crop-wrong-hover);
+$crop-on-wrong: var(--crop-on-wrong);

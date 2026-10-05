@@ -152,6 +152,7 @@
       <button
         type="button"
         appButton
+        class="verdict-wrong"
         title="Fix the shapes: draw, move, join, remove"
         [disabled]="!draft.crop() || draft.busy()"
         (click)="draft.fix()"
@@ -167,28 +168,26 @@
         Can't tell
       </button>
     </div>
-    <div class="bar-row" data-moves>
+    <div class="bar-row">
       <button type="button" appButton [disabled]="draft.index() === 0" (click)="draft.go(-1)">
         Back
       </button>
-      <span class="bar-forward">
-        <button
-          type="button"
-          appButton
-          [disabled]="draft.index() >= draft.list().length - 1"
-          (click)="draft.go(1)"
-        >
-          Next
-        </button>
-        <button
-          type="button"
-          appButton
-          [disabled]="draft.answered() === draft.list().length"
-          (click)="draft.nextUnchecked()"
-        >
-          Next unchecked
-        </button>
-      </span>
+      <button
+        type="button"
+        appButton
+        [disabled]="draft.index() >= draft.list().length - 1"
+        (click)="draft.go(1)"
+      >
+        Next
+      </button>
+      <button
+        type="button"
+        appButton
+        [disabled]="draft.answered() === draft.list().length"
+        (click)="draft.nextUnchecked()"
+      >
+        Next unchecked
+      </button>
     </div>
   }
 </nav>
