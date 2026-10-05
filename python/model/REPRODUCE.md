@@ -115,6 +115,16 @@ python python/model/checked_data.py --labels test_out/vod_model/data_mined/check
 python python/model/validate_data.py --data test_out/vod_model/data_mined_checked2 --sheet test_out/vod_model/sheet_mined_checked2.png
 ```
 
+The robot set (2026-10-05): 312 crops of 29 robot runs the user played (`test_out/vod_model/hand_robots/`), checked
+on the phone page with one box around each whole robot (`check_robots/`, crop_check/README.md). Two crops are left
+out: one kept the model's box on a name tag beside the robot's box, one shows a robot's arm and leg at the crop's edge
+with no box. One is unsure. That leaves 309 crops: 184 robots, 136 crops without one.
+
+```bash
+python python/model/crop_check/labels.py test_out/vod_model/check_robots test_out/vod_model/check_robots/answers/checks test_out/vod_model/hand_robots/checked_phone.jsonl robots
+python python/model/checked_data.py --labels test_out/vod_model/hand_robots/checked_phone.jsonl --out test_out/vod_model/data_robots_checked --tag chk_robot_ --leave-out train/Switching_Humanoid_-_120529.50_-_2026.10_a3b9a0_002.npz,train/OW_Mirror_-_2591.96_-_2026.10.05-02.51.4_f649f4_006.npz
+```
+
 ## 2. Train
 
 ```bash
