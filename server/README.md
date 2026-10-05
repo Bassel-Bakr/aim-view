@@ -9,6 +9,7 @@ desktop app: both use the `aimview-service` crate (`service/`). It is the server
 ```bash
 bun run build:server     # the UI's server-mode build, into ui/dist/server/browser (again after UI changes)
 bun run server           # cargo run -p aimview-server --release
+bun run server:dev       # the same in dev mode, open to the local network without a token ("Access")
 ```
 
 Then open http://127.0.0.1:8770/. Ctrl+C stops the server.

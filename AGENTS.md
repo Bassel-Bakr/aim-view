@@ -21,6 +21,7 @@ training data in `test_out/` (ignored by git). Its `vod/` folder became `python/
 bun run server                                 # the review server (server/, aimview-server), http://127.0.0.1:8770/: the
                                                # server-mode build at / (bun run build:server first; flags or
                                                # aimview-server.toml: server/README.md)
+bun run server:dev                             # the same in dev mode: open to the local network, no token
 cargo run -q --release -p aimview-service --bin aimview-tool -- help   # the library and the native review for
                                                # scripts, JSON on stdout (python/aimview_tools.py runs it)
 python python/model/test_model.py              # the detector's tests

@@ -16,7 +16,8 @@
     "format": "bun run --cwd ui format",
     "app": "cd desktop && cargo tauri dev",
     "build:app": "cd desktop && cargo tauri build",
-    "server": "cargo run -p aimview-server --release"
+    "server": "cargo run -p aimview-server --release",
+    "server:dev": "cargo run -p aimview-server --release -- --dev --host 0.0.0.0"
   },
   "devDependencies": {
     "binaryen": "^132.0.0"
