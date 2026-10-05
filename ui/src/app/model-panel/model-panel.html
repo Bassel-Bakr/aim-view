@@ -12,7 +12,7 @@
   </button>
 }
 
-<dialog class="dialog" #dialog aria-labelledby="models-title" (close)="opened.set(false)">
+<dialog class="dialog" #dialog aria-labelledby="models-title">
   <header class="head">
     <h2 id="models-title">Models</h2>
     <button type="button" appButton (click)="close()">Close</button>
@@ -22,10 +22,8 @@
     reviews use the model you pick. Each recording keeps its reviews by other models, so switching
     back is instant.
   </p>
-  <!-- The models and the choice load on their own (fetched ahead when the page is idle), and show while it is open -->
+  <!-- The models and the choice load on their own (fetched ahead when the page is idle) when it first opens, and stay -->
   @defer (when opened(); prefetch on idle) {
-    @if (opened()) {
-      <app-model-choice />
-    }
+    <app-model-choice />
   }
 </dialog>

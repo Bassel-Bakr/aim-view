@@ -4,6 +4,14 @@ import { firstValueFrom } from 'rxjs';
 import { Job, Report, RunMarks, Tracks } from '../../api';
 import { ReviewEngine } from '../../platform/review-engine';
 
+/**
+ * Whether a report fetched again is the one already shown, to the last number. It often is (a switch to a model that
+ * has not reviewed the recording shows the same review), and the run page then need not work out and draw it again.
+ */
+function sameReport(a: Report | null, b: Report | null): boolean {
+  return a === b || (a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
+}
+
 /** A window with none of its three marks set is no window. */
 function markedOrNull(marks: RunMarks | null): RunMarks | null {
   return marks && (marks.start != null || marks.end != null || marks.length != null) ? marks : null;
@@ -28,10 +36,13 @@ export class ServerReview implements ReviewEngine {
   }
 
   report(id: () => string | undefined): HttpResourceRef<Report | null | undefined> {
-    return httpResource<Report | null>(() => {
-      const at = id();
-      return at === undefined ? undefined : { url: '/api/report', params: { id: at } };
-    });
+    return httpResource<Report | null>(
+      () => {
+        const at = id();
+        return at === undefined ? undefined : { url: '/api/report', params: { id: at } };
+      },
+      { equal: sameReport },
+    );
   }
 
   tracks(id: () => string | undefined): HttpResourceRef<Tracks | null | undefined> {

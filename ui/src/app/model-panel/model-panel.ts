@@ -16,12 +16,17 @@ import { ModelChoice } from './model-choice/model-choice';
 export class ModelPanel {
   protected readonly models = inject(Models);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private readonly choice = viewChild(ModelChoice);
   protected readonly deviceLabels = DEVICE_LABELS;
-  /** The dialog is open: its body is made afresh each time, so a switch's last word does not stay. */
+  /**
+   * The dialog has been opened: its body loads then and stays, so closing and opening again build nothing (making and
+   * tearing down its table cost a frame or two each time). A switch's last word is cleared when it opens.
+   */
   protected readonly opened = signal(false);
 
   protected open(): void {
     this.opened.set(true);
+    this.choice()?.clearStatus();
     this.models.list.reload();
     this.dialog().nativeElement.showModal();
   }

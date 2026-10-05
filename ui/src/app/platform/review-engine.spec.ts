@@ -1,3 +1,5 @@
+import { TestBed } from '@angular/core/testing';
+import { Report } from '../api';
 import { MODE_CASES, setUp } from './contract-case';
 import { ReviewEngine } from './review-engine';
 
@@ -26,6 +28,31 @@ for (const mode of MODE_CASES) {
       );
       if (engine.unavailable(ID) === null) expect(job.stage).not.toBe('error');
       else expect(job.stage).toBe('error');
+    });
+
+    it('keeps the report on show when it comes again unchanged, and takes a changed one', async () => {
+      const engine = setUp(mode, ReviewEngine);
+      let shown = { mode: 'click', fps: 60, kills: 1 };
+      // a fresh copy each time, as the network gives it
+      const routes = { '/api/report': () => ({ ...shown }) };
+      const report = TestBed.runInInjectionContext(() => engine.report(() => ID));
+      const loaded = () =>
+        mode.finish(
+          (async () => {
+            for (;;) {
+              TestBed.tick();
+              await new Promise((resolve) => setTimeout(resolve));
+              if (report.hasValue() && !report.isLoading()) return report.value();
+            }
+          })(),
+          routes,
+        );
+      const first = (await loaded()) as Report;
+      report.reload();
+      expect(await loaded()).toBe(first);
+      shown = { ...shown, kills: 2 };
+      report.reload();
+      expect(await loaded()).toEqual({ mode: 'click', fps: 60, kills: 2 });
     });
 
     it('answers how a recording’s job stands', async () => {

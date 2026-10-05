@@ -37,6 +37,11 @@ export class ModelChoice {
   protected readonly switching = signal(false);
   protected readonly status = signal('');
 
+  /** Clears the last switch's word, for the dialog opening again. */
+  clearStatus(): void {
+    this.status.set('');
+  }
+
   protected useDevice(device: Device): void {
     void this.models.useDevice(device);
   }
