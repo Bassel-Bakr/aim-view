@@ -451,8 +451,9 @@ python python/model/eval_vods.py test_out/vod_model/runs/small_v2/best.pt --out 
 ```
 
 The video-alone kill finder (a clicking run's kills from the video alone, with no stats file and no HUD:
-`src/matching.rs`, `match_video`) on the 48 runs in `video_alone_runs.json` (one run per scenario: 29 for development,
-19 of held-out scenarios), scored against each run's stats file (a kill within 3 frames, one to one). It takes the
+`src/matching.rs`, `match_video`) on the 46 runs in `video_alone_runs.json` (one run per scenario: 28 for development,
+18 of held-out scenarios; the two Flow Fix runs left it on 2026-10-06, for `retired/video_alone_runs_flow_fix.json`:
+Flow Fix was unfinished work, its shots deleted or delayed, so neither its stats file nor its HUD gives the kills), scored against each run's stats file (a kill within 3 frames, one to one). It takes the
 model's name, or a model file with its _u8in export beside it (step 4). It tracks each run once in the app's native
 review (about 15 minutes for full_v3 on the RTX 5070 Ti) and keeps the tracks in
 `test_out/vod_model/eval/video_alone/<model>/`, so after a change to the finder it only scores again (under a minute).

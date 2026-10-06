@@ -9,7 +9,7 @@ both through the app's native review:
                measured on static, dynamic and switching runs; on tracking runs, time on the bot minus the stats
                file's accuracy (the mean, and the mean size).
   report       eval_vods.py's four static recordings: the kills matched and flicks measured of the app's own report.
-  video_alone  eval_video_alone.py's 48 runs: the video-alone kill finder's recall and precision, overall and per kind.
+  video_alone  eval_video_alone.py's 46 runs: the video-alone kill finder's recall and precision, overall and per kind.
 
 The limits (each against the best model's number, kind by kind):
   - kills matched may not drop, by a single kill (the user's rule);

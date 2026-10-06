@@ -32,7 +32,7 @@ python python/model/eval_vods.py <model>       # static runs against their stats
                                                # model's _u8in export)
 python python/model/eval_moving.py name=<model> ...      # every scenario kind against the stats files (the core's
                                                # numbers on the native review's tracks)
-python python/model/eval_video_alone.py [model]  # the video-alone kill finder on 48 runs against their stats files
+python python/model/eval_video_alone.py [model]  # the video-alone kill finder on 46 runs against their stats files
                                                # (tracks kept per model; --retrack after a change to the tracking)
 python python/model/accept.py <name> [--list]  # the acceptance gate: the contract and the three checks above against
                                                # the best model's; --list adds a passing model to models.json
@@ -299,7 +299,9 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   file's clock is 9 frames late). The check also follows the place each kill's track ended for 40 frames: a target
   as small as the crosshair, lost under it before the click, stays there at part of its level and goes when it dies,
   so its kill moves to then (`with_hidden_kills`, only while the place stays within 0.4 degrees of the crosshair):
-  1wall 6targets extra small from 45 to 57 of 98 kills, the 48 runs at 0.940 and 0.970. Where the detector marks the crosshair (matching.rs
+  1wall 6targets extra small from 45 to 57 of 98 kills, the 48 runs at 0.940 and 0.970. The two Flow Fix runs left the
+  benchmark (2026-10-06: unfinished work, its shots deleted or delayed; python/model/retired/): on the 46 left,
+  0.945 and 0.973. Where the detector marks the crosshair (matching.rs
   `crosshair_spots`: boxes piled at the screen's center while the camera turns, 5 times as dense as 0.2 to 0.4 degrees
   around it; no search, so no knife edge), a track the tracker hands to the crosshair's box when its target dies is cut
   back to its last target box (`without_crosshair_ends`), with a stats file too: its clock was 7 to 10 frames late on

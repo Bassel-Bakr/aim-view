@@ -30,7 +30,7 @@ the stats file's clock, which is 9 frames late on valorant 558.46 with every mod
 | --- | --- | --- |
 | Static runs | `python python/model/eval_vods.py full_v3` | 1w4ts Voltaic 143/143 kills, 142 flicks; 10 Sphere Hipfire Extra Small 155/155, 155; Pokeball 5 114/114, 113; Pokeball 1 84/84, 83 |
 | Every scenario kind | `python python/model/eval_moving.py full_v3=python/model/exports/detector_full_v3_u8in.onnx` (`name=path`: a bare name is read as the model's name and retracks) | static kills 854/854, flicks 847; dynamic and switching kills 1107/1112, flicks 1087 (Bounce 180 Sparky Jumbo 107/107, 105; Falling Targets 54/54, 54; Smoothbot Switch Robots 54/56, 43); tracking on target minus accuracy: mean -0.033, mean abs 0.087 |
-| Video alone (48 runs) | `python python/model/eval_video_alone.py full_v3` | all: recall 0.945, precision 0.958 (5,120 of 5,417 kills); held out: 0.976, 0.974; switching: 0.913, 0.903 (5a66b5c; before: 0.957, and 0.974, 0.972 held out). full_v4: 0.944, 0.960 (0.928, 0.934 before) |
+| Video alone (48 runs; 46 since 2026-10-06, the Flow Fix runs left out) | `python python/model/eval_video_alone.py full_v3` | all: recall 0.945, precision 0.958 (5,120 of 5,417 kills); held out: 0.976, 0.974; switching: 0.913, 0.903 (5a66b5c; before: 0.957, and 0.974, 0.972 held out). full_v4: 0.944, 0.960 (0.928, 0.934 before) |
 
 The video-alone benchmark's harness, caches and notes: `test_out/baselines/vbench/` (`bench.py`, `final_all.txt`).
 

@@ -1,0 +1,4 @@
+[
+ {"id": "Flow Fix Pacing Drop/Flow Fix Pacing Drop - 109.50 - 2026.09.24-01.03.49.mp4", "stats": "Flow Fix Pacing Drop - Challenge - 2026.09.24-01.03.49 Stats.csv", "kind": "static", "set": "dev", "retired": "2026-10-06: Flow Fix was unfinished work (its shots were deleted or delayed), so neither its stats file nor its HUD gives the kills"},
+ {"id": "Flow Fix Slow Start/Flow Fix Slow Start - 59.70 - 2026.09.24-00.51.24.mp4", "stats": "Flow Fix Slow Start - Challenge - 2026.09.24-00.51.24 Stats.csv", "kind": "static", "set": "held", "retired": "2026-10-06: Flow Fix was unfinished work (its shots were deleted or delayed), so neither its stats file nor its HUD gives the kills"}
+]
