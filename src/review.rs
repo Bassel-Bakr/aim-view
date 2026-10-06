@@ -20,11 +20,11 @@ use crate::matching::{
 };
 use crate::measure::{choices, measure, target_radius, Measure};
 use crate::reload::{reload_cost, ReloadCost};
-use crate::scenario::AmmoRules;
+use crate::scenario::{AmmoRules, Hitbox};
 use crate::stats_file::StatsFile;
 use crate::summary::{judge, summarize, Issue, Mode, Summary};
 use crate::track::{REVIEW_VERSION, Tracks};
-use crate::tracking::{CameraReading, FaintCut, TrackSummary, countdown_end, stats_length, track_summary};
+use crate::tracking::{CameraReading, FaintCut, RunFacts, TrackSummary, countdown_end, stats_length, track_summary};
 
 /// A kill's target is the track nearest the crosshair in this many seconds before it (`match_times`' window).
 const KILL_WINDOW_S: f64 = 0.25;
@@ -502,19 +502,27 @@ fn faint_cut(tracks: &Tracks, faint: Option<FaintSetting>) -> (Cow<'_, Tracks>, 
     (Cow::Owned(Tracks { fps: tracks.fps, frames: without.frames, version: tracks.version }), Some(cut))
 }
 
-/// Reviews a tracking run from its tracks, its kill times (bots that die) and its video's readings. `limit`: the
-/// scenario's time limit (seconds), which the stats file's own length overrides. `faint`: the user's faint-target
-/// cut-off; when on, the measures leave out the tracks it cuts (the kills are still matched on every track).
+/// What a tracking review takes from the scenario: its time limit (seconds), which the stats file's own length
+/// overrides, and its bots' hitbox (None: the crosshair is on a target within a margin of its box).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TrackScenario {
+    pub limit: Option<f64>,
+    pub hitbox: Option<Hitbox>,
+}
+
+/// Reviews a tracking run from its tracks, its kill times (bots that die), its scenario's facts and its video's
+/// readings. `faint`: the user's faint-target cut-off; when on, the measures leave out the tracks it cuts (the kills
+/// are still matched on every track).
 pub fn review_tracking(
     tracks: &Tracks,
     kills: KillTimes,
     video: &str,
-    limit: Option<f64>,
+    scenario: TrackScenario,
     readings: VideoReadings,
     run: Option<serde_json::Value>,
     faint: Option<FaintSetting>,
 ) -> Result<TrackReport, String> {
-    let fps = tracks.fps;
+    let (fps, limit) = (tracks.fps, scenario.limit);
     let kills = match kills {
         KillTimes::Stats { name, text } => tracking_stats_kills(tracks, name, text, limit)?,
         KillTimes::Unpaired { hud } => tracking_hud_kills(hud, video, limit),
@@ -534,7 +542,16 @@ pub fn review_tracking(
         limit = length_s;
     }
     let (measured, cut) = faint_cut(tracks, faint);
-    let mut summary = track_summary(&measured, &meta, limit, Some(readings.camera), &deaths, start, source);
+    let facts = RunFacts {
+        meta: &meta,
+        limit,
+        start,
+        camera: Some(readings.camera),
+        deaths: &deaths,
+        source,
+        hitbox: scenario.hitbox,
+    };
+    let mut summary = track_summary(&measured, &facts);
     summary.faint = cut;
     Ok(TrackReport {
         video: video.into(),
@@ -604,6 +621,8 @@ pub struct ReviewRequest {
     pub countdown: Vec<bool>,
     #[serde(default)]
     pub faint: Option<FaintSetting>,
+    #[serde(default)]
+    pub hitbox: Option<Hitbox>,
 }
 
 /// A clicking run's report or a tracking run's.
@@ -631,8 +650,9 @@ fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
     let outdated = request.tracks.version < REVIEW_VERSION;
     if request.tracking {
         let readings = VideoReadings { camera: &request.camera, countdown: &request.countdown };
-        let (limit, run) = (request.limit, request.run);
-        let report = review_tracking(&request.tracks, kills, &request.video, limit, readings, run, request.faint)?;
+        let scenario = TrackScenario { limit: request.limit, hitbox: request.hitbox };
+        let (run, faint) = (request.run, request.faint);
+        let report = review_tracking(&request.tracks, kills, &request.video, scenario, readings, run, faint)?;
         Ok(AnyReport::Track(Box::new(TrackReport { outdated, ..report })))
     } else {
         let reviewed = review_clicks(&request.tracks, kills, &request.video, request.run, request.reload.as_ref())?;

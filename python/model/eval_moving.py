@@ -64,16 +64,18 @@ def picks(lib):
     return out
 
 
-def core_numbers(program, kind, tracks, video, stats, limit, keep=None):
+def core_numbers(program, kind, tracks, video, stats, limit, keep=None, hitbox=None):
     """A recording's numbers from the core's review of its tracks, as the app's report works them out. Clicking kinds:
     (kind, kills matched, the stats file's kills, flicks measured), with the stats file. Tracking: (kind, the review's
-    time on the bot, the stats file's accuracy), without the stats file, over the scenario's time limit `limit`. With
-    `keep`, the whole report is written there too."""
+    time on the bot, the stats file's accuracy), without the stats file, over the scenario's time limit `limit`, and
+    with `hitbox` (the scenario's facts' hitbox) on the bot inside that shape. With `keep`, the whole report is written
+    there too."""
     meta, rows = old_review.load_stats(stats)
     tracking = kind == "tracking"
     request = dict(tracks=tracks, statsText="" if tracking else Path(stats).read_bytes().decode("utf-8", "replace"),
                    video=Path(video).name, stats="" if tracking else Path(stats).name, hud=None, run=None,
-                   tracking=tracking, limit=limit if tracking else None, camera=[], countdown=[], faint=None)
+                   tracking=tracking, limit=limit if tracking else None, camera=[], countdown=[], faint=None,
+                   hitbox=hitbox if tracking else None)
     report = eval_video_alone.request_report(program, request)
     if keep:
         Path(keep).parent.mkdir(parents=True, exist_ok=True)

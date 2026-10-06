@@ -17,6 +17,7 @@ use crate::geometry::{K, degrees};
 use crate::matching::KillSource;
 use crate::optional_fields::OptionalFields;
 use crate::python::{hypot, round};
+use crate::scenario::{Hitbox, HitboxKind};
 use crate::stats_file::StatsFile;
 use crate::statistics::median;
 use crate::summary::DIRECTIONS;
@@ -914,9 +915,34 @@ fn without_crosshair(frames: &[TrackFrame]) -> Option<Vec<TrackFrame>> {
 /// A frame's nearest target: its distance from the crosshair and its half-width (degrees), or None.
 type NearestTarget = Option<(f64, f64)>;
 
-/// Each frame's nearest target and whether the crosshair is on a target (within INSIDE_MARGIN_DEG of its box, or of its
-/// disc without one).
-fn nearest_and_inside(frames: &[TrackFrame]) -> (Box<[NearestTarget]>, Box<[bool]>) {
+/// Whether the crosshair (the origin) is on a target at (x, y) whose box is width x height (degrees): within
+/// INSIDE_MARGIN_DEG of the box, or, with the bots' hitbox, of that shape. A hitbox's sides on screen change with the
+/// bot's distance and their ratio stays, so the box's side along the hitbox's longer axis sizes it (a thin capsule's
+/// height: its width on screen is mostly blur) and the ratio gives the other; a capsule's round ends and an ellipse's
+/// edge leave out the box's corners, as the game's hit test does.
+fn on_box(x: f64, y: f64, width: f64, height: f64, hitbox: Option<Hitbox>) -> bool {
+    let Some(hitbox) = hitbox else {
+        return x.abs() <= width / 2.0 + INSIDE_MARGIN_DEG && y.abs() <= height / 2.0 + INSIDE_MARGIN_DEG;
+    };
+    let ratio = hitbox.width_to_height;
+    let tall = if ratio < 1.0 {
+        height
+    } else if ratio > 1.0 {
+        width / ratio
+    } else {
+        width.max(height)
+    };
+    let (half_w, half_h) = (tall * ratio / 2.0 + INSIDE_MARGIN_DEG, tall / 2.0 + INSIDE_MARGIN_DEG);
+    match hitbox.kind {
+        HitboxKind::Cuboid => x.abs() <= half_w && y.abs() <= half_h,
+        HitboxKind::Cylindrical if half_h > half_w => hypot(x, (y.abs() - (half_h - half_w)).max(0.0)) <= half_w,
+        HitboxKind::Cylindrical | HitboxKind::Spheroid => (x / half_w).powi(2) + (y / half_h).powi(2) <= 1.0,
+    }
+}
+
+/// Each frame's nearest target and whether the crosshair is on a target (`on_box`, or within INSIDE_MARGIN_DEG of its
+/// disc without a box).
+fn nearest_and_inside(frames: &[TrackFrame], hitbox: Option<Hitbox>) -> (Box<[NearestTarget]>, Box<[bool]>) {
     let mut near: Vec<NearestTarget> = Vec::with_capacity(frames.len());
     let mut inside = Vec::with_capacity(frames.len());
     for frame in frames {
@@ -925,8 +951,7 @@ fn nearest_and_inside(frames: &[TrackFrame]) -> (Box<[NearestTarget]>, Box<[bool
             let (distance, radius) = match &frame.wh {
                 Some(sizes) => {
                     let (width, height) = sizes[index];
-                    let within = |offset: f64, size: f64| offset.abs() <= size / 2.0 + INSIDE_MARGIN_DEG;
-                    on = on || (within(x, width) && within(y, height));
+                    on = on || on_box(x, y, width, height, hitbox);
                     let line_x = (x.abs() - (width - height).max(0.0) / 2.0).max(0.0);
                     let line_y = (y.abs() - (height - width).max(0.0) / 2.0).max(0.0);
                     (hypot(line_x, line_y), width.min(height) / 2.0)
@@ -1079,21 +1104,26 @@ fn read_switches(summary: &mut TrackSummary, switching: &[bool], fps: f64) {
     summary.switching = Some(share_true(switching));
 }
 
-/// How the crosshair stayed on the target in a tracking run. `limit`: the run's length (seconds); `start`: its first
-/// frame when known; `deaths`: the frames where bots die; `camera`: the camera's readings. The boxes a detector puts on
-/// the crosshair are left out first (`without_crosshair`).
-pub fn track_summary(
-    tracks: &Tracks,
-    meta: &HashMap<String, String>,
-    limit: Option<f64>,
-    camera: Option<&[CameraReading]>,
-    deaths: &[i64],
-    start: Option<i64>,
-    source: KillSource,
-) -> TrackSummary {
+/// What a tracking run's summary is measured with besides its tracks: the stats file's facts (`meta`), the run's length
+/// (seconds) and its first frame when known, the camera's readings, the frames where bots die, where the kills come
+/// from, and the bots' hitbox (None: the crosshair is on a target within INSIDE_MARGIN_DEG of its box).
+pub struct RunFacts<'a> {
+    pub meta: &'a HashMap<String, String>,
+    pub limit: Option<f64>,
+    pub start: Option<i64>,
+    pub camera: Option<&'a [CameraReading]>,
+    pub deaths: &'a [i64],
+    pub source: KillSource,
+    pub hitbox: Option<Hitbox>,
+}
+
+/// How the crosshair stayed on the target in a tracking run. The boxes a detector puts on the crosshair are left out
+/// first (`without_crosshair`).
+pub fn track_summary(tracks: &Tracks, run: &RunFacts) -> TrackSummary {
+    let RunFacts { meta, limit, start, camera, deaths, source, hitbox } = *run;
     let kept = without_crosshair(&tracks.frames);
     let (frames, fps): (&[TrackFrame], f64) = (kept.as_deref().unwrap_or(&tracks.frames), tracks.fps);
-    let (near, inside) = nearest_and_inside(frames);
+    let (near, inside) = nearest_and_inside(frames, hitbox);
     let mut summary = unmeasured_summary(meta, source);
     let Some((first, end)) = run_span(&near, &inside, fps, limit, start, deaths) else { return summary };
     let (switches, switching_frames) = bot_switches(deaths, first..end, &inside, frames);
@@ -1215,6 +1245,21 @@ fn what_if(summary: &TrackSummary, tracking: &[bool], on: &[bool], losses: &[usi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A capsule 8 degrees high and 0.5 wide (Centering's ratio, 1:16) in a box 1 degree wide: its round ends leave
+    /// out the box's corners, and its width comes from the height, not from the box's blurred width.
+    #[test]
+    fn a_hitbox_leaves_out_the_boxs_corners() {
+        let capsule = Some(Hitbox { kind: HitboxKind::Cylindrical, width_to_height: 1.0 / 16.0 });
+        assert!(on_box(0.25, 4.0, 1.0, 8.0, None));
+        assert!(!on_box(0.25, 4.0, 1.0, 8.0, capsule), "beside the round end");
+        assert!(on_box(0.0, 3.9, 1.0, 8.0, capsule), "on the round end");
+        assert!(on_box(0.25, 0.0, 1.0, 8.0, capsule), "on the side");
+        assert!(!on_box(0.45, 0.0, 1.0, 8.0, capsule), "inside the box, outside the capsule");
+        let ball = Some(Hitbox { kind: HitboxKind::Spheroid, width_to_height: 1.0 });
+        assert!(on_box(0.5, 0.5, 2.0, 2.0, ball));
+        assert!(!on_box(0.95, 0.95, 2.0, 2.0, ball), "the box's corner");
+    }
 
     #[test]
     fn turns_back_times_the_way_back_onto_the_bot() {

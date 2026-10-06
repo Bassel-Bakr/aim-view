@@ -49,7 +49,8 @@ rust-analyzer's call hierarchy.
 - `src/review.rs`: The review of a run (python/retired/review.py: `review`): a clicking run's flicks, or a tracking
   run's time on the target.
 - `src/scenario.rs`: What a scenario file (.sce) says about a run (python/retired/review.py: `scenario_facts`,
-  `target_counts`): its kind, its time limit, how many targets are alive at once, and the player's weapon's ammo rules.
+  `target_counts`): its kind, its time limit, how many targets are alive at once, the player's weapon's ammo rules, and
+  the bots' hitbox (its shape and its width over its height).
 - `src/scipy.rs`: What the review uses from SciPy's `ndimage`, done the way SciPy does it, so results match bit for bit.
 - `src/session.rs`: A review session: everything a review does between the decoder and the detector, the same for the
   browser and the desktop.
@@ -560,6 +561,8 @@ run's tracks, its stats file and what the video read); the report goes back as r
   empty.
 - `VideoReadings` (struct): What a tracking run reads from its video besides the tracks: per frame the camera's reading,
   and whether KovaaK's countdown bar shows.
+- `TrackScenario` (struct): What a tracking review takes from the scenario: its time limit (seconds), which the stats
+  file's own length overrides, and its bots' hitbox (None: the crosshair is on a target within a margin of its box).
 - `ReviewRequest` (struct): What the page asks the core to review: the tracks, the video's name, the stats file's name
   and text (empty without one), what the HUD read, the user's run marks; for a clicking run the ammo rules of the
   scenario's weapon (null or missing: its magazine never runs out, or the scenario is not known); for a tracking run
@@ -572,12 +575,16 @@ run's tracks, its stats file and what the video read); the report goes back as r
 ## src/scenario.rs
 
 What a scenario file (.sce) says about a run (python/retired/review.py: `scenario_facts`, `target_counts`): its kind,
-its time limit, how many targets are alive at once, and the player's weapon's ammo rules. Read from the file's part
-before "[Map Data]".
+its time limit, how many targets are alive at once, the player's weapon's ammo rules, and the bots' hitbox (its shape
+and its width over its height). Read from the file's part before "[Map Data]".
 
 - `Kind` (enum): The kinds of run the review tells apart.
 - `Facts` (struct): A scenario's facts: its kind, its time limit in seconds, its targets alive at once (one per bot
-  added), and the player's weapon's ammo rules (none when its magazine never runs out).
+  added), the player's weapon's ammo rules (none when its magazine never runs out) and the bots' hitbox (none when the
+  bots differ or look like something else).
+- `HitboxKind` (enum): A bot's hitbox shape (KovaaK's MainBBType): an ellipsoid (a sphere when its height is its width),
+  an upright capsule (a cylinder with round ends), or a box.
+- `Hitbox` (struct): The bots' hitbox: its shape and its width over its height (2 x MainBBRadius over MainBBHeight).
 - `AmmoRules` (struct): The ammo rules of a weapon whose magazine can run out (KovaaK's weapon profile, and the
   scenario's points for a reload): the magazine's size (MagazineMax), the ammo a shot uses (AmmoPerShot), the ammo a
   kill puts back, up to a full magazine (AmmoReloadedOnKill), the reload's time in seconds from an empty magazine and
@@ -749,6 +756,10 @@ from the tracks and the camera's turn.
   it left out.
 - `TrackInfo` (struct): Where the tracking run's kill times came from.
 - `TrackSummary` (struct): A tracking run's summary (see the old review's `track_summary`).
+- `RunFacts` (struct): What a tracking run's summary is measured with besides its tracks: the stats file's facts
+  (`meta`), the run's length (seconds) and its first frame when known, the camera's readings, the frames where bots die,
+  where the kills come from, and the bots' hitbox (None: the crosshair is on a target within INSIDE_MARGIN_DEG of its
+  box).
 - Functions: `track_motion`, `stats_length`, `countdown_end`, `track_summary`.
 
 ## src/typescript.rs

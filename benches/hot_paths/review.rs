@@ -6,7 +6,7 @@ use std::hint::black_box;
 use aimview::hud::HudReading;
 use aimview::matching::{match_times, match_video};
 use aimview::measure::{measure as measure_flicks, target_radius};
-use aimview::review::{KillTimes, VideoReadings, review_clicks, review_json, review_tracking};
+use aimview::review::{KillTimes, TrackScenario, VideoReadings, review_clicks, review_json, review_tracking};
 use aimview::stats_file::StatsFile;
 use aimview::track::Tracks;
 use aimview::tracking::CameraReading;
@@ -113,7 +113,8 @@ fn tracking_review(group: &mut BenchmarkGroup<WallTime>) {
             bencher.iter(|| {
                 let kills = KillTimes::Stats { name: "stats.csv", text: &stats };
                 let video_readings = VideoReadings { camera: &readings.camera, countdown: &readings.countdown };
-                review_tracking(black_box(&tracks), kills, &video, limit, video_readings, None, None)
+                let scenario = TrackScenario { limit, hitbox: None };
+                review_tracking(black_box(&tracks), kills, &video, scenario, video_readings, None, None)
             })
         });
     }

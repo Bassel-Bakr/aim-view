@@ -1,6 +1,6 @@
 //! What a scenario file (.sce) says about a run (python/retired/review.py: `scenario_facts`, `target_counts`): its
-//! kind, its time limit, how many targets are alive at once, and the player's weapon's ammo rules. Read from the file's
-//! part before "[Map Data]".
+//! kind, its time limit, how many targets are alive at once, the player's weapon's ammo rules, and the bots' hitbox
+//! (its shape and its width over its height). Read from the file's part before "[Map Data]".
 //!
 //! In: a .sce file's bytes (the service reads the scenario folders: service/src/library/; the browser's copy of them
 //! reaches it the same way). Out: the facts the service keeps for each scenario, which pick the review for a run
@@ -19,8 +19,9 @@ pub enum Kind {
     Switching,
 }
 
-/// A scenario's facts: its kind, its time limit in seconds, its targets alive at once (one per bot added), and the
-/// player's weapon's ammo rules (none when its magazine never runs out).
+/// A scenario's facts: its kind, its time limit in seconds, its targets alive at once (one per bot added), the
+/// player's weapon's ammo rules (none when its magazine never runs out) and the bots' hitbox (none when the bots differ
+/// or look like something else).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Facts {
@@ -28,6 +29,28 @@ pub struct Facts {
     pub limit: Option<f64>,
     pub targets: Option<usize>,
     pub reload: Option<AmmoRules>,
+    pub hitbox: Option<Hitbox>,
+}
+
+/// A bot's hitbox shape (KovaaK's MainBBType): an ellipsoid (a sphere when its height is its width), an upright capsule
+/// (a cylinder with round ends), or a box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum HitboxKind {
+    Spheroid,
+    Cylindrical,
+    Cuboid,
+}
+
+/// The bots' hitbox: its shape and its width over its height (2 x MainBBRadius over MainBBHeight). On screen both
+/// sides change with the bot's distance and the ratio stays, so a box's side along the longer axis gives the other.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Hitbox {
+    pub kind: HitboxKind,
+    pub width_to_height: f64,
 }
 
 /// The ammo rules of a weapon whose magazine can run out (KovaaK's weapon profile, and the scenario's points for a
@@ -111,7 +134,36 @@ pub fn facts(text: &str) -> Facts {
     let limit = first_line(head, "Timelimit=", |value| number(value, false));
     let targets =
         line_value(head, "AddedBots=").map(|value| value.trim().split(';').filter(|bot| !bot.is_empty()).count());
-    Facts { kind, limit, targets, reload: ammo_rules(head) }
+    Facts { kind, limit, targets, reload: ammo_rules(head), hitbox: hitbox(head) }
+}
+
+/// The hitbox every bot of the scenario shares, when it is what shows (MainBBHide false: a hitbox hidden under a
+/// character model, as the Overwatch-like bots are, is no guide to what the video shows) and has no head of its own.
+/// The bots are the file's bot profiles (AddedBots names files and rotations, "x.bot", "x.rot", not the profiles).
+/// None when the bots' hitboxes differ, or a profile or a size is missing.
+fn hitbox(head: &str) -> Option<Hitbox> {
+    let bots = head.split("\n[").filter_map(|section| section.strip_prefix("Bot Profile]"));
+    let mut shared: Option<Hitbox> = None;
+    for bot in bots {
+        let character = profile(head, "Character Profile]", value(bot, "CharacterProfile=")?)?;
+        let off = |key: &str| value(character, key).is_some_and(|setting| setting.eq_ignore_ascii_case("false"));
+        if !off("MainBBHide=") || !off("MainBBHasHead=") {
+            return None;
+        }
+        let size = |key: &str| value(character, key).and_then(|found| number(found, false)).filter(|&size| size > 0.0);
+        let kind = match value(character, "MainBBType=")? {
+            "Spheroid" => HitboxKind::Spheroid,
+            "Cylindrical" => HitboxKind::Cylindrical,
+            "Cuboid" => HitboxKind::Cuboid,
+            _ => return None,
+        };
+        let found = Hitbox { kind, width_to_height: 2.0 * size("MainBBRadius=")? / size("MainBBHeight=")? };
+        if shared.is_some_and(|other| other != found) {
+            return None;
+        }
+        shared = Some(found);
+    }
+    shared
 }
 
 /// The kind of an untagged (older) file: tracking when its first weapon fires fully automatic, static clicking when no
@@ -220,7 +272,8 @@ Timelimit=60.0
     fn reads_the_tags_the_limit_and_the_bots() {
         let text = "Name=x\r\nAimTypeTag=Clicking\r\nAimSubTypeTag=Dynamic\r\nTimelimit=60.0\r\nAddedBots=a;b;c;\r\n\
                     [Map Data]\r\nTimelimit=1";
-        assert_eq!(facts(text), Facts { kind: Kind::Dynamic, limit: Some(60.0), targets: Some(3), reload: None });
+        let want = Facts { kind: Kind::Dynamic, limit: Some(60.0), targets: Some(3), reload: None, hitbox: None };
+        assert_eq!(facts(text), want);
     }
 
     /// An excerpt of "1w2ts reload.sce" (its user's scenarios folder): the player holds BB Gun, a magazine of 3 that a
@@ -251,6 +304,28 @@ Timelimit=60.0
         assert_eq!(facts(&RELOAD.replace("BB Gun;", "explode250ms;")).reload, None);
         assert_eq!(facts(&RELOAD.replace("UseIncReload=false", "UseIncReload=true")).reload, None);
         assert_eq!(facts(&RELOAD.replace("BB Gun;", "Gone;")).reload, None);
+    }
+
+    /// An excerpt of "Centering II 180 No Strafes Fixed.sce": its bot is a capsule 320 high and 20 wide.
+    const CAPSULE: &str = "Name=c\r\nAddedBots=Centering II 180.bot\r\n[Bot Profile]\r\nName=Centering II 180\r\n\
+        CharacterProfile=Centering II 180 \r\n[Character Profile]\r\nName=Centering II 180\r\n\
+        MainBBType=Cylindrical\r\nMainBBHeight=320.0\r\nMainBBRadius=10.0\r\nMainBBHasHead=false\r\nMainBBHide=false\r\n\
+        [Map Data]\r\n";
+
+    #[test]
+    fn reads_the_bots_hitbox() {
+        let capsule = Hitbox { kind: HitboxKind::Cylindrical, width_to_height: 20.0 / 320.0 };
+        assert_eq!(facts(CAPSULE).hitbox, Some(capsule));
+        // a hitbox hidden under a model, a head of its own, an unknown shape: none
+        assert_eq!(facts(&CAPSULE.replace("MainBBHide=false", "MainBBHide=true")).hitbox, None);
+        assert_eq!(facts(&CAPSULE.replace("MainBBHasHead=false", "MainBBHasHead=true")).hitbox, None);
+        assert_eq!(facts(&CAPSULE.replace("Cylindrical", "Mesh")).hitbox, None);
+        // a second bot with another hitbox: none
+        let two = CAPSULE.replace("AddedBots=Centering II 180.bot", "AddedBots=Centering II 180.bot;Ball.bot")
+            .replace("[Map Data]", "[Bot Profile]\r\nName=Ball\r\nCharacterProfile=Ball\r\n[Character Profile]\r\n\
+                Name=Ball\r\nMainBBType=Spheroid\r\nMainBBHeight=50.0\r\nMainBBRadius=25.0\r\nMainBBHasHead=false\r\n\
+                MainBBHide=false\r\n[Map Data]");
+        assert_eq!(facts(&two).hitbox, None);
     }
 
     #[test]

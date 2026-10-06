@@ -470,7 +470,8 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
     let areas = review_areas(library, line, &video)?;
     let cap: Option<usize> = line.number("cap")?;
     let limit: Option<f64> = line.number("limit")?;
-    let facts = line.one("kind").map(kind).transpose()?.map(|kind| Facts { kind, limit, targets: cap, reload: None });
+    let facts =
+        line.one("kind").map(kind).transpose()?.map(|kind| Facts { kind, limit, targets: cap, reload: None, hitbox: None });
     let window = review_window(line)?;
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     let request = Request {

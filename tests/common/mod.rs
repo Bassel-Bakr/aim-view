@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use aimview::camera::excluded;
 use aimview::faint::FaintSetting;
 use aimview::geometry::{H, W, overlay_shares};
-use aimview::review::{KillTimes, VideoReadings, review_tracking};
+use aimview::review::{KillTimes, TrackScenario, VideoReadings, review_tracking};
 use aimview::track::{Mask, Tracks};
 use aimview::tracking::CameraReading;
 use serde_json::Value;
@@ -208,7 +208,8 @@ impl TrackingInputs {
         let limit = facts["facts"][scenario_key(video).as_str()]["limit"].as_f64();
         let readings = VideoReadings { camera: &self.camera, countdown: &self.countdown };
         let kills = KillTimes::Stats { name: stats, text: &stats_text };
-        let report = review_tracking(&self.tracks, kills, video, limit, readings, None, faint).unwrap();
+        let scenario = TrackScenario { limit, hitbox: None };
+        let report = review_tracking(&self.tracks, kills, video, scenario, readings, None, faint).unwrap();
         serde_json::to_value(&report).unwrap()
     }
 }
