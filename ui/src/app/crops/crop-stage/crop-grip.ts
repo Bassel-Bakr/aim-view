@@ -14,13 +14,14 @@ import {
   turnHandle,
 } from '../../shapes/shape-geometry';
 import {
-  frontCorners,
   pushedSide,
+  solidCorners,
   SideHandle,
   sideHandles,
   tumbled,
   tumbleHandle,
 } from '../../shapes/solid-geometry';
+import { freePoints, freeSides, movedSide, movedVertex } from '../../shapes/free-geometry';
 import { changeEach, DraftScene, withChanged } from '../crop-scene';
 
 /**
@@ -79,13 +80,39 @@ const SHAPE_SLACK_PX = 6;
 export function handlesOf(shape: Shape, scale: number): ShapeHandles {
   const reach = HANDLE_REACH_PX / scale;
   const solid = shape.solid;
+  const points = freePoints(shape);
+  if (points) {
+    return {
+      corners: points,
+      sides: freeSides(points),
+      turn: turnHandle(shape, reach),
+      face: null,
+      tumble: null,
+    };
+  }
   return {
-    corners: !solid ? corners(shape) : shape.kind === 'box' ? frontCorners(shape, solid) : [],
+    corners: vertexHandles(shape),
     sides: solid ? sideHandles(shape, solid) : flatSides(shape),
     turn: turnHandle(shape, reach),
     face: faceHandle(shape),
     tumble: solid && tumbleHandle(shape, solid, reach),
   };
+}
+
+/** A shape's corner handles: a box's every vertex (a 3D box's eight), a pill's frame corners, a capsule's none. */
+function vertexHandles(shape: Shape): CropPoint[] {
+  if (shape.kind === 'box') return shape.solid ? solidCorners(shape, shape.solid) : corners(shape);
+  return shape.solid ? [] : corners(shape);
+}
+
+/**
+ * A box's vertex dragged: it moves on its own, the others stay (a box not yet placed by hand takes its corners as its
+ * placed vertices first). A pill's corner resizes its frame, the opposite corner staying (Shift: equal sides).
+ */
+function draggedVertex(shape: Shape, index: number, point: CropPoint, even: boolean): Shape {
+  if (shape.kind !== 'box') return resized(shape, index, point, even);
+  const points = freePoints(shape) ?? vertexHandles(shape);
+  return movedVertex(shape, points, index, point);
 }
 
 /** The shape that shows handles: the selected one, when only one is (with more, a drag moves them all). */
@@ -176,14 +203,9 @@ export function dragged(
   const solid = held.solid;
   switch (grip.kind) {
     case 'corner':
-      return withChanged(from, resized(held, grip.index, point, even));
+      return withChanged(from, draggedVertex(held, grip.index, point, even));
     case 'side':
-      return withChanged(
-        from,
-        solid
-          ? pushedSide(held, solid, grip.index, point, { minSide: MIN_SIDE_PX, mirror })
-          : pushedFlatSide(held, grip.index, point, mirror),
-      );
+      return withChanged(from, draggedSide(held, grip.index, { start, point, even, mirror }));
     case 'turn':
       return withChanged(from, turned(held, point));
     case 'face':
@@ -201,6 +223,16 @@ export function dragged(
     default:
       return from;
   }
+}
+
+/** A side dragged: a placed box's moves its vertices, a solid's its face, a flat shape's its frame's side. */
+function draggedSide(shape: Shape, side: number, { start, point, mirror }: CropDrag): Shape {
+  const points = freePoints(shape);
+  if (points)
+    return movedSide(shape, points, side, [point[0] - start[0], point[1] - start[1]], mirror);
+  if (shape.solid)
+    return pushedSide(shape, shape.solid, side, point, { minSide: MIN_SIDE_PX, mirror });
+  return pushedFlatSide(shape, side, point, mirror);
 }
 
 /**

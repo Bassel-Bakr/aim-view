@@ -7,6 +7,15 @@ import {
   solidTurnHandle,
   traceSolid,
 } from './solid-geometry';
+import {
+  freeEdges,
+  freePoints,
+  movedPoints,
+  onFree,
+  scaledPoints,
+  turnedPoints,
+  withPoints,
+} from './free-geometry';
 
 /**
  * Editing a crop's shapes with the pointer: where a shape's corners and handles are, what a drag does to it, and its
@@ -64,6 +73,8 @@ export function farCorners(shape: Shape): CropPoint[] {
 
 /** Whether a point is on a shape (its frame, or its far end's), `slack` pixels round it counting too. */
 export function onShape(shape: Shape, point: CropPoint, slack: number): boolean {
+  const points = freePoints(shape);
+  if (points) return onFree(points, point, slack);
   if (shape.solid) return onSolid(shape, shape.solid, point, slack);
   const [, , width, height] = shape.box;
   const inFrame = (at: CropPoint) => {
@@ -151,6 +162,7 @@ export function pushedFlatSide(
  * square (a solid one a cube, as thick as it is wide).
  */
 export function evened(shape: Shape): Shape {
+  if (freePoints(shape)) return shape;
   const [cx, cy, width, height] = shape.box;
   const side = (width + height) / 2;
   const solid = shape.solid && { ...shape.solid, thickness: side };
@@ -159,6 +171,8 @@ export function evened(shape: Shape): Shape {
 
 /** A shape moved by (dx, dy). */
 export function moved(shape: Shape, [dx, dy]: CropPoint): Shape {
+  const points = freePoints(shape);
+  if (points) return withPoints(shape, movedPoints(points, [dx, dy]));
   const [cx, cy, width, height] = shape.box;
   return { ...shape, box: [cx + dx, cy + dy, width, height] };
 }
@@ -175,6 +189,8 @@ export function turned(shape: Shape, [x, y]: CropPoint): Shape {
  * the whole shape turns.
  */
 export function turnedBy(shape: Shape, degrees: number): Shape {
+  const points = freePoints(shape);
+  if (points) return withPoints(shape, turnedPoints(points, degrees));
   const angle = (((shape.angle + degrees) % 360) + 360) % 360;
   if (!shape.face) return { ...shape, angle };
   const [dx, dy] = shape.face;
@@ -199,6 +215,8 @@ export function faced(shape: Shape, [x, y]: CropPoint): Shape {
 export function scaled(shape: Shape, factor: number, [x, y]: CropPoint): Shape {
   const [cx, cy, width, height] = shape.box;
   const grow = Math.max(factor, MIN_SIDE_PX / Math.min(width, height));
+  const points = freePoints(shape);
+  if (points) return withPoints(shape, scaledPoints(points, grow, [x, y]));
   const face: FaceOffset | null = shape.face && [shape.face[0] * grow, shape.face[1] * grow];
   const solid = shape.solid && { ...shape.solid, thickness: shape.solid.thickness * grow };
   return {
@@ -211,8 +229,10 @@ export function scaled(shape: Shape, factor: number, [x, y]: CropPoint): Shape {
 
 /** The box round shapes' corners (and far faces): [center x, center y, width, height]. */
 export function boxAround(shapes: readonly Shape[]): CropBox {
-  const points = shapes.flatMap((shape) =>
-    shape.solid ? solidExtent(shape, shape.solid) : [...corners(shape), ...farCorners(shape)],
+  const points = shapes.flatMap(
+    (shape) =>
+      freePoints(shape) ??
+      (shape.solid ? solidExtent(shape, shape.solid) : [...corners(shape), ...farCorners(shape)]),
   );
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
@@ -258,6 +278,14 @@ function pillSides(shape: Shape, [dx, dy]: FaceOffset): CropPoint[] {
  */
 export function tracePath(context: CanvasRenderingContext2D, shape: Shape): void {
   context.beginPath();
+  const points = freePoints(shape);
+  if (points) {
+    for (const edge of freeEdges(points)) {
+      context.moveTo(...edge.from);
+      context.lineTo(...edge.to);
+    }
+    return;
+  }
   if (shape.solid) {
     traceSolid(context, shape, shape.solid);
     return;

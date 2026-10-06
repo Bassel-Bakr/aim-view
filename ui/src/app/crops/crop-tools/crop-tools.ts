@@ -148,14 +148,18 @@ export class CropTools {
 
   /** A 3D shape among the selected ones: the 3D turn buttons show. */
   protected readonly solidChosen = computed(() =>
-    this.chosen().some((shape) => shape.solid !== null),
+    this.chosen().some((shape) => shape.solid !== null && shape.points === null),
+  );
+  /** A box placed by hand among the selected ones: Back to a box shows. */
+  protected readonly placedChosen = computed(() =>
+    this.chosen().some((shape) => shape.points !== null),
   );
 
   /** Turns each selected 3D shape so a side comes toward the camera, a step at a time. */
   protected show(side: SideShown): void {
     this.change((scene, ids) =>
       changeEach(scene, ids, (shape) =>
-        shape.solid ? showing(shape, shape.solid, side, TURN_STEP_DEG) : shape,
+        shape.solid && !shape.points ? showing(shape, shape.solid, side, TURN_STEP_DEG) : shape,
       ),
     );
   }
@@ -167,6 +171,11 @@ export class CropTools {
         shape.solid ? { ...shape, solid: { ...shape.solid, tip: 0, swing: 0 } } : shape,
       ),
     );
+  }
+
+  /** Undoes the selected boxes' placed corners: each is its box again, flat or solid as it was. */
+  protected unplace(): void {
+    this.change((scene, ids) => changeEach(scene, ids, (shape) => ({ ...shape, points: null })));
   }
 
   protected toggleMirroring(): void {

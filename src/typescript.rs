@@ -63,6 +63,11 @@ pub struct Switch(pub usize, pub usize, pub usize);
 #[ts(export)]
 pub struct CropBox(pub f64, pub f64, pub f64, pub f64);
 
+/// A box's vertex placed by hand: x, y (crop pixels).
+#[derive(TS)]
+#[ts(export)]
+pub struct CropVertex(pub f64, pub f64);
+
 /// Where a box's far face sits from its near one: x, y (crop pixels).
 #[derive(TS)]
 #[ts(export)]

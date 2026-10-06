@@ -14,7 +14,7 @@ type Vector3 = [x: number, y: number, z: number];
 /** A 3D turn as the rows of its matrix. */
 type Turn = [Vector3, Vector3, Vector3];
 /** A box edge: the indexes of its two corners in `solidCorners`. */
-type Edge = [from: number, to: number];
+export type Edge = [from: number, to: number];
 
 /** How a new 3D shape starts: tipped and swung so its top and right side show (a target seen from above, to the right). */
 export const START_TIP_DEG = 20;
@@ -92,11 +92,15 @@ export function pillAxis(shape: Shape, solid: Solid): CropPoint[] {
   );
 }
 
-const EDGES: Edge[] = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((corner) =>
+export const EDGES: Edge[] = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((corner) =>
   [1, 2, 4].filter((side) => !(corner & side)).map((side): Edge => [corner, corner | side]),
 );
 
-function segmentDistance([x, y]: CropPoint, [ax, ay]: CropPoint, [bx, by]: CropPoint): number {
+export function segmentDistance(
+  [x, y]: CropPoint,
+  [ax, ay]: CropPoint,
+  [bx, by]: CropPoint,
+): number {
   const [alongX, alongY] = [bx - ax, by - ay];
   const lengthSq = alongX * alongX + alongY * alongY;
   const share =
@@ -105,7 +109,7 @@ function segmentDistance([x, y]: CropPoint, [ax, ay]: CropPoint, [bx, by]: CropP
 }
 
 /** The convex hull of points, in order round it (Andrew's monotone chain, as the core's). */
-function convexHull(points: CropPoint[]): CropPoint[] {
+export function convexHull(points: CropPoint[]): CropPoint[] {
   const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const turn = (from: CropPoint, a: CropPoint, b: CropPoint) =>
     (a[0] - from[0]) * (b[1] - from[1]) - (a[1] - from[1]) * (b[0] - from[0]);
@@ -126,7 +130,7 @@ function convexHull(points: CropPoint[]): CropPoint[] {
   return hull;
 }
 
-function inConvex(polygon: CropPoint[], [x, y]: CropPoint): boolean {
+export function inConvex(polygon: CropPoint[], [x, y]: CropPoint): boolean {
   const sides = polygon.map(([ax, ay], i) => {
     const [bx, by] = polygon[(i + 1) % polygon.length];
     return Math.sign((bx - ax) * (y - ay) - (by - ay) * (x - ax));
@@ -268,7 +272,7 @@ function faceNormal(turn: Turn, face: number): Vector3 {
 }
 
 /** The corners of a box face (axis * 2, plus 1 for its far side), as `solidCorners` indexes in order round it. */
-function faceCornerIndexes(face: number): number[] {
+export function faceCornerIndexes(face: number): number[] {
   const axis = face >> 1;
   const [first, second] = [0, 1, 2].filter((other) => other !== axis);
   const base = (face & 1) << axis;

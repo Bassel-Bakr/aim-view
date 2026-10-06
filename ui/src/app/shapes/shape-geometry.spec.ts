@@ -25,6 +25,7 @@ function shape(overrides: Partial<Shape>): Shape {
     angle: 0,
     face: null,
     solid: null,
+    points: null,
     depth: 0,
     role: null,
     model: null,

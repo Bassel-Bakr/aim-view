@@ -21,6 +21,7 @@ export type { ClickWhatIfGroup } from './generated/click-what-if-group';
 export type { CropAnswer } from './generated/crop-answer';
 export type { CropAnswers } from './generated/crop-answers';
 export type { CropBox } from './generated/crop-box';
+export type { CropVertex } from './generated/crop-vertex';
 export type { CropEntry } from './generated/crop-entry';
 export type { CropPage } from './generated/crop-page';
 export type { CropSet } from './generated/crop-set';

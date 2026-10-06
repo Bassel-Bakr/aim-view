@@ -1,6 +1,14 @@
 import { CropEntry, SceneView, Shape, Solid } from '../../api';
 import { CropPoint, tracePath } from '../../shapes/shape-geometry';
-import { capsuleOutline, capsuleRings, solidEdges, solidFaces } from '../../shapes/solid-geometry';
+import { freeEdges, freeFaces, freePoints } from '../../shapes/free-geometry';
+import {
+  capsuleOutline,
+  capsuleRings,
+  SolidEdge,
+  SolidFace,
+  solidEdges,
+  solidFaces,
+} from '../../shapes/solid-geometry';
 
 /** The light at which a face is neither lit nor shaded. */
 const LIGHT_MIDDLE = 0.5;
@@ -166,6 +174,11 @@ function paintShapes(
   for (const shape of [...scene.shapes].sort((a, b) => a.depth - b.depth)) {
     const width = picture.selection.includes(shape.id) ? style.lineWidthSelected : style.lineWidth;
     const line: SolidLine = { color: colorOf(shape, scene.occluders, style), width, scale };
+    const points = freePoints(shape);
+    if (points) {
+      paintFaces(context, freeFaces(points), freeEdges(points), line, style);
+      continue;
+    }
     if (shape.solid) {
       paintSolid(context, shape, shape.solid, line, style);
       continue;
@@ -215,7 +228,18 @@ function paintSolid(
     paintCapsule(context, shape, solid, line, style);
     return;
   }
-  for (const face of solidFaces(shape, solid).filter((one) => one.facing)) {
+  paintFaces(context, solidFaces(shape, solid), solidEdges(shape, solid), line, style);
+}
+
+/** A box's faces toward the camera, lit or shaded, then its seen edges solid and its hidden ones dashed. */
+function paintFaces(
+  context: CanvasRenderingContext2D,
+  faces: SolidFace[],
+  edges: SolidEdge[],
+  line: SolidLine,
+  style: CropStyle,
+) {
+  for (const face of faces.filter((one) => one.facing)) {
     context.beginPath();
     face.corners.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
     context.closePath();
@@ -224,7 +248,6 @@ function paintSolid(
     context.fill();
   }
   context.globalAlpha = 1;
-  const edges = solidEdges(shape, solid);
   for (const seen of [false, true]) {
     context.beginPath();
     for (const edge of edges.filter((one) => one.seen === seen)) {

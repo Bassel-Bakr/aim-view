@@ -2,7 +2,9 @@
 //! (a sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a
 //! third face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep
 //! pill's the pill swept back to its far end. Or either can be solid: a box or a capsule with a thickness, tipped and
-//! swung out of the screen's plane, its outline what that solid shows the camera. Shapes are joined into targets (a bot's head and body), ordered
+//! swung out of the screen's plane, its outline what that solid shows the camera. A box's vertices can also be placed
+//! one by one (`points`: a flat box's 4 corners, a 3D box's 8), for a target seen in perspective: its outline is then
+//! what they span. Shapes are joined into targets (a bot's head and body), ordered
 //! front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them
 //! (occluders: the crosshair, a pillar, an overlay).
 //!
@@ -32,8 +34,9 @@ pub enum ShapeRole {
 }
 
 /// One shape: its kind, its frame before turning ([center x, center y, width, height], pixels), its angle (degrees,
-/// clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and tumble), its
-/// depth (greater is nearer), its role, and the model box it started from (an index into the crop's boxes), if any.
+/// clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and tumble), a
+/// box's vertices placed by hand (crop pixels; they decide its outline when given), its depth (greater is nearer), its
+/// role, and the model box it started from (an index into the crop's boxes), if any.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Shape {
@@ -49,6 +52,9 @@ pub struct Shape {
     pub face: Option<[f64; 2]>,
     #[serde(default)]
     pub solid: Option<Solid>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::CropVertex>>"))]
+    pub points: Option<Vec<[f64; 2]>>,
     #[serde(default)]
     pub depth: i32,
     #[serde(default)]
@@ -259,8 +265,16 @@ fn stadium(ends: [[f64; 2]; 2], radius: f64) -> Vec<[f64; 2]> {
     convex_hull(points.collect())
 }
 
+/// A box's vertices placed by hand, when there are enough to span an area.
+fn free_points(shape: &Shape) -> Option<&Vec<[f64; 2]>> {
+    shape.points.as_ref().filter(|points| shape.kind == ShapeKind::Box && points.len() >= 3)
+}
+
 /// A shape's outline on the crop, in order round it.
 pub fn outline(shape: &Shape) -> Vec<[f64; 2]> {
+    if let Some(points) = free_points(shape) {
+        return convex_hull(points.clone());
+    }
     match (shape.kind, &shape.solid) {
         (ShapeKind::Pill, Some(solid)) => stadium(solid_pill_segment(shape, solid), pill_parts(shape).0),
         (ShapeKind::Box, Some(solid)) => convex_hull(solid_corners(shape, solid)),
@@ -320,6 +334,9 @@ fn in_deep_pill(shape: &Shape, [dx, dy]: [f64; 2], x: f64, y: f64) -> bool {
 /// band it sweeps to its far end, with a third face; of its tipped axis, solid); a box those in its turned rectangle,
 /// or in its outline when it has a third face or is solid.
 pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
+    if free_points(shape).is_some() {
+        return in_convex(&outline(shape), x, y);
+    }
     if let Some(solid) = &shape.solid {
         return match shape.kind {
             ShapeKind::Pill => {
@@ -361,7 +378,9 @@ pub fn check(scene: &Scene) -> Result<(), String> {
             return Err(format!("the shape id {} is used twice", shape.id));
         }
         let solid = shape.solid.iter().flat_map(|solid| [solid.thickness, solid.tip, solid.swing]);
-        let mut numbers = shape.frame.into_iter().chain([shape.angle]).chain(shape.face.into_iter().flatten()).chain(solid);
+        let points = shape.points.iter().flatten().flatten().copied();
+        let mut numbers =
+            shape.frame.into_iter().chain([shape.angle]).chain(shape.face.into_iter().flatten()).chain(solid).chain(points);
         if numbers.any(|value| !value.is_finite() || value.abs() > MAX_VALUE) {
             return Err(format!("the shape {} has a number out of range", shape.id));
         }
@@ -549,7 +568,7 @@ mod tests {
     const SIDE: usize = 128;
 
     fn shape(id: &str, kind: ShapeKind, frame: [f64; 4], depth: i32) -> Shape {
-        Shape { id: id.into(), kind, frame, angle: 0.0, face: None, solid: None, depth, role: None, model: None }
+        Shape { id: id.into(), kind, frame, angle: 0.0, face: None, solid: None, points: None, depth, role: None, model: None }
     }
 
     fn pixel(view: &[u32], x: usize, y: usize) -> bool {
@@ -625,6 +644,19 @@ mod tests {
         let leaning = Shape { solid: solid(60.0, 0.0), ..pill };
         assert!(contains(&leaning, 64.0, 64.0 + 12.4) && !contains(&leaning, 64.0, 64.0 + 13.0), "foreshortened by half");
         assert!(check(&Scene { shapes: vec![Shape { solid: Some(Solid { thickness: 0.0, tip: 0.0, swing: 0.0 }), ..shape("z", ShapeKind::Box, [1.0, 1.0, 1.0, 1.0], 0) }], ..Scene::default() }).is_err());
+    }
+
+    #[test]
+    fn a_box_with_its_vertices_placed_covers_what_they_span() {
+        let flat = shape("b", ShapeKind::Box, [64.0, 64.0, 20.0, 20.0], 0);
+        let leaning = Shape { points: Some(vec![[54.0, 54.0], [74.0, 58.0], [74.0, 70.0], [54.0, 74.0]]), ..flat.clone() };
+        assert!(contains(&leaning, 73.0, 60.0) && !contains(&leaning, 73.0, 56.0), "the corner moved down on its own");
+        assert!(contains(&flat, 73.0, 56.0), "the box it came from covered it");
+        let cube: Vec<[f64; 2]> =
+            (0..8_usize).map(|i| [54.0 + 20.0 * (i & 1) as f64 + 6.0 * (i >> 2) as f64, 54.0 + 20.0 * (i >> 1 & 1) as f64 - 6.0 * (i >> 2) as f64]).collect();
+        let placed = Shape { points: Some(cube), ..flat };
+        assert_eq!(outline(&placed).len(), 6, "eight vertices of a cube seen at an angle span a hexagon");
+        assert!(contains(&placed, 78.0, 50.0) && !contains(&placed, 55.0, 50.0));
     }
 
     #[test]

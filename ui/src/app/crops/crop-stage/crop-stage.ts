@@ -352,6 +352,7 @@ export class CropStage {
           id: '',
           kind,
           box,
+          points: null,
           angle: 0,
           face: null,
           solid,

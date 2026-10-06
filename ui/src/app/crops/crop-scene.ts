@@ -2,6 +2,7 @@ import {
   CropAnswer,
   CropBox,
   CropEntry,
+  CropVertex,
   CropVerdict,
   FaceOffset,
   Shape,
@@ -37,6 +38,7 @@ function pill(id: string, box: CropBox, model: number | null): Shape {
     angle: 0,
     face: null,
     solid: null,
+    points: null,
     depth: 0,
     role: null,
     model,
@@ -84,7 +86,7 @@ export function sceneOfAnswer(crop: CropEntry, answer: CropAnswer): DraftScene {
 /** A value to a tenth of a pixel: finer is noise from the finger and the turning. */
 const tenth = (value: number) => Math.round(value * 10) / 10;
 
-/** A shape with its box and third face to a tenth of a pixel. */
+/** A shape with its box, third face, solid and placed vertices to a tenth of a pixel (a degree for its turns). */
 function tidied(shape: Shape): Shape {
   const [cx, cy, width, height] = shape.box;
   const face: FaceOffset | null = shape.face && [tenth(shape.face[0]), tenth(shape.face[1])];
@@ -93,12 +95,15 @@ function tidied(shape: Shape): Shape {
     tip: tenth(shape.solid.tip),
     swing: tenth(shape.solid.swing),
   };
+  const points: CropVertex[] | null =
+    shape.points && shape.points.map(([x, y]): CropVertex => [tenth(x), tenth(y)]);
   return {
     ...shape,
     box: [tenth(cx), tenth(cy), tenth(width), tenth(height)],
     angle: tenth(shape.angle),
     face,
     solid,
+    points,
   };
 }
 
@@ -263,6 +268,7 @@ export function withKind(
     kind,
     face: null,
     solid: deep ? (shape.solid ?? defaultSolid(shape.box)) : null,
+    points: null,
   }));
 }
 

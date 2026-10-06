@@ -143,6 +143,19 @@
     Pan
   </button>
 </div>
+@if (placedChosen()) {
+  <div class="tool-row">
+    <span class="tool-label">Corners</span>
+    <button
+      type="button"
+      appButton
+      title="Undo the corners placed by hand: the shape is its box again (its size and turn as the box round it)"
+      (click)="unplace()"
+    >
+      Back to a box
+    </button>
+  </div>
+}
 @if (solidChosen()) {
   <div class="tool-row">
     <span id="crop-tumble-label" class="tool-label">3D turn</span>
@@ -169,11 +182,12 @@
   </div>
 }
 <p class="tool-help">
-  Drag on the crop to draw a {{ drawing() }}. Tap shapes to select them. Drag a corner to resize, a
-  square on a side to move that side (Mirror or Alt: its opposite side too), the round handle above
-  to turn. A 3D shape has a square on each face (hollow: a face turned away) and a ringed handle
-  below: drag it to tumble the shape in 3D, or use the 3D turn buttons. Its faces toward you are
-  shaded and its hidden edges dashed. The wheel over the selected shapes resizes them, elsewhere it
-  zooms. Shift while drawing or resizing makes a perfect circle or square. Tap the wall for a tiny
-  target.
+  Drag on the crop to draw a {{ drawing() }}. Tap shapes to select them. Drag a box's corner (a 3D
+  box's every corner) to move it on its own, for a box seen in perspective; a pill's corner resizes
+  it. A square on a side moves that side (Mirror or Alt: its opposite side too), the round handle
+  above turns it. A 3D shape has a square on each face (hollow: a face turned away) and a ringed
+  handle below: drag it to tumble the shape in 3D, or use the 3D turn buttons. Its faces toward you
+  are shaded and its hidden edges dashed. The wheel over the selected shapes resizes them, elsewhere
+  it zooms. Shift while drawing or resizing makes a perfect circle or square. Tap the wall for a
+  tiny target.
 </p>
