@@ -16,8 +16,11 @@ gives a crop of 256 x 256 round the crosshair (shifted up to 48 px at random), l
   distance transform has no second peak behind a saddle, as two overlapping targets have and a capsule's even ridge
   has not, and no notch as deep as one of unlike size leaves: `notched`), stay off the crop's edge and be MIN_AREA_PX
   or more; else the next frame back is tried;
-- every other part of a like size (AREA_RANGE times it) and shape, off the crop's edge, is a target too; any other part,
-  and a detector box over no part, is left to train.py as "ignore" (learnt neither as a target nor as wall).
+- every other part of a target's shape, off the crop's edge and no bigger than AREA_RANGE[1] times it (no smaller than
+  AREA_RANGE[0] times it beside a bot, whose head may be a part of its own), is a target too; any other part, and a
+  detector box over no part whose pixels stand out from the wall, is left to train.py as "ignore" (learnt neither as a
+  target nor as wall); a line (LINE_FILL of its box) and a detector box that does not stand out are left as wall
+  (`stands_out`).
 Each kill's crop is paired with the same crop GONE_FRAMES after the kill (`gone_crop`), saved with the tag GONE_TAG:
 the target gone, the crosshair on the wall, labelled with no target at the crosshair (no part of the killed target's
 color within CROSSHAIR_REACH_PX of it, else none is saved) and the other targets by the same rules. Without the pairs
@@ -78,8 +81,11 @@ SADDLE_SHARE = 0.8              # two peaks are two targets when the distance di
 PEAK_PX = 3                     # a peak is the greatest distance within this many pixels
 HEAD_SLANT = 0.5                # a head is above its body within this run over rise
 NOTCH_SHARE = 0.06              # two overlapping targets leave a notch this deep against the part's shorter side
+MIN_NOTCH_PX = 3.0              # and at least this deep (a small target's pixel steps leave 1 to 2)
+LINE_FILL = 0.2                 # a part filling less of its box is a line (a wall's edge, a panel's outline)
 UPRIGHT_ASPECT = 2.2            # a part this many times taller than wide is a bot standing: its neck is no notch
-AREA_RANGE = (0.2, 5.0)         # another target's area against the killed one's
+AREA_RANGE = (0.2, 5.0)         # another target's area against the killed one's (the least only beside a bot)
+STANDS_OUT_SHARE = 0.1          # a detector box may hold a target where this share of its pixels stands out
 BRIDGE_PX = 2                   # fixed-map pixels this near the target's color join it
 SHEET_COLUMNS, THUMB = 10, 128
 LEFT_OUT = ("flow fix",)        # scenarios whose stats files are not the kills' truth
@@ -160,7 +166,8 @@ def two_targets(mask):
 def notched(mask, width, height):
     """Whether a part is two overlapping targets of unlike size, which `two_targets` misses (the smaller one gives no
     peak): the largest disc in its convex hull but off the part is NOTCH_SHARE of its shorter side or more. A single
-    cube or sphere reaches 0.057 (its shading's edge), a pair 0.06 to 0.13 (2026-10-07, 557 auto-labelled parts). Holes
+    cube or sphere reaches 0.057 (its shading's edge), a pair 0.06 to 0.13 and 4 px or more (2026-10-07, 557
+    auto-labelled parts), a target of 10 px 1 px (its pixel steps). Holes
     are filled first (the crosshair over a target); an upright part is left alone (a bot's neck)."""
     if height >= UPRIGHT_ASPECT * width:
         return False
@@ -174,7 +181,7 @@ def notched(mask, width, height):
     hull = Image.new("1", filled.shape[::-1])
     ImageDraw.Draw(hull).polygon([tuple(corner) for corner in corners.tolist()], fill=1)
     notch = ndimage.distance_transform_edt(np.array(hull) & ~filled).max()
-    return notch >= NOTCH_SHARE * min(width, height)
+    return notch >= max(NOTCH_SHARE * min(width, height), MIN_NOTCH_PX)
 
 
 def shape_of(mask):
@@ -210,48 +217,73 @@ def label_crop(rgb, fixed, at, model_boxes):
     box, area, solid, edge = shape_of(killed)
     if not solid or edge or area < MIN_AREA_PX:
         return None
-    boxes, ignore, mask = others(labelled, count, numbers[0], area, model_boxes)
-    return [box, *boxes], ignore, (mask | killed).astype(np.uint8), target, area
+    size = (area, box[3] >= UPRIGHT_ASPECT * box[2])
+    boxes, ignore, mask = others(rgb, fixed, found, (numbers[0], *size), model_boxes)
+    return [box, *boxes], ignore, (mask | killed).astype(np.uint8), target, size
 
 
-def others(labelled, count, killed, area, model_boxes):
-    """The parts but `killed` as targets (a target's shape and a like size to `area`, off the crop's edge) or ignored,
-    their mask, and the detector's boxes over no part ignored."""
+def others(rgb, fixed, found, killed, model_boxes):
+    """The parts (`found`: labelled array, count) but the killed target's as targets or ignored, their mask, and the
+    detector's boxes over no part ignored. `killed` is the killed target's part number (0: none), area and whether it
+    stands upright. A part is a target with a target's shape, off the crop's edge, and no bigger than AREA_RANGE[1]
+    times the killed target; beside an upright one (a bot) no smaller than AREA_RANGE[0] times it either, where a
+    smaller part is its head. Beside a sphere or a cube a small part is a target too: shimPressure's spheres differ in
+    size (2026-10-07: 13 small spheres were left out, and 2 bots' heads would have been taken). A line (LINE_FILL) is
+    left as wall, not ignored: train.py learns nothing in an ignore box, and a panel's outline blanked a whole crop."""
+    (labelled, count), (killed_number, area, upright) = found, killed
+    smallest = AREA_RANGE[0] * area if upright else 0.0
     boxes, ignore, mask = [], [], np.zeros(labelled.shape, bool)
     for number in range(1, count + 1):
         part = labelled == number
-        if number == killed or part.sum() < MIN_AREA_PX:
+        if number == killed_number or part.sum() < MIN_AREA_PX:
             continue
         other, other_area, other_solid, other_edge = shape_of(part)
-        if other_solid and not other_edge and AREA_RANGE[0] * area <= other_area <= AREA_RANGE[1] * area:
+        if other_solid and not other_edge and smallest <= other_area <= AREA_RANGE[1] * area:
             boxes.append(other)
             mask |= part
-        else:
+        elif other_area >= LINE_FILL * other[2] * other[3]:
             ignore.append(other)
-    for cx, cy, width, height in model_boxes:
-        if not labelled[int(np.clip(cy, 0, CROP - 1)), int(np.clip(cx, 0, CROP - 1))]:
-            ignore.append([cx, cy, width, height])
+    wall = np.median(rgb.reshape(-1, 3).astype(np.float32), 0)
+    for box in model_boxes:
+        if not labelled[int(np.clip(box[1], 0, CROP - 1)), int(np.clip(box[0], 0, CROP - 1))]                 and stands_out(rgb, fixed, box, wall):
+            ignore.append(list(box))
     return boxes, ignore, mask
+
+
+def stands_out(rgb, fixed, box, wall):
+    """Whether a detector box (cx, cy, w, h in crop pixels) may hold a target: STANDS_OUT_SHARE of its pixels off the
+    fixed map differ from the wall's color by MIN_CONTRAST (a target's color stands out from the wall's), or too few of
+    them to tell. One that does not is left as wall, not ignored: on the auto crops (2026-10-07) such boxes held
+    Reactive Flick's purple rings and a wall panel's outline, none a target."""
+    cx, cy, width, height = box
+    x0, y0 = int(max(0, cx - width / 2)), int(max(0, cy - height / 2))
+    x1, y1 = int(min(CROP, cx + width / 2 + 1)), int(min(CROP, cy + height / 2 + 1))
+    free = ~fixed[y0:y1, x0:x1]
+    if free.sum() < MIN_COLOR_PX:
+        return True
+    distance = np.linalg.norm(rgb[y0:y1, x0:x1][free].astype(np.float32) - wall, axis=1)
+    return (distance >= MIN_CONTRAST).mean() >= STANDS_OUT_SHARE
 
 
 def gone_crop(kill, place, frames, decoded, fixed):
     """The kill's crop GONE_FRAMES after it (the module's text), `place` its crop's (corner, crosshair, the killed
-    target's color, its area): (frame, rgb, fixed, boxes, ignore, mask), or None when the killed target's color is
-    still at the crosshair or the frame is missing."""
+    target's color, its area and whether it stands upright): (frame, rgb, fixed, boxes, ignore, mask), or None when the
+    killed target's color is still at the crosshair or the frame is missing."""
     later = kill + GONE_FRAMES
     if later not in decoded or later >= len(frames):
         return None
-    (x0, y0), at, target, area = place
+    (x0, y0), at, target, size = place
     window = (slice(y0, y0 + CROP), slice(x0, x0 + CROP))
     rgb, crop_fixed = decoded[later][window], fixed[window]
-    labelled, count = parts(rgb, crop_fixed, at, target)
+    found = parts(rgb, crop_fixed, at, target)
+    labelled = found[0]
     near = labelled[at[1] - CROSSHAIR_REACH_PX:at[1] + CROSSHAIR_REACH_PX + 1,
                     at[0] - CROSSHAIR_REACH_PX:at[0] + CROSSHAIR_REACH_PX + 1]
     if near.any():
         return None
     model_boxes = [(box[0] - x0, box[1] - y0, box[2], box[3]) for box in build_disagreements.boxes_px(frames[later])
                    if x0 <= box[0] < x0 + CROP and y0 <= box[1] < y0 + CROP]
-    boxes, ignore, mask = others(labelled, count, 0, area, model_boxes)
+    boxes, ignore, mask = others(rgb, crop_fixed, found, (0, *size), model_boxes)
     return later, rgb, crop_fixed, boxes, ignore, mask.astype(np.uint8)
 
 
@@ -277,8 +309,8 @@ def crop_kill(kill, frames, decoded, fixed, rnd):
         rgb, crop_fixed = decoded[frame][window], fixed[window]
         labels = label_crop(rgb, crop_fixed, at, model_boxes)
         if labels is not None:
-            boxes, ignore, mask, target, area = labels
-            return (frame, rgb, crop_fixed, boxes, ignore, mask), ((x0, y0), at, target, area)
+            boxes, ignore, mask, target, size = labels
+            return (frame, rgb, crop_fixed, boxes, ignore, mask), ((x0, y0), at, target, size)
     return None
 
 

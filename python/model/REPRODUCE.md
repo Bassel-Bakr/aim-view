@@ -265,7 +265,12 @@ small). Every auto crop had a target at the crosshair, so the crosshair alone ca
 is now paired with the same crop 8 frames after the kill: the target gone, the crosshair on the wall, no target there
 (tag `auto_gone_`; no pair while the killed target's color is still at the crosshair). The labeller also refuses a
 part with a notch as deep as two overlapping targets of unlike size leave (`notched`: 7 of 609 parts, every one a pair
-of cubes or spheres labelled as one). The three sets again, with their pairs: 189 tile crops and 75 pairs, 24 small
+of cubes or spheres labelled as one). Three more fixes came from looking at the crops: a line of the target's color
+(a wall panel's outline) is left as wall, not ignored (train.py learns nothing inside an ignore box, and one outline
+blanked a whole crop); a detector box whose pixels do not stand out from the wall is left as wall too (Reactive
+Flick's purple rings, which are no targets); and beside a sphere or a cube a smaller part of a target's shape is a
+target (shimPressure's spheres differ in size), but not beside a bot, whose head can be a part of its own. The three
+sets again, with their pairs: 189 tile crops and 75 pairs, 24 small
 static crops and 24 pairs, 162 crops of every clicking kind and 101 pairs:
 
 ```bash
