@@ -194,10 +194,11 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
 
 ## State (2026-10-02)
 
-- The detector is large_v11 (`infer.BEST`, models.json's default since 2026-10-06): the large model (148,709
-  parameters), trained on every scenario kind, on robots boxed whole, and never boxing a health bar (of any color,
-  with or without its text), then on the kills its first version got wrong against the stats files; its tracking gap
-  is half full_v8_s3's (the default before it). small_v13 is the small one for speed.
+- The detector is large_v13e4 (`infer.BEST`, models.json's default since 2026-10-06): the large model (148,709
+  parameters), trained on every scenario kind, on robots boxed whole, never boxing a health bar (of any color, with
+  or without its text), then on the kills its first version got wrong against the stats files, tiles labelled from
+  the stats files' kills with no one drawing, and robot crops checked by Claude; large_v11 was the default before it.
+  small_v13 is the small one for speed.
 - The plan: the app runs three ways from one code base (browser only, browser with the review server, desktop). The UI
   is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
   desktop app (Tauri 2) and as WebAssembly for the browser. The ground truth is KovaaK's stats files, not Python: a
