@@ -51,6 +51,7 @@ pub fn work_out(
         "tracking": facts.is_some_and(|facts| facts.kind == Kind::Tracking),
         "limit": facts.and_then(|facts| facts.limit),
         "reload": facts.and_then(|facts| facts.reload.as_ref()),
+        "hitbox": facts.and_then(|facts| facts.hitbox),
         "camera": readings["camera"],
         "countdown": readings["countdown"],
         "faint": faint,

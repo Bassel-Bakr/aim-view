@@ -221,7 +221,9 @@ def moving(model, pick, lib, program):
     for kind, videos in pick.items():
         for video, stats in videos:
             limit = facts.get(scenario_of(video), (None, None))[1]
-            out[Path(video).name] = list(eval_moving.core_numbers(program, kind, tracks[video], video, stats, limit))
+            hitbox = lib.scenarios().get(scenario_of(video), {}).get("hitbox")     # the bots' shape: on the bot inside it
+            out[Path(video).name] = list(eval_moving.core_numbers(program, kind, tracks[video], video, stats, limit,
+                                                                  hitbox=hitbox))
     return out, fresh
 
 

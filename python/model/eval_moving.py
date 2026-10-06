@@ -114,8 +114,9 @@ def model_numbers(lib, program, pick, scenarios, name, path, reports):
     for kind, videos in pick.items():
         for video, stats in videos:
             limit = facts.get(scenario_of(video), (None, None))[1]
+            hitbox = lib.scenarios().get(scenario_of(video), {}).get("hitbox")
             keep = reports / name / f"{Path(video).stem}.json" if reports else None
-            out[video] = core_numbers(program, kind, tracks[video], video, stats, limit, keep)
+            out[video] = core_numbers(program, kind, tracks[video], video, stats, limit, keep, hitbox)
     return out
 
 
