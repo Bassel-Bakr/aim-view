@@ -11,6 +11,12 @@ use std::time::Instant;
 use aimview::hud::HudReading;
 use aimview_service::review::{Request, TimeWindow, review};
 
+/// `--features dhat-heap`: every allocation counted by where it was made, written to dhat-heap.json when the review
+/// ends (open it in DHAT's viewer, dh_view.html).
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 /// The arguments' places on the command line (after the program's own name, 0).
 const VIDEO_ARG: usize = 1;
 const MODEL_ARG: usize = 2;
@@ -54,6 +60,8 @@ fn request(args: &[String], parts: Option<PathBuf>) -> Request {
 }
 
 fn main() {
+    #[cfg(feature = "dhat-heap")]
+    let _heap = dhat::Profiler::new_heap();
     let mut args: Vec<String> = std::env::args().collect();
     let parts = args.iter().position(|arg| arg == "--parts");
     let parts = parts.map(|i| PathBuf::from(args.drain(i..i + 2).nth(1).expect("--parts <folder>")));

@@ -9,6 +9,26 @@ in backticks after a number is its criterion bench (`cargo bench --bench hot_pat
 or at 5a66b5c for matching and the report (BENCH.md, "Function benchmarks"; runs differ by up to about 10%). Numbers
 marked "survey" come from a scratch bench at 9eef1f4 run while another build was going (about ±30%).
 
+## Profiling a whole review
+
+Three tools, each on the native review of av1 0:20 to 0:40 (`cargo build --profile profiling`: release with its
+symbols):
+- the wall time: `hyperfine -N --warmup 1 --runs 5 "<track.exe or aimview-tool review ...>"`;
+- the CPU: `cargo flamegraph --profile profiling -p aimview-service --bin aimview-tool -o flamegraph.svg -- review
+  <video> --out <dir> --model <_u8in.onnx> --window 20 40 --no-report --kill-check`, from an administrator's terminal
+  on Windows (it records through ETW);
+- the heap: `cargo run --profile profiling -p aimview-service --example track --features dhat-heap -- <video> <model>
+  <out> 0 2 4 20 40`, which writes dhat-heap.json (DHAT's viewer, dh_view.html).
+
+What they showed (2026-10-07, large_v13e4, the GPU's frames): the review is GPU-bound (the 3D engine 98% busy while
+tracking; fp16 and batches of 2 or 8 frames were no faster than fp32 in 4: 5.9 s). Of the CPU's samples, NVIDIA's
+driver took about half on its own threads; reading each frame back from the GPU (`GpuFrames::next_into`) 14.5%, and
+DirectML's upload of the same RGB back to the GPU 5.4% (a round trip); the 720p luma from the full Y plane
+(`mean_2x2`) 10%; the camera's FFTs 11%; the HUD 2.7%; allocation 3.8%. dhat: 8.45 GB in 3.2 million blocks, the
+detector's output copies (2.9 GB), the camera's tiles and buffers (2.3 GB), the decoder's countdown rows (0.3 GB) and
+the HUD's small vectors (1.8 million blocks) first. A review's fixed cost (the model, DirectML's session, the key
+frames) is about 1.5 s.
+
 ## Every frame (about 6,000 a review)
 
 The review is a pipe: decode, convert, detect, track. The slowest stage sets the pace. Two runs are reviewed at once

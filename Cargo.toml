@@ -67,6 +67,12 @@ lto = false
 codegen-units = 16
 incremental = true
 
+# `cargo flamegraph --profile profiling` and the heap profile (service's `dhat-heap` feature): release with its
+# symbols, so a profile names each function (HOT_PATHS.md)
+[profile.profiling]
+inherits = "release"
+debug = true
+
 # `cargo test --profile quick`: optimized like release (the parity tests need fast code), without the whole-program
 # optimization that makes each release build slow. The same arithmetic, so the same results.
 [profile.quick]
