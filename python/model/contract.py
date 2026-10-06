@@ -524,6 +524,9 @@ SCREEN_ALL, SCREEN_ONE = 0.005, 0.02
 # does, and confirms 410 against 400).
 SDS = 2.0
 SHARE_FLOOR = 0.01
+# A box's width or height over its label's is judged by its distance from 1 (a box as wide as the target): a model whose
+# boxes fit the labels better than full_v3's passes, however far that is from full_v3's own ratio.
+RATIO = "ratio"
 SHARES = ("one_box", "under_crosshair", "band_precision", "recall_by_kind")
 BAND_BOXES = 50                     # a calibration band needs this many boxes for its precision to count
 
@@ -554,12 +557,16 @@ def screen_check(rows, reference_rows, key):
 
 
 def relative(flat_reference, spread_of, key, value, worse):
-    """value against full_v3's: worse +1 when larger is worse, -1 when smaller is, 0 either way."""
+    """value against full_v3's: worse +1 when larger is worse, -1 when smaller is, 0 either way, RATIO farther from
+    1."""
     reference = flat_reference[key]
     gap = max(SDS * spread_of[key], SHARE_FLOOR if key.split(".")[0] in SHARES else 0.0)
     if value is None:
         return dict(value=None, reference=reference, allowed_gap=gap, passed=False)
-    difference = value - reference if worse > 0 else reference - value if worse < 0 else abs(value - reference)
+    if worse == RATIO:
+        difference = abs(value - 1) - abs(reference - 1)
+    else:
+        difference = value - reference if worse > 0 else reference - value if worse < 0 else abs(value - reference)
     return dict(value=round(value, 4), reference=round(reference, 4), allowed_gap=round(gap, 4),
                 passed=bool(difference <= gap))
 
@@ -577,8 +584,8 @@ def judge(rep, ref, sd, ref_rec):
 
     fit = rep["box_fit"]
     rows = {key: rel(f"box_fit.{key}", fit[key], worse)
-            for key, worse in (("centre_error_median", 1), ("centre_error_p90", 1), ("width_ratio_median", 0),
-                               ("height_ratio_median", 0))}
+            for key, worse in (("centre_error_median", 1), ("centre_error_p90", 1), ("width_ratio_median", RATIO),
+                               ("height_ratio_median", RATIO))}
     rows["hand_centre_error_median"] = rel("hand.centre_error_median", rep["hand"]["centre_error_median"], 1)
     out["box_fit"] = dict(rows, passed=all(row["passed"] for row in rows.values()))
     out["one_box"] = rel("one_box", rep["one_box"], 1)
