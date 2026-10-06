@@ -248,6 +248,17 @@ crops and 4 of the 196 tile crops (`set_aside_two_targets/` beside them):
 python python/model/build_auto_labels.py $D/data_auto_v13 large_v13e4 --match "" --recordings 150 --per-recording 25 --seed 13
 ```
 
+The extra-small static runs give no auto labels, and should not: their targets are as small as the crosshair and sit
+under it for 9 frames or more before the kill (5 Sphere Hipfire Extra Small, 2026-10-06: the target's place 5 to 9
+frames before the kill, found by the view's turn, was 0 to 2 px from the crosshair; the detector boxed it 10 to 20
+frames before, while it still showed). Nothing shows there to learn, and a box there would teach the detector to box
+the crosshair; the review dates those kills by the target's trail instead (`with_hidden_kills`). A run of the small
+static scenarios gave 26 crops at the crosshair (Microshot Speed's mostly):
+
+```bash
+python python/model/build_auto_labels.py $D/data_auto_xs large_v13e4 --kinds static --match "extra small,xsmall,micro,small,tes,tiny" --recordings 40 --per-recording 25 --seed 21
+```
+
 The robots checked by Claude (2026-10-06): large_v12 found Smoothbot Switch Robots' robots in pieces (6 flicks fewer
 than large_v11, the gate's only fail). Crops a few frames before the stats files' kills on 9 bot recordings outside
 the gate (`build_kill_feedback.py --rules kill`), the robots boxed whole by the teacher (not snapped: snapping cuts a
