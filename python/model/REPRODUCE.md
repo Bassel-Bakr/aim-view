@@ -368,9 +368,12 @@ scores included), `best.pt` (best validation F1) and `last.pt`. Seeds are fixed 
 The first run on a crop folder packs its crops (`crop_pack.py`): they are decoded once into `<folder>.pack/` beside
 it (about 210 KB a crop: 15 GB for full_v9's 68,417 training crops, 80 s), and packed again when the folder's crops
 change. A batch is read from the packs on a thread (4 ms) instead of 64 crop files in worker processes (44 ms), the
-boxes stay on the CPU so no step waits for the GPU, the model trains channels-last, and each batch's crosshairs are
-drawn at once. full_v9's recipe: 42 s an epoch (58 s the first), against 75 s (117 s) before; the same validation F1
-within noise (0.9471, 0.9431, 0.9448, 0.9446 against 0.9477, 0.9439, 0.9441, 0.9469).
+boxes stay on the CPU so no step waits for the GPU, the model trains channels-last, each batch's crosshairs are drawn
+at once, and validation reads each batch's detections back in one copy (2.7 s instead of 11 s). With Triton
+(`pip install triton-windows` on Windows) the augmentations and the target heatmap are compiled (torch.compile:
+recolouring 2.5 ms a batch on the GPU instead of 8.1); without it they run as they are. full_v9's recipe: 22 ms a
+step, about 29 s an epoch (40 s the first, which compiles), against 75 s (117 s) before; the same validation F1 within
+noise (0.9477, 0.9423, 0.9450, 0.9459 against 0.9477, 0.9439, 0.9441, 0.9469).
 
 ## 3. Evaluate
 

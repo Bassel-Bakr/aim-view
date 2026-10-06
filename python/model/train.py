@@ -10,6 +10,7 @@ Usage: python python/model/train.py python/model/configs/small.json [--epochs N]
 import argparse
 import json
 import math
+import os
 import random
 import shutil
 import sys
@@ -167,12 +168,17 @@ def outlines(image, target_mask, fixed, share=0.0):
     One width and style per batch, a color per crop: done for the whole batch at once."""
     if share <= 0:
         return image
+    width = random.randint(OUTLINE_MIN_PX, OUTLINE_MAX_PX)
+    soft = random.random() < GLOW_SHARE                         # a glow: a little wider, with soft edges
+    return fast(outline_ring)(image, target_mask, fixed, share, width, soft)
+
+
+def outline_ring(image, target_mask, fixed, share, width, soft):
+    """outlines()' drawing for one width and style (compiled once for each)."""
     batch = image.shape[0]
     device = image.device
     pick = (torch.rand(batch, 1, 1, 1, device=device) < share).float()
     targets = ((target_mask > HALF) & (fixed < HALF)).float()
-    width = random.randint(OUTLINE_MIN_PX, OUTLINE_MAX_PX)
-    soft = random.random() < GLOW_SHARE                         # a glow: a little wider, with soft edges
     reach = width + 1 if soft else width
     yy, xx = torch.meshgrid(torch.arange(-reach, reach + 1, device=device), torch.arange(-reach, reach + 1,
                                                                                          device=device), indexing="ij")
@@ -350,11 +356,16 @@ def decoder(image, share=0.0):
     crops, done for the whole batch at once."""
     if share <= 0:
         return image
+    return fast(decoder_colors)(image, share, random.choice(("nearest", "bilinear")))
+
+
+def decoder_colors(image, share, mode):
+    """decoder()'s colors for one way of re-sampling the chroma (compiled once for each)."""
     batch = image.shape[0]
     device = image.device
     pick = (torch.rand(batch, 1, 1, 1, device=device) < share).float()
     luma = lum(image)
-    chroma = F.interpolate(F.avg_pool2d(image - luma, 2), scale_factor=2, mode=random.choice(("nearest", "bilinear")))
+    chroma = F.interpolate(F.avg_pool2d(image - luma, 2), scale_factor=2, mode=mode)
     gain = 1 + (torch.rand(batch, 3, 1, 1, device=device) - HALF) * DECODER_GAIN
     offset = (torch.rand(batch, 3, 1, 1, device=device) - HALF) * DECODER_OFFSET
     out = ((luma + chroma) * gain + offset).clamp(0, 1)
@@ -374,6 +385,33 @@ def blur_noise(image, share=0.5):
     return image.clamp(0, 1)
 
 
+_COMPILED = {}      # a step's fused work, compiled, by name (compile_fused)
+
+
+def fast(augmentation):
+    """A step's work compiled when compile_fused() made it so, else as it is."""
+    return _COMPILED.get(augmentation.__name__, augmentation)
+
+
+def compile_fused(device):
+    """torch.compile for what a step does to the whole batch in long chains of small operations (the augmentations
+    and the target heatmap), where it can run (CUDA and Triton: triton-windows on Windows, with its own C compiler
+    when no other is set). Each chain becomes a few fused kernels: recolouring takes 2.5 ms a batch on the GPU
+    instead of 8.1. The model gains nothing (cuDNN's convolutions set its pace). Whether it could."""
+    if device.type != "cuda":
+        return False
+    try:
+        import triton
+    except ImportError:
+        return False
+    compiler = Path(triton.__file__).parent / "runtime" / "tcc" / "tcc.exe"
+    if os.name == "nt" and "CC" not in os.environ and compiler.is_file():
+        os.environ["CC"] = str(compiler)    # Triton looks for it in the system's packages, not the user's
+    for augmentation in (recolour, texture, outline_ring, decoder_colors, gaussian_heatmap):
+        _COMPILED[augmentation.__name__] = torch.compile(augmentation, dynamic=False)
+    return True
+
+
 def augment(rgb, fixed, target_mask, boxes, counts, config, ignore=None):
     """The augmented batch and its boxes; with ignore boxes, those too (moved as the boxes are)."""
     image = rgb.permute(0, 3, 1, 2).float() / 255.0
@@ -384,9 +422,11 @@ def augment(rgb, fixed, target_mask, boxes, counts, config, ignore=None):
                                                 boxes if ignore is None else torch.cat([boxes, ignore], 1), counts)
     if ignore is not None:
         boxes, ignore = boxes[:, :box_slots], boxes[:, box_slots:]
+    # the flips and turns leave 8 memory layouts, and a compiled augmentation is made again for each one it meets
+    image, fixed, target_mask = (part.contiguous() for part in (image, fixed, target_mask))
     shares = config["augment"]
-    image = recolour(image, target_mask, shares["theme"], shares["target"])
-    image = texture(image, target_mask, shares["texture"])
+    image = fast(recolour)(image, target_mask, shares["theme"], shares["target"])
+    image = fast(texture)(image, target_mask, shares["texture"])
     image = outlines(image, target_mask, fixed, shares.get("outline", 0.0))
     image, fixed = crosshairs(image, fixed, boxes, counts, shares["crosshair"], shares.get("crosshair_on_target", 0.5),
                               shares.get("crosshair_jitter", 0.0), shares.get("crosshair_outline", 0.0),
@@ -397,34 +437,46 @@ def augment(rgb, fixed, target_mask, boxes, counts, config, ignore=None):
 
 
 # ---- targets and loss -----------------------------------------------------------------------------------------------
-def targets(boxes, counts, size, device=None):
-    """Heatmap (B, 1, S/4, S/4) with a Gaussian at every center, and the regression targets at center cells, on
-    `device` (the boxes' own by default). With the boxes and counts on the CPU nothing here waits for the GPU."""
-    batch = boxes.shape[0]
-    cells = size // net.STRIDE
-    device = device or boxes.device
-    boxes_here, boxes = boxes.cpu(), boxes.to(device, non_blocking=True)
-    valid = torch.arange(boxes.shape[1], device=device)[None] < counts.to(device, non_blocking=True)[:, None]
+def gaussian_heatmap(boxes, valid, cells):
+    """(B, 1, G, G): a Gaussian at every valid box's center (cells), its spread from the box's size."""
     centers = boxes[..., :2] / net.STRIDE
     sides = boxes[..., 2:].clamp(min=1.0)
     sigma = (SIGMA_SIZE * sides.max(-1).values / net.STRIDE).clamp(min=MIN_SIGMA)
-    yy, xx = torch.meshgrid(torch.arange(cells, device=device), torch.arange(cells, device=device), indexing="ij")
+    yy, xx = torch.meshgrid(torch.arange(cells, device=boxes.device), torch.arange(cells, device=boxes.device),
+                            indexing="ij")
     distance2 = (xx[None, None] + 0.5 - centers[..., 0, None, None]) ** 2 + \
         (yy[None, None] + 0.5 - centers[..., 1, None, None]) ** 2
     gaussians = torch.exp(-distance2 / (2 * sigma[..., None, None] ** 2)) * valid[..., None, None]
-    heatmap = gaussians.max(1).values[:, None]
-    center_cells = (boxes_here[..., :2] / net.STRIDE).floor().long().clamp(0, cells - 1)
-    peak = torch.zeros(batch, 1, cells, cells, device=device)
-    reg = torch.zeros(batch, 4, cells, cells, device=device)
-    # every box's cell at once, its crop and slot found on the CPU (counts is there) and the cells read back in one
-    # copy; where two boxes share a cell the later one's values stand, as writing them box by box left them
-    crops, slots = (torch.arange(boxes.shape[1])[None] < counts.cpu()[:, None]).nonzero(as_tuple=True)
-    cells_xy = center_cells[crops, slots]
+    return gaussians.max(1).values[:, None]
+
+
+def targets(boxes, counts, size, device=None):
+    """Heatmap (B, 1, S/4, S/4) with a Gaussian at every center, and the regression targets at center cells, on
+    `device` (the boxes' own by default). With the boxes and counts on the CPU nothing here waits for the GPU."""
+    batch, box_slots = boxes.shape[:2]
+    cells = size // net.STRIDE
+    device = device or boxes.device
+    boxes = boxes.cpu()
+    valid = torch.arange(box_slots)[None] < counts.cpu()[:, None]
+    # every box's cell at once, found on the CPU; where two boxes share a cell the later one's values stand, as
+    # writing them box by box left them
+    crops, slots = valid.nonzero(as_tuple=True)
+    cells_xy = (boxes[..., :2] / net.STRIDE).floor().long().clamp(0, cells - 1)[crops, slots]
     keys = ((crops * cells + cells_xy[:, 1]) * cells + cells_xy[:, 0]).tolist()
     last = sorted({key: i for i, key in enumerate(keys)}.values())
-    crops, slots, cells_xy = (part[last].to(device, non_blocking=True) for part in (crops, slots, cells_xy))
-    x, y = cells_xy[:, 0], cells_xy[:, 1]
-    peak[crops, 0, y, x] = 1
+    kept = torch.stack([crops[last], slots[last], cells_xy[last, 0], cells_xy[last, 1]], 1)
+    # one pinned upload for all of it (the indices are small enough to be exact as floats)
+    sent = torch.cat([boxes.reshape(-1), valid.reshape(-1).float(), kept.reshape(-1).float()]).pin_memory()
+    sent = sent.to(device, non_blocking=True)
+    box_values = boxes.numel()
+    boxes = sent[:box_values].view(batch, box_slots, 4)
+    valid = sent[box_values:box_values + valid.numel()].view(batch, box_slots) > 0
+    crops, slots, x, y = sent[box_values + valid.numel():].view(-1, 4).long().unbind(1)
+    heatmap = fast(gaussian_heatmap)(boxes, valid, cells)
+    centers, sides = boxes[..., :2] / net.STRIDE, boxes[..., 2:].clamp(min=1.0)
+    peak = torch.zeros(batch, 1, cells, cells, device=device)
+    reg = torch.zeros(batch, 4, cells, cells, device=device)
+    peak[:, 0][crops, y, x] = torch.ones((), device=device)
     reg[crops, :, y, x] = torch.stack([centers[crops, slots, 0] - x, centers[crops, slots, 1] - y,
                                        sides[crops, slots, 0].log(), sides[crops, slots, 1].log()], 1)
     heatmap = torch.maximum(heatmap, peak)
@@ -468,14 +520,35 @@ def loss_fn(out, heatmap, peak, reg, config, keep=None):
 
 
 # ---- metrics --------------------------------------------------------------------------------------------------------
+def batch_detections(out, threshold):
+    """net.decode(out, threshold) for a batch, the peaks found for all its images at once and read back to the CPU
+    in one copy (decoding image by image waited for the GPU 64 times a batch): the same values, as the same
+    arithmetic runs on the same device."""
+    heat = torch.sigmoid(out[:, 0:1].float())
+    peak = (heat == F.max_pool2d(heat, net.PEAK_WINDOW, 1, 1)) & (heat > threshold)
+    images, ys, xs = torch.nonzero(peak[:, 0], as_tuple=True)
+    cells = out[images, :, ys, xs].float().T
+    found = torch.stack([(xs.float() + cells[1]) * net.STRIDE, (ys.float() + cells[2]) * net.STRIDE, cells[3].exp(),
+                         cells[4].exp(), heat[images, 0, ys, xs]], 1).cpu()
+    images = images.cpu()
+    detections = []
+    for image in range(out.shape[0]):
+        rows = found[images == image]
+        if len(rows) > net.MAX_DETECTIONS:
+            rows = rows[rows[:, 4].topk(net.MAX_DETECTIONS).indices]
+        detections.append(rows)
+    return detections
+
+
 def match(predictions, truth, counts):
-    """Greedy matching by score: a prediction is a hit when its center is within max(2 px, half the target's size)."""
+    """Greedy matching by score: a prediction is a hit when its center is within max(2 px, half the target's size).
+    Equal scores (common: the scores come from bfloat16) keep the detections' order, on any device."""
     true_pos = false_pos = false_neg = 0
     errors = []
     for crop in range(len(predictions)):
         labels = truth[crop, :int(counts[crop])]
         used = torch.zeros(len(labels), dtype=torch.bool)
-        for found in predictions[crop][predictions[crop][:, 4].argsort(descending=True)].cpu():
+        for found in predictions[crop][predictions[crop][:, 4].argsort(descending=True, stable=True)].cpu():
             if len(labels) == 0:
                 false_pos += 1
                 continue
@@ -521,7 +594,7 @@ def evaluate(model, loader, device, recolour_test=False, threshold=0.3):
             inputs = net.prepare(rgb, fixed)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
             out = model(inputs.contiguous(memory_format=torch.channels_last))
-        hits, misses, missed, found_errors = match(net.decode(out, threshold), boxes.cpu(), counts)
+        hits, misses, missed, found_errors = match(batch_detections(out, threshold), boxes.cpu(), counts)
         true_pos, false_pos, false_neg, errors = true_pos + hits, false_pos + misses, false_neg + missed, \
             errors + found_errors
     model.train()
@@ -756,6 +829,7 @@ def main():
     torch.manual_seed(config["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True       # the fastest convolution for the crops' one size, found once
+    compiled = compile_fused(device)
     run = Path(cli.out) / config["name"]
     if not cli.resume and (run / "state.pt").exists():
         raise SystemExit(f"{run} already has a run: --resume it, or give the config another name")
@@ -768,7 +842,8 @@ def main():
     print(f"{config['name']}: {trainer.params} parameters; {len(trainer.train_crops)} train crops, "
           f"{len(trainer.val_loader.dataset)} val crops; {train['epochs']} epochs on {device}"
           + (f"; resuming at epoch {trainer.epoch0 + 1}, batch {trainer.batch0}" if state else "")
-          + (f"; forked from {config['forked_from']}" if fork else ""), flush=True)
+          + (f"; forked from {config['forked_from']}" if fork else "")
+          + ("; compiled" if compiled else ""), flush=True)
     log = open(run / "metrics.jsonl", "a")
     for epoch in range(trainer.epoch0, train["epochs"]):
         started = time.time()
