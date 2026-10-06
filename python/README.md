@@ -279,7 +279,9 @@ one the tracker only lost, or a crosshair the detector boxed, still shows there.
 kill-2) the target's patch, a disc 0.6 times its box's longer side across, is measured at its tracked place: the
 distance between the disc's mean color and the mean color of a ring of wall round it, the fixed map's pixels left out.
 After it (kill+3 to kill+6) the same is measured where it died, moved by the camera's turn since. A kill whose patch
-still stands out after by half as much as before, or more, is no kill. The native review reads the video a second
+still stands out after by half as much as before, or more, is no kill. A patch with less than 30% of its disc off the
+fixed map gives no verdict: a target as small as the crosshair, at it, is mostly crosshair, whose soft edges (not in the
+fixed map) would stand out after the kill as if the target were still there. The native review reads the video a second
 time for these frames (service/src/review.rs `check_kills`), only when the recording has no stats file.
 
 The same place is measured in each of the 40 frames after the track's end. A target as small as the crosshair is lost

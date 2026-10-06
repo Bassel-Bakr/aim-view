@@ -494,7 +494,9 @@ Since 2026-10-06 each run is tracked with the kill check (`--kill-check`: kills.
 leaves out the kills it rules out, as the app does for a recording without a stats file. large_v11: recall 0.938 and
 precision 0.968 (0.944 and 0.958 without the check); held out, 0.979 and 0.989 (0.982 and 0.979). With the kills of
 targets hidden under the crosshair moved to when they died (the check's trail): 0.940 and 0.970, held out the same.
-A cache whose kills.json has no trail (made before) is tracked again.
+A cache whose kills.json has no trail (made before) is tracked again. With a verdict only from a patch at least 30%
+off the fixed map (kill_check.rs `MIN_FREE_SHARE`), on the 46 runs: 0.952 and 0.971 (0.945 and 0.973), held out the
+same.
 
 Results land in `test_out/vod_model/eval/`.
 

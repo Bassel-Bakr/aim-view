@@ -36,9 +36,13 @@ const CORE_SHARE: f64 = 0.6;
 const MIN_RADIUS_PX: f64 = 2.5;
 const RING_NEAR: f64 = 1.2;
 const RING_FAR: f64 = 1.6 / CORE_SHARE;
-/// A patch needs this many pixels in the disc and in the ring (the fixed map's pixels, the crosshair's, left out).
+/// A patch needs this many pixels in the disc and in the ring (the fixed map's pixels, the crosshair's, left out), and
+/// MIN_FREE_SHARE of its disc off the fixed map: a target as small as the crosshair, at it, is mostly crosshair, whose
+/// soft edges (not in the fixed map) would stand out after the kill as if the target were still there. On the gate's
+/// static runs that vetoed 29 true kills where 3 are now (and caught 10 false kills where it caught 28).
 const MIN_CORE_PIXELS: usize = 2;
 const MIN_RING_PIXELS: usize = 6;
+const MIN_FREE_SHARE: f64 = 0.3;
 /// A target that still shows after the kill by this share of how it showed before (or more) did not die.
 const STILL_THERE_SHARE: f64 = 0.5;
 /// A target that stands out by this share of how it did before (at least GONE_FLOOR) or less, in two frames measured
@@ -236,7 +240,7 @@ fn patch_radius(tracks: &Tracks, flick: &Flick) -> f64 {
 }
 
 /// How much the disc round (cx, cy) differs in color from the ring round it (the distance between their mean colors),
-/// the fixed map's pixels left out; None near the frame's edge or with too few pixels.
+/// the fixed map's pixels left out; None near the frame's edge, with too few pixels, or with the disc mostly fixed.
 fn standing_out(rgb: &[u8], fixed: &[bool], cx: f64, cy: f64, radius: f64) -> Option<f64> {
     let reach = (radius * RING_FAR).ceil() + 1.0;
     let (x0, y0, x1, y1) = (cx - reach, cy - reach, cx + reach, cy + reach);
@@ -244,10 +248,12 @@ fn standing_out(rgb: &[u8], fixed: &[bool], cx: f64, cy: f64, radius: f64) -> Op
         return None;
     }
     let (mut core, mut ring) = (([0.0; RGB], 0usize), ([0.0; RGB], 0usize));
+    let mut disc = 0usize;
     for y in y0 as usize..=y1 as usize {
         for x in x0 as usize..=x1 as usize {
             let distance = hypot(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy);
             let index = y * W + x;
+            disc += usize::from(distance <= radius);
             let into = if fixed[index] {
                 continue;
             } else if distance <= radius {
@@ -263,7 +269,7 @@ fn standing_out(rgb: &[u8], fixed: &[bool], cx: f64, cy: f64, radius: f64) -> Op
             into.1 += 1;
         }
     }
-    if core.1 < MIN_CORE_PIXELS || ring.1 < MIN_RING_PIXELS {
+    if core.1 < MIN_CORE_PIXELS || ring.1 < MIN_RING_PIXELS || (core.1 as f64) < MIN_FREE_SHARE * disc as f64 {
         return None;
     }
     let mean = |sums: [f64; RGB], count: usize, channel: usize| sums[channel] / count as f64;
@@ -300,6 +306,12 @@ mod tests {
         let mut covered = fixed.clone();
         (90..110).for_each(|y| covered[y * W + 90..y * W + 110].fill(true));
         assert_eq!(standing_out(&rgb, &covered, 100.0, 100.0, 4.0), None, "the fixed map's pixels left out");
+        let mut mostly = fixed.clone();
+        (90..103).for_each(|y| mostly[y * W + 90..y * W + 110].fill(true));
+        assert_eq!(standing_out(&rgb, &mostly, 100.0, 100.0, 4.0), None, "a disc mostly under the crosshair");
+        let mut edge = fixed.clone();
+        edge[96 * W + 90..96 * W + 110].fill(true);
+        assert!(standing_out(&rgb, &edge, 100.0, 100.0, 4.0).is_some(), "a disc a little under it");
     }
 
     /// 60 empty frames, each turning the view by `shift_deg` in x.
