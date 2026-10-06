@@ -514,6 +514,7 @@ function reviewSetup(
       end: Math.min(request.window.end, Number.MAX_VALUE),
     },
     runs: request.runs,
+    kind: request.kind,
   };
 }
 

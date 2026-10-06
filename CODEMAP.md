@@ -483,10 +483,11 @@ retrained model needs no change to the code. Format 1: the score a cell must pas
 model's scores on the reference model's scale, and (optional) the weaker score a cell at the crosshair may pass instead
 (`AtCrosshair`). A model with no file gets today's values (`ModelSettings::default`).
 
-- `ModelSettings` (struct): A model's settings. Methods: `from_json`, `mapped`, `passes`, `lowest_threshold`, `floor`.
+- `ModelSettings` (struct): A model's settings. Methods: `from_json`, `mapped`, `passes`, `lowest_threshold`,
+  `for_kind`, `floor`.
 - `AtCrosshair` (struct): Weaker cells kept at the crosshair: a cell whose score passes `threshold` (on the reference
   model's scale, under the model's own) is a target too when its box's center is within `reach_px` of the crosshair
-  (1280 x 720 pixels).
+  (1280 x 720 pixels), in a run of one of `kinds` (None: every kind; a run of no known kind gets the rule only then).
 - Functions: `settings_file`.
 - Constants: `FORMAT`, `DEFAULT_THRESHOLD`, `REFERENCE`.
 
@@ -1116,9 +1117,10 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
   frames it takes at once, the scenario's target count (0: not known), the runs to split the recording into, the part of
   the video to track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's,
   areas.rs), a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of
-  the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), and whether the
-  kills the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
-  without a stats file, whose report takes its kills from the video).
+  the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), whether the kills
+  the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
+  without a stats file, whose report takes its kills from the video), and the scenario's kind (None: not known; the
+  model's at-crosshair rule may name the kinds it is for).
 - `Reviewed` (struct): A review's tracks, the video's readings, what the HUD read (None: no HUD was read), the areas the
   area finder found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames
   then), and the check of the kills the video alone gives (None: not asked for).

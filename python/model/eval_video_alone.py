@@ -191,7 +191,7 @@ def track_all(runs, name, model, retrack):
     for i, run in enumerate(todo, 1):
         started, folder = time.time(), cache / slug(run["id"])
         lib.review_video(str(lib.resolve(run["id"])), str(model), str(folder), stats=str(run["stats_file"]),
-                         areas=AREAS, quiet=True, kill_check=True)
+                         kind=run["kind"], areas=AREAS, quiet=True, kill_check=True)
         (folder / "model.json").write_text(json.dumps(dict(model=str(model), sha256=digest)))
         print(f"tracked {i}/{len(todo)} in {time.time() - started:5.1f} s: {run['id']}", flush=True)
     return cache

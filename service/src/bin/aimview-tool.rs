@@ -490,6 +490,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         gpu_frames: library.config().gpu_frames,
         gpu_share: line.number("gpu-share")?.unwrap_or(1.0),
         kill_check: line.has("kill-check"),
+        kind: facts.as_ref().map(|facts| facts.kind),
     };
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();

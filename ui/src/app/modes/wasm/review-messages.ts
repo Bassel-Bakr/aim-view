@@ -1,4 +1,4 @@
-import { AreaBox, JobStage, TimeWindow } from '../../api';
+import { AreaBox, JobStage, Kind, TimeWindow } from '../../api';
 
 /** Where the browser runs the detector: the GPU (WebGPU) or the CPU (WebAssembly). */
 export type BrowserDevice = 'webgpu' | 'wasm';
@@ -7,7 +7,8 @@ export type BrowserDevice = 'webgpu' | 'wasm';
  * What the review worker is asked: a recording's file, which of its runs to review (`run` of `runs`: src/session.rs;
  * each run has a worker of its own) and the part of it to review (null: all of it), where the core, the detector
  * runtime and the model are, where to run the detector and how many frames it takes at once, the scenario's target
- * count (null: not known), the areas the review ignores, and the port to the camera worker.
+ * count (null: not known), the areas the review ignores, the scenario's kind (null: not known; the model's
+ * at-crosshair rule may name the kinds it is for), and the port to the camera worker.
  */
 export interface ReviewRequest {
   file: Blob;
@@ -21,6 +22,7 @@ export interface ReviewRequest {
   batch: number;
   cap: number | null;
   areas: AreaBox[];
+  kind: Kind | null;
   camera: MessagePort;
 }
 

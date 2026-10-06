@@ -62,9 +62,10 @@ const WATCH_FRAMES_WAITING: usize = 8;
 /// once, the scenario's target count (0: not known), the runs to split the recording into, the part of the video to
 /// track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's, areas.rs),
 /// a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of the
-/// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), and whether the
-/// kills the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a
-/// recording without a stats file, whose report takes its kills from the video).
+/// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), whether the kills
+/// the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
+/// without a stats file, whose report takes its kills from the video), and the scenario's kind (None: not known; the
+/// model's at-crosshair rule may name the kinds it is for).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
@@ -80,6 +81,7 @@ pub struct Request {
     pub gpu_frames: bool,
     pub gpu_share: f64,
     pub kill_check: bool,
+    pub kind: Option<aimview::scenario::Kind>,
 }
 
 /// The least share of the time a review's detector may run (`Request::gpu_share`): below it a review would barely
@@ -154,6 +156,7 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
         areas: req.areas.clone(),
         window: req.window,
         runs: req.runs,
+        kind: req.kind,
         model,
     })?;
     let total = review.frames();

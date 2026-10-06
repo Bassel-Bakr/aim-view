@@ -207,12 +207,12 @@ def moving(model, pick, lib, program):
                      "run again to track with this model")
         tracks = pickle.load(open(cache, "rb"))
     facts, counts, fresh = lib.scenario_facts(), lib.target_counts(), []
-    for videos in pick.values():
+    for kind, videos in pick.items():
         for video, _ in videos:
             if video not in tracks:
                 say(f"moving: tracking {Path(video).stem[:NAME_CHARS]} with {model.name}")
-                tracks[video] = lib.review_video(video, str(model.export), cap=counts.get(scenario_of(video)),
-                                                 quiet=True)["tracks"]
+                tracks[video] = lib.review_video(video, str(model.export), kind=kind,
+                                                 cap=counts.get(scenario_of(video)), quiet=True)["tracks"]
                 fresh.append(Path(video).name)
                 partial = cache.with_suffix(".pkl.tmp")
                 pickle.dump(tracks, open(partial, "wb"))

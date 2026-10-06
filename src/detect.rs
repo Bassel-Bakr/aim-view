@@ -35,7 +35,7 @@ pub fn decode(
             let mapped_score = model.mapped(score[i]);
             let cx = ((x as f64 + regression[i] as f64) * STRIDE) as f32;
             let cy = ((y as f64 + regression[cells + i] as f64) * STRIDE) as f32;
-            let at_crosshair = model.at_crosshair.is_some_and(|weak| {
+            let at_crosshair = model.at_crosshair.as_ref().is_some_and(|weak| {
                 mapped_score > weak.threshold
                     && (cx as f64 - crosshair_x).hypot(cy as f64 - crosshair_y) <= weak.reach_px
             });
@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn a_weak_cell_is_a_target_only_at_the_crosshair() {
         let weak = ModelSettings {
-            at_crosshair: Some(AtCrosshair { threshold: 0.2, reach_px: 30.0 }),
+            at_crosshair: Some(AtCrosshair { threshold: 0.2, reach_px: 30.0, kinds: None }),
             ..ModelSettings::default()
         };
         let (crosshair_x, crosshair_y) = crate::geometry::to_px(0.0, 0.0);

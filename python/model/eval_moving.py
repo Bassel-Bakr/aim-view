@@ -105,10 +105,10 @@ def model_numbers(lib, program, pick, scenarios, name, path, reports):
     facts, counts = scenarios
     cache = f"test_out/vod_model/eval/moving_{name}_native.pkl"
     tracks = pickle.load(open(cache, "rb")) if os.path.exists(cache) else {}
-    for videos in pick.values():
+    for kind, videos in pick.items():
         for video, _ in videos:
             if video not in tracks:
-                tracks[video] = lib.review_video(video, model, cap=counts.get(scenario_of(video)))["tracks"]
+                tracks[video] = lib.review_video(video, model, kind=kind, cap=counts.get(scenario_of(video)))["tracks"]
                 pickle.dump(tracks, open(cache, "wb"))
     out = {}
     for kind, videos in pick.items():

@@ -1,7 +1,16 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { AreaBox, errorMessage, Job, JobStage, RunMarks, TimeWindow, Tracks } from '../../api';
+import {
+  AreaBox,
+  errorMessage,
+  Job,
+  JobStage,
+  Kind,
+  RunMarks,
+  TimeWindow,
+  Tracks,
+} from '../../api';
 import { ServerReview } from '../http/server-review';
 import { CoreModule } from '../wasm/core-module';
 import {
@@ -24,7 +33,7 @@ interface OrderWindow {
 /**
  * A review the service leaves to the page (the contract's `review`): the video (a mounted path), the model, where to
  * run the detector and how many frames it takes at once, the scenario's target count (0 or null: not known), the part
- * of the video to track (null: all of it) and the areas the review leaves out.
+ * of the video to track (null: all of it), the areas the review leaves out and the scenario's kind (null: not known).
  */
 export interface ReviewOrder {
   video: string;
@@ -34,6 +43,7 @@ export interface ReviewOrder {
   cap: number | null;
   window: OrderWindow | null;
   areas: AreaBox[];
+  kind?: Kind | null;
 }
 
 /** A job the service answers: with `review` when it waits for the page to run that review. */
@@ -105,6 +115,7 @@ function reviewRequest(
     batch: order.batch || 1,
     cap: order.cap || null,
     areas: order.areas,
+    kind: order.kind ?? null,
     camera,
   };
 }

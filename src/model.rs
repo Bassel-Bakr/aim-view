@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::scenario::Kind;
+
 /// The settings file's format this core reads.
 pub const FORMAT: u32 = 1;
 /// The threshold of a model with no settings file (python/model/infer.py: THRESHOLD, chosen on the val split).
@@ -37,14 +39,18 @@ pub struct ModelSettings {
 }
 
 /// Weaker cells kept at the crosshair: a cell whose score passes `threshold` (on the reference model's scale, under the
-/// model's own) is a target too when its box's center is within `reach_px` of the crosshair (1280 x 720 pixels). A
-/// target being shot is under the crosshair, and the empty crosshair scores low: on Tile Frenzy 180 (large_v11,
-/// 2026-10-06) 98 of the 109 kills the model had no box for had a candidate over 0.2 within 30 px of the crosshair
-/// before the kill, and none of them 6 to 8 frames after, the cube gone.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// model's own) is a target too when its box's center is within `reach_px` of the crosshair (1280 x 720 pixels), in a
+/// run of one of `kinds` (None: every kind; a run of no known kind gets the rule only then). A target being shot is
+/// under the crosshair, and the empty crosshair scores low: on Tile Frenzy 180 (large_v11, 2026-10-06) 98 of the 109
+/// kills the model had no box for had a candidate over 0.2 within 30 px of the crosshair before the kill, and none of
+/// them 6 to 8 frames after, the cube gone. On clicking runs it kept dying targets' tracks alive, so the files name
+/// tracking (MODEL_FILE.md).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AtCrosshair {
     pub threshold: f32,
     pub reach_px: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<Kind>>,
 }
 
 impl Default for ModelSettings {
@@ -73,7 +79,7 @@ impl ModelSettings {
         if !(0.0..=1.0).contains(&settings.threshold) {
             return Err(format!("the threshold {} is not from 0 to 1", settings.threshold));
         }
-        if let Some(weak) = settings.at_crosshair
+        if let Some(weak) = &settings.at_crosshair
             && (!(0.0..=settings.threshold).contains(&weak.threshold) || weak.reach_px.is_nan() || weak.reach_px < 0.0)
         {
             return Err("at_crosshair needs a threshold from 0 to the model's and a reach of 0 px or more".into());
@@ -124,7 +130,18 @@ impl ModelSettings {
 
     /// The lowest threshold a cell can pass: the weaker one at the crosshair when the model has it.
     pub fn lowest_threshold(&self) -> f32 {
-        self.at_crosshair.map_or(self.threshold, |weak| weak.threshold)
+        self.at_crosshair.as_ref().map_or(self.threshold, |weak| weak.threshold)
+    }
+
+    /// The settings for a run of this kind (None: not known): the at-crosshair rule left out when it names other kinds.
+    pub fn for_kind(mut self, kind: Option<Kind>) -> ModelSettings {
+        let applies = |weak: &AtCrosshair| {
+            weak.kinds.as_ref().is_none_or(|kinds| kind.is_some_and(|kind| kinds.contains(&kind)))
+        };
+        if !self.at_crosshair.as_ref().is_some_and(applies) {
+            self.at_crosshair = None;
+        }
+        self
     }
 
     /// The raw score at or under which no cell passes even at the crosshair, so a decoder can skip those cells without
@@ -211,6 +228,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The at-crosshair rule only for the kinds it names; for every kind when it names none.
+    #[test]
+    fn the_rule_at_the_crosshair_keeps_to_its_kinds() {
+        let text = r#"{"format": 1, "name": "m", "threshold": 0.3, "reference": "full_v3",
+            "at_crosshair": {"threshold": 0.2, "reach_px": 30, "kinds": ["tracking"]}}"#;
+        let tracking_only = ModelSettings::from_json(text).unwrap();
+        assert!(tracking_only.clone().for_kind(Some(Kind::Tracking)).at_crosshair.is_some());
+        assert!(tracking_only.clone().for_kind(Some(Kind::Static)).at_crosshair.is_none());
+        assert!(tracking_only.clone().for_kind(None).at_crosshair.is_none(), "a run of no known kind");
+        let every = ModelSettings {
+            at_crosshair: Some(AtCrosshair { threshold: 0.2, reach_px: 30.0, kinds: None }),
+            ..ModelSettings::default()
+        };
+        assert!(every.clone().for_kind(Some(Kind::Static)).at_crosshair.is_some());
+        assert!(every.for_kind(None).at_crosshair.is_some());
     }
 
     #[test]

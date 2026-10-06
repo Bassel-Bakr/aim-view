@@ -143,6 +143,9 @@ pub struct Setup {
     pub areas: Vec<AreaBox>,
     pub window: Option<TimeWindow>,
     pub runs: usize,
+    /// The scenario's kind (None: not known): the model's at-crosshair rule may name the kinds it is for.
+    #[serde(default)]
+    pub kind: Option<crate::scenario::Kind>,
     #[serde(skip)]
     pub model: ModelSettings,
 }
@@ -155,10 +158,11 @@ pub struct Review {
 }
 
 impl Review {
-    pub fn new(setup: Setup) -> Result<Review, String> {
+    pub fn new(mut setup: Setup) -> Result<Review, String> {
         if setup.times.is_empty() {
             return Err("the video has no frames".into());
         }
+        setup.model = setup.model.for_kind(setup.kind);
         let range = window_frames(&setup.times, setup.window);
         let runs = split_runs(&setup.times, &setup.keys, setup.runs.max(1), LEAST_RUN, range).into_boxed_slice();
         Ok(Review { setup, runs })
@@ -170,7 +174,7 @@ impl Review {
 
     /// The detector model's settings (its settings file), before the runs start.
     pub fn set_model(&mut self, model: ModelSettings) {
-        self.setup.model = model;
+        self.setup.model = model.for_kind(self.setup.kind);
     }
 
     pub fn runs(&self) -> &[Run] {
@@ -545,6 +549,7 @@ mod tests {
             areas: vec![],
             window: None,
             runs: 2,
+            kind: None,
             model: ModelSettings::default(),
         };
         let review = Review::new(setup).unwrap();
@@ -575,6 +580,7 @@ mod tests {
             areas: vec![area.clone()],
             window: None,
             runs: 2,
+            kind: None,
             model: ModelSettings::default(),
         };
         let review = Review::new(setup).unwrap();

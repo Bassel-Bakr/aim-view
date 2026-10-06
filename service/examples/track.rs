@@ -49,6 +49,7 @@ fn request(args: &[String], parts: Option<PathBuf>) -> Request {
         gpu_frames: std::env::var("AIMVIEW_GPU_FRAMES").is_ok_and(|value| value == "1"),
         gpu_share: 1.0,
         kill_check: false,
+        kind: None,
     }
 }
 

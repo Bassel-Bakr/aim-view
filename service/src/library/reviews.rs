@@ -211,7 +211,7 @@ impl Library {
         let threads = std::thread::available_parallelism().map_or(1, |threads| threads.get());
         let runs = crate::review::parts_at_once(threads, self.config.gpu_frames);
         // the user's run window: only its part of the video is tracked
-        let window = RunMarks::read(&self.review_dir(id)).tracked(facts.and_then(|facts| facts.limit));
+        let window = RunMarks::read(&self.review_dir(id)).tracked(facts.as_ref().and_then(|facts| facts.limit));
         Ok(Request {
             video,
             model: self.model_file(model),
@@ -226,6 +226,7 @@ impl Library {
             gpu_share: 1.0,
             // without a stats file the report takes the kills from the video: check them in the frames round them
             kill_check: self.stats_path(id).is_none(),
+            kind: facts.map(|facts| facts.kind),
         })
     }
 
