@@ -17,9 +17,11 @@
 //! KovaaK's stats files are the reference, not python/hud.py: where it misreads and the stats files show it, the
 //! reading here departs from it, and each place says so.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::repeat_n;
 use std::ops::Range;
+use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 
@@ -376,8 +378,7 @@ impl Scale {
 /// A glyph's strength image (`width` x `height`) scaled to GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX as Pillow's bilinear
 /// resize does, as bytes (0 to 255).
 fn glyph_image(strength: &[f32], width: usize, height: usize) -> [u8; GLYPH_PIXELS] {
-    let x_taps = taps(width, GLYPH_WIDTH_PX, BILINEAR_SUPPORT, bilinear);
-    let y_taps = taps(height, GLYPH_HEIGHT_PX, BILINEAR_SUPPORT, bilinear);
+    let (x_taps, y_taps) = (glyph_taps(width, GLYPH_WIDTH_PX), glyph_taps(height, GLYPH_HEIGHT_PX));
     let mut columns_scaled = vec![0f32; height * GLYPH_WIDTH_PX];
     for y in 0..height {
         for (x, (first, weights)) in x_taps.iter().enumerate() {
@@ -395,6 +396,21 @@ fn glyph_image(strength: &[f32], width: usize, height: usize) -> [u8; GLYPH_PIXE
         }
     }
     out
+}
+
+/// Pillow's resampling weights for each output pixel: its first source pixel and weights (`taps`).
+type Taps = Vec<(usize, Vec<f64>)>;
+
+/// Pillow's bilinear taps scaling `len` pixels to `out`, made once a size on each thread: a HUD's glyphs come in few
+/// sizes, and made for each glyph they were 1.8 million small allocations in a review of av1's 0:20 to 0:40.
+fn glyph_taps(len: usize, out: usize) -> Rc<Taps> {
+    thread_local! {
+        static MADE: RefCell<HashMap<(usize, usize), Rc<Taps>>> = RefCell::new(HashMap::new());
+    }
+    MADE.with(|made| {
+        let made = &mut *made.borrow_mut();
+        Rc::clone(made.entry((len, out)).or_insert_with(|| Rc::new(taps(len, out, BILINEAR_SUPPORT, bilinear))))
+    })
 }
 
 /// The Y levels as read: a limited-range recording's stretched to 0..255, as ffmpeg's grey conversion does.

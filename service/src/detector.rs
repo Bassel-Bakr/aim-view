@@ -39,15 +39,16 @@ pub struct Detector {
     pub device: &'static str,
 }
 
-/// One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x MAP_WIDTH).
-pub struct Maps {
-    pub score: Vec<f32>,
-    pub reg: Vec<f32>,
+/// One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x MAP_WIDTH),
+/// where ONNX Runtime left them.
+pub struct Maps<'a> {
+    pub score: &'a [f32],
+    pub reg: &'a [f32],
 }
 
-impl Maps {
+impl<'a> Maps<'a> {
     /// The score map and the reg maps of the batch's `index`-th frame.
-    pub fn of_frame(&self, index: usize) -> (&[f32], &[f32]) {
+    pub fn of_frame(&self, index: usize) -> (&'a [f32], &'a [f32]) {
         let map = MAP_WIDTH * MAP_HEIGHT;
         let regs = REG_MAPS * map;
         (&self.score[index * map..(index + 1) * map], &self.reg[index * regs..(index + 1) * regs])
@@ -114,18 +115,18 @@ impl Detector {
         Ok(Detector { session, fixed, batch, device })
     }
 
-    /// One call on a whole batch of RGB frames (batch x DST_H x DST_W x 3 bytes).
-    pub fn run(&mut self, rgb: &[u8]) -> Result<Maps, String> {
+    /// One call on a whole batch of RGB frames (batch x DST_H x DST_W x 3 bytes): its maps handed to `read` where ONNX
+    /// Runtime left them (copying them out cost 4.6 MB a call of 4 frames).
+    pub fn run<T>(&mut self, rgb: &[u8], read: impl FnOnce(Maps<'_>) -> T) -> Result<T, String> {
         let rgb = TensorRef::from_array_view(([self.batch, DST_H, DST_W, RGB_CHANNELS], rgb))
             .map_err(|error| error.to_string())?;
         let out = self
             .session
             .run(ort::inputs!["rgb" => rgb, "fixed" => &self.fixed])
             .map_err(|error| format!("the detector failed: {error}"))?;
-        let map = |name: &str| -> Result<Vec<f32>, String> {
-            Ok(out[name].try_extract_tensor::<f32>().map_err(|error| error.to_string())?.1.to_vec())
-        };
-        Ok(Maps { score: map("score")?, reg: map("reg")? })
+        let score = out["score"].try_extract_tensor::<f32>().map_err(|error| error.to_string())?.1;
+        let reg = out["reg"].try_extract_tensor::<f32>().map_err(|error| error.to_string())?.1;
+        Ok(read(Maps { score, reg }))
     }
 }
 

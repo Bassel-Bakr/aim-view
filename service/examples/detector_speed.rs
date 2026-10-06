@@ -38,11 +38,11 @@ fn run_session(model: &Path, batch: usize, frames: usize) -> Result<(&'static st
     let mut detector = Detector::new(model, batch, &fixed, Device::Auto)?;
     let rgb = noise(batch * DST_W * DST_H * RGB_CHANNELS);
     for _ in 0..WARM_UP_CALLS {
-        detector.run(&rgb)?;
+        detector.run(&rgb, |_| ())?;
     }
     let started = Instant::now();
     for _ in 0..frames.div_ceil(batch) {
-        detector.run(&rgb)?;
+        detector.run(&rgb, |_| ())?;
     }
     Ok((detector.device, started.elapsed().as_secs_f64()))
 }

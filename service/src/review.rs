@@ -442,9 +442,9 @@ impl FrameSource {
 
 /// A channel to one of a run's threads, and the buffers that thread sends back to be filled again.
 #[cfg(feature = "native")]
-struct Handoff<T> {
+struct Handoff<T, Spare = Vec<u8>> {
     send: SyncSender<T>,
-    spare: Receiver<Vec<u8>>,
+    spare: Receiver<Spare>,
 }
 
 /// One run: this thread decodes and converts each frame the run reads and watches the excluded areas of those it
@@ -464,13 +464,13 @@ fn review_run(context: &RunContext, run: usize) -> Result<RunPart, String> {
     let (to_detector, batches) = mpsc::sync_channel::<Batch>(BATCHES_WAITING);
     let (spare_rgb, spare_rgb_back) = mpsc::channel::<Vec<u8>>();
     let (to_watch, watch_frames) = mpsc::sync_channel::<WatchFrame>(WATCH_FRAMES_WAITING);
-    let (spare_luma, spare_luma_back) = mpsc::channel::<Vec<u8>>();
+    let (spare_watch, spare_watch_back) = mpsc::channel::<WatchFrame>();
     let watch = thread::scope(|scope| {
         let tracking = &tracking;
         let detecting = scope.spawn(move || detect(context, detector, batches, &spare_rgb, tracking));
-        let watching = scope.spawn(move || watch_run(review, run, keys, watch_frames, &spare_luma));
+        let watching = scope.spawn(move || watch_run(review, run, keys, watch_frames, &spare_watch));
         let to_detector = Handoff { send: to_detector, spare: spare_rgb_back };
-        let to_watch = Handoff { send: to_watch, spare: spare_luma_back };
+        let to_watch = Handoff { send: to_watch, spare: spare_watch_back };
         let decoded = decode_run(&mut frames, info, batch, tracking, &to_detector, &to_watch);
         drop(to_detector);
         drop(to_watch);
@@ -494,7 +494,7 @@ fn decode_run(
     batch: usize,
     tracking: &Mutex<RunTracking>,
     to_detector: &Handoff<Batch>,
-    to_watch: &Handoff<WatchFrame>,
+    to_watch: &Handoff<WatchFrame, WatchFrame>,
 ) -> Result<(), String> {
     let stopped = || "the detector stopped".to_string();
     let rows = countdown_bytes();
@@ -503,8 +503,9 @@ fn decode_run(
     let mut waiting = vec![0u8; batch * RGB_BYTES];
     let mut count = 0;
     loop {
-        // the frame's Y plane goes straight into a buffer the watch gave back
-        let mut luma = to_watch.spare.try_recv().unwrap_or_else(|_| vec![0u8; luma_bytes]);
+        // the frame's Y plane and countdown rows go straight into buffers the watch gave back
+        let (mut luma, mut countdown) =
+            to_watch.spare.try_recv().unwrap_or_else(|_| (vec![0u8; luma_bytes], vec![0u8; rows.len()]));
         if !frames.next_into(&mut rgb, &mut luma)? {
             break;
         }
@@ -512,7 +513,8 @@ fn decode_run(
         if next == NextFrame::Stop {
             break;
         }
-        to_watch.send.send((luma, rgb[rows.clone()].to_vec())).map_err(|_| "the camera watch stopped")?;
+        countdown.copy_from_slice(&rgb[rows.clone()]);
+        to_watch.send.send((luma, countdown)).map_err(|_| "the camera watch stopped")?;
         if next == NextFrame::Watch {
             continue;
         }
@@ -545,18 +547,21 @@ fn detect(
     let share = context.req.gpu_share.clamp(MIN_GPU_SHARE, 1.0);
     for (rgb, count) in batches {
         let started = std::time::Instant::now();
-        let maps = detector.run(&rgb)?;
+        let gpu_time = detector.run(&rgb, |maps| -> Result<std::time::Duration, String> {
+            // the call waits for the GPU's work, so its time is the GPU's
+            let gpu_time = started.elapsed();
+            let mut tracker = tracking.lock().map_err(|_| "the tracker failed")?;
+            for index in 0..count {
+                let (score, reg) = maps.of_frame(index);
+                tracker.maps(score, reg, MAP_WIDTH, MAP_HEIGHT);
+            }
+            Ok(gpu_time)
+        })??;
         if share < 1.0 {
-            // the call waits for the GPU's work, so its time is the GPU's: rest the rest of the share's period
-            std::thread::sleep(started.elapsed().mul_f64(1.0 / share - 1.0));
+            // rest the rest of the share's period
+            std::thread::sleep(gpu_time.mul_f64(1.0 / share - 1.0));
         }
         let _ = spare.send(rgb);
-        let mut tracker = tracking.lock().map_err(|_| "the tracker failed")?;
-        for index in 0..count {
-            let (score, reg) = maps.of_frame(index);
-            tracker.maps(score, reg, MAP_WIDTH, MAP_HEIGHT);
-        }
-        drop(tracker);
         let done = context.done.fetch_add(count, Ordering::Relaxed) + count;
         if done / PROGRESS_EVERY != (done - count) / PROGRESS_EVERY {
             (context.progress)("tracking", done, total);
@@ -566,19 +571,19 @@ fn detect(
 }
 
 /// The watch's side of a run: the camera's turn and the HUD read from each frame's Y plane and countdown rows, each
-/// Y plane's buffer sent back to be filled again.
+/// frame's buffers sent back to be filled again.
 #[cfg(feature = "native")]
 fn watch_run(
     review: &Review,
     run: usize,
     keys: &KeysRead,
     frames: Receiver<WatchFrame>,
-    spare: &Sender<Vec<u8>>,
+    spare: &Sender<WatchFrame>,
 ) -> Result<WatchPart, String> {
     let mut watching = review.watching(run, keys);
     for (luma, rows) in frames {
         watching.frame(&luma, &rows);
-        let _ = spare.send(luma);
+        let _ = spare.send((luma, rows));
     }
     watching.part()
 }

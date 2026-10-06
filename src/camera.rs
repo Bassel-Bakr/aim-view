@@ -113,6 +113,12 @@ impl Grid {
     /// column k % 6.
     fn tiles(&self, image: &[u8]) -> Vec<f32> {
         let mut out = vec![0.0f32; TILES * TILE_CELLS];
+        self.tiles_into(image, &mut out);
+        out
+    }
+
+    /// `tiles` into `out` (TILES x TILE_CELLS), every value written.
+    fn tiles_into(&self, image: &[u8], out: &mut [f32]) {
         for row in 0..GRID_ROWS {
             let row_start = (row / TILE_SIDE) * TILES_ACROSS * TILE_CELLS + (row % TILE_SIDE) * TILE_SIDE;
             for column in 0..GRID_COLUMNS {
@@ -120,7 +126,6 @@ impl Grid {
                 out[row_start + (column / TILE_SIDE) * TILE_CELLS + column % TILE_SIDE] = value;
             }
         }
-        out
     }
 
     /// A grid cell's value: the image's four pixels around its place, weighted.
@@ -327,8 +332,33 @@ pub struct CameraWatch {
     scratch: Box<[Complex32]>,
     /// The frame before's tile spectra.
     previous_spectra: Option<Vec<Complex32>>,
+    /// The buffers a frame's work needs, kept from frame to frame (each is written whole before it is read).
+    work: Work,
     pub shifts: Vec<TileShifts>,
     pub countdown: Vec<bool>,
+}
+
+/// The camera watch's buffers: the grid's tiles, the spectra of the frame before the frame before (filled again with
+/// this frame's), and the FFTs' rows, columns and correlation.
+#[derive(Default)]
+struct Work {
+    tiles: Vec<f32>,
+    spectra: Vec<Complex32>,
+    rows: Vec<Complex32>,
+    columns: Vec<Complex32>,
+    correlation: Vec<f32>,
+}
+
+impl Work {
+    fn new() -> Work {
+        Work {
+            tiles: vec![0.0; TILES * TILE_CELLS],
+            spectra: vec![Complex32::default(); TILES * SPECTRUM_CELLS],
+            rows: vec![Complex32::default(); TILE_CELLS],
+            columns: vec![Complex32::default(); SPECTRUM_CELLS],
+            correlation: vec![0.0; TILE_CELLS],
+        }
+    }
 }
 
 impl CameraWatch {
@@ -350,6 +380,7 @@ impl CameraWatch {
             inverse_fft,
             scratch: vec![Complex32::default(); scratch_length].into_boxed_slice(),
             previous_spectra: None,
+            work: Work::new(),
             shifts: Vec::new(),
             countdown: Vec::new(),
         }
@@ -357,41 +388,39 @@ impl CameraWatch {
 
     /// Each tile's spectrum (TILE_SIDE rows of SPECTRUM_COLUMNS: rfft2 of the tile less its mean, times the Hann
     /// window). The FFTs run a tile at a time: its rows in one call, then its spectrum's columns in one call.
-    fn spectra(&mut self, luma: &[u8]) -> Vec<Complex32> {
-        let tiles = self.grid.tiles(luma);
-        let mut out = vec![Complex32::default(); TILES * SPECTRUM_CELLS];
-        let mut rows = vec![Complex32::default(); TILE_CELLS];
-        let mut columns = vec![Complex32::default(); SPECTRUM_CELLS];
-        for (cells, spectrum) in tiles.chunks_exact(TILE_CELLS).zip(out.chunks_exact_mut(SPECTRUM_CELLS)) {
+    fn spectra(&mut self, luma: &[u8], work: &mut Work) -> Vec<Complex32> {
+        self.grid.tiles_into(luma, &mut work.tiles);
+        let mut out = std::mem::take(&mut work.spectra);
+        out.resize(TILES * SPECTRUM_CELLS, Complex32::default());
+        let (rows, columns) = (&mut work.rows, &mut work.columns);
+        for (cells, spectrum) in work.tiles.chunks_exact(TILE_CELLS).zip(out.chunks_exact_mut(SPECTRUM_CELLS)) {
             let mean = tile_mean(cells) as f32;
             for ((value, &cell), &weight) in rows.iter_mut().zip(cells).zip(self.grid.hann.iter()) {
                 *value = Complex32::new((cell - mean) * weight, 0.0);
             }
-            self.forward_fft.process_with_scratch(&mut rows, &mut self.scratch);
-            transpose(&rows, TILE_SIDE, &mut columns, SPECTRUM_COLUMNS, TILE_SIDE);
-            self.forward_fft.process_with_scratch(&mut columns, &mut self.scratch);
-            transpose(&columns, TILE_SIDE, spectrum, TILE_SIDE, SPECTRUM_COLUMNS);
+            self.forward_fft.process_with_scratch(rows, &mut self.scratch);
+            transpose(rows, TILE_SIDE, columns, SPECTRUM_COLUMNS, TILE_SIDE);
+            self.forward_fft.process_with_scratch(columns, &mut self.scratch);
+            transpose(columns, TILE_SIDE, spectrum, TILE_SIDE, SPECTRUM_COLUMNS);
         }
         out
     }
 
     /// Each tile's shift from the frame before (`previous`, its spectra) to this one (`current`).
-    fn tile_shifts(&mut self, current: &[Complex32], previous: &[Complex32]) -> TileShifts {
+    fn tile_shifts(&mut self, current: &[Complex32], previous: &[Complex32], work: &mut Work) -> TileShifts {
         let mut shifts = [None; TILES];
-        let mut columns = vec![Complex32::default(); SPECTRUM_CELLS];
-        let mut rows = vec![Complex32::default(); TILE_CELLS];
-        let mut correlation = vec![0.0f32; TILE_CELLS];
+        let (columns, rows, correlation) = (&mut work.columns, &mut work.rows, &mut work.correlation);
         let tiles = current.chunks_exact(SPECTRUM_CELLS).zip(previous.chunks_exact(SPECTRUM_CELLS));
         for (shift, (now, before)) in shifts.iter_mut().zip(tiles) {
-            cross_power_columns(now, before, &mut columns);
+            cross_power_columns(now, before, columns);
             // irfft2: the inverse along y for each column (one call), then the real inverse along x for each row
-            self.inverse_fft.process_with_scratch(&mut columns, &mut self.scratch);
-            full_spectrum_rows(&columns, &mut rows);
-            self.inverse_fft.process_with_scratch(&mut rows, &mut self.scratch);
-            for (value, sum) in correlation.iter_mut().zip(&rows) {
+            self.inverse_fft.process_with_scratch(columns, &mut self.scratch);
+            full_spectrum_rows(columns, rows);
+            self.inverse_fft.process_with_scratch(rows, &mut self.scratch);
+            for (value, sum) in correlation.iter_mut().zip(rows.iter()) {
                 *value = sum.re / TILE_CELLS as f32;
             }
-            *shift = peak_shift(&correlation);
+            *shift = peak_shift(correlation);
         }
         shifts
     }
@@ -432,11 +461,17 @@ impl CameraWatch {
     /// One frame: its luma (1280 x 720) and its RGB24 (for the countdown bar).
     pub fn add(&mut self, luma: &[u8], rgb: &[u8]) {
         self.countdown.push(countdown_showing(rgb));
-        let spectra = self.spectra(luma);
+        let mut work = std::mem::take(&mut self.work);
+        let spectra = self.spectra(luma, &mut work);
         let shifts = match self.previous_spectra.take() {
-            Some(previous) => self.tile_shifts(&spectra, &previous),
+            Some(previous) => {
+                let shifts = self.tile_shifts(&spectra, &previous, &mut work);
+                work.spectra = previous;
+                shifts
+            }
             None => [None; TILES],
         };
+        self.work = work;
         self.previous_spectra = Some(spectra);
         self.shifts.push(shifts);
     }

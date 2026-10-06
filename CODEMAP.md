@@ -914,7 +914,7 @@ map, as bytes. The model's settings come from its settings file beside it (`mode
 
 - `Detector` (struct) Methods: `new`, `run`.
 - `Maps` (struct): One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x
-  MAP_WIDTH). Methods: `of_frame`.
+  MAP_WIDTH), where ONNX Runtime left them. Methods: `of_frame`.
 - Functions: `model_settings`.
 - Constants: `MAP_WIDTH`, `MAP_HEIGHT`.
 
