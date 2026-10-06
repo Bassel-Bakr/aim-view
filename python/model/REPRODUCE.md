@@ -151,6 +151,15 @@ python python/model/checked_data.py --labels $D/hand_small/checked_phone.jsonl -
 python python/model/checked_data.py --labels $D/teacher_robots/checked_phone.jsonl --out $D/data_robots_teacher_checked --tag chk_rteach
 ```
 
+The small targets checked again on the app's Crops page (2026-10-05 and 06, the teacher page's small set: masks drawn
+with the Crops page's shapes, Tile Frenzy's cubes as 3D boxes) are in `hand_small/checked_phone_2.jsonl` (105 crops on
+2026-10-06: 79 correct, 25 skip, 1 unsure). It reads the first answers and the newer ones, the newest answer of a crop
+winning:
+
+```bash
+python python/model/crop_check/labels.py $D/check_teacher $D/check_teacher/answers_small/checks $D/hand_small/checked_phone_2.jsonl small --also $D/check_teacher/answers/checks
+```
+
 The health-bar set (2026-10-05): bots' health bars the model boxes, the box crossed out (`build_bars.py`'s docstring
 has the rules). It reads build_mined.py's reviews (full_v3's tracks of 215 recordings, the checks' runs left out) and
 boxes their frames again with full_v7, the model that boxes bars most. The four parts run at once, and give the same
