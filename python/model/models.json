@@ -8,7 +8,7 @@
     {"key": "tracking", "name": "Tracking", "what": "time on the bot minus the stats file's accuracy: mean, and mean size (nearer 0 is better)"}
   ],
   "checked_on": "Recordings no model trained on, against their stats files (eval_moving.py).",
-  "default": "full_v8_s3",
+  "default": "large_v11",
   "models": {
     "full_v3": {
       "params": 80765, "kb": 324.4,
@@ -35,6 +35,14 @@
       "weak": "Video alone a little below full_v6 (recall 0.9459 against 0.9463, precision 0.9608 against 0.9626). Targets as small as the crosshair: 1wall 2targets xsmall valorant 38 of 66 kills (full_v6 42).",
       "checks": {"static": [854, 848], "moving": [1200, 1188], "tracking": [-0.056, 0.099]},
       "accepted": "2026-10-05: python/model/reports/accept_full_v8_s3.json (the app's native review)"
+    },
+    "large_v11": {
+      "params": 148709, "kb": 587.1,
+      "trained": "The large model (1.8 times full_v8_s3's parameters) from scratch on every set, then fine-tuned with the Centering crops and the kills its first version got wrong against the stats files.",
+      "best": "Tracking nearest the stats files of any model (mean gap size 0.065 against full_v8_s3's 0.122, both with the hitbox test), boxes as wide as the targets, and 12 more dynamic kills found from the video alone.",
+      "weak": "Slower: 1.8 times full_v8_s3's parameters. 6 fewer dynamic and switching flicks measured, and the video alone a little below full_v8_s3 (recall 0.938 against 0.939, precision 0.968 against 0.970, both with the kill check).",
+      "checks": {"static": [854, 848], "moving": [1200, 1182], "tracking": [-0.046, 0.065]},
+      "accepted": "2026-10-06: python/model/reports/accept_large_v11.json (the app's native review)"
     },
     "hand": {
       "label": "Hand-written",

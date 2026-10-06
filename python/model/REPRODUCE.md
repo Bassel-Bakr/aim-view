@@ -390,6 +390,25 @@ python python/model/export.py $D/runs/full_v9/best.pt
 python python/model/accept.py full_v9 --all
 ```
 
+large_v10 and large_v11 (2026-10-06): the large model (widths 32, 64, 96, 128, head 64: 148,709 parameters) from
+scratch on full_v9's sets and the Centering set, then fine-tuned for 4 epochs (lr 0.0005) with the kill feedback set
+too (`repeat_large_v11.txt` is `repeat_large_v10.txt` plus `chk_kills_ 3`). large_v10 failed the gate on the video
+alone's static precision (0.9449 against 0.9561); large_v11 passed it and is the default:
+
+```bash
+SETS="--extra $D/data_kills4 --extra $D/hand_data --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked \
+  --extra $D/data_mined_checked2 --extra $D/data_robots_checked2 --extra $D/data_crosshair_checked \
+  --extra $D/data_crosshair_turn_checked --extra $D/data_small_checked2 --extra $D/data_robots_teacher_checked \
+  --extra $D/data_bars_checked2 --extra $D/data_bars_recolored2"
+python python/model/train.py python/model/configs/large_v10.json --data $D/data_v3 $SETS --extra $D/data_centering_checked \
+  --repeat $D/repeat_large_v10.txt --times 3
+python python/model/train.py python/model/configs/large_v11.json --data $D/data_v3 $SETS \
+  --extra $D/data_centering_checked_snapped --extra $D/data_kill_feedback_checked \
+  --repeat $D/repeat_large_v11.txt --times 3 --init $D/runs/large_v10/best.pt
+python python/model/export.py $D/runs/large_v11/best.pt
+python python/model/accept.py large_v11 --list
+```
+
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
 and forked from any snapshot with `<new config> --fork test_out/vod_model/runs/<name>/snapshots/<snapshot>.pt`.
 

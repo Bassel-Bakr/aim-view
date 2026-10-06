@@ -611,16 +611,45 @@ Switch Wide's (2 false). It loses most on targets as small as the crosshair (1wa
 against 42), as most fine-tunes of full_v6 do (34 to 38; one ablation kept 42), and on mccoyfrozentrack (6 of 19 against 9). The
 gate's reports: `python/model/reports/accept_full_v8_s3.json`, `test_out/baselines/full_v8_auto/` for the trial.
 
+## large_v11: the large model (2026-10-06)
+
+A model with more channels (widths 32, 64, 96, 128, head 64: 148,709 parameters, 1.8 times full_v8_s3's), trained from
+scratch as large_v10 on full_v9's sets and the Centering set (crops where full_v9 and full_v8_s3 disagree on the
+Centering scenarios), then fine-tuned for 4 epochs with the kill feedback set (84 crops at the crosshair where
+large_v10's kills disagreed with the stats files, checked on the phone) and the Centering boxes snapped to the
+target's pixels. The commands: REPRODUCE.md. Two of the gate's rules changed on the way: box_fit judges a box's width
+and height by their distance from the label's (large_v11's boxes are 0.993 of the label's width, full_v8_s3's 0.958,
+which the old rule failed), and the video alone is scored with the kill check (python/README.md), as the app reviews
+a recording without a stats file. Both models below were measured that way:
+
+| Check | large_v11 | full_v8_s3 | Allowed |
+| --- | --- | --- | --- |
+| Contract | meets it | meets it | every check |
+| Static kills, flicks (854) | 854, 848 | 854, 848 | 0, 5.1 |
+| Dynamic kills, flicks (797) | 796, 786 | 796, 789 | 0, 5.9 |
+| Switching kills, flicks (404) | 404, 396 | 404, 399 | 0, 4.6 |
+| Tracking gap with the hitbox: mean size, mean | 0.0645, -0.0461 | 0.1221, -0.0944 | 0.0642, 0.0796 |
+| Report (4 static runs) kills, flicks (496) | 496, 494 | 496, 494 | 0, 2.9 |
+| Video alone, all: recall, precision | 0.9382, 0.9682 | 0.9391, 0.9697 | 0.0070, 0.0050 |
+| Video alone, dynamic: recall, precision | 0.9789, 0.9893 | 0.9729, 0.9908 | 0.0078, 0.0045 |
+| Gate | PASS | | |
+
+Tracking is where it gains: the gap to the stats files' accuracy is half full_v8_s3's. The tracking runs are measured
+with the hitbox test (src/tracking.rs: the crosshair against the bot's capsule, ellipse or box from its scenario
+file), which large_v11's wider boxes suit; full_v8_s3 measured 0.099 without it. large_v10 failed the gate on the
+video alone's static precision (0.9449 against 0.9561, before the kill check). The gate's report:
+`python/model/reports/accept_large_v11.json`.
+
 ## Current best model
 
-**full_v8_s3** (2026-10-05, "full_v8: health bars of any color" above), threshold 0.3. 80,765 parameters; 324.4 KB as
-fp32 ONNX. Static, dynamic, switching, tracking, robots, and never a health bar. small_v13 (32,037 parameters, 134.5
-KB) is the small one, for speed. full_v6 was the best before it.
+**large_v11** (2026-10-06, "large_v11: the large model" above), threshold 0.3 (its scores calibrated). 148,709 parameters;
+587.1 KB as fp32 ONNX. full_v8_s3 (80,765 parameters, 324.4 KB) was the best before it; small_v13 (32,037 parameters,
+134.5 KB) is the small one, for speed.
 
-- To embed (KovOBS, the browser, any language): `python/model/exports/detector_full_v8_s3_embed.onnx` (or
+- To embed (KovOBS, the browser, any language): `python/model/exports/detector_large_v11_embed.onnx` (or
   `detector_small_v13_embed.onnx`). Raw RGB bytes and the fixed map in, the 100 best boxes out.
-- With the plain float input (any ONNX runtime, the HTTP server): `detector_full_v8_s3_fp32.onnx`.
-- The checkpoint: `test_out/vod_model/runs/full_v8_s3/best.pt`.
+- With the plain float input (any ONNX runtime, the HTTP server): `detector_large_v11_fp32.onnx`.
+- The checkpoint: `test_out/vod_model/runs/large_v11/best.pt`.
 
 The checks of earlier models below were made with small_v11 as the best.
 
