@@ -492,6 +492,17 @@ python python/model/export.py $D/runs/large_v13e4/best.pt
 python python/model/accept.py large_v13e4 --list
 ```
 
+The large_v14 runs (2026-10-06 and 07), large_v13e4 trained on for 4 epochs more with the auto-labelled sets (the
+same command, `--init $D/runs/large_v13e4/best.pt`, the last epoch exported, the tracking rule `at_crosshair` added to
+its settings file); none passed, and large_v13e4 stays the default:
+
+| Config | What it added | Verdict |
+| --- | --- | --- |
+| large_v14, large_v14_s4 | data_auto_tiles2, data_auto_v13, data_auto_xs (seeds 3 and 4) | the contract: the crosshair boxed while the view turned in 15.3% and 6.7% of 1wall 6targets extra small 849.91's turns, against 2.8% |
+| large_v14b | the sets rebuilt with the after-kill pairs (data_auto_tiles3, data_auto_v13b, data_auto_xsb; `auto_gone_ 3`) | the contract: 10.6% |
+| large_v14_ctrl | nothing: large_v13e4's own data again | the contract: 6.05%, so any fine-tune tips that recording |
+| large_v14_noxs | large_v14b without data_auto_xsb | met the contract (4.56%); the gate failed it on the video alone's dynamic precision, 0.9888 against 0.9929 (allowed 0.0039) |
+
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
 and forked from any snapshot with `<new config> --fork test_out/vod_model/runs/<name>/snapshots/<snapshot>.pt`.
 
