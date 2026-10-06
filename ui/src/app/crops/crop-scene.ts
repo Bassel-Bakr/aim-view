@@ -7,7 +7,9 @@ import {
   Shape,
   ShapeKind,
   ShapeRole,
+  Solid,
 } from '../api';
+import { START_SWING_DEG, START_TIP_DEG } from '../shapes/solid-geometry';
 import { boxAround, CropPoint, scaled } from '../shapes/shape-geometry';
 import { CropFix } from './crop-lessons';
 
@@ -28,7 +30,17 @@ const POINT_PX = 8;
 
 /** A pill standing for a box. */
 function pill(id: string, box: CropBox, model: number | null): Shape {
-  return { id, kind: 'pill', box: [...box], angle: 0, face: null, depth: 0, role: null, model };
+  return {
+    id,
+    kind: 'pill',
+    box: [...box],
+    angle: 0,
+    face: null,
+    solid: null,
+    depth: 0,
+    role: null,
+    model,
+  };
 }
 
 /** The median of the crop's model boxes' sides, for a tapped point; POINT_PX when it has none. */
@@ -76,7 +88,18 @@ const tenth = (value: number) => Math.round(value * 10) / 10;
 function tidied(shape: Shape): Shape {
   const [cx, cy, width, height] = shape.box;
   const face: FaceOffset | null = shape.face && [tenth(shape.face[0]), tenth(shape.face[1])];
-  return { ...shape, box: [tenth(cx), tenth(cy), tenth(width), tenth(height)], face };
+  const solid: Solid | null = shape.solid && {
+    thickness: tenth(shape.solid.thickness),
+    tip: tenth(shape.solid.tip),
+    swing: tenth(shape.solid.swing),
+  };
+  return {
+    ...shape,
+    box: [tenth(cx), tenth(cy), tenth(width), tenth(height)],
+    angle: tenth(shape.angle),
+    face,
+    solid,
+  };
 }
 
 /**
@@ -123,15 +146,12 @@ export function freshId(scene: DraftScene): string {
   return `s${next}`;
 }
 
-/** How far back a new 3D shape's far end sits: this share of its frame, up and to the right (its top and side show). */
-const DEPTH_SHARE = 0.25;
-
-/** A third face for a shape seen at an angle: its far end up and to the right by a share of its frame. */
-export function defaultFace(box: CropBox): FaceOffset {
-  return [tenth(DEPTH_SHARE * box[2]), tenth(-DEPTH_SHARE * box[3])];
+/** A new 3D shape's solid: as thick as its short side, tipped and swung so its top and right side show. */
+export function defaultSolid(box: CropBox): Solid {
+  return { thickness: Math.min(box[2], box[3]), tip: START_TIP_DEG, swing: START_SWING_DEG };
 }
 
-/** The scene with a new shape on top of the others; deep: a 3D one, with a third face. */
+/** The scene with a new shape on top of the others; deep: a 3D one, solid. */
 export function withShape(
   scene: DraftScene,
   kind: ShapeKind,
@@ -139,8 +159,8 @@ export function withShape(
   deep = false,
 ): DraftScene {
   const depth = Math.max(0, ...scene.shapes.map((shape) => shape.depth));
-  const face = deep ? defaultFace(box) : null;
-  const shape: Shape = { ...pill(freshId(scene), box, null), kind, face, depth };
+  const solid = deep ? defaultSolid(box) : null;
+  const shape: Shape = { ...pill(freshId(scene), box, null), kind, solid, depth };
   return { ...scene, shapes: [...scene.shapes, shape] };
 }
 
@@ -231,7 +251,7 @@ export function changeEach(
   };
 }
 
-/** The selected shapes made one kind, flat or 3D (deep: keeping a third face, or given one). */
+/** The selected shapes made one kind, flat or 3D (deep: solid, keeping its tumble, or given the starting one). */
 export function withKind(
   scene: DraftScene,
   ids: readonly string[],
@@ -241,7 +261,8 @@ export function withKind(
   return changeEach(scene, ids, (shape) => ({
     ...shape,
     kind,
-    face: deep ? (shape.face ?? defaultFace(shape.box)) : null,
+    face: null,
+    solid: deep ? (shape.solid ?? defaultSolid(shape.box)) : null,
   }));
 }
 

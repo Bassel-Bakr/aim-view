@@ -4,6 +4,8 @@ import {
   corners,
   faced,
   faceHandle,
+  flatSides,
+  pushedFlatSide,
   evened,
   moved,
   onShape,
@@ -22,6 +24,7 @@ function shape(overrides: Partial<Shape>): Shape {
     box: [50, 50, 20, 10],
     angle: 0,
     face: null,
+    solid: null,
     depth: 0,
     role: null,
     model: null,
@@ -65,8 +68,8 @@ describe('shape geometry', () => {
     expect(moved(shape({}), [3, -2]).box).toEqual([53, 48, 20, 10]);
     const cube = faced(shape({ kind: 'box' }), [56, 44]);
     expect(cube.face).toEqual([6, -6]);
-    expect(faceHandle(cube, 10)).toEqual([56, 44]);
-    expect(faceHandle(shape({}), 10)).toEqual([70, 35]);
+    expect(faceHandle(cube)).toEqual([56, 44]);
+    expect(faceHandle(shape({}))).toBeNull();
     expect(onShape(cube, [65, 39], 0)).toBe(true);
     const deepPill = faced(shape({}), [70, 50]);
     expect(onShape(deepPill, [79, 50], 0) && !onShape(shape({}), [79, 50], 0)).toBe(true);
@@ -94,5 +97,23 @@ describe('shape geometry', () => {
     const head = shape({ box: [50, 40, 10, 10] });
     const body = shape({ box: [50, 55, 10, 20] });
     expect(boxAround([head, body])).toEqual([50, 50, 10, 30]);
+  });
+});
+
+describe("a flat box's sides", () => {
+  it('moves one side of a flat box, the opposite side staying, or both with Mirror', () => {
+    const flat = shape({ kind: 'box' });
+    expect(flatSides(flat).map((handle) => handle.point)).toEqual([
+      [40, 50],
+      [60, 50],
+      [50, 45],
+      [50, 55],
+    ]);
+    expect(pushedFlatSide(flat, 1, [70, 50], false).box).toEqual([55, 50, 30, 10]);
+    expect(pushedFlatSide(flat, 1, [70, 50], true).box).toEqual([50, 50, 40, 10]);
+    expect(
+      pushedFlatSide(shape({ kind: 'box', angle: 90 }), 2, [60, 50], false).box[3],
+    ).toBeCloseTo(15);
+    expect(flatSides(shape({}))).toEqual([]);
   });
 });

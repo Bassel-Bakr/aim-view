@@ -1,7 +1,8 @@
 //! The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets are 3D). A pill
 //! (a sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a
 //! third face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep
-//! pill's the pill swept back to its far end. Shapes are joined into targets (a bot's head and body), ordered
+//! pill's the pill swept back to its far end. Or either can be solid: a box or a capsule with a thickness, tipped and
+//! swung out of the screen's plane, its outline what that solid shows the camera. Shapes are joined into targets (a bot's head and body), ordered
 //! front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them
 //! (occluders: the crosshair, a pillar, an overlay).
 //!
@@ -31,8 +32,8 @@ pub enum ShapeRole {
 }
 
 /// One shape: its kind, its frame before turning ([center x, center y, width, height], pixels), its angle (degrees,
-/// clockwise), a box's third face (the offset of the far face, pixels), its depth (greater is nearer), its role, and
-/// the model box it started from (an index into the crop's boxes), if any.
+/// clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and tumble), its
+/// depth (greater is nearer), its role, and the model box it started from (an index into the crop's boxes), if any.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Shape {
@@ -47,11 +48,28 @@ pub struct Shape {
     #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::FaceOffset>"))]
     pub face: Option<[f64; 2]>,
     #[serde(default)]
+    pub solid: Option<Solid>,
+    #[serde(default)]
     pub depth: i32,
     #[serde(default)]
     pub role: Option<ShapeRole>,
     #[serde(default)]
     pub model: Option<usize>,
+}
+
+/// A 3D shape's thickness and its turn out of the screen's plane, for a target seen at an angle. It is drawn as the
+/// solid seen from the camera, straight on (a parallel projection): a box with each corner where the turn puts it; a
+/// pill as a capsule, round (as thick as its short side), whose axis the turn tips toward or away from the camera.
+/// Turns apply tip, then swing, then the shape's angle; x runs to the right, y down, z away from the camera.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct Solid {
+    /// A box's size front to back, pixels.
+    pub thickness: f64,
+    /// Degrees its top leans toward the camera, so its top face shows (about the screen's x axis).
+    pub tip: f64,
+    /// Degrees its right side turns toward the camera, so its right face shows (about the screen's y axis).
+    pub swing: f64,
 }
 
 /// A crop's shapes: which are joined into one target (a shape in no group, and no occluder, is a target of its own),
@@ -186,11 +204,68 @@ fn flat_pill_outline(shape: &Shape) -> Vec<[f64; 2]> {
     points
 }
 
+/// A solid shape's turn as a matrix, Rz(angle) Ry(swing) Rx(tip): a point of its own frame (along its width, across
+/// it, front to back) times the matrix is where the turn puts it.
+fn rotation(shape: &Shape, solid: &Solid) -> [[f64; 3]; 3] {
+    let (sin_z, cos_z) = shape.angle.to_radians().sin_cos();
+    let (sin_y, cos_y) = solid.swing.to_radians().sin_cos();
+    let (sin_x, cos_x) = solid.tip.to_radians().sin_cos();
+    [
+        [cos_z * cos_y, cos_z * sin_y * sin_x - sin_z * cos_x, cos_z * sin_y * cos_x + sin_z * sin_x],
+        [sin_z * cos_y, sin_z * sin_y * sin_x + cos_z * cos_x, sin_z * sin_y * cos_x - cos_z * sin_x],
+        [-sin_y, cos_y * sin_x, cos_y * cos_x],
+    ]
+}
+
+/// A point of a solid shape's own frame (along its width, across it, front to back; pixels) on the crop.
+fn solid_point(shape: &Shape, turn: &[[f64; 3]; 3], own: [f64; 3]) -> [f64; 2] {
+    let moved = |row: &[f64; 3]| row[0] * own[0] + row[1] * own[1] + row[2] * own[2];
+    [shape.frame[0] + moved(&turn[0]), shape.frame[1] + moved(&turn[1])]
+}
+
+/// A solid box's eight corners on the crop.
+fn solid_corners(shape: &Shape, solid: &Solid) -> Vec<[f64; 2]> {
+    let turn = rotation(shape, solid);
+    let half = [shape.frame[2] / 2.0, shape.frame[3] / 2.0, solid.thickness / 2.0];
+    (0..8_usize)
+        .map(|corner| {
+            let side = |axis: usize| if corner >> axis & 1 == 0 { -half[axis] } else { half[axis] };
+            solid_point(shape, &turn, [side(0), side(1), side(2)])
+        })
+        .collect()
+}
+
+/// A solid pill's middle segment on the crop: its axis, tipped toward or away from the camera.
+fn solid_pill_segment(shape: &Shape, solid: &Solid) -> [[f64; 2]; 2] {
+    let (_, half) = pill_parts(shape);
+    let turn = rotation(shape, solid);
+    let wide = shape.frame[2] >= shape.frame[3];
+    let end = |sign: f64| {
+        let own = if wide { [sign * half, 0.0, 0.0] } else { [0.0, sign * half, 0.0] };
+        solid_point(shape, &turn, own)
+    };
+    [end(-1.0), end(1.0)]
+}
+
+/// The outline of the points within a radius of a segment: its ends' circles and the lines joining them.
+fn stadium(ends: [[f64; 2]; 2], radius: f64) -> Vec<[f64; 2]> {
+    let steps = 2 * ARC_POINTS;
+    let points = ends.iter().flat_map(|center| {
+        (0..steps).map(move |step| {
+            let turn = (360.0 * step as f64 / steps as f64).to_radians();
+            [center[0] + radius * turn.cos(), center[1] + radius * turn.sin()]
+        })
+    });
+    convex_hull(points.collect())
+}
+
 /// A shape's outline on the crop, in order round it.
 pub fn outline(shape: &Shape) -> Vec<[f64; 2]> {
-    match shape.kind {
-        ShapeKind::Pill => pill_outline(shape),
-        ShapeKind::Box => box_outline(shape),
+    match (shape.kind, &shape.solid) {
+        (ShapeKind::Pill, Some(solid)) => stadium(solid_pill_segment(shape, solid), pill_parts(shape).0),
+        (ShapeKind::Box, Some(solid)) => convex_hull(solid_corners(shape, solid)),
+        (ShapeKind::Pill, None) => pill_outline(shape),
+        (ShapeKind::Box, None) => box_outline(shape),
     }
 }
 
@@ -242,9 +317,18 @@ fn in_deep_pill(shape: &Shape, [dx, dy]: [f64; 2], x: f64, y: f64) -> bool {
 }
 
 /// Whether a crop point is inside a shape: a pill holds the points within its radius of its middle segment (of the
-/// band it sweeps to its far end, with a third face); a box those in its turned rectangle, or in its outline when it
-/// has a third face.
+/// band it sweeps to its far end, with a third face; of its tipped axis, solid); a box those in its turned rectangle,
+/// or in its outline when it has a third face or is solid.
 pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
+    if let Some(solid) = &shape.solid {
+        return match shape.kind {
+            ShapeKind::Pill => {
+                let [a, b] = solid_pill_segment(shape, solid);
+                segment_distance([x, y], a, b) <= pill_parts(shape).0
+            }
+            ShapeKind::Box => in_convex(&outline(shape), x, y),
+        };
+    }
     match (shape.kind, shape.face) {
         (ShapeKind::Pill, Some(face)) => in_deep_pill(shape, face, x, y),
         (ShapeKind::Pill, None) => {
@@ -276,11 +360,13 @@ pub fn check(scene: &Scene) -> Result<(), String> {
         if !ids.insert(shape.id.as_str()) {
             return Err(format!("the shape id {} is used twice", shape.id));
         }
-        let numbers = shape.frame.iter().chain([&shape.angle]).chain(shape.face.iter().flatten());
-        if numbers.into_iter().any(|value| !value.is_finite() || value.abs() > MAX_VALUE) {
+        let solid = shape.solid.iter().flat_map(|solid| [solid.thickness, solid.tip, solid.swing]);
+        let mut numbers = shape.frame.into_iter().chain([shape.angle]).chain(shape.face.into_iter().flatten()).chain(solid);
+        if numbers.any(|value| !value.is_finite() || value.abs() > MAX_VALUE) {
             return Err(format!("the shape {} has a number out of range", shape.id));
         }
-        if shape.frame[2] <= 0.0 || shape.frame[3] <= 0.0 {
+        let flat = shape.solid.is_some_and(|solid| solid.thickness <= 0.0);
+        if shape.frame[2] <= 0.0 || shape.frame[3] <= 0.0 || flat {
             return Err(format!("the shape {} has no size", shape.id));
         }
     }
@@ -463,7 +549,7 @@ mod tests {
     const SIDE: usize = 128;
 
     fn shape(id: &str, kind: ShapeKind, frame: [f64; 4], depth: i32) -> Shape {
-        Shape { id: id.into(), kind, frame, angle: 0.0, face: None, depth, role: None, model: None }
+        Shape { id: id.into(), kind, frame, angle: 0.0, face: None, solid: None, depth, role: None, model: None }
     }
 
     fn pixel(view: &[u32], x: usize, y: usize) -> bool {
@@ -517,6 +603,28 @@ mod tests {
         let [x0, y0, x1, y1] = bounds(&deep);
         assert!((x0 - 35.0).abs() < 1e-9 && (x1 - 65.0).abs() < 1e-9, "{x0} {x1}");
         assert!((y0 - 39.0).abs() < 1e-9 && (y1 - 79.0).abs() < 1e-9, "{y0} {y1}");
+    }
+
+    #[test]
+    fn a_solid_shows_the_camera_what_its_turn_puts_in_front() {
+        let solid = |tip: f64, swing: f64| Some(Solid { thickness: 30.0, tip, swing });
+        let flat = shape("b", ShapeKind::Box, [64.0, 64.0, 20.0, 10.0], 0);
+        let facing = Shape { solid: solid(0.0, 0.0), ..flat.clone() };
+        for (x, y) in [(73.9, 68.9), (75.0, 64.0), (64.0, 70.0)] {
+            assert_eq!(contains(&facing, x, y), contains(&flat, x, y), "facing the camera, a box is its rectangle");
+        }
+        let tipped = Shape { solid: solid(90.0, 0.0), ..flat.clone() };
+        assert!(contains(&tipped, 64.0, 64.0 + 14.9) && !contains(&tipped, 64.0, 64.0 + 15.1), "its top: the thickness");
+        let swung = Shape { solid: solid(0.0, 90.0), ..flat.clone() };
+        assert!(contains(&swung, 64.0 + 14.9, 64.0) && !contains(&swung, 64.0 + 15.1, 64.0), "its side: the thickness");
+        let [x0, y0, x1, y1] = bounds(&Shape { solid: solid(30.0, 30.0), ..flat });
+        assert!(x1 - x0 > 20.0 && y1 - y0 > 10.0, "a cube seen from above and the right shows more than its front");
+        let pill = shape("p", ShapeKind::Pill, [64.0, 64.0, 10.0, 40.0], 0);
+        let end_on = Shape { solid: solid(90.0, 0.0), ..pill.clone() };
+        assert!(contains(&end_on, 64.0 + 4.9, 64.0) && !contains(&end_on, 64.0, 64.0 + 6.0), "a capsule end on: a disc");
+        let leaning = Shape { solid: solid(60.0, 0.0), ..pill };
+        assert!(contains(&leaning, 64.0, 64.0 + 12.4) && !contains(&leaning, 64.0, 64.0 + 13.0), "foreshortened by half");
+        assert!(check(&Scene { shapes: vec![Shape { solid: Some(Solid { thickness: 0.0, tip: 0.0, swing: 0.0 }), ..shape("z", ShapeKind::Box, [1.0, 1.0, 1.0, 1.0], 0) }], ..Scene::default() }).is_err());
     }
 
     #[test]

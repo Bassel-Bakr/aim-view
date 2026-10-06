@@ -3,6 +3,7 @@ import { Shape, ShapeKind, ShapeRole } from '../../api';
 import { Button } from '../../controls/button';
 import { CropDraft } from '../crop-draft';
 import { evened, turnedBy } from '../../shapes/shape-geometry';
+import { showing, SideShown } from '../../shapes/solid-geometry';
 import {
   changeEach,
   DraftScene,
@@ -21,6 +22,19 @@ interface ShapeChoice {
   deep: boolean;
   name: string;
 }
+
+/** A 3D turn button: the side it turns toward the camera, and its words. */
+interface SideChoice {
+  side: SideShown;
+  name: string;
+}
+
+const SIDES_SHOWN: readonly SideChoice[] = [
+  { side: 'top', name: 'Show top' },
+  { side: 'bottom', name: 'Show bottom' },
+  { side: 'left', name: 'Show left' },
+  { side: 'right', name: 'Show right' },
+];
 
 /** A Turn button's step, in degrees. */
 const TURN_STEP_DEG = 15;
@@ -54,6 +68,7 @@ export class CropTools {
   protected readonly draft = inject(CropDraft);
   protected readonly shapes = SHAPES;
   protected readonly TURN_STEP = TURN_STEP_DEG;
+  protected readonly sidesShown = SIDES_SHOWN;
   protected readonly roles: readonly RoleChoice[] = [
     { role: null, name: 'None' },
     { role: 'head', name: 'Head' },
@@ -67,7 +82,11 @@ export class CropTools {
   protected readonly drawing = computed(() => shapeName(this.draft.kind(), this.draft.deep()));
   /** The shape pressed: the selected shapes' when they share one, else the one a drag draws. */
   protected readonly pressed = computed(() => {
-    const names = new Set(this.chosen().map((shape) => shapeName(shape.kind, shape.face !== null)));
+    const names = new Set(
+      this.chosen().map((shape) =>
+        shapeName(shape.kind, shape.solid !== null || shape.face !== null),
+      ),
+    );
     const [only] = names;
     return names.size === 1 ? only : this.drawing();
   });
@@ -125,6 +144,33 @@ export class CropTools {
   /** Turns each selected shape about its middle, clockwise on screen for a positive step. */
   protected turn(degrees: number): void {
     this.change((scene, ids) => changeEach(scene, ids, (shape) => turnedBy(shape, degrees)));
+  }
+
+  /** A 3D shape among the selected ones: the 3D turn buttons show. */
+  protected readonly solidChosen = computed(() =>
+    this.chosen().some((shape) => shape.solid !== null),
+  );
+
+  /** Turns each selected 3D shape so a side comes toward the camera, a step at a time. */
+  protected show(side: SideShown): void {
+    this.change((scene, ids) =>
+      changeEach(scene, ids, (shape) =>
+        shape.solid ? showing(shape, shape.solid, side, TURN_STEP_DEG) : shape,
+      ),
+    );
+  }
+
+  /** Turns each selected 3D shape to face the camera squarely, its turn on screen kept. */
+  protected faceCamera(): void {
+    this.change((scene, ids) =>
+      changeEach(scene, ids, (shape) =>
+        shape.solid ? { ...shape, solid: { ...shape.solid, tip: 0, swing: 0 } } : shape,
+      ),
+    );
+  }
+
+  protected toggleMirroring(): void {
+    this.draft.mirroring.update((on) => !on);
   }
 
   protected togglePanning(): void {

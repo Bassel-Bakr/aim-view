@@ -51,6 +51,7 @@ export type { SecondShares } from './generated/second-shares';
 export type { Shape } from './generated/shape';
 export type { ShapeKind } from './generated/shape-kind';
 export type { ShapeRole } from './generated/shape-role';
+export type { Solid } from './generated/solid';
 export type { SpeedCurve } from './generated/speed-curve';
 export type { Summary as ClickSummary } from './generated/summary';
 export type { Switch } from './generated/switch';

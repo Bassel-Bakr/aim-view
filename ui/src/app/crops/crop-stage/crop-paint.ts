@@ -1,5 +1,9 @@
-import { CropEntry, SceneView, Shape } from '../../api';
+import { CropEntry, SceneView, Shape, Solid } from '../../api';
 import { CropPoint, tracePath } from '../../shapes/shape-geometry';
+import { capsuleOutline, capsuleRings, solidEdges, solidFaces } from '../../shapes/solid-geometry';
+
+/** The light at which a face is neither lit nor shaded. */
+const LIGHT_MIDDLE = 0.5;
 import { CROP_SIDE } from '../crop-draft';
 import { DraftScene } from '../crop-scene';
 import { handled, handlesOf } from './crop-grip';
@@ -29,6 +33,8 @@ export interface CropStyle {
   under: string;
   visible: string;
   handle: string;
+  faceLight: string;
+  faceShade: string;
   lineWidth: number;
   lineWidthSelected: number;
   handleRadius: number;
@@ -65,6 +71,8 @@ export function readCropStyle(element: Element): CropStyle {
     lineWidth: Number(token('line-width')),
     lineWidthSelected: Number(token('line-width-selected')),
     handleRadius: Number(token('handle-radius')),
+    faceLight: token('face-light'),
+    faceShade: token('face-shade'),
   };
 }
 
@@ -156,15 +164,107 @@ function paintShapes(
   }
   const hidden = new Set(targets.filter((one) => one.hidden).flatMap((one) => one.shapes));
   for (const shape of [...scene.shapes].sort((a, b) => a.depth - b.depth)) {
+    const width = picture.selection.includes(shape.id) ? style.lineWidthSelected : style.lineWidth;
+    const line: SolidLine = { color: colorOf(shape, scene.occluders, style), width, scale };
+    if (shape.solid) {
+      paintSolid(context, shape, shape.solid, line, style);
+      continue;
+    }
     tracePath(context, shape);
     context.setLineDash(hidden.has(shape.id) ? [6 / scale, 4 / scale] : []);
-    const width = picture.selection.includes(shape.id) ? style.lineWidthSelected : style.lineWidth;
-    strokeTwice(context, colorOf(shape, scene.occluders, style), width, style, scale);
+    strokeTwice(context, line.color, width, style, scale);
   }
   context.setLineDash([]);
   if (picture.sketch) {
     tracePath(context, picture.sketch);
     strokeTwice(context, style.drawn, style.lineWidth, style, scale);
+  }
+}
+
+/** How a solid's lines are drawn: its color, its width and the stage's scale (screen pixels a crop pixel). */
+interface SolidLine {
+  color: string;
+  width: number;
+  scale: number;
+}
+
+/** Strokes the path solid, or dashed for what the camera does not see. */
+function strokeSeen(
+  context: CanvasRenderingContext2D,
+  seen: boolean,
+  line: SolidLine,
+  style: CropStyle,
+) {
+  context.setLineDash(seen ? [] : [4 / line.scale, 3 / line.scale]);
+  strokeTwice(context, line.color, line.width, style, line.scale);
+  context.setLineDash([]);
+}
+
+/**
+ * A solid shape: a box's faces toward the camera lit or shaded by where they face, its seen edges solid and its hidden
+ * ones dashed; a capsule shaded across its axis like a cylinder, its near end ring solid and its far one dashed.
+ */
+function paintSolid(
+  context: CanvasRenderingContext2D,
+  shape: Shape,
+  solid: Solid,
+  line: SolidLine,
+  style: CropStyle,
+) {
+  if (shape.kind === 'pill') {
+    paintCapsule(context, shape, solid, line, style);
+    return;
+  }
+  for (const face of solidFaces(shape, solid).filter((one) => one.facing)) {
+    context.beginPath();
+    face.corners.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+    context.closePath();
+    context.globalAlpha = Math.abs(face.light - LIGHT_MIDDLE) * 2;
+    context.fillStyle = face.light > LIGHT_MIDDLE ? style.faceLight : style.faceShade;
+    context.fill();
+  }
+  context.globalAlpha = 1;
+  const edges = solidEdges(shape, solid);
+  for (const seen of [false, true]) {
+    context.beginPath();
+    for (const edge of edges.filter((one) => one.seen === seen)) {
+      context.moveTo(...edge.from);
+      context.lineTo(...edge.to);
+    }
+    strokeSeen(context, seen, line, style);
+  }
+}
+
+function paintCapsule(
+  context: CanvasRenderingContext2D,
+  shape: Shape,
+  solid: Solid,
+  line: SolidLine,
+  style: CropStyle,
+) {
+  const outline = capsuleOutline(shape, solid);
+  const rings = capsuleRings(shape, solid);
+  const [{ center, across, tilt }] = rings;
+  const [nx, ny] = [-Math.sin(tilt) * across, Math.cos(tilt) * across];
+  const shading = context.createLinearGradient(
+    center[0] - nx,
+    center[1] - ny,
+    center[0] + nx,
+    center[1] + ny,
+  );
+  shading.addColorStop(0, style.faceShade);
+  shading.addColorStop(0.35, style.faceLight);
+  shading.addColorStop(1, style.faceShade);
+  context.beginPath();
+  outline.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+  context.closePath();
+  context.fillStyle = shading;
+  context.fill();
+  strokeSeen(context, true, line, style);
+  for (const ring of rings) {
+    context.beginPath();
+    context.ellipse(...ring.center, ring.along, ring.across, ring.tilt, 0, 2 * Math.PI);
+    strokeSeen(context, ring.near, line, style);
   }
 }
 
@@ -184,7 +284,10 @@ function dot(
   context.stroke();
 }
 
-/** The selected shape's handles, at the same size on screen at any zoom: corners, the turn handle, the face's. */
+/**
+ * The selected shape's handles, at the same size on screen at any zoom: corners, the turn handle, the face's, and a
+ * solid's tumble (a ringed dot) and thickness (a square).
+ */
 function paintHandles(
   context: CanvasRenderingContext2D,
   picture: StagePicture,
@@ -199,7 +302,9 @@ function paintHandles(
   const shape = picture.scene && handled(picture.scene, picture.selection);
   if (shape) {
     const handles = handlesOf(shape, place.scale);
-    const [first, second] = handles.corners.map(onScreen);
+    const [first, second] = handles.corners.length
+      ? handles.corners.map(onScreen)
+      : [onScreen([shape.box[0], shape.box[1]]), onScreen([shape.box[0], shape.box[1]])];
     const turn = onScreen(handles.turn);
     context.beginPath();
     context.moveTo((first[0] + second[0]) / 2, (first[1] + second[1]) / 2);
@@ -213,6 +318,25 @@ function paintHandles(
       const [x, y] = onScreen(handles.face);
       context.fillStyle = style.handle;
       context.fillRect(x - radius, y - radius, 2 * radius, 2 * radius);
+    }
+    // a solid's sides: squares, hollow for the sides the camera does not see
+    for (const side of handles.sides) {
+      const [x, y] = onScreen(side.point);
+      context.fillStyle = style.handle;
+      context.strokeStyle = style.handle;
+      context.lineWidth = 2;
+      if (side.seen) context.fillRect(x - radius, y - radius, 2 * radius, 2 * radius);
+      else context.strokeRect(x - radius, y - radius, 2 * radius, 2 * radius);
+    }
+    if (handles.tumble) {
+      // a ball to roll: a ring round a dot
+      const [x, y] = onScreen(handles.tumble);
+      dot(context, [x, y], radius, style);
+      context.beginPath();
+      context.arc(x, y, 2 * radius, 0, 2 * Math.PI);
+      context.lineWidth = 2;
+      context.strokeStyle = style.handle;
+      context.stroke();
     }
   }
 }

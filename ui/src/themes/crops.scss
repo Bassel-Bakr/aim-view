@@ -16,6 +16,9 @@
   // The pixels the targets show, as the training data will have them
   --crop-visible: rgba(76, 201, 240, 0.3);
   --crop-handle: #fff;
+  // a solid's faces: lit toward the light, shaded away from it
+  --crop-face-light: rgba(255, 255, 255, 0.35);
+  --crop-face-shade: rgba(0, 0, 0, 0.35);
   --crop-line-width: 1.5;
   --crop-line-width-selected: 3;
   --crop-handle-radius: 5;

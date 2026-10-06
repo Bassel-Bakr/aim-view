@@ -3,11 +3,12 @@ import type { CropBox } from './crop-box';
 import type { FaceOffset } from './face-offset';
 import type { ShapeKind } from './shape-kind';
 import type { ShapeRole } from './shape-role';
+import type { Solid } from './solid';
 
 /**
  * One shape: its kind, its frame before turning ([center x, center y, width, height], pixels), its angle (degrees,
- * clockwise), a box's third face (the offset of the far face, pixels), its depth (greater is nearer), its role, and
- * the model box it started from (an index into the crop's boxes), if any.
+ * clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and tumble), its
+ * depth (greater is nearer), its role, and the model box it started from (an index into the crop's boxes), if any.
  */
 export interface Shape {
   id: string;
@@ -15,6 +16,7 @@ export interface Shape {
   box: CropBox;
   angle: number;
   face: FaceOffset | null;
+  solid: Solid | null;
   depth: number;
   role: ShapeRole | null;
   model: number | null;

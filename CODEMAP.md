@@ -635,15 +635,18 @@ reviewed at once (one decoder is the limit, in the browser and natively alike), 
 The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets are 3D). A pill (a
 sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a third
 face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep pill's the
-pill swept back to its far end. Shapes are joined into targets (a bot's head and body), ordered front to back by depth
-(a shape hides the parts of shapes behind it), and some only hide what is behind them (occluders: the crosshair, a
-pillar, an overlay).
+pill swept back to its far end. Or either can be solid: a box or a capsule with a thickness, tipped and swung out of the
+screen's plane, its outline what that solid shows the camera. Shapes are joined into targets (a bot's head and body),
+ordered front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them
+(occluders: the crosshair, a pillar, an overlay).
 
 - `ShapeKind` (enum): KovaaK's target shapes.
 - `ShapeRole` (enum): The part of a bot a shape stands for.
 - `Shape` (struct): One shape: its kind, its frame before turning ([center x, center y, width, height], pixels), its
-  angle (degrees, clockwise), a box's third face (the offset of the far face, pixels), its depth (greater is nearer),
-  its role, and the model box it started from (an index into the crop's boxes), if any.
+  angle (degrees, clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and
+  tumble), its depth (greater is nearer), its role, and the model box it started from (an index into the crop's boxes),
+  if any.
+- `Solid` (struct): A 3D shape's thickness and its turn out of the screen's plane, for a target seen at an angle.
 - `Scene` (struct): A crop's shapes: which are joined into one target (a shape in no group, and no occluder, is a target
   of its own), and which only hide what is behind them.
 - `TargetView` (struct): One target as the scene shows it: its shapes, the box round its visible pixels ([center x,

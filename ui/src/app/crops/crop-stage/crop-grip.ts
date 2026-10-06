@@ -4,13 +4,22 @@ import {
   CropPoint,
   faced,
   faceHandle,
+  flatSides,
   MIN_SIDE_PX,
   moved,
   onShape,
+  pushedFlatSide,
   resized,
   turned,
   turnHandle,
 } from '../../shapes/shape-geometry';
+import {
+  pushedSide,
+  SideHandle,
+  sideHandles,
+  tumbled,
+  tumbleHandle,
+} from '../../shapes/solid-geometry';
 import { changeEach, DraftScene, withChanged } from '../crop-scene';
 
 /**
@@ -18,29 +27,38 @@ import { changeEach, DraftScene, withChanged } from '../crop-scene';
  * pixels; `scale` is screen pixels per crop pixel, so handles keep their size on screen at any zoom.
  */
 
-/** What a press holds: a selected shape's corner, turn handle or face handle, a shape, a crossed-out box, or none. */
-export type GripKind = 'corner' | 'turn' | 'face' | 'move' | 'uncross' | 'draw';
+/**
+ * What a press holds: a selected shape's corner, side, turn handle, face handle or a solid's tumble handle, a shape, a
+ * crossed-out box, or none.
+ */
+export type GripKind = 'corner' | 'side' | 'turn' | 'face' | 'tumble' | 'move' | 'uncross' | 'draw';
 
 export interface CropGrip {
   kind: GripKind;
   /** The shape held; null for a crossed-out box or the wall. */
   id: string | null;
-  /** The corner held (0 to 3, as `corners`), or the crossed-out model box; -1 for none. */
+  /** The corner held (0 to 3, as `corners`), the side (as its handle says), or the crossed-out model box; -1: none. */
   index: number;
 }
 
-/** A drag: where it began and where it is (crop pixels), and whether Shift keeps a shape's two sides equal. */
+/**
+ * A drag: where it began and where it is (crop pixels), whether Shift keeps a shape's two sides equal, and whether a
+ * side's opposite side moves with it (Alt, or the tools' Mirror), the shape keeping its middle.
+ */
 export interface CropDrag {
   start: CropPoint;
   point: CropPoint;
   even: boolean;
+  mirror: boolean;
 }
 
-/** A selected shape's handles: its corners, its turn handle, and its face handle. */
+/** A selected shape's handles: a flat one's corners, its sides, its turn and face handles, and a solid's tumble. */
 export interface ShapeHandles {
   corners: CropPoint[];
+  sides: SideHandle[];
   turn: CropPoint;
   face: CropPoint | null;
+  tumble: CropPoint | null;
 }
 
 /** How far the turn and face handles sit from a shape, in screen pixels. */
@@ -56,13 +74,16 @@ export function handleReach(pointerType: string): number {
 /** How near a finger must come to a shape's edge to take it, in screen pixels. */
 const SHAPE_SLACK_PX = 6;
 
-/** A shape's handles at a scale. */
+/** A shape's handles at a scale: a solid's sides (every face of a box), a flat box's side middles and corners. */
 export function handlesOf(shape: Shape, scale: number): ShapeHandles {
   const reach = HANDLE_REACH_PX / scale;
+  const solid = shape.solid;
   return {
-    corners: corners(shape),
+    corners: solid ? [] : corners(shape),
+    sides: solid ? sideHandles(shape, solid) : flatSides(shape),
     turn: turnHandle(shape, reach),
-    face: faceHandle(shape, reach),
+    face: faceHandle(shape),
+    tumble: solid && tumbleHandle(shape, solid, reach),
   };
 }
 
@@ -97,6 +118,25 @@ function crossedAt(scene: DraftScene, crop: CropEntry, [x, y]: CropPoint, scale:
   return under ?? -1;
 }
 
+/** The handle of the selected shape a press takes: corners, then the sides the camera sees, then the rest. */
+function handleAt(
+  shape: Shape,
+  near: (handle: CropPoint | null) => boolean,
+  scale: number,
+): CropGrip | null {
+  const handles = handlesOf(shape, scale);
+  const corner = handles.corners.findIndex(near);
+  if (corner >= 0) return { kind: 'corner', id: shape.id, index: corner };
+  // the sides the camera sees first: they lie over the hidden ones
+  const sides = [...handles.sides].sort((a, b) => Number(b.seen) - Number(a.seen));
+  const side = sides.find((handle) => near(handle.point));
+  if (side) return { kind: 'side', id: shape.id, index: side.side };
+  if (near(handles.turn)) return { kind: 'turn', id: shape.id, index: -1 };
+  if (near(handles.tumble)) return { kind: 'tumble', id: shape.id, index: -1 };
+  if (near(handles.face)) return { kind: 'face', id: shape.id, index: -1 };
+  return null;
+}
+
 /** What a press at a point takes: the selected shape's handle first, then the topmost shape, then a crossed-out box. */
 export function gripAt(
   scene: DraftScene,
@@ -109,13 +149,8 @@ export function gripAt(
   const near = (handle: CropPoint | null) =>
     handle !== null && Math.hypot(handle[0] - point[0], handle[1] - point[1]) * scale <= reachPx;
   const shape = handled(scene, selection);
-  if (shape) {
-    const handles = handlesOf(shape, scale);
-    const corner = handles.corners.findIndex(near);
-    if (corner >= 0) return { kind: 'corner', id: shape.id, index: corner };
-    if (near(handles.turn)) return { kind: 'turn', id: shape.id, index: -1 };
-    if (near(handles.face)) return { kind: 'face', id: shape.id, index: -1 };
-  }
+  const handle = shape && handleAt(shape, near, scale);
+  if (handle) return handle;
   const [top] = shapesAt(scene, point, scale);
   if (top) return { kind: 'move', id: top.id, index: -1 };
   const crossed = crossedAt(scene, crop, point, scale);
@@ -126,23 +161,45 @@ export function gripAt(
 
 /**
  * The scene as a drag leaves it, from the scene at the press: a corner resizes its shape (its sides kept equal with
- * Shift), the turn handle turns it, the face handle gives it a third face, and a shape moves (with the rest of the
- * selection when it is selected).
+ * Shift), a side moves that side (its opposite one too, mirrored), the turn handle turns it, the face handle moves its
+ * far end, a solid's tumble handle tumbles it in 3D, and a shape moves (with the rest of the selection when selected).
  */
 export function dragged(
   from: DraftScene,
   grip: CropGrip,
   selection: readonly string[],
-  { start, point, even }: CropDrag,
+  { start, point, even, mirror }: CropDrag,
 ): DraftScene {
   const held = from.shapes.find((shape) => shape.id === grip.id);
   if (!held) return from;
-  if (grip.kind === 'corner') return withChanged(from, resized(held, grip.index, point, even));
-  if (grip.kind === 'turn') return withChanged(from, turned(held, point));
-  if (grip.kind === 'face') return withChanged(from, faced(held, point));
-  if (grip.kind !== 'move') return from;
-  const ids = selection.includes(held.id) ? selection : [held.id];
-  return changeEach(from, ids, (shape) => moved(shape, [point[0] - start[0], point[1] - start[1]]));
+  const solid = held.solid;
+  switch (grip.kind) {
+    case 'corner':
+      return withChanged(from, resized(held, grip.index, point, even));
+    case 'side':
+      return withChanged(
+        from,
+        solid
+          ? pushedSide(held, solid, grip.index, point, { minSide: MIN_SIDE_PX, mirror })
+          : pushedFlatSide(held, grip.index, point, mirror),
+      );
+    case 'turn':
+      return withChanged(from, turned(held, point));
+    case 'face':
+      return withChanged(from, faced(held, point));
+    case 'tumble':
+      return solid
+        ? withChanged(from, tumbled(held, solid, [point[0] - start[0], point[1] - start[1]]))
+        : from;
+    case 'move': {
+      const ids = selection.includes(held.id) ? selection : [held.id];
+      return changeEach(from, ids, (shape) =>
+        moved(shape, [point[0] - start[0], point[1] - start[1]]),
+      );
+    }
+    default:
+      return from;
+  }
 }
 
 /**

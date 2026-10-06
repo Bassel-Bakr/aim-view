@@ -1,4 +1,12 @@
 import { CropBox, FaceOffset, Shape } from '../api';
+import {
+  onSolid,
+  resizedSolid,
+  SideHandle,
+  solidExtent,
+  solidTurnHandle,
+  traceSolid,
+} from './solid-geometry';
 
 /**
  * Editing a crop's shapes with the pointer: where a shape's corners and handles are, what a drag does to it, and its
@@ -56,6 +64,7 @@ export function farCorners(shape: Shape): CropPoint[] {
 
 /** Whether a point is on a shape (its frame, or its far end's), `slack` pixels round it counting too. */
 export function onShape(shape: Shape, point: CropPoint, slack: number): boolean {
+  if (shape.solid) return onSolid(shape, shape.solid, point, slack);
   const [, , width, height] = shape.box;
   const inFrame = (at: CropPoint) => {
     const [along, across] = toOwn(shape, at);
@@ -67,14 +76,14 @@ export function onShape(shape: Shape, point: CropPoint, slack: number): boolean 
 
 /** Where a shape's turn handle is: above the middle of its frame's top edge. */
 export function turnHandle(shape: Shape, reach: number): CropPoint {
+  if (shape.solid) return solidTurnHandle(shape, shape.solid, reach);
   return toCrop(shape, [0, -shape.box[3] / 2 - reach]);
 }
 
-/** Where a shape's face handle is: its far end's middle, or beside its top right corner before it has one. */
-export function faceHandle(shape: Shape, reach: number): CropPoint {
-  const [cx, cy, width, height] = shape.box;
-  if (shape.face) return [cx + shape.face[0], cy + shape.face[1]];
-  return toCrop(shape, [width / 2 + reach, -height / 2 - reach]);
+/** Where a shape's face handle is: its far end's middle; none without a third face (a solid has its own handles). */
+export function faceHandle(shape: Shape): CropPoint | null {
+  const [cx, cy] = shape.box;
+  return shape.face && !shape.solid ? [cx + shape.face[0], cy + shape.face[1]] : null;
 }
 
 /**
@@ -82,6 +91,7 @@ export function faceHandle(shape: Shape, reach: number): CropPoint {
  * sides the same, the longer one (Shift: a perfect circle or square).
  */
 export function resized(shape: Shape, corner: number, point: CropPoint, even = false): Shape {
+  if (shape.solid) return resizedSolid(shape, shape.solid, corner, point, even, MIN_SIDE_PX);
   const signs: OwnPoint[] = [
     [-1, -1],
     [1, -1],
@@ -103,11 +113,48 @@ export function resized(shape: Shape, corner: number, point: CropPoint, even = f
   return { ...shape, box: [cx, cy, newWidth, newHeight] };
 }
 
-/** A shape with both sides the same, their mean, about its middle: a pill becomes a circle, a box a square. */
+/** A flat box's side handles: the middles of its frame's sides (axis * 2: left, top; plus 1: right, bottom). */
+export function flatSides(shape: Shape): SideHandle[] {
+  if (shape.kind !== 'box' || shape.face) return [];
+  const [, , width, height] = shape.box;
+  const middles: OwnPoint[] = [
+    [-width / 2, 0],
+    [width / 2, 0],
+    [0, -height / 2],
+    [0, height / 2],
+  ];
+  return middles.map((own, side) => ({ point: toCrop(shape, own), side, seen: true }));
+}
+
+/** A flat box with one side moved to a point: the opposite side stays, or moves the other way with `mirror`. */
+export function pushedFlatSide(
+  shape: Shape,
+  side: number,
+  point: CropPoint,
+  mirror: boolean,
+): Shape {
+  const [axis, sign] = [side >> 1, side & 1 ? 1 : -1];
+  const reach = toOwn(shape, point)[axis] * sign;
+  const box: CropBox = [...shape.box];
+  const size = box[2 + axis];
+  const next = Math.max(MIN_SIDE_PX, mirror ? 2 * reach : reach + size / 2);
+  const shift = mirror ? 0 : (sign * (next - size)) / 2;
+  const [cx, cy] = toCrop(shape, axis === 0 ? [shift, 0] : [0, shift]);
+  box[0] = cx;
+  box[1] = cy;
+  box[2 + axis] = next;
+  return { ...shape, box };
+}
+
+/**
+ * A shape with both sides the same, their mean, about its middle: a pill becomes a circle (a solid one a ball), a box a
+ * square (a solid one a cube, as thick as it is wide).
+ */
 export function evened(shape: Shape): Shape {
   const [cx, cy, width, height] = shape.box;
   const side = (width + height) / 2;
-  return { ...shape, box: [cx, cy, side, side] };
+  const solid = shape.solid && { ...shape.solid, thickness: side };
+  return { ...shape, box: [cx, cy, side, side], solid };
 }
 
 /** A shape moved by (dx, dy). */
@@ -153,16 +200,20 @@ export function scaled(shape: Shape, factor: number, [x, y]: CropPoint): Shape {
   const [cx, cy, width, height] = shape.box;
   const grow = Math.max(factor, MIN_SIDE_PX / Math.min(width, height));
   const face: FaceOffset | null = shape.face && [shape.face[0] * grow, shape.face[1] * grow];
+  const solid = shape.solid && { ...shape.solid, thickness: shape.solid.thickness * grow };
   return {
     ...shape,
     box: [x + (cx - x) * grow, y + (cy - y) * grow, width * grow, height * grow],
     face,
+    solid,
   };
 }
 
 /** The box round shapes' corners (and far faces): [center x, center y, width, height]. */
 export function boxAround(shapes: readonly Shape[]): CropBox {
-  const points = shapes.flatMap((shape) => [...corners(shape), ...farCorners(shape)]);
+  const points = shapes.flatMap((shape) =>
+    shape.solid ? solidExtent(shape, shape.solid) : [...corners(shape), ...farCorners(shape)],
+  );
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -207,6 +258,10 @@ function pillSides(shape: Shape, [dx, dy]: FaceOffset): CropPoint[] {
  */
 export function tracePath(context: CanvasRenderingContext2D, shape: Shape): void {
   context.beginPath();
+  if (shape.solid) {
+    traceSolid(context, shape, shape.solid);
+    return;
+  }
   if (shape.kind === 'pill') {
     tracePill(context, shape, [0, 0]);
     const face = shape.face;

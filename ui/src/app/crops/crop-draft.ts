@@ -59,6 +59,8 @@ export class CropDraft {
   readonly deep = signal(false);
   /** In a fix, a drag moves the view instead of drawing or moving shapes (the tools' Pan); taps still select. */
   readonly panning = signal(false);
+  /** A side dragged moves its opposite side too, the shape keeping its middle (the tools' Mirror; Alt does it too). */
+  readonly mirroring = signal(false);
   /** After an answer, the next crop not checked shows; off (?order=all), the next crop in order, checked or not. */
   readonly skipChecked = signal(queryValue('order') !== 'all');
   readonly note = signal<CropNote | null>(null);

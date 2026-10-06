@@ -82,13 +82,14 @@ describe('crop scenes', () => {
 });
 
 describe('3D crop shapes', () => {
-  it('draws a 3D shape with its far end up and to the right, and makes shapes flat or 3D', () => {
+  it('draws a 3D shape solid, its top and right side showing, and makes shapes flat or 3D', () => {
     let scene = withDrawn(sceneOfFix(CROP, null), 'box', [50, 80, 40, 20], true);
-    expect(scene.shapes.at(-1)?.face).toEqual([10, -5]);
+    const solid = { thickness: 20, tip: 20, swing: 25 };
+    expect(scene.shapes.at(-1)?.solid).toEqual(solid);
     scene = withKind(scene, ['s2'], 'pill', true);
-    expect(scene.shapes.at(-1)).toEqual(expect.objectContaining({ kind: 'pill', face: [10, -5] }));
-    expect(withKind(scene, ['s2'], 'pill').shapes.at(-1)?.face).toBeNull();
-    expect(withKind(scene, ['m0'], 'box', true).shapes[0].face).not.toBeNull();
+    expect(scene.shapes.at(-1)).toEqual(expect.objectContaining({ kind: 'pill', solid }));
+    expect(withKind(scene, ['s2'], 'pill').shapes.at(-1)?.solid).toBeNull();
+    expect(withKind(scene, ['m0'], 'box', true).shapes[0].solid).not.toBeNull();
   });
 });
 

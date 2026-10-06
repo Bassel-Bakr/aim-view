@@ -126,6 +126,16 @@
     type="button"
     appButton
     class="tool-toggle"
+    title="A side dragged moves its opposite side too, so the shape keeps its middle (also: hold Alt)"
+    [attr.aria-pressed]="draft.mirroring()"
+    (click)="toggleMirroring()"
+  >
+    Mirror
+  </button>
+  <button
+    type="button"
+    appButton
+    class="tool-toggle"
     title="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
     [attr.aria-pressed]="draft.panning()"
     (click)="togglePanning()"
@@ -133,10 +143,37 @@
     Pan
   </button>
 </div>
+@if (solidChosen()) {
+  <div class="tool-row">
+    <span id="crop-tumble-label" class="tool-label">3D turn</span>
+    @for (s of sidesShown; track s.side) {
+      <button
+        type="button"
+        appButton
+        [title]="
+          'Turn the selected 3D shapes ' + TURN_STEP + '° so more of their ' + s.side + ' shows'
+        "
+        (click)="show(s.side)"
+      >
+        {{ s.name }}
+      </button>
+    }
+    <button
+      type="button"
+      appButton
+      title="Turn the selected 3D shapes to face the camera squarely (their turn on screen stays)"
+      (click)="faceCamera()"
+    >
+      Face me
+    </button>
+  </div>
+}
 <p class="tool-help">
-  Drag on the crop to draw a {{ drawing() }}. Tap shapes to select them. Drag a corner to resize,
-  the round handle above to turn, the square handle to pull a 3D shape's far end (a cube's top and
-  side, a pill seen at an angle). The wheel over the selected shapes resizes them, elsewhere it
+  Drag on the crop to draw a {{ drawing() }}. Tap shapes to select them. Drag a corner to resize, a
+  square on a side to move that side (Mirror or Alt: its opposite side too), the round handle above
+  to turn. A 3D shape has a square on each face (hollow: a face turned away) and a ringed handle
+  below: drag it to tumble the shape in 3D, or use the 3D turn buttons. Its faces toward you are
+  shaded and its hidden edges dashed. The wheel over the selected shapes resizes them, elsewhere it
   zooms. Shift while drawing or resizing makes a perfect circle or square. Tap the wall for a tiny
   target.
 </p>

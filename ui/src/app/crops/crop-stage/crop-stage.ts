@@ -18,7 +18,7 @@ import { listenQuietly } from '../../services/listen-quietly';
 import { CropPoint } from '../../shapes/shape-geometry';
 import { CROP_SIDE, CropDraft } from '../crop-draft';
 import {
-  defaultFace,
+  defaultSolid,
   DraftScene,
   removed,
   resizedAll,
@@ -61,6 +61,12 @@ interface StagePress {
 }
 
 /** Two fingers: how far apart and where their middle was when the second came down, and the zoom then. */
+/** The keys held while dragging: Shift keeps sides equal; Alt (or Mirror) moves a side's opposite side too. */
+interface DragKeys {
+  even: boolean;
+  mirror: boolean;
+}
+
 interface StagePinch {
   distance: number;
   middle: ScreenPoint;
@@ -304,7 +310,10 @@ export class CropStage {
       clearTimeout(this.peekTimer);
       this.peeking.set(false);
     }
-    this.dragTo(press, screen, event.shiftKey);
+    this.dragTo(press, screen, {
+      even: event.shiftKey,
+      mirror: event.altKey || this.draft.mirroring(),
+    });
   }
 
   private movePinch(pinch: StagePinch): void {
@@ -324,7 +333,7 @@ export class CropStage {
     );
   }
 
-  private dragTo(press: StagePress, screen: ScreenPoint, even: boolean): void {
+  private dragTo(press: StagePress, screen: ScreenPoint, { even, mirror }: DragKeys): void {
     const grip = press.grip;
     if (!grip || press.pans) {
       const [dx, dy] = [screen[0] - press.screen[0], screen[1] - press.screen[1]];
@@ -333,13 +342,23 @@ export class CropStage {
       );
       return;
     }
-    const drag = { start: press.start, point: this.toCrop(screen), even };
+    const drag = { start: press.start, point: this.toCrop(screen), even, mirror };
     if (grip.kind === 'draw') {
       const box = sketchBox(drag);
       const kind = this.draft.kind();
-      const face = box && this.draft.deep() ? defaultFace(box) : null;
+      const solid = box && this.draft.deep() ? defaultSolid(box) : null;
       this.sketch.set(
-        box && { id: '', kind, box, angle: 0, face, depth: 0, role: null, model: null },
+        box && {
+          id: '',
+          kind,
+          box,
+          angle: 0,
+          face: null,
+          solid,
+          depth: 0,
+          role: null,
+          model: null,
+        },
       );
       return;
     }
@@ -369,6 +388,7 @@ export class CropStage {
         start: press.start,
         point: this.toCrop(this.at(event)),
         even: event.shiftKey,
+        mirror: false,
       });
   }
 
@@ -378,7 +398,7 @@ export class CropStage {
     if (!crop || !scene) return;
     const selection = this.draft.selection();
     // a handle only drags: tapped, it is what lies under it that was meant (a head above a body's turn handle)
-    const handle = held.kind === 'corner' || held.kind === 'turn' || held.kind === 'face';
+    const handle = ['corner', 'turn', 'face', 'tumble', 'thickness'].includes(held.kind);
     const grip = handle ? gripAt(scene, crop, [], [x, y], this.place().scale) : held;
     const id = grip.id;
     if (grip.kind === 'move' && id) {
