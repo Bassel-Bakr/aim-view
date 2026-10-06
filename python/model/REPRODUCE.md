@@ -344,6 +344,20 @@ python python/model/export.py $D/runs/full_v8/best.pt
 python python/model/accept.py full_v8 --all
 ```
 
+full_v9: full_v8_s3's recipe (seed 3, from full_v6) on the sets made again from the 2026-10-06 labels (step 1: the
+bars, their recolored copies, the robots and the small targets, with Tile Frenzy's cubes as 3D boxes). It ran beside a
+game with `--gpu-share 0.3` (the GPU trains 30% of the time; the weights are those of a run without it):
+
+```bash
+python python/model/train.py python/model/configs/full_v9.json --data $D/data_v3 --extra $D/data_kills4 --extra $D/hand_data \
+  --extra $D/hand_data2 --extra $D/data_moving_dark --extra $D/data_themes_checked --extra $D/data_mined_checked2 \
+  --extra $D/data_robots_checked2 --extra $D/data_crosshair_checked --extra $D/data_crosshair_turn_checked --extra $D/data_small_checked2 \
+  --extra $D/data_robots_teacher_checked --extra $D/data_bars_checked2 --extra $D/data_bars_recolored2 \
+  --repeat $D/repeat_full_v8.txt --times 3 --init $D/runs/full_v6/best.pt --gpu-share 0.3
+python python/model/export.py $D/runs/full_v9/best.pt
+python python/model/accept.py full_v9 --all
+```
+
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
 and forked from any snapshot with `<new config> --fork test_out/vod_model/runs/<name>/snapshots/<snapshot>.pt`.
 

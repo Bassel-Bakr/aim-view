@@ -1,0 +1,42 @@
+{
+  "name": "full_v9",
+  "seed": 3,
+  "model": {
+    "widths": [
+      24,
+      48,
+      64,
+      96
+    ],
+    "blocks": [
+      3,
+      3,
+      3
+    ],
+    "head": 48
+  },
+  "train": {
+    "epochs": 4,
+    "batch": 64,
+    "lr": 0.00025,
+    "weight_decay": 0.0001,
+    "workers": 8
+  },
+  "augment": {
+    "theme": 0.7,
+    "target": 0.8,
+    "texture": 0.3,
+    "crosshair": 0.7,
+    "crosshair_on_target": 0.6,
+    "crosshair_jitter": 0.6,
+    "blur": 0.5,
+    "outline": 0.3,
+    "decoder": 0.5,
+    "crosshair_outline": 0.5,
+    "crosshair_real": 0.6
+  },
+  "loss": {
+    "offset": 1.0,
+    "size": 0.5
+  }
+}

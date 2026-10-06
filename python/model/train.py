@@ -513,6 +513,10 @@ class EpochOrder(torch.utils.data.Sampler):
         return self.n - self.start * self.batch
 
 
+# The least share of the time --gpu-share lets the GPU train: below it a run would barely move.
+MIN_GPU_SHARE = 0.05
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("config", nargs="?")
@@ -526,6 +530,9 @@ def parse_args():
     parser.add_argument("--resume", help="a run folder to go on with")
     parser.add_argument("--fork", help="a snapshot (or a run folder: its latest state) to branch from")
     parser.add_argument("--save-every", type=int, default=200)
+    parser.add_argument("--gpu-share", type=float, default=1.0,
+                        help="the share of the time the GPU trains (0 to 1): after each step the run rests so the GPU "
+                        "is free the rest of the time, for a game beside it; the weights come out the same")
     parser.add_argument("--extra", action="append", default=[], help="another dataset folder (its train and val splits "
                         "are added)")
     return parser, parser.parse_args()
@@ -570,6 +577,8 @@ def schedule(step, steps):
 
 class Trainer:
     """Training that can be paused, resumed and forked at any point (see main)."""
+
+    gpu_share = 1.0
 
     def __init__(self, config, args, run, device):
         self.config, self.args, self.run, self.device = config, args, run, device
@@ -642,6 +651,16 @@ class Trainer:
         # left on the GPU, in float64 so the epoch's sum equals Python's: reading it each step would wait for the GPU
         return loss.detach().double()
 
+    def rest(self, step_started):
+        """After a step, rests so the GPU trains only --gpu-share of the time: the step's time (waited for on the GPU)
+        times the rest's share over the work's."""
+        if self.gpu_share >= 1:
+            return
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+        busy = time.perf_counter() - step_started
+        time.sleep(busy * (1 / max(self.gpu_share, MIN_GPU_SHARE) - 1))
+
     def train_epoch(self, epoch):
         """One epoch's batches, from where a resumed run stopped; the batches done, or None when paused or
         stopped."""
@@ -652,7 +671,9 @@ class Trainer:
         done = start
         try:
             for batch in self.train_loader:
+                step_started = time.perf_counter()
                 self.total += self.step(batch)
+                self.rest(step_started)
                 done += 1
                 if done % self.args.get("save_every", 200) == 0:
                     self.save(epoch, done)
@@ -704,6 +725,7 @@ def main():
     json.dump(config, open(run / "config.json", "w"), indent=1)
     train = config["train"]
     trainer = Trainer(config, args, run, device)
+    trainer.gpu_share = cli.gpu_share
     trainer.start(state, fork)
     print(f"{config['name']}: {trainer.params} parameters; {len(trainer.train_crops)} train crops, "
           f"{len(trainer.val_loader.dataset)} val crops; {train['epochs']} epochs on {device}"
