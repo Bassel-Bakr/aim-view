@@ -19,14 +19,11 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import net  # noqa: E402
-
-MAXBOX = 40
-MAXIGNORE = 8
-SAME_TARGET_PX = 1.5            # the labeller can report one target twice: two labels this close are one
+from crop_pack import PackedCrops, PackLoader, read_crop  # noqa: E402
 HALF = 0.5                      # a coin toss; and a mask's 0/1 split
 
 # recolour: the wall moved to a random color, the targets painted one that stands out
@@ -71,7 +68,7 @@ FAR = 1e9
 TINY = 1e-9
 RECOLOR_SEEDS = 10 ** 6
 SEED_STRIDE = 100003            # an epoch's order is seeded by seed * this + epoch
-VAL_BATCH, VAL_WORKERS = 64, 4
+VAL_BATCH = 64
 
 
 class Crops(Dataset):
@@ -87,20 +84,7 @@ class Crops(Dataset):
         return len(self.files)
 
     def __getitem__(self, i):
-        crop = np.load(self.files[i])
-        keep = []                       # the labeller can report one target twice (overlapping search windows)
-        for box in crop["boxes"]:
-            if all(np.hypot(box[0] - kept[0], box[1] - kept[1]) > SAME_TARGET_PX for kept in keep):
-                keep.append(box)
-        boxes = np.zeros((MAXBOX, 4), np.float32)
-        count = min(MAXBOX, len(keep))
-        if count:
-            boxes[:count] = np.array(keep[:count])
-        ignore = np.zeros((MAXIGNORE, 4), np.float32)   # "ignore": a target there, but not one to learn (under the
-        if "ignore" in crop.files:                      # crosshair); padding has width 0
-            ignored = min(MAXIGNORE, len(crop["ignore"]))
-            ignore[:ignored] = crop["ignore"][:ignored]
-        return crop["rgb"], crop["fixed"], crop["tmask"], boxes, count, ignore
+        return read_crop(self.files[i])
 
 
 # ---- augmentation (batched, on the GPU) -----------------------------------------------------------------------------
@@ -221,20 +205,17 @@ def real_crosshairs(folder, device="cpu"):
     return _REAL[key]
 
 
-def paste_real(image, fixed, crop, cx, cy, picture):
-    """One real crosshair image (4 x h x w) alpha-blended into a crop, centered on (cx, cy), and its visible pixels
-    marked in the fixed map, as the key frames mark the game's crosshair."""
-    size = image.shape[-1]
-    height, width = picture.shape[1:]
-    x0, y0 = int(round(cx - width / 2)), int(round(cy - height / 2))
-    left, top, right, bottom = max(0, x0), max(0, y0), min(size, x0 + width), min(size, y0 + height)
-    if left >= right or top >= bottom:
-        return
-    part = picture[:, top - y0:bottom - y0, left - x0:right - x0]
-    alpha = part[3:4]
-    image[crop, :, top:bottom, left:right] = image[crop, :, top:bottom, left:right] * (1 - alpha) + part[:3] * alpha
-    fixed[crop, 0, top:bottom, left:right] = torch.maximum(fixed[crop, 0, top:bottom, left:right],
-                                                           (alpha[0] > REAL_VISIBLE).to(fixed.dtype))
+DOT, PLUS, RING = 0, 1, 2       # a drawn crosshair's kinds
+_SCALED = {}
+
+
+def scaled_picture(pictures, index, height, width):
+    """One of KovaaK's crosshair images (4 x h x w) at a size, made once (bilinear; the size alone sets the result)."""
+    key = (id(pictures), index, height, width)
+    if key not in _SCALED:
+        _SCALED[key] = F.interpolate(pictures[index][None], size=(height, width), mode="bilinear",
+                                     align_corners=False)[0].clamp(0, 1)
+    return _SCALED[key]
 
 
 def crosshair_center(boxes, counts, crop, size, on_target, jitter):
@@ -249,31 +230,100 @@ def crosshair_center(boxes, counts, crop, size, on_target, jitter):
                                                                                           size - CROSSHAIR_EDGE_PX)
 
 
-def real_picture(pictures, device):
-    """One of KovaaK's crosshair images, 5 to 40 px across, half of them tinted."""
-    picture = random.choice(pictures).to(device)
-    scale = random.uniform(REAL_MIN_PX, REAL_MAX_PX) / max(picture.shape[1:])
-    picture = F.interpolate(picture[None], size=(max(1, round(picture.shape[1] * scale)),
-                                                 max(1, round(picture.shape[2] * scale))),
-                            mode="bilinear", align_corners=False)[0].clamp(0, 1)
-    if random.random() < HALF:
-        tint = torch.rand(3, 1, 1, device=device)
-        picture = torch.cat([picture[:3] * tint / tint.max().clamp(min=TINT_FLOOR), picture[3:]])
-    return picture
+def drawn_plan():
+    """A synthetic crosshair's kind and sizes (px): a dot (its radius), a plus (its arm, thickness and gap) or a ring
+    (its radius)."""
+    kind = random.choice((DOT, DOT, PLUS, RING))
+    if kind == DOT:
+        return DOT, random.uniform(*DOT_RADIUS_PX), 0.0, 0.0
+    if kind == PLUS:
+        return PLUS, random.uniform(*PLUS_ARM_PX), random.uniform(*PLUS_THICKNESS_PX), random.uniform(*PLUS_GAP_PX)
+    return RING, random.uniform(*RING_RADIUS_PX), 0.0, 0.0
 
 
-def drawn_shape(dx, dy):
-    """A synthetic crosshair's pixels: a dot, a plus or a ring, by their offsets from its center."""
-    kind = random.choice(("dot", "dot", "plus", "ring"))
-    if kind == "dot":
-        return dx ** 2 + dy ** 2 <= random.uniform(*DOT_RADIUS_PX) ** 2
-    if kind == "plus":
-        arm, thickness, gap = (random.uniform(*PLUS_ARM_PX), random.uniform(*PLUS_THICKNESS_PX),
-                               random.uniform(*PLUS_GAP_PX))
-        return ((dx.abs() <= thickness) & (dy.abs() <= arm) & (dy.abs() >= gap)) | \
-            ((dy.abs() <= thickness) & (dx.abs() <= arm) & (dx.abs() >= gap))
-    radius = random.uniform(*RING_RADIUS_PX)
-    return ((dx ** 2 + dy ** 2).sqrt() - radius).abs() <= RING_THICKNESS_PX
+def crosshair_plans(boxes, counts, size, shares, pictures):
+    """Each crop's crosshair, chosen on the CPU: (crop, cx, cy, picture) for one of KovaaK's images (its index, height,
+    width and whether it is tinted), else (crop, cx, cy, shape, outline) for a drawn one (drawn_plan(), and the
+    outline's width and whether it is dark, or None)."""
+    share, on_target, jitter, outline, real = shares
+    pictured, drawn = [], []
+    for crop in range(boxes.shape[0]):
+        if random.random() > share:
+            continue
+        cx, cy = crosshair_center(boxes, counts, crop, size, on_target, jitter)
+        if pictures and random.random() < real:
+            index = random.randrange(len(pictures))
+            height, width = pictures[index].shape[1:]
+            scale = random.uniform(REAL_MIN_PX, REAL_MAX_PX) / max(height, width)
+            pictured.append((crop, cx, cy, (index, max(1, round(height * scale)), max(1, round(width * scale)),
+                                            random.random() < HALF)))
+            continue
+        shape = drawn_plan()
+        edge = (random.choice(OUTLINE_SIZES), random.random() < DARK_OUTLINE_SHARE) \
+            if random.random() < outline else None
+        drawn.append((crop, cx, cy, shape, edge))
+    return pictured, drawn
+
+
+def paste_pictures(image, fixed, plans, pictures):
+    """KovaaK's crosshair images alpha-blended into their crops, centered on their spots, half of them tinted, and
+    their visible pixels marked in the fixed map, as the key frames mark the game's crosshair: placed in one overlay,
+    then blended for the whole batch at once (alpha 0 leaves a crop as it was)."""
+    if not plans:
+        return image, fixed
+    batch, _, size, _ = image.shape
+    device = image.device
+    overlay = torch.zeros(batch, 4, size, size, device=device)
+    for crop, cx, cy, (index, height, width, _) in plans:
+        picture = scaled_picture(pictures, index, height, width)
+        x0, y0 = int(round(cx - width / 2)), int(round(cy - height / 2))
+        left, top, right, bottom = max(0, x0), max(0, y0), min(size, x0 + width), min(size, y0 + height)
+        if left < right and top < bottom:
+            overlay[crop, :, top:bottom, left:right] = picture[:, top - y0:bottom - y0, left - x0:right - x0]
+    gain = torch.ones(batch, 3, 1, 1, device=device)
+    tinted = [crop for crop, _, _, (_, _, _, tint) in plans if tint]
+    if tinted:
+        tint = torch.rand(len(tinted), 3, 1, 1, device=device)
+        gain.index_copy_(0, torch.tensor(tinted).to(device, non_blocking=True),
+                         tint / tint.amax(1, keepdim=True).clamp(min=TINT_FLOOR))
+    alpha = overlay[:, 3:]
+    image = image * (1 - alpha) + overlay[:, :3] * gain * alpha
+    return image, torch.maximum(fixed, (alpha > REAL_VISIBLE).to(fixed.dtype))
+
+
+def drawn_masks(plans, size, device):
+    """The pixels of each drawn crosshair (n, S, S) and of its outline (none without one), all at once."""
+    rows = torch.tensor([[cx, cy, *shape, (edge or (0, False))[0]] for _, cx, cy, shape, edge in plans],
+                        dtype=torch.float32).to(device, non_blocking=True)
+    cx, cy, kind, first, second, third, grow = (rows[:, k, None, None] for k in range(7))
+    pixels = torch.arange(size, device=device, dtype=torch.float32)
+    dx, dy = pixels[None, None, :] - cx, pixels[None, :, None] - cy
+    distance2 = dx ** 2 + dy ** 2
+    plus = ((dx.abs() <= second) & (dy.abs() <= first) & (dy.abs() >= third)) | \
+        ((dy.abs() <= second) & (dx.abs() <= first) & (dx.abs() >= third))
+    drawn = torch.where(kind == DOT, distance2 <= first ** 2,
+                        torch.where(kind == PLUS, plus, (distance2.sqrt() - first).abs() <= RING_THICKNESS_PX))
+    edge = torch.zeros_like(drawn)
+    for grow_px in OUTLINE_SIZES:
+        edge |= (F.max_pool2d(drawn[:, None].float(), grow_px, 1, grow_px // 2)[:, 0] > 0) & (grow == grow_px)
+    return drawn, edge & ~drawn
+
+
+def draw_crosshairs(image, fixed, plans):
+    """The drawn crosshairs (dot, plus or ring, any color) and their outlines (mostly dark) painted into their crops
+    and marked in the fixed map, all at once."""
+    if not plans:
+        return image, fixed
+    device = image.device
+    crops = torch.tensor([plan[0] for plan in plans]).to(device, non_blocking=True)
+    dark = torch.tensor([bool(edge and edge[1]) for *_, edge in plans]).to(device, non_blocking=True)
+    drawn, edge = drawn_masks(plans, image.shape[-1], device)
+    color = torch.rand(len(plans), 3, 1, 1, device=device)
+    edge_color = torch.rand(len(plans), 3, 1, 1, device=device) \
+        * torch.where(dark, DARK_OUTLINE, 1.0)[:, None, None, None]
+    picked = torch.where(edge[:, None], edge_color, torch.where(drawn[:, None], color, image.index_select(0, crops)))
+    marked = fixed.index_select(0, crops).masked_fill((drawn | edge)[:, None], 1)
+    return image.index_copy(0, crops, picked), fixed.index_copy(0, crops, marked)
 
 
 def crosshairs(image, fixed, boxes, counts, share=0.5, on_target=0.5, jitter=0.0, outline=0.0, real=0.0,
@@ -284,33 +334,14 @@ def crosshairs(image, fixed, boxes, counts, share=0.5, on_target=0.5, jitter=0.0
     holds slightly off (v2; v1 drew it dead center). A share (outline) get a 1 or 2 px edge, mostly dark, as Aim Lab's
     red cross has: every model up to small_v6 took that crosshair for a target. A share (real) are KovaaK's own
     crosshair images instead (real_crosshairs()), 5 to 40 px across, half of them tinted, as the game's crosshair color
-    does: small_v10 took the user's and other players' crosshairs for targets again."""
-    batch, _, size, _ = image.shape
-    device = image.device
-    yy, xx = torch.meshgrid(torch.arange(size, device=device), torch.arange(size, device=device), indexing="ij")
-    # the boxes read once on the CPU, and the pixels painted with where() rather than a mask's index: neither makes
-    # the loop wait for the GPU crop by crop
-    boxes = boxes.cpu()
-    for crop in range(batch):
-        if random.random() > share:
-            continue
-        cx, cy = crosshair_center(boxes, counts, crop, size, on_target, jitter)
-        pictures = real_crosshairs(folder, device) if real else []
-        if pictures and random.random() < real:
-            paste_real(image, fixed, crop, cx, cy, real_picture(pictures, device))
-            continue
-        drawn = drawn_shape(xx - cx, yy - cy)
-        color = torch.rand(3, 1, device=device)
-        image[crop] = torch.where(drawn, color[:, :, None], image[crop])
-        fixed[crop, 0].masked_fill_(drawn, 1)
-        if random.random() < outline:
-            grow = random.choice(OUTLINE_SIZES)
-            edge = (F.max_pool2d(drawn[None, None].float(), grow, 1, grow // 2)[0, 0] > 0) & ~drawn
-            dark = random.random() < DARK_OUTLINE_SHARE
-            edge_color = torch.rand(3, 1, device=device) * (DARK_OUTLINE if dark else 1.0)
-            image[crop] = torch.where(edge, edge_color[:, :, None], image[crop])
-            fixed[crop, 0].masked_fill_(edge, 1)
-    return image, fixed
+    does: small_v10 took the user's and other players' crosshairs for targets again.
+    A crop has one crosshair at most, so each is chosen on the CPU and all are drawn for the whole batch at once: drawn
+    a crop at a time they took about half of a training step's time on the CPU, in hundreds of small GPU calls."""
+    pictures = real_crosshairs(folder, image.device) if real else []
+    pictured, drawn = crosshair_plans(boxes.cpu(), counts, image.shape[-1], (share, on_target, jitter, outline, real),
+                                      pictures)
+    image, fixed = paste_pictures(image, fixed, pictured, pictures)
+    return draw_crosshairs(image, fixed, drawn)
 
 
 def decoder(image, share=0.0):
@@ -366,12 +397,14 @@ def augment(rgb, fixed, target_mask, boxes, counts, config, ignore=None):
 
 
 # ---- targets and loss -----------------------------------------------------------------------------------------------
-def targets(boxes, counts, size):
-    """Heatmap (B, 1, S/4, S/4) with a Gaussian at every center, and the regression targets at center cells."""
+def targets(boxes, counts, size, device=None):
+    """Heatmap (B, 1, S/4, S/4) with a Gaussian at every center, and the regression targets at center cells, on
+    `device` (the boxes' own by default). With the boxes and counts on the CPU nothing here waits for the GPU."""
     batch = boxes.shape[0]
     cells = size // net.STRIDE
-    device = boxes.device
-    valid = torch.arange(boxes.shape[1], device=device)[None] < counts.to(device)[:, None]
+    device = device or boxes.device
+    boxes_here, boxes = boxes.cpu(), boxes.to(device, non_blocking=True)
+    valid = torch.arange(boxes.shape[1], device=device)[None] < counts.to(device, non_blocking=True)[:, None]
     centers = boxes[..., :2] / net.STRIDE
     sides = boxes[..., 2:].clamp(min=1.0)
     sigma = (SIGMA_SIZE * sides.max(-1).values / net.STRIDE).clamp(min=MIN_SIGMA)
@@ -380,16 +413,16 @@ def targets(boxes, counts, size):
         (yy[None, None] + 0.5 - centers[..., 1, None, None]) ** 2
     gaussians = torch.exp(-distance2 / (2 * sigma[..., None, None] ** 2)) * valid[..., None, None]
     heatmap = gaussians.max(1).values[:, None]
-    center_cells = centers.floor().long().clamp(0, cells - 1)
+    center_cells = (boxes_here[..., :2] / net.STRIDE).floor().long().clamp(0, cells - 1)
     peak = torch.zeros(batch, 1, cells, cells, device=device)
     reg = torch.zeros(batch, 4, cells, cells, device=device)
     # every box's cell at once, its crop and slot found on the CPU (counts is there) and the cells read back in one
     # copy; where two boxes share a cell the later one's values stand, as writing them box by box left them
     crops, slots = (torch.arange(boxes.shape[1])[None] < counts.cpu()[:, None]).nonzero(as_tuple=True)
-    cells_xy = center_cells.cpu()[crops, slots]
+    cells_xy = center_cells[crops, slots]
     keys = ((crops * cells + cells_xy[:, 1]) * cells + cells_xy[:, 0]).tolist()
     last = sorted({key: i for i, key in enumerate(keys)}.values())
-    crops, slots, cells_xy = crops[last].to(device), slots[last].to(device), cells_xy[last].to(device)
+    crops, slots, cells_xy = (part[last].to(device, non_blocking=True) for part in (crops, slots, cells_xy))
     x, y = cells_xy[:, 0], cells_xy[:, 1]
     peak[crops, 0, y, x] = 1
     reg[crops, :, y, x] = torch.stack([centers[crops, slots, 0] - x, centers[crops, slots, 1] - y,
@@ -487,7 +520,7 @@ def evaluate(model, loader, device, recolour_test=False, threshold=0.3):
         else:
             inputs = net.prepare(rgb, fixed)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
-            out = model(inputs)
+            out = model(inputs.contiguous(memory_format=torch.channels_last))
         hits, misses, missed, found_errors = match(net.decode(out, threshold), boxes.cpu(), counts)
         true_pos, false_pos, false_neg, errors = true_pos + hits, false_pos + misses, false_neg + missed, \
             errors + found_errors
@@ -584,15 +617,15 @@ class Trainer:
         self.config, self.args, self.run, self.device = config, args, run, device
         train = config["train"]
         sets = [Path(args["data"])] + [Path(extra) for extra in args.get("extra", [])]
-        self.train_crops = Crops([folder / "train" for folder in sets], repeats(args), args.get("times", 1))
+        # the crops' packs (crop_pack.py), read on a thread: worker processes reading the crop files were slower
+        self.train_crops = PackedCrops([folder / "train" for folder in sets], repeats(args), args.get("times", 1))
         self.order = EpochOrder(len(self.train_crops), config["seed"], train["batch"])
-        self.train_loader = DataLoader(self.train_crops, train["batch"], sampler=self.order,
-                                       num_workers=train["workers"], drop_last=True, persistent_workers=True,
+        self.train_loader = PackLoader(self.train_crops, train["batch"], sampler=self.order, drop_last=True,
                                        pin_memory=True)
-        self.val_loader = DataLoader(Crops([folder / "val" for folder in sets]), VAL_BATCH, num_workers=VAL_WORKERS,
-                                     persistent_workers=True)
+        self.val_loader = PackLoader(PackedCrops([folder / "val" for folder in sets]), VAL_BATCH)
         per_epoch = len(self.train_crops) // train["batch"]
-        self.model = net.build(config).to(device)
+        # channels last: cuDNN's depthwise convolutions run 1.7 times as fast on it as on the default layout
+        self.model = net.build(config).to(device, memory_format=torch.channels_last)
         self.steps = train["epochs"] * per_epoch
         self.epoch0, self.batch0, self.best, self.total = 0, 0, -1, 0.0
 
@@ -636,13 +669,17 @@ class Trainer:
 
     def step(self, batch):
         """One optimizer step on a batch; returns its loss."""
-        rgb, fixed, target_mask, boxes, ignore = (batch[part].to(self.device, non_blocking=True) for part in (0, 1, 2, 3, 5))
-        counts = batch[4]     # kept on the CPU: the loops over the crops read it without waiting for the GPU
+        rgb, fixed, target_mask = (batch[part].to(self.device, non_blocking=True) for part in (0, 1, 2))
+        # the boxes, their counts and the ignore boxes stay on the CPU, where the crosshairs, the targets and the
+        # ignored cells read them: nothing in the step waits for the GPU, so the next batch is prepared while it works
+        boxes, counts, ignore = batch[3], batch[4], batch[5]
         inputs, boxes, ignore = augment(rgb, fixed, target_mask, boxes.clone(), counts, self.config, ignore)
-        heatmap, peak, reg = targets(boxes, counts, inputs.shape[-1])
+        heatmap, peak, reg = targets(boxes, counts, inputs.shape[-1], self.device)
+        keep = kept_cells(ignore, heatmap.shape[-1])
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
-            out = self.model(inputs)
-        loss, _ = loss_fn(out, heatmap, peak, reg, self.config, kept_cells(ignore, heatmap.shape[-1]))
+            out = self.model(inputs.contiguous(memory_format=torch.channels_last))
+        loss, _ = loss_fn(out, heatmap, peak, reg, self.config,
+                          None if keep is None else keep.to(self.device, non_blocking=True))
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), CLIP_NORM)
@@ -718,6 +755,7 @@ def main():
     np.random.seed(config["seed"])
     torch.manual_seed(config["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.backends.cudnn.benchmark = True       # the fastest convolution for the crops' one size, found once
     run = Path(cli.out) / config["name"]
     if not cli.resume and (run / "state.pt").exists():
         raise SystemExit(f"{run} already has a run: --resume it, or give the config another name")

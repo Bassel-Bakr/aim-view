@@ -365,6 +365,13 @@ Each run writes `test_out/vod_model/runs/<name>/` with `config.json`, `metrics.j
 scores included), `best.pt` (best validation F1) and `last.pt`. Seeds are fixed in the config. 20 epochs take about
 7 minutes for small on the GPU. `--epochs N` overrides the config for a quick try.
 
+The first run on a crop folder packs its crops (`crop_pack.py`): they are decoded once into `<folder>.pack/` beside
+it (about 210 KB a crop: 15 GB for full_v9's 68,417 training crops, 80 s), and packed again when the folder's crops
+change. A batch is read from the packs on a thread (4 ms) instead of 64 crop files in worker processes (44 ms), the
+boxes stay on the CPU so no step waits for the GPU, the model trains channels-last, and each batch's crosshairs are
+drawn at once. full_v9's recipe: 42 s an epoch (58 s the first), against 75 s (117 s) before; the same validation F1
+within noise (0.9471, 0.9431, 0.9448, 0.9446 against 0.9477, 0.9439, 0.9441, 0.9469).
+
 ## 3. Evaluate
 
 Crops of the held-out test scenarios, against the automatic labels (the threshold is chosen on val, never on test):
