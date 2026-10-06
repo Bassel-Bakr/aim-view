@@ -103,9 +103,6 @@
     }
     <app-crop-stage />
     <p class="status" role="status">{{ status() }}</p>
-    @if (draft.mode() === 'fix') {
-      <app-crop-tools />
-    }
   } @else if (draft.list().length) {
     <p class="status">Every crop of this set is checked.</p>
   } @else if (!folders().length && draft.pages.hasValue()) {
@@ -126,6 +123,7 @@
 
 <nav class="bar" aria-label="Answer">
   @if (draft.mode() === 'fix') {
+    <app-crop-tools class="bar-tools" />
     <div class="bar-row">
       <button type="button" appButton (click)="draft.cancel()">Cancel</button>
       <button

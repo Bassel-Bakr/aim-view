@@ -31,6 +31,8 @@
   // The page: its widest, and the progress meter's height
   --crop-page-width: 560px;
   --crop-meter-height: 4px;
+  // A fix's tools in the answer bar: at most this share of the screen, the rest scrolls
+  --crop-tools-max-height: 45dvh;
 }
 
 $crop-wrong: var(--crop-wrong);

@@ -71,6 +71,12 @@
     @apply flex flex-wrap justify-center gap-3;
   }
 
+  // A fix's tools sit in the bar, so they stay on screen on a phone (under the crop they ran off it, and a drag that
+  // starts on the crop draws rather than scrolls); past their share of the screen they scroll on their own
+  .bar-tools {
+    @apply mx-auto max-h-(--crop-tools-max-height) w-full max-w-(--crop-page-width) overflow-y-auto;
+  }
+
   // Wrong in red, so it is never taken for Right
   .verdict-wrong {
     border-color: c.$crop-wrong;
