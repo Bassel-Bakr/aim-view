@@ -705,6 +705,8 @@ def balanced_sum(terms):
 def decode(video, frames):
     """The frames (sorted indices) as RGB 1280 x 720 (ffmpeg's area scaling, as everywhere): one pass from the start, so
     the numbering is the review's; frames between them in the same windows are decoded and dropped."""
+    if not frames:
+        return {}
     ranges = []
     for i in frames:
         if ranges and i - ranges[-1][1] <= JOIN_FRAMES:
