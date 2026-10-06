@@ -69,7 +69,7 @@ def from_folder(set_name, folder):
     recordings = [json.loads(line) for line in manifest.open(encoding="utf8")] if manifest.exists() else []
     for path in sorted(folder.glob("**/*.npz")):
         crop = np.load(path, allow_pickle=True)
-        known = next((row for row in recordings if path.name.startswith(row["stem"])), {})
+        known = next((row for row in recordings if row.get("stem") and path.name.startswith(row["stem"])), {})
         rule = str(crop["mined"]) if "mined" in crop.files else None
         why = [str(crop["why"])] if "why" in crop.files else []
         yield crop, entry(set_name, path.relative_to(folder).as_posix(), crop, known.get("folder", ""),

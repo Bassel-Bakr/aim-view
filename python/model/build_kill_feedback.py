@@ -5,20 +5,21 @@ Each recording (with a stats file, outside the gate's own runs) is reviewed as t
 the excluded areas eval_video_alone.py uses), kept in <out>/reviews/<model>/<stem>/. The core finds its kills from the
 video alone (eval_video_alone.core_review) and they are matched to the stats file's (within 3 frames), as the gate
 does. Two rules give crops 256 x 256 round the crosshair (shifted up to 48 px at random):
-- false_kill: a kill the video gave and the stats file does not have. The box nearest the crosshair at that frame (on
-  the small-target runs it is nearly always the player's own crosshair, boxed) is put in as crossed out (`fix`), so
-  Right agrees it is no target.
+- false_kill: a kill the video gave and the stats file does not have. On the gate's small-target runs the box nearest
+  the crosshair is nearly always the player's own crosshair, boxed, but elsewhere it is often a real target whose kill
+  the video timed wrong, so nothing is crossed out in advance.
 - missed_kill: a kill of the stats file the video did not find, at its frame: the target under or near the crosshair
-  that the detector lost; its boxes are the review's, for the user to fix.
-Saved like build_mined.py's (rgb, fixed, tmask, boxes, scores, mined, fix, frame, why) in the split folder
+  that the detector lost.
+The crops carry the review's boxes, for the user to judge and fix. Saved like build_mined.py's (rgb, fixed, tmask: each
+box's pill, boxes, scores, mined, frame, why) in the split folder
 build_data.split_of gives the scenario folder, with a manifest.jsonl for make_page.py.
 
 Usage: python python/model/build_kill_feedback.py <out> <model> [--kind static] [--match xsmall,extra small,...]
        [--recordings 20] [--per-rule 4] [--seed 0]
 """
 import argparse
+import hashlib
 import json
-import math
 import random
 import sys
 from pathlib import Path
@@ -36,6 +37,7 @@ import eval_moving  # noqa: E402
 import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import old_review  # noqa: E402
+import teacher_label  # noqa: E402
 
 CROP, JITTER_PX = build_mined.CROP, build_mined.JITTER_PX
 WIDTH, HEIGHT = build_mined.WIDTH, build_mined.HEIGHT
@@ -87,19 +89,17 @@ def kills(lib, video, stats, args):
     return frames, false, missed
 
 
-def save(path, rgb, fixed, labels, fix, rule, i, why, rnd):
-    """One crop round the crosshair, labelled with the boxes inside it; `fix` (a false kill's box) left out of them."""
+def save(path, rgb, fixed, labels, rule, i, why, rnd):
+    """One crop round the crosshair, labelled with the review's boxes inside it."""
     cx, cy = old_review.to_px(0, 0)
     x0 = int(np.clip(cx - CROP // 2 + rnd.randint(-JITTER_PX, JITTER_PX), 0, WIDTH - CROP))
     y0 = int(np.clip(cy - CROP // 2 + rnd.randint(-JITTER_PX, JITTER_PX), 0, HEIGHT - CROP))
-    inside = [box for box in labels if box is not fix and x0 <= box[0] < x0 + CROP and y0 <= box[1] < y0 + CROP]
+    inside = [box for box in labels if x0 <= box[0] < x0 + CROP and y0 <= box[1] < y0 + CROP]
     boxes = np.array([(box[0] - x0, box[1] - y0, box[2], box[3]) for box in inside], np.float32).reshape(-1, 4)
-    mask = build_disagreements.pill_mask(boxes, (CROP, CROP)) if hasattr(build_disagreements, "pill_mask") else \
-        np.zeros((CROP, CROP), np.uint8)
-    extra = {} if fix is None else {"fix": np.array([fix[0] - x0, fix[1] - y0, fix[2], fix[3]], np.float32)}
     np.savez_compressed(path, rgb=rgb[y0:y0 + CROP, x0:x0 + CROP], fixed=fixed[y0:y0 + CROP, x0:x0 + CROP],
-                        tmask=mask, boxes=boxes, scores=np.array([box[4] for box in inside], np.float32),
-                        mined=np.str_(rule), frame=np.int32(i), why=np.str_(why), **extra)
+                        tmask=teacher_label.pill_mask(boxes, (CROP, CROP)), boxes=boxes,
+                        scores=np.array([box[4] for box in inside], np.float32), mined=np.str_(rule),
+                        frame=np.int32(i), why=np.str_(why))
 
 
 def crops_of(lib, video, stats, args, rnd):
@@ -110,7 +110,7 @@ def crops_of(lib, video, stats, args, rnd):
     frames, false, missed = found
     rules = [("false_kill", frame) for frame in rnd.sample(false, min(args.per_rule, len(false)))]
     rules += [("missed_kill", frame) for frame in rnd.sample(missed, min(args.per_rule, len(missed)))]
-    stem = build_disagreements.hashlib.md5(video.name.encode()).hexdigest()[:10]
+    stem = hashlib.md5(video.name.encode()).hexdigest()[:10]
     folder = args.out / build_data.split_of(video.parent.name)
     folder.mkdir(parents=True, exist_ok=True)
     decoded = build_mined.decode(video, sorted({frame for _, frame in rules}))
@@ -120,12 +120,9 @@ def crops_of(lib, video, stats, args, rnd):
         if i not in decoded:
             continue
         labels = build_disagreements.boxes_px(frames[i])
-        cx, cy = old_review.to_px(0, 0)
-        fix = min(labels, key=lambda box: math.hypot(box[0] - cx, box[1] - cy)) \
-            if rule == "false_kill" and labels else None
-        why = ("the video gave a kill here and the stats file has none: the box nearest the crosshair is crossed out"
+        why = ("the video gave a kill here and the stats file has none: is the box at the crosshair a target?"
                if rule == "false_kill" else "the stats file has a kill here and the video found none")
-        save(folder / f"{stem}_{i:05d}_{rule[0]}{n:02d}.npz", decoded[i], fixed, labels, fix, rule, i, why, rnd)
+        save(folder / f"{stem}_{i:05d}_{rule[0]}{n:02d}.npz", decoded[i], fixed, labels, rule, i, why, rnd)
         written += 1
     print(f"{video.name}: {len(false)} false kills, {len(missed)} missed; {written} crops", flush=True)
     return dict(stem=stem, folder=video.parent.name, kind=args.kind, video=str(video), crops=written,
