@@ -665,14 +665,15 @@ and large_v11's 141) and kept the robots (Smoothbot 45 flicks against 46). Expor
 
 ## Current best model
 
-**large_v11** (2026-10-06, "large_v11: the large model" above), threshold 0.3 (its scores calibrated). 148,709 parameters;
-587.1 KB as fp32 ONNX. full_v8_s3 (80,765 parameters, 324.4 KB) was the best before it; small_v13 (32,037 parameters,
-134.5 KB) is the small one, for speed.
+**large_v13e4** (2026-10-06, "large_v12 and large_v13" above), threshold 0.3, and on tracking runs weaker boxes at the
+crosshair (its settings' `at_crosshair`: tracking's gap to the stats files 0.062 to 0.048). 148,709 parameters; 587.1
+KB as fp32 ONNX. large_v11 was the best before it, and full_v8_s3 (80,765 parameters, 324.4 KB) before that; full_v8_s3
+is the fastest model listed (BENCH.md). small_v13 left the picker on 2026-10-05 (the user's call).
 
-- To embed (KovOBS, the browser, any language): `python/model/exports/detector_large_v11_embed.onnx` (or
-  `detector_small_v13_embed.onnx`). Raw RGB bytes and the fixed map in, the 100 best boxes out.
-- With the plain float input (any ONNX runtime, the HTTP server): `detector_large_v11_fp32.onnx`.
-- The checkpoint: `test_out/vod_model/runs/large_v11/best.pt`.
+- To embed (KovOBS, the browser, any language): `python/model/exports/detector_large_v13e4_embed.onnx`. Raw RGB bytes
+  and the fixed map in, the 100 best boxes out.
+- With the plain float input (any ONNX runtime, the HTTP server): `detector_large_v13e4_fp32.onnx`.
+- The checkpoint: `test_out/vod_model/runs/large_v13e4/best.pt` (large_v13's last epoch).
 
 The checks of earlier models below were made with small_v11 as the best.
 

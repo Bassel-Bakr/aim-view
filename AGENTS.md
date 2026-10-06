@@ -198,7 +198,9 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   parameters), trained on every scenario kind, on robots boxed whole, never boxing a health bar (of any color, with
   or without its text), then on the kills its first version got wrong against the stats files, tiles labelled from
   the stats files' kills with no one drawing, and robot crops checked by Claude; large_v11 was the default before it.
-  small_v13 is the small one for speed.
+  On tracking runs it counts weaker boxes at the crosshair too (its settings' `at_crosshair`, MODEL_FILE.md).
+  small_v13 left the picker on 2026-10-05 (the user's call); full_v8_s3 is the fastest one listed (in the browser on
+  the CPU 20.5 ms a frame against large_v13e4's 31.0; on WebGPU 5.4 against 5.5: BENCH.md).
 - The plan: the app runs three ways from one code base (browser only, browser with the review server, desktop). The UI
   is Angular 22 and carries the redesign from the 2026-10-02 mockup. The review core is Rust, built natively for the
   desktop app (Tauri 2) and as WebAssembly for the browser. The ground truth is KovaaK's stats files, not Python: a
