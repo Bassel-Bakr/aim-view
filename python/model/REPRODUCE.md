@@ -200,6 +200,36 @@ python python/model/checked_data.py --labels $D/data_bars/checked_phone.jsonl --
 python python/model/recolor_bars.py
 ```
 
+The Centering set (2026-10-06): full_v9 lost the thin pill bot of Centering II 180 No Strafes Fixed (time on the bot
+0.297 against the stats file's 0.589). That run is one of the gate's, so the crops come from the six other Centering
+recordings: `build_disagreements.py` reviews each with full_v9 and full_v8_s3 and cuts a crop where they disagree,
+inside the run; `teacher_label.py` boxes them with Grounding DINO ("black pole . black stick ." at 0.3) before the
+check (its Centering tab, `check_centering/`; the recording without a countdown is skipped: 125 crops of 5). The user
+marked 106 Right and fixed 16 (the teacher's box 0.61 as wide) and left 3 with no target. All of them train
+(`--split train`: the gate's own run stays the test); the snapped set takes the boxes marked Right to their pixels
+(`teacher_label.snap`, which then snapped every teacher box; the user's own fixes are kept as drawn):
+
+```bash
+python python/model/build_disagreements.py $D/data_centering full_v9 full_v8_s3 "E:/OBS/KovOBS/Centering I 180 no strafes" "E:/OBS/KovOBS/Centering II 180 no strafes" "E:/OBS/KovOBS/Centering II 90 No Strafes Fixed"
+python python/model/teacher_label.py $D/data_centering --prompt "black pole . black stick ." --threshold 0.3
+python python/model/crop_check/make_page.py $D/check_centering centering $D/data_centering --title "Centering"
+python python/model/crop_check/labels.py $D/check_centering $D/check_centering/answers/checks $D/data_centering/checked_phone.jsonl centering
+python python/model/checked_data.py --labels $D/data_centering/checked_phone.jsonl --out $D/data_centering_checked --tag chk_center --split train
+```
+
+(`checked_phone_snapped.jsonl` and `data_centering_checked_snapped` were made from it by a session script: the
+Right answers' boxes snapped and given pill masks.)
+
+The kill feedback set (2026-10-06): the kills the video alone gives that a stats file does not have, and the stats
+file's kills it does not find, on 20 small-target static recordings outside the gate (`build_kill_feedback.py`, for
+large_v10: 34 false and 50 missed, its Kills tab in `check_kill_feedback/`). A false kill's box is often a real target
+the video timed wrong, not the crosshair, so the user judges every box:
+
+```bash
+python python/model/build_kill_feedback.py $D/data_kill_feedback large_v10 --recordings 20
+python python/model/crop_check/make_page.py $D/check_kill_feedback kills $D/data_kill_feedback --title "Kills the stats files disagree with (large_v10)"
+```
+
 ## 2. Train
 
 ```bash
