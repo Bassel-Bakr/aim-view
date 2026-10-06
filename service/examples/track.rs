@@ -47,6 +47,7 @@ fn request(args: &[String], parts: Option<PathBuf>) -> Request {
         keep_parts: parts,
         // AIMVIEW_GPU_FRAMES=1: decode and convert on the GPU where the video allows it (gpu_frames.rs)
         gpu_frames: std::env::var("AIMVIEW_GPU_FRAMES").is_ok_and(|value| value == "1"),
+        gpu_share: 1.0,
     }
 }
 

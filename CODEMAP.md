@@ -1075,7 +1075,8 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
 - `Request` (struct): What to review: the video, the detector model (its _u8in export) and the device it runs on, the
   frames it takes at once, the scenario's target count (0: not known), the runs to split the recording into, the part of
   the video to track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's,
-  areas.rs), and a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept).
+  areas.rs), a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), and the share
+  of the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it).
 - `Reviewed` (struct): A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas
   the area finder found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames
   then).
@@ -1084,6 +1085,7 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
 - `DeviceNote` (type): Told the device each run's detector runs on ("DirectML", "CUDA" or "CPU") once it has loaded:
   with `Device::Auto` the CPU when the GPU could not start it.
 - Functions: `add_device`, `frame_bytes`, `parts_at_once`, `review`.
+- Constants: `MIN_GPU_SHARE`.
 
 ## service/src/run_window.rs
 

@@ -23,6 +23,8 @@ AREA_EXAMPLES = ROOT / "test_out" / "vod_app" / "area_examples.jsonl"   # the sa
 VODS_DEFAULT = r"E:\OBS\KovOBS"
 STATS_DEFAULT = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats"
 TOOL = ROOT / "target" / "release" / ("aimview-tool.exe" if os.name == "nt" else "aimview-tool")
+# The share of the time a review's detector runs (aimview-tool review --gpu-share), when this is set.
+GPU_SHARE_VAR = "AIMVIEW_GPU_SHARE"
 # the library's settings: aimview-tool's library options (download_ffmpeg: --download-ffmpeg)
 SETTINGS = ("data", "layout", "models", "vods", "stats", "scenarios", "device", "gpu_frames", "ffmpeg",
             "download_ffmpeg")
@@ -218,6 +220,9 @@ class Library:
         runs: the parts reviewed at once (None: 2 with 8 threads or more). window: (start, end) in seconds, only that
         part tracked. quiet: no progress on stderr."""
         args = ["review", video, *self.options, "--batch", batch]
+        if os.environ.get(GPU_SHARE_VAR):
+            # a game beside the review keeps the GPU the rest of the time; the results do not change
+            args += ["--gpu-share", os.environ[GPU_SHARE_VAR]]
         for flag, value in (("--model", model), ("--stats-file", stats), ("--kind", kind), ("--limit", limit),
                             ("--cap", cap), ("--runs", runs)):
             if value is not None:

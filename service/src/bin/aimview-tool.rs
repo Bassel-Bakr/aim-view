@@ -61,6 +61,8 @@ Review options:
   --runs N                the parts of the video reviewed at once [with 8 threads or more: 4 with GPU frames,
                           else 2; else 1]
   --batch N               the frames the detector takes at once [4]
+  --gpu-share SHARE       the share of the time the detector runs, 0.05 to 1, resting the rest so a game beside it
+                          keeps the GPU; the results do not change [1]
   --window START END      only this part of the video tracked, in seconds
   --no-report             no report.json
   --quiet                 no progress on stderr
@@ -115,6 +117,7 @@ const REVIEW: Options = &[
     ("areas", Takes::One),
     ("runs", Takes::One),
     ("batch", Takes::One),
+    ("gpu-share", Takes::One),
     ("window", Takes::Two),
     ("no-report", Takes::Nothing),
     ("quiet", Takes::Nothing),
@@ -481,6 +484,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         areas,
         keep_parts: None,
         gpu_frames: library.config().gpu_frames,
+        gpu_share: line.number("gpu-share")?.unwrap_or(1.0),
     };
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();

@@ -60,7 +60,8 @@ const WATCH_FRAMES_WAITING: usize = 8;
 /// What to review: the video, the detector model (its _u8in export) and the device it runs on, the frames it takes at
 /// once, the scenario's target count (0: not known), the runs to split the recording into, the part of the video to
 /// track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's, areas.rs),
-/// and a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept).
+/// a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), and the share of the
+/// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
@@ -74,7 +75,12 @@ pub struct Request {
     /// Decode and convert on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 AV1 or H.264
     /// MP4s); else, or false, ffmpeg's software decode.
     pub gpu_frames: bool,
+    pub gpu_share: f64,
 }
+
+/// The least share of the time a review's detector may run (`Request::gpu_share`): below it a review would barely
+/// move.
+pub const MIN_GPU_SHARE: f64 = 0.05;
 
 /// A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas the area finder
 /// found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames then).
@@ -470,8 +476,14 @@ fn detect(
     tracking: &Mutex<RunTracking>,
 ) -> Result<(), String> {
     let total = context.review.frames();
+    let share = context.req.gpu_share.clamp(MIN_GPU_SHARE, 1.0);
     for (rgb, count) in batches {
+        let started = std::time::Instant::now();
         let maps = detector.run(&rgb)?;
+        if share < 1.0 {
+            // the call waits for the GPU's work, so its time is the GPU's: rest the rest of the share's period
+            std::thread::sleep(started.elapsed().mul_f64(1.0 / share - 1.0));
+        }
         let _ = spare.send(rgb);
         let mut tracker = tracking.lock().map_err(|_| "the tracker failed")?;
         for index in 0..count {
