@@ -30,7 +30,8 @@ use aimview::hud::HudReading;
 use aimview::kill_check::{KillCheck, KillEvidence};
 #[cfg(feature = "native")]
 use aimview::session::{
-    FrameFormat, Joined, KeysRead, NextFrame, Review, RunTracking, Setup, WatchPart, countdown_bytes,
+    FrameFormat, FrameRange, Joined, KeysRead, LEAST_RUN, NextFrame, Review, Run, RunTracking, Setup, WatchPart,
+    countdown_bytes, split_runs,
 };
 #[cfg(feature = "native")]
 use aimview::tracker::TrackPart;
@@ -185,27 +186,54 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
     Ok(Reviewed { tracks: joined.tracks, readings: joined.readings, hud: joined.hud, found, kills })
 }
 
-/// The kills the video alone gives, checked in the frames round them (aimview::kill_check): the video read again from
-/// its start up to the last frame the check needs, each frame it needs fed to it.
+/// The kills the video alone gives, checked in the frames round them (aimview::kill_check): the frames from the first
+/// the check needs to the last read again in parts as the review's runs are (`split_runs`: each from a key frame,
+/// `req.runs` decoders at once; one decoder from the video's start took 4.5 s of av1's 10.4 s review of 0:20 to 0:40),
+/// each frame it needs fed to it. The order the frames reach it does not change its evidence.
 #[cfg(feature = "native")]
 fn check_kills(req: &Request, info: &VideoInfo, fixed: &[u8], tracks: &Tracks) -> Result<Vec<KillEvidence>, String> {
     let frames = tracks.frames.to_vec();
     let core_tracks = aimview::track::Tracks { fps: tracks.fps, frames, version: tracks.version };
-    let mut check = KillCheck::new(&core_tracks, fixed);
+    let check = KillCheck::new(&core_tracks, fixed);
     let needed = check.frames();
-    let Some(&last) = needed.last() else { return Ok(check.evidence()) };
-    let mut frames = FrameSource::open(req, info, None, Some(last + 1))?;
+    let (Some(&first), Some(&last)) = (needed.first(), needed.last()) else { return Ok(check.evidence()) };
+    let parts = split_runs(&info.times, &info.keys, req.runs.max(1), LEAST_RUN, FrameRange { first, end: last + 1 });
+    let check = Mutex::new(check);
+    thread::scope(|scope| {
+        let (check, needed) = (&check, &needed);
+        let running: Vec<_> =
+            parts.iter().map(|part| scope.spawn(move || check_part(req, info, part, needed, check))).collect();
+        let failed = || Err("a part of the kill check failed".to_string());
+        running.into_iter().try_for_each(|running| running.join().unwrap_or_else(|_| failed()))
+    })?;
+    Ok(check.into_inner().map_err(|_| "the kill check failed")?.evidence())
+}
+
+/// One part of the kill check's frames: decoded from its key frame up to the last frame of the part the check needs,
+/// each of those fed to it.
+#[cfg(feature = "native")]
+fn check_part(
+    req: &Request,
+    info: &VideoInfo,
+    part: &Run,
+    needed: &[usize],
+    check: &Mutex<KillCheck>,
+) -> Result<(), String> {
+    let end = part.first + part.frames;
+    let mine: Vec<usize> = needed.iter().copied().filter(|&frame| frame >= part.first && frame < end).collect();
+    let Some(&last) = mine.last() else { return Ok(()) };
+    let mut wanted = mine.iter().copied().peekable();
+    let mut frames = FrameSource::open(req, info, (part.first > 0).then_some(part.from), Some(last + 1 - part.first))?;
     let (mut rgb, mut luma) = (vec![0u8; RGB_BYTES], vec![0u8; info.width * info.height]);
-    let mut wanted = needed.iter().peekable();
-    for frame in 0..=last {
+    for frame in part.first..=last {
         if !frames.next_into(&mut rgb, &mut luma)? {
             return Err(format!("the kill check's frames ended at frame {frame} where it needs {last}"));
         }
-        if wanted.next_if_eq(&&frame).is_some() {
-            check.add(frame, &rgb);
+        if wanted.next_if_eq(&frame).is_some() {
+            check.lock().map_err(|_| "the kill check failed")?.add(frame, &rgb);
         }
     }
-    Ok(check.evidence())
+    Ok(())
 }
 
 /// Reads the key frames for the fixed map and the HUD's boxes, and for the area finder when the recording has enough
