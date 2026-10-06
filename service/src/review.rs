@@ -196,7 +196,7 @@ fn check_kills(req: &Request, info: &VideoInfo, fixed: &[u8], tracks: &Tracks) -
     let mut wanted = needed.iter().peekable();
     for frame in 0..=last {
         if !frames.next_into(&mut rgb, &mut luma)? {
-            break;
+            return Err(format!("the kill check's frames ended at frame {frame} where it needs {last}"));
         }
         if wanted.next_if_eq(&&frame).is_some() {
             check.add(frame, &rgb);
