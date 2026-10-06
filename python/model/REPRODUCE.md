@@ -259,6 +259,21 @@ static scenarios gave 26 crops at the crosshair (Microshot Speed's mostly):
 python python/model/build_auto_labels.py $D/data_auto_xs large_v13e4 --kinds static --match "extra small,xsmall,micro,small,tes,tiny" --recordings 40 --per-recording 25 --seed 21
 ```
 
+The pairs (2026-10-07): large_v14, large_v13e4 trained on with the three sets above, failed the gate's contract. Two
+seeds boxed the crosshair while the view turned 2.4 and 5.4 times as often as large_v13e4 (1wall 6targets extra
+small). Every auto crop had a target at the crosshair, so the crosshair alone came to look like one. Each kill's crop
+is now paired with the same crop 8 frames after the kill: the target gone, the crosshair on the wall, no target there
+(tag `auto_gone_`; no pair while the killed target's color is still at the crosshair). The labeller also refuses a
+part with a notch as deep as two overlapping targets of unlike size leave (`notched`: 7 of 609 parts, every one a pair
+of cubes or spheres labelled as one). The three sets again, with their pairs: 189 tile crops and 75 pairs, 24 small
+static crops and 24 pairs, 162 crops of every clicking kind and 101 pairs:
+
+```bash
+python python/model/build_auto_labels.py $D/data_auto_tiles3 large_v11 --match tile --per-recording 60
+python python/model/build_auto_labels.py $D/data_auto_xsb large_v13e4 --kinds static --match "extra small,xsmall,micro,small,tes,tiny" --recordings 40 --per-recording 25 --seed 21
+python python/model/build_auto_labels.py $D/data_auto_v13b large_v13e4 --match "" --recordings 150 --per-recording 25 --seed 13
+```
+
 The robots checked by Claude (2026-10-06): large_v12 found Smoothbot Switch Robots' robots in pieces (6 flicks fewer
 than large_v11, the gate's only fail). Crops a few frames before the stats files' kills on 9 bot recordings outside
 the gate (`build_kill_feedback.py --rules kill`), the robots boxed whole by the teacher (not snapped: snapping cuts a

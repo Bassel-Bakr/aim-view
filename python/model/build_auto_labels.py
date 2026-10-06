@@ -14,17 +14,23 @@ gives a crop of 256 x 256 round the crosshair (shifted up to 48 px at random), l
 - the part at the crosshair is the killed target: it must be a target's shape (SOLID_SHARE of its box filled, its sides
   within MAX_ASPECT and no wider than BAR_ASPECT times its height (a health bar lies flat), convex: CONVEX_SHARE of its hull filled, where two targets touching are not, and one target: its
   distance transform has no second peak behind a saddle, as two overlapping targets have and a capsule's even ridge
-  has not), stay off the crop's edge and be MIN_AREA_PX or more; else the next frame back is tried;
+  has not, and no notch as deep as one of unlike size leaves: `notched`), stay off the crop's edge and be MIN_AREA_PX
+  or more; else the next frame back is tried;
 - every other part of a like size (AREA_RANGE times it) and shape, off the crop's edge, is a target too; any other part,
   and a detector box over no part, is left to train.py as "ignore" (learnt neither as a target nor as wall).
+Each kill's crop is paired with the same crop GONE_FRAMES after the kill (`gone_crop`), saved with the tag GONE_TAG:
+the target gone, the crosshair on the wall, labelled with no target at the crosshair (no part of the killed target's
+color within CROSSHAIR_REACH_PX of it, else none is saved) and the other targets by the same rules. Without the pairs
+the crops taught that something at the crosshair is a target: two seeds of large_v14 boxed the crosshair itself while
+the view turned 2.4 and 5.4 times as often as large_v13e4 on 1wall 6targets extra small (2026-10-06).
 The boxes are the parts' extents and the target mask their pixels. It suits plain targets on a plain wall (tiles,
 spheres): on a sweep of 40 other clicking recordings (2026-10-06) the detector missed almost no kill's target, and the
 few crops it made held health bars and humanoid bots, which a color's parts cannot box as the detector must (a bot
 whole, never its bar). Flow Fix's recordings are left out: its shots were deleted or delayed, so its stats files are
 not the kills' truth. The crops are saved like build_kill_feedback.py's
 (rgb, fixed, tmask, boxes, scores, mined, frame, why, ignore), all in train/ with TAG before their names (train.py
---repeat), with a manifest.jsonl and a sheet of every crop (sheet.png: each target's outline, its mask, in green; the
-boxes left out in yellow) to look over.
+--repeat), with a manifest.jsonl and a sheet of every crop (sheet.png, and sheet_gone.png for the pairs: each target's outline,
+its mask, in green; the boxes left out in yellow) to look over.
 
 Usage: python python/model/build_auto_labels.py <out> <model> [--match tile] [--kinds static,dynamic,switching]
        [--recordings 40] [--per-recording 25] [--seed 0]
@@ -55,6 +61,8 @@ import old_review  # noqa: E402
 CROP, JITTER_PX = build_mined.CROP, build_mined.JITTER_PX
 WIDTH, HEIGHT = build_mined.WIDTH, build_mined.HEIGHT
 TAG = "auto_kill_"              # 10 characters: train.py --repeat's key
+GONE_TAG = "auto_gone_"
+GONE_FRAMES = 8                 # frames after a kill its target has gone (the death's fade is about 6)
 NEAR_DEG = 1.5                  # a box this near the crosshair before a kill: the detector saw the target
 LOOK_BACK = (1, 2, 3, 4)        # frames before a kill its target is looked for in, nearest first
 MIN_CONTRAST = 60.0             # RGB distance a target's color must have from the wall's
@@ -69,6 +77,8 @@ PEAK_SHARE = 0.6                # a second peak of the distance to the part's ed
 SADDLE_SHARE = 0.8              # two peaks are two targets when the distance dips under this share of the lower between
 PEAK_PX = 3                     # a peak is the greatest distance within this many pixels
 HEAD_SLANT = 0.5                # a head is above its body within this run over rise
+NOTCH_SHARE = 0.06              # two overlapping targets leave a notch this deep against the part's shorter side
+UPRIGHT_ASPECT = 2.2            # a part this many times taller than wide is a bot standing: its neck is no notch
 AREA_RANGE = (0.2, 5.0)         # another target's area against the killed one's
 BRIDGE_PX = 2                   # fixed-map pixels this near the target's color join it
 SHEET_COLUMNS, THUMB = 10, 128
@@ -94,9 +104,9 @@ def missed_kills(lib, video, stats, args):
     return frames, [kill for kill in truth if max(LOOK_BACK) <= kill < len(frames) and not seen(kill)]
 
 
-def parts(rgb, fixed, at):
-    """The crop's parts of the target's color (labelled array, count), the target's color taken round `at` (the
-    crosshair in the crop), or None when it does not stand out from the wall's."""
+def target_color(rgb, fixed, at):
+    """The target's color round `at` (the crosshair in the crop), or None when it does not stand out from the wall's
+    (the crop's median)."""
     x, y = at
     window = (slice(y - CROSSHAIR_REACH_PX, y + CROSSHAIR_REACH_PX + 1),
               slice(x - CROSSHAIR_REACH_PX, x + CROSSHAIR_REACH_PX + 1))
@@ -105,8 +115,16 @@ def parts(rgb, fixed, at):
         return None
     wall = np.median(rgb.reshape(-1, 3).astype(np.float32), 0)
     target = np.median(rgb[window][free].astype(np.float32), 0)
-    if np.linalg.norm(target - wall) < MIN_CONTRAST:
+    return None if np.linalg.norm(target - wall) < MIN_CONTRAST else target
+
+
+def parts(rgb, fixed, at, target=None):
+    """The crop's parts of the target's color (labelled array, count): the color taken round `at` (the crosshair in
+    the crop) unless given, None when it does not stand out from the wall's."""
+    target = target_color(rgb, fixed, at) if target is None else target
+    if target is None:
         return None
+    wall = np.median(rgb.reshape(-1, 3).astype(np.float32), 0)
     pixels = rgb.astype(np.float32)
     from_wall = np.linalg.norm(pixels - wall, axis=2)
     colored = (np.linalg.norm(pixels - target, axis=2) < from_wall) & (from_wall > MIN_CONTRAST / 2) & ~fixed
@@ -139,6 +157,26 @@ def two_targets(mask):
     return False
 
 
+def notched(mask, width, height):
+    """Whether a part is two overlapping targets of unlike size, which `two_targets` misses (the smaller one gives no
+    peak): the largest disc in its convex hull but off the part is NOTCH_SHARE of its shorter side or more. A single
+    cube or sphere reaches 0.057 (its shading's edge), a pair 0.06 to 0.13 (2026-10-07, 557 auto-labelled parts). Holes
+    are filled first (the crosshair over a target); an upright part is left alone (a bot's neck)."""
+    if height >= UPRIGHT_ASPECT * width:
+        return False
+    filled = ndimage.binary_fill_holes(mask)
+    rows, columns = np.nonzero(filled)
+    points = np.column_stack([columns, rows])
+    try:
+        corners = points[ConvexHull(points).vertices]
+    except QhullError:                                  # a line of pixels
+        return False
+    hull = Image.new("1", filled.shape[::-1])
+    ImageDraw.Draw(hull).polygon([tuple(corner) for corner in corners.tolist()], fill=1)
+    notch = ndimage.distance_transform_edt(np.array(hull) & ~filled).max()
+    return notch >= NOTCH_SHARE * min(width, height)
+
+
 def shape_of(mask):
     """A part's box (cx, cy, w, h in crop pixels), area, whether it has a target's shape, and whether it touches the
     crop's edge."""
@@ -150,15 +188,17 @@ def shape_of(mask):
     except QhullError:                                  # a line of pixels
         hull = 0.0
     solid = (area >= SOLID_SHARE * width * height and max(width, height) <= MAX_ASPECT * min(width, height)
-             and width <= BAR_ASPECT * height and area >= CONVEX_SHARE * hull and not two_targets(mask))
+             and width <= BAR_ASPECT * height and area >= CONVEX_SHARE * hull and not two_targets(mask)
+             and not notched(mask, width, height))
     edge = x0 == 0 or y0 == 0 or x1 == CROP or y1 == CROP
     return [(x0 + x1) / 2, (y0 + y1) / 2, width, height], area, solid, edge
 
 
 def label_crop(rgb, fixed, at, model_boxes):
-    """A crop's target boxes, ignore boxes and target mask from its pixels (the module's rules), or None when the part
-    at the crosshair (`at`) is no target."""
-    found = parts(rgb, fixed, at)
+    """A crop's target boxes, ignore boxes and target mask from its pixels (the module's rules), the killed target's
+    color and area, or None when the part at the crosshair (`at`) is no target."""
+    target = target_color(rgb, fixed, at)
+    found = None if target is None else parts(rgb, fixed, at, target)
     if found is None:
         return None
     labelled, count = found
@@ -170,10 +210,17 @@ def label_crop(rgb, fixed, at, model_boxes):
     box, area, solid, edge = shape_of(killed)
     if not solid or edge or area < MIN_AREA_PX:
         return None
-    boxes, ignore, mask = [box], [], killed.copy()
+    boxes, ignore, mask = others(labelled, count, numbers[0], area, model_boxes)
+    return [box, *boxes], ignore, (mask | killed).astype(np.uint8), target, area
+
+
+def others(labelled, count, killed, area, model_boxes):
+    """The parts but `killed` as targets (a target's shape and a like size to `area`, off the crop's edge) or ignored,
+    their mask, and the detector's boxes over no part ignored."""
+    boxes, ignore, mask = [], [], np.zeros(labelled.shape, bool)
     for number in range(1, count + 1):
         part = labelled == number
-        if number == numbers[0] or part.sum() < MIN_AREA_PX:
+        if number == killed or part.sum() < MIN_AREA_PX:
             continue
         other, other_area, other_solid, other_edge = shape_of(part)
         if other_solid and not other_edge and AREA_RANGE[0] * area <= other_area <= AREA_RANGE[1] * area:
@@ -184,7 +231,28 @@ def label_crop(rgb, fixed, at, model_boxes):
     for cx, cy, width, height in model_boxes:
         if not labelled[int(np.clip(cy, 0, CROP - 1)), int(np.clip(cx, 0, CROP - 1))]:
             ignore.append([cx, cy, width, height])
-    return boxes, ignore, mask.astype(np.uint8)
+    return boxes, ignore, mask
+
+
+def gone_crop(kill, place, frames, decoded, fixed):
+    """The kill's crop GONE_FRAMES after it (the module's text), `place` its crop's (corner, crosshair, the killed
+    target's color, its area): (frame, rgb, fixed, boxes, ignore, mask), or None when the killed target's color is
+    still at the crosshair or the frame is missing."""
+    later = kill + GONE_FRAMES
+    if later not in decoded or later >= len(frames):
+        return None
+    (x0, y0), at, target, area = place
+    window = (slice(y0, y0 + CROP), slice(x0, x0 + CROP))
+    rgb, crop_fixed = decoded[later][window], fixed[window]
+    labelled, count = parts(rgb, crop_fixed, at, target)
+    near = labelled[at[1] - CROSSHAIR_REACH_PX:at[1] + CROSSHAIR_REACH_PX + 1,
+                    at[0] - CROSSHAIR_REACH_PX:at[0] + CROSSHAIR_REACH_PX + 1]
+    if near.any():
+        return None
+    model_boxes = [(box[0] - x0, box[1] - y0, box[2], box[3]) for box in build_disagreements.boxes_px(frames[later])
+                   if x0 <= box[0] < x0 + CROP and y0 <= box[1] < y0 + CROP]
+    boxes, ignore, mask = others(labelled, count, 0, area, model_boxes)
+    return later, rgb, crop_fixed, boxes, ignore, mask.astype(np.uint8)
 
 
 def corner_of(rnd):
@@ -209,7 +277,8 @@ def crop_kill(kill, frames, decoded, fixed, rnd):
         rgb, crop_fixed = decoded[frame][window], fixed[window]
         labels = label_crop(rgb, crop_fixed, at, model_boxes)
         if labels is not None:
-            return frame, rgb, crop_fixed, *labels
+            boxes, ignore, mask, target, area = labels
+            return (frame, rgb, crop_fixed, boxes, ignore, mask), ((x0, y0), at, target, area)
     return None
 
 
@@ -220,26 +289,38 @@ def crops_of(lib, video, stats, args, rnd):
         return dict(video=str(video), crops=0, reason="the stats file gives no clock offset")
     frames, missed = found
     picked = sorted(rnd.sample(missed, min(args.per_recording, len(missed))))
-    decoded = build_mined.decode(video, sorted({kill - back for kill in picked for back in LOOK_BACK}))
+    wanted = {kill - back for kill in picked for back in LOOK_BACK} | {kill + GONE_FRAMES for kill in picked}
+    decoded = build_mined.decode(video, sorted(frame for frame in wanted if 0 <= frame < len(frames)))
     fixed = old_review.fixed_map(build_data.keyframes(video, "yuv420p")).astype(bool)
     stem = hashlib.md5(video.name.encode()).hexdigest()[:10]
     (args.out / "train").mkdir(parents=True, exist_ok=True)
-    written = 0
+    written = gone = 0
     for kill in picked:
-        crop = crop_kill(kill, frames, decoded, fixed, rnd)
-        if crop is None:
+        found = crop_kill(kill, frames, decoded, fixed, rnd)
+        if found is None:
             continue
-        frame, rgb, crop_fixed, boxes, ignore, mask = crop
-        np.savez_compressed(args.out / "train" / f"{TAG}{stem}_{frame:05d}.npz", rgb=rgb,
-                            fixed=crop_fixed.astype(np.uint8), tmask=mask, boxes=np.array(boxes, np.float32),
-                            scores=np.ones(len(boxes), np.float32), mined=np.str_("auto_kill"), frame=np.int32(frame),
-                            why=np.str_(f"auto: the stats file's kill at frame {kill}, the target found in the pixels"),
-                            ignore=np.array(ignore, np.float32).reshape(-1, 4))
+        crop, place = found
+        save_crop(args.out / "train" / f"{TAG}{stem}_{crop[0]:05d}.npz", crop,
+                  f"auto: the stats file's kill at frame {kill}, the target found in the pixels")
         written += 1
-    print(f"{video.name}: {len(missed)} kills with no box near the crosshair; {written} of {len(picked)} labelled",
-          flush=True)
-    return dict(stem=stem, folder=video.parent.name, video=str(video), crops=written, missed=len(missed),
+        after = gone_crop(kill, place, frames, decoded, fixed)
+        if after is not None:
+            save_crop(args.out / "train" / f"{GONE_TAG}{stem}_{after[0]:05d}.npz", after,
+                      f"auto: {GONE_FRAMES} frames after the stats file's kill at frame {kill}, its target gone")
+            gone += 1
+    print(f"{video.name}: {len(missed)} kills with no box near the crosshair; {written} of {len(picked)} labelled, "
+          f"{gone} with the target gone after", flush=True)
+    return dict(stem=stem, folder=video.parent.name, video=str(video), crops=written, gone=gone, missed=len(missed),
                 tried=len(picked))
+
+
+def save_crop(path, crop, why):
+    """A crop (frame, rgb, fixed, boxes, ignore, mask) as an npz like build_kill_feedback.py's."""
+    frame, rgb, crop_fixed, boxes, ignore, mask = crop
+    np.savez_compressed(path, rgb=rgb, fixed=crop_fixed.astype(np.uint8), tmask=mask,
+                        boxes=np.array(boxes, np.float32).reshape(-1, 4), scores=np.ones(len(boxes), np.float32),
+                        mined=np.str_("auto_kill"), frame=np.int32(frame), why=np.str_(why),
+                        ignore=np.array(ignore, np.float32).reshape(-1, 4))
 
 
 def draw_sheet(files, path):
@@ -288,7 +369,9 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "manifest.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     draw_sheet(sorted((args.out / "train").glob(f"{TAG}*.npz")), args.out / "sheet.png")
-    print(f"{sum(row['crops'] for row in rows)} crops from {len(rows)} recordings in {args.out}")
+    draw_sheet(sorted((args.out / "train").glob(f"{GONE_TAG}*.npz")), args.out / "sheet_gone.png")
+    print(f"{sum(row['crops'] for row in rows)} crops and {sum(row.get('gone', 0) for row in rows)} with the target "
+          f"gone from {len(rows)} recordings in {args.out}")
 
 
 if __name__ == "__main__":
