@@ -422,13 +422,18 @@ kill (frames kill-4 to kill-2) its target's patch is measured at its tracked pla
 (kill+3 to kill+6) the same at the place it died, carried along by the camera's turn (a frame's shift moves a still spot
 on screen by as much). A kill whose target still shows after, by half as much as before or more, is no kill
 (`ruled_out`): on the gate's static runs that left out 34% of the video's false kills and 0.65% of its true ones, on its
-dynamic runs 37% and 0.31% (measured against the stats files, 2026-10-06).
+dynamic runs 37% and 0.31% (measured against the stats files, 2026-10-06). The place it died is measured in each of the
+TRAIL frames after it (`KillEvidence::trail`): a target hidden under the crosshair before the click stays a while at
+part of its level, and goes when it dies. Such a kill is moved to when it died (`with_hidden_kills`): the frame the
+place reached the wall, less the death's fade, the target held at the crosshair until then. On the video-alone runs' dev
+set that took 1wall 6targets extra small from 45 to 57 of its 98 kills, the held-out runs unchanged (2026-10-06).
 
 - `KillEvidence` (struct): A kill's evidence: how much its target stood out from the wall before it and after it (the
-  median over the frames measured; None where none could be: the place was off screen, or the frames were missing).
+  median over the frames measured; None where none could be: the place was off screen, or the frames were missing), and
+  the place it died in each frame after it, 1 to TRAIL (None where it could not be measured).
 - `KillCheck` (struct): The kills of a review being checked: the measurements each frame needs, and those made. Methods:
   `new`, `frames`, `add`, `evidence`.
-- Functions: `ruled_out`.
+- Functions: `ruled_out`, `with_hidden_kills`.
 
 ## src/lib.rs
 

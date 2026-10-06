@@ -166,6 +166,13 @@ def file_hash(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def with_trails(kills):
+    """Whether a kill check's evidence has each kill's trail (kill_check.rs since 2026-10-06; an older check has none,
+    so the review could not move a hidden target's kill)."""
+    evidence = json.loads(kills.read_bytes())
+    return evidence is not None and all("trail" in kill for kill in evidence)
+
+
 def track_all(runs, name, model, retrack):
     """Tracks the runs not tracked yet with this model file (all of them with retrack). Each run's model.json, written
     when its tracking is done, says which file tracked it."""
@@ -175,7 +182,7 @@ def track_all(runs, name, model, retrack):
     def tracked(folder):
         stamp = folder / "model.json"
         return (all((folder / file).exists() for file in TRACKED) and stamp.exists()
-                and json.loads(stamp.read_text())["sha256"] == digest)
+                and json.loads(stamp.read_text())["sha256"] == digest and with_trails(folder / "kills.json"))
 
     todo = [run for run in runs if retrack or not tracked(cache / slug(run["id"]))]
     if not todo:

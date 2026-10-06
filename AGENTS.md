@@ -296,7 +296,10 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   for it, only for a recording without a stats file (service/src/review.rs `check_kills`, kept as kills.json; about 4.6
   s a run); the browser does not check yet. With large_v11 on the 48 runs it takes precision from 0.958 to 0.968 and
   recall from 0.944 to 0.938, 23 of the 34 kills it loses on 1wall 2targets xsmall valorant (see Open: its stats
-  file's clock is 9 frames late). Where the detector marks the crosshair (matching.rs
+  file's clock is 9 frames late). The check also follows the place each kill's track ended for 40 frames: a target
+  as small as the crosshair, lost under it before the click, stays there at part of its level and goes when it dies,
+  so its kill moves to then (`with_hidden_kills`, only while the place stays within 0.4 degrees of the crosshair):
+  1wall 6targets extra small from 45 to 57 of 98 kills, the 48 runs at 0.940 and 0.970. Where the detector marks the crosshair (matching.rs
   `crosshair_spots`: boxes piled at the screen's center while the camera turns, 5 times as dense as 0.2 to 0.4 degrees
   around it; no search, so no knife edge), a track the tracker hands to the crosshair's box when its target dies is cut
   back to its last target box (`without_crosshair_ends`), with a stats file too: its clock was 7 to 10 frames late on

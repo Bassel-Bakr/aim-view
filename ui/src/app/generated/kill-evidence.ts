@@ -2,10 +2,12 @@
 
 /**
  * A kill's evidence: how much its target stood out from the wall before it and after it (the median over the frames
- * measured; None where none could be: the place was off screen, or the frames were missing).
+ * measured; None where none could be: the place was off screen, or the frames were missing), and the place it died in
+ * each frame after it, 1 to TRAIL (None where it could not be measured).
  */
 export interface KillEvidence {
   frame: number;
   before: number | null;
   after: number | null;
+  trail: (number | null)[];
 }

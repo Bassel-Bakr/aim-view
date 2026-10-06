@@ -14,7 +14,7 @@ use crate::capped::Capped;
 use crate::faint::{FaintSetting, without_faint};
 use crate::geometry::{CX, CY, H, K, W};
 use crate::hud::{HudFinal, HudGame, HudReading};
-use crate::kill_check::{KillEvidence, ruled_out};
+use crate::kill_check::{KillEvidence, ruled_out, with_hidden_kills};
 use crate::matching::{
     appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
     JOIN_GAP_S, JOIN_RADIUS_DEG, SPOTS,
@@ -358,15 +358,20 @@ pub fn review_clicks(
 }
 
 /// The video's kills less those their check in the frames round them rules out (kill_check.rs: the target still
-/// showed after), the rest numbered again in order; all of them when they were not checked.
-fn confirmed((flicks, mut info): (Vec<Flick>, MatchInfo), checked: Option<&[KillEvidence]>) -> (Vec<Flick>, MatchInfo) {
+/// showed after), those whose target was hidden under the crosshair moved to when it died, the rest numbered again in
+/// order; all of them as they were when they were not checked.
+fn confirmed(
+    tracks: &Tracks,
+    (flicks, mut info): (Vec<Flick>, MatchInfo),
+    checked: Option<&[KillEvidence]>,
+) -> (Vec<Flick>, MatchInfo) {
     let Some(checked) = checked else { return (flicks, info) };
     let out: HashSet<i64> =
         checked.iter().filter(|evidence| ruled_out(evidence)).map(|evidence| evidence.frame).collect();
     let before = flicks.len();
-    let flicks: Vec<Flick> = flicks
+    let kept: Vec<Flick> = flicks.into_iter().filter(|flick| !out.contains(&flick.kill_frame)).collect();
+    let flicks: Vec<Flick> = with_hidden_kills(kept, checked, tracks)
         .into_iter()
-        .filter(|flick| !out.contains(&flick.kill_frame))
         .enumerate()
         .map(|(at, flick)| Flick { kill_number: at + 1, ..flick })
         .collect();
@@ -407,7 +412,7 @@ fn unpaired_kills(
                 || reading.kills.len() as f64 <= AIMLAB_MAX_KILLS_PER_VIDEO_KILL * match_video(tracks).0.len() as f64)
     });
     let Some(reading) = hud else {
-        let (flicks, info) = confirmed(match_video(tracks), checked);
+        let (flicks, info) = confirmed(tracks, match_video(tracks), checked);
         let all = ClickKills { flicks, info, meta, shots: Vec::new(), hits: None, stats: None };
         let Some(window) = window else {
             return all;

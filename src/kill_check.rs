@@ -4,7 +4,12 @@
 //! round it; after it (kill+3 to kill+6) the same at the place it died, carried along by the camera's turn (a frame's
 //! shift moves a still spot on screen by as much). A kill whose target still shows after, by half as much as before or
 //! more, is no kill (`ruled_out`): on the gate's static runs that left out 34% of the video's false kills and 0.65% of
-//! its true ones, on its dynamic runs 37% and 0.31% (measured against the stats files, 2026-10-06).
+//! its true ones, on its dynamic runs 37% and 0.31% (measured against the stats files, 2026-10-06). The place it died
+//! is measured in each of the TRAIL frames after it (`KillEvidence::trail`): a target hidden under the crosshair before
+//! the click stays a while at part of its level, and goes when it dies. Such a kill is moved to when it died
+//! (`with_hidden_kills`): the frame the place reached the wall, less the death's fade, the target held at the
+//! crosshair until then. On the video-alone runs' dev set that took 1wall 6targets extra small from 45 to 57 of its 98
+//! kills, the held-out runs unchanged (2026-10-06).
 //!
 //! In: the review's tracks and fixed map, then the frames it asks for (`frames`) at 1280 x 720 RGB, from a host (the
 //! service reads the video again: service/src/review.rs). Out: each kill's evidence (`KillEvidence`), which the review
@@ -15,14 +20,16 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{H, W, to_px};
-use crate::matching::{Flick, match_video};
+use crate::matching::{Flick, PathPoint, match_video};
 use crate::python::hypot;
 use crate::statistics::median;
 use crate::track::Tracks;
 
-/// The frames before a kill its target is measured in (its tracked places), and after it (where it died).
+/// The frames before a kill its target is measured in (its tracked places), and after it (where it died) for `after`;
+/// the trail goes on to TRAIL frames after it.
 const BEFORE: [i64; 3] = [-4, -3, -2];
 const AFTER: [i64; 4] = [3, 4, 5, 6];
+const TRAIL: i64 = 40;
 /// The target's patch: a disc this share of its box's longer side across (at least MIN_RADIUS_PX), against a ring from
 /// RING_NEAR to RING_FAR times its radius: the wall round it.
 const CORE_SHARE: f64 = 0.6;
@@ -34,16 +41,28 @@ const MIN_CORE_PIXELS: usize = 2;
 const MIN_RING_PIXELS: usize = 6;
 /// A target that still shows after the kill by this share of how it showed before (or more) did not die.
 const STILL_THERE_SHARE: f64 = 0.5;
+/// A target that stands out by this share of how it did before (at least GONE_FLOOR) or less, in two frames measured
+/// one after the other, has gone.
+const GONE_SHARE: f64 = 0.12;
+const GONE_FLOOR: f64 = 5.0;
+/// A kill whose target goes more than HIDDEN_FRAMES after its track's end, its place within AT_CROSSHAIR_DEG of the
+/// crosshair until then, was hidden under the crosshair: it died FADE_FRAMES before it went (the death's fade).
+const HIDDEN_FRAMES: i64 = 6;
+const FADE_FRAMES: i64 = 6;
+const AT_CROSSHAIR_DEG: f64 = 0.4;
 const RGB: usize = 3;
 
 /// A kill's evidence: how much its target stood out from the wall before it and after it (the median over the frames
-/// measured; None where none could be: the place was off screen, or the frames were missing).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// measured; None where none could be: the place was off screen, or the frames were missing), and the place it died in
+/// each frame after it, 1 to TRAIL (None where it could not be measured).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct KillEvidence {
     pub frame: i64,
     pub before: Option<f64>,
     pub after: Option<f64>,
+    #[serde(default)]
+    pub trail: Vec<Option<f64>>,
 }
 
 /// Whether a kill's evidence rules it out: its target still showed after it, by STILL_THERE_SHARE of how it showed
@@ -52,19 +71,75 @@ pub fn ruled_out(evidence: &KillEvidence) -> bool {
     matches!((evidence.before, evidence.after), (Some(before), Some(after)) if after >= STILL_THERE_SHARE * before)
 }
 
-/// One measurement to make in a frame: the kill's, before or after it, a patch round (x, y) of this radius (pixels).
+/// The kills (in order) with those whose target was hidden under the crosshair moved to when it died (`hidden_until`),
+/// each next flick starting no earlier than the kill before it (its path cut to match). `checked`: the kills' evidence.
+pub fn with_hidden_kills(flicks: Vec<Flick>, checked: &[KillEvidence], tracks: &Tracks) -> Vec<Flick> {
+    let mut previous: Option<i64> = None;
+    let mut out = Vec::with_capacity(flicks.len());
+    for mut flick in flicks {
+        if let Some(previous) = previous.filter(|&previous| previous > flick.start_frame) {
+            flick.start_frame = previous;
+            flick.path.retain(|point| point.0 >= previous);
+        }
+        let evidence = checked.iter().find(|evidence| evidence.frame == flick.kill_frame);
+        if let Some((kill_frame, held)) = evidence.and_then(|evidence| hidden_until(&flick, evidence, tracks)) {
+            flick.kill_frame = kill_frame;
+            flick.path.extend(held);
+        }
+        previous = Some(flick.kill_frame);
+        out.push(flick);
+    }
+    out
+}
+
+/// When a kill's target hidden under the crosshair died, and where it was held from its track's end until then (the
+/// place it ended moved by the view's shift); None when it was not hidden.
+fn hidden_until(flick: &Flick, evidence: &KillEvidence, tracks: &Tracks) -> Option<(i64, Vec<PathPoint>)> {
+    let (before, &(end, x, y)) = (evidence.before?, flick.path.last()?);
+    let low = (GONE_SHARE * before).max(GONE_FLOOR);
+    let seen: Vec<(i64, f64)> =
+        evidence.trail.iter().enumerate().filter_map(|(at, value)| Some((at as i64 + 1, (*value)?))).collect();
+    let gone = seen.windows(2).find(|pair| pair[0].1 < low && pair[1].1 < low)?[0].0;
+    let mut places = Vec::new();
+    let (mut at_x, mut at_y) = (x, y);
+    for frame in end + 1..=end + gone {
+        let Some(shift) = usize::try_from(frame).ok().and_then(|frame| tracks.frames.get(frame)).map(|at| at.shift)
+        else {
+            break;
+        };
+        (at_x, at_y) = (at_x + shift.0, at_y + shift.1);
+        places.push((frame, at_x, at_y));
+    }
+    let at_crosshair = |&(x, y): &(f64, f64)| hypot(x, y) <= AT_CROSSHAIR_DEG;
+    let held = at_crosshair(&(x, y)) && places.iter().all(|&(_, x, y)| at_crosshair(&(x, y)));
+    if gone <= HIDDEN_FRAMES || !held {
+        return None;
+    }
+    places.truncate((gone - FADE_FRAMES) as usize);
+    Some((end + gone - FADE_FRAMES, places))
+}
+
+/// One measurement to make in a frame: the kill's, `offset` frames from it (before it when negative), a patch round
+/// (x, y) of this radius (pixels).
 struct Look {
     kill: i64,
-    after: bool,
+    offset: i64,
     x: f64,
     y: f64,
     radius: f64,
 }
 
+/// A kill's measurements: before it, and the trail after it (frame kill + 1 at 0).
+#[derive(Default)]
+struct Measured {
+    before: Vec<f64>,
+    trail: Vec<Option<f64>>,
+}
+
 /// The kills of a review being checked: the measurements each frame needs, and those made.
 pub struct KillCheck {
     looks: BTreeMap<usize, Vec<Look>>,
-    measured: BTreeMap<i64, [Vec<f64>; 2]>,
+    measured: BTreeMap<i64, Measured>,
     fixed: Vec<bool>,
 }
 
@@ -89,22 +164,20 @@ impl KillCheck {
     fn plan(&mut self, tracks: &Tracks, flick: &Flick) {
         let Some(&(_, x, y)) = flick.path.last() else { return };
         let kill = flick.kill_frame;
-        self.measured.insert(kill, [Vec::new(), Vec::new()]);
+        self.measured.insert(kill, Measured { before: Vec::new(), trail: vec![None; TRAIL as usize] });
         let radius = patch_radius(tracks, flick);
         for offset in BEFORE {
             if let Some(&(frame, at_x, at_y)) = flick.path.iter().find(|point| point.0 == kill + offset) {
-                self.look(frame, Look { kill, after: false, x: at_x, y: at_y, radius });
+                self.look(frame, Look { kill, offset, x: at_x, y: at_y, radius });
             }
         }
         let (mut turn_x, mut turn_y) = (0.0, 0.0);
-        for offset in 1..=AFTER[AFTER.len() - 1] {
+        for offset in 1..=TRAIL {
             let Some(frame) = usize::try_from(kill + offset).ok().and_then(|frame| tracks.frames.get(frame)) else {
                 break;
             };
             (turn_x, turn_y) = (turn_x + frame.shift.0, turn_y + frame.shift.1);
-            if AFTER.contains(&offset) {
-                self.look(kill + offset, Look { kill, after: true, x: x + turn_x, y: y + turn_y, radius });
-            }
+            self.look(kill + offset, Look { kill, offset, x: x + turn_x, y: y + turn_y, radius });
         }
     }
 
@@ -124,18 +197,25 @@ impl KillCheck {
     /// A frame's measurements, from its RGB (1280 x 720).
     pub fn add(&mut self, frame: usize, rgb: &[u8]) {
         for look in self.looks.get(&frame).into_iter().flatten() {
-            if let Some(value) = standing_out(rgb, &self.fixed, look.x, look.y, look.radius) {
-                self.measured.entry(look.kill).or_default()[usize::from(look.after)].push(value);
+            let value = standing_out(rgb, &self.fixed, look.x, look.y, look.radius);
+            let measured = self.measured.entry(look.kill).or_default();
+            match usize::try_from(look.offset - 1) {
+                Ok(at) => measured.trail[at] = value,
+                Err(_) => measured.before.extend(value),
             }
         }
     }
 
-    /// Each kill's evidence, in order.
+    /// Each kill's evidence, in order: `after` the median of the trail's frames AFTER.
     pub fn evidence(&self) -> Vec<KillEvidence> {
-        let middle = |values: &Vec<f64>| (!values.is_empty()).then(|| median(values));
+        let middle = |values: &[f64]| (!values.is_empty()).then(|| median(values));
         self.measured
             .iter()
-            .map(|(&frame, [before, after])| KillEvidence { frame, before: middle(before), after: middle(after) })
+            .map(|(&frame, measured)| {
+                let after: Vec<f64> = AFTER.iter().filter_map(|&offset| measured.trail[offset as usize - 1]).collect();
+                let (before, after) = (middle(&measured.before), middle(&after));
+                KillEvidence { frame, before, after, trail: measured.trail.clone() }
+            })
             .collect()
     }
 }
@@ -195,6 +275,7 @@ fn standing_out(rgb: &[u8], fixed: &[bool], cx: f64, cy: f64, radius: f64) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::track::TrackFrame;
 
     /// A grey wall with a red disc of radius 6 at (100, 100).
     fn wall_with_target() -> Vec<u8> {
@@ -221,9 +302,50 @@ mod tests {
         assert_eq!(standing_out(&rgb, &covered, 100.0, 100.0, 4.0), None, "the fixed map's pixels left out");
     }
 
+    /// 60 empty frames, each turning the view by `shift_deg` in x.
+    fn still_tracks(shift_deg: f64) -> Tracks {
+        let frame = |i| TrackFrame { i, shift: (shift_deg, 0.0), t: Vec::new(), a: Vec::new(), wh: None, s: None };
+        Tracks { fps: 60.0, frames: (0..60).map(frame).collect(), version: 0 }
+    }
+
+    /// A flick ending at frame 10 at (0.1, 0) degrees: the target lost under the crosshair.
+    fn lost_at_crosshair() -> Flick {
+        let path = (0..=10).map(|frame| (frame, 0.1, 0.0)).collect();
+        Flick {
+            kill_number: 1,
+            kill_frame: 10,
+            stats_frame: None,
+            start_frame: 0,
+            shots: None,
+            path,
+            spawned: false,
+            area_px: None,
+        }
+    }
+
+    /// The target at a third of its level for 11 frames after the track's end, then wall.
+    fn hidden_then_gone() -> KillEvidence {
+        let trail = (1..=TRAIL).map(|offset| Some(if offset <= 11 { 30.0 } else { 1.0 })).collect();
+        KillEvidence { frame: 10, before: Some(100.0), after: Some(30.0), trail }
+    }
+
+    #[test]
+    fn a_target_hidden_under_the_crosshair_dies_when_it_goes() {
+        let flicks = with_hidden_kills(vec![lost_at_crosshair()], &[hidden_then_gone()], &still_tracks(0.0));
+        let gone = 12;
+        assert_eq!(flicks[0].kill_frame, 10 + gone - FADE_FRAMES);
+        assert_eq!(flicks[0].path.last(), Some(&(10 + gone - FADE_FRAMES, 0.1, 0.0)), "held at the crosshair");
+        let turned = with_hidden_kills(vec![lost_at_crosshair()], &[hidden_then_gone()], &still_tracks(0.2));
+        assert_eq!(turned[0].kill_frame, 10, "the view turned away: the place left the crosshair");
+        let next = Flick { kill_number: 2, kill_frame: 30, start_frame: 10, ..lost_at_crosshair() };
+        let both = with_hidden_kills(vec![lost_at_crosshair(), next], &[hidden_then_gone()], &still_tracks(0.0));
+        assert_eq!(both[1].start_frame, both[0].kill_frame, "the next flick starts at the moved kill");
+        assert!(both[1].path.iter().all(|point| point.0 >= both[0].kill_frame));
+    }
+
     #[test]
     fn a_kill_is_ruled_out_only_when_its_target_still_shows() {
-        let evidence = |before, after| KillEvidence { frame: 0, before, after };
+        let evidence = |before, after| KillEvidence { frame: 0, before, after, trail: Vec::new() };
         assert!(ruled_out(&evidence(Some(100.0), Some(60.0))));
         assert!(!ruled_out(&evidence(Some(100.0), Some(10.0))));
         assert!(!ruled_out(&evidence(None, Some(60.0))));

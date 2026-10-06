@@ -282,6 +282,15 @@ After it (kill+3 to kill+6) the same is measured where it died, moved by the cam
 still stands out after by half as much as before, or more, is no kill. The native review reads the video a second
 time for these frames (service/src/review.rs `check_kills`), only when the recording has no stats file.
 
+The same place is measured in each of the 40 frames after the track's end. A target as small as the crosshair is lost
+by the detector when it slides under the crosshair, frames before the click: its track ends early, though the target
+still shows through the crosshair's gaps (the fixed map's pixels are left out of the patch). Its patch then stays at
+part of its level, and drops to the wall's when it dies, after the death's fade (about 6 frames on KovaaK's). When the
+place stays within 0.4 degrees of the crosshair and the patch goes (under 12% of its level before, and under 5, in two
+frames measured in a row) more than 6 frames after the track's end, the kill moves to 6 frames before it went, and its
+path carries on at the crosshair until then (src/kill_check.rs `with_hidden_kills`). On the video-alone runs this
+moved kills only on 1wall 6targets extra small (45 to 57 of its 98 kills found) and Pokeball 1w4ts (111 to 110).
+
 python/review.py's `match_video` keeps the old rules: a track picked up again within 0.5 s (allowing for the camera's
 turn) continues it, with no repair, no test of where and how big a target comes back, and no limit on blob size. It
 stays only as the reference for the parity of the HUD path; the core's video-alone path differs from it on purpose.
