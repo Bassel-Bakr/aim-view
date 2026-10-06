@@ -113,9 +113,9 @@ export function resized(shape: Shape, corner: number, point: CropPoint, even = f
   return { ...shape, box: [cx, cy, newWidth, newHeight] };
 }
 
-/** A flat box's side handles: the middles of its frame's sides (axis * 2: left, top; plus 1: right, bottom). */
+/** A flat shape's side handles: the middles of its frame's sides (axis * 2: left, top; plus 1: right, bottom). */
 export function flatSides(shape: Shape): SideHandle[] {
-  if (shape.kind !== 'box' || shape.face) return [];
+  if (shape.face) return [];
   const [, , width, height] = shape.box;
   const middles: OwnPoint[] = [
     [-width / 2, 0],
@@ -126,7 +126,7 @@ export function flatSides(shape: Shape): SideHandle[] {
   return middles.map((own, side) => ({ point: toCrop(shape, own), side, seen: true }));
 }
 
-/** A flat box with one side moved to a point: the opposite side stays, or moves the other way with `mirror`. */
+/** A flat shape with one side moved to a point: the opposite side stays, or moves the other way with `mirror`. */
 export function pushedFlatSide(
   shape: Shape,
   side: number,

@@ -14,6 +14,7 @@ import {
   turnHandle,
 } from '../../shapes/shape-geometry';
 import {
+  frontCorners,
   pushedSide,
   SideHandle,
   sideHandles,
@@ -52,7 +53,7 @@ export interface CropDrag {
   mirror: boolean;
 }
 
-/** A selected shape's handles: a flat one's corners, its sides, its turn and face handles, and a solid's tumble. */
+/** A selected shape's handles: its corners (a solid box's front ones), its sides, turn and face handles, a solid's tumble. */
 export interface ShapeHandles {
   corners: CropPoint[];
   sides: SideHandle[];
@@ -74,12 +75,12 @@ export function handleReach(pointerType: string): number {
 /** How near a finger must come to a shape's edge to take it, in screen pixels. */
 const SHAPE_SLACK_PX = 6;
 
-/** A shape's handles at a scale: a solid's sides (every face of a box), a flat box's side middles and corners. */
+/** A shape's handles at a scale: its corners, its sides (a solid box's every face, a capsule's ends and sides). */
 export function handlesOf(shape: Shape, scale: number): ShapeHandles {
   const reach = HANDLE_REACH_PX / scale;
   const solid = shape.solid;
   return {
-    corners: solid ? [] : corners(shape),
+    corners: !solid ? corners(shape) : shape.kind === 'box' ? frontCorners(shape, solid) : [],
     sides: solid ? sideHandles(shape, solid) : flatSides(shape),
     turn: turnHandle(shape, reach),
     face: faceHandle(shape),

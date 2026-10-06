@@ -364,7 +364,7 @@ function sizesOf(shape: Shape, solid: Solid): Vector3 {
   return [shape.box[2], shape.box[3], solid.thickness];
 }
 
-/** A solid's side handles: a box's faces, a capsule's ends and thickness; each where it can be dragged on screen. */
+/** A solid's side handles: a box's faces, a capsule's ends and both its sides; each where it can be dragged on screen. */
 export function sideHandles(shape: Shape, solid: Solid): SideHandle[] {
   const turn = rotation(shape, solid);
   const onScreen = (own: Vector3) => onCrop(shape, turn, own);
@@ -390,14 +390,12 @@ export function sideHandles(shape: Shape, solid: Solid): SideHandle[] {
         seen: times(turn, axis)[2] * sign <= 0,
       }))
     : [];
-  return [
-    ...ends,
-    {
-      point: onScreen(across.map((part) => part * radius) as Vector3),
-      side: CAPSULE_THICKNESS,
-      seen: true,
-    },
-  ];
+  const sides = [-1, 1].map((sign) => ({
+    point: onScreen(across.map((part) => part * sign * radius) as Vector3),
+    side: CAPSULE_THICKNESS,
+    seen: true,
+  }));
+  return [...ends, ...sides];
 }
 
 /** How far a point lies along a direction on screen from a shape's middle, in units of that direction. */

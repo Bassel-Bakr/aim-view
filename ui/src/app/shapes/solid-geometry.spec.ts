@@ -56,6 +56,8 @@ describe('solid geometry', () => {
       kind: 'pill' as const,
       box: [50, 50, 10, 40] as Shape['box'],
     };
+    const leaning = { ...ball, solid: { ...ball.solid!, tip: 30 } };
+    expect(sideHandles(leaning, leaning.solid!).map((handle) => handle.side)).toEqual([0, 1, 2, 2]);
     expect(rounded(pillAxis(ball, ball.solid!))).toEqual([
       [50, 50],
       [50, 50],

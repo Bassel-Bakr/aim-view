@@ -114,6 +114,7 @@ describe("a flat box's sides", () => {
     expect(
       pushedFlatSide(shape({ kind: 'box', angle: 90 }), 2, [60, 50], false).box[3],
     ).toBeCloseTo(15);
-    expect(flatSides(shape({}))).toEqual([]);
+    expect(flatSides(shape({}))).toHaveLength(4);
+    expect(flatSides(shape({ face: [5, 0] }))).toEqual([]);
   });
 });
