@@ -12,7 +12,7 @@ gives a crop of 256 x 256 round the crosshair (shifted up to 48 px at random), l
   MIN_CONTRAST; the fixed map's pixels next to such pixels join them (the crosshair drawn over a target), holes are
   filled (a sphere's highlight), and the connected parts taken;
 - the part at the crosshair is the killed target: it must be a target's shape (SOLID_SHARE of its box filled, its sides
-  within MAX_ASPECT, convex: CONVEX_SHARE of its hull filled, where two targets touching are not, and one target: its
+  within MAX_ASPECT and no wider than BAR_ASPECT times its height (a health bar lies flat), convex: CONVEX_SHARE of its hull filled, where two targets touching are not, and one target: its
   distance transform has no second peak behind a saddle, as two overlapping targets have and a capsule's even ridge
   has not), stay off the crop's edge and be MIN_AREA_PX or more; else the next frame back is tried;
 - every other part of a like size (AREA_RANGE times it) and shape, off the crop's edge, is a target too; any other part,
@@ -63,6 +63,7 @@ MIN_COLOR_PX = 3                # of which at least this many off the fixed map
 MIN_AREA_PX = 12
 SOLID_SHARE = 0.5               # a target fills at least this share of its box (a sphere 0.79, a cube's face 1)
 MAX_ASPECT = 4.0                # a target's box is at most this many times as long as it is wide
+BAR_ASPECT = 1.8                # a part this many times wider than tall lies flat: a health bar, never a target
 CONVEX_SHARE = 0.9              # a target's pixels against its pixel centers' hull (a cube or sphere over 1)
 PEAK_SHARE = 0.6                # a second peak of the distance to the part's edge counts from this share of the first
 SADDLE_SHARE = 0.8              # two peaks are two targets when the distance dips under this share of the lower between
@@ -149,7 +150,7 @@ def shape_of(mask):
     except QhullError:                                  # a line of pixels
         hull = 0.0
     solid = (area >= SOLID_SHARE * width * height and max(width, height) <= MAX_ASPECT * min(width, height)
-             and area >= CONVEX_SHARE * hull and not two_targets(mask))
+             and width <= BAR_ASPECT * height and area >= CONVEX_SHARE * hull and not two_targets(mask))
     edge = x0 == 0 or y0 == 0 or x1 == CROP or y1 == CROP
     return [(x0 + x1) / 2, (y0 + y1) / 2, width, height], area, solid, edge
 
