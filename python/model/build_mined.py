@@ -693,6 +693,15 @@ def lone_places(run, single):
     return out
 
 
+def balanced_sum(terms):
+    """The terms' sum as ffmpeg's expressions take it: halves in brackets, a balanced tree (ffmpeg refuses a flat sum
+    of 100 terms or more, its parser's depth limit; service/src/video.rs does the same)."""
+    if len(terms) == 1:
+        return terms[0]
+    half = len(terms) // 2
+    return f"({balanced_sum(terms[:half])})+({balanced_sum(terms[half:])})"
+
+
 def decode(video, frames):
     """The frames (sorted indices) as RGB 1280 x 720 (ffmpeg's area scaling, as everywhere): one pass from the start, so
     the numbering is the review's; frames between them in the same windows are decoded and dropped."""
@@ -705,7 +714,7 @@ def decode(video, frames):
     while len(ranges) > MAX_WINDOWS:                  # ffmpeg's expressions stay short
         k = min(range(len(ranges) - 1), key=lambda k: ranges[k + 1][0] - ranges[k][1])
         ranges[k][1] = ranges.pop(k + 1)[1]
-    select = "+".join(f"between(n,{first},{last})" for first, last in ranges)
+    select = balanced_sum([f"between(n,{first},{last})" for first, last in ranges])
     size = WIDTH * HEIGHT * 3
     process = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(video), "-vf",
                                 f"select='{select}',scale={WIDTH}:{HEIGHT}:flags=area,format=rgb24", "-fps_mode",
