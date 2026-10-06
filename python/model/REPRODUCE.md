@@ -160,6 +160,20 @@ winning:
 python python/model/crop_check/labels.py $D/check_teacher $D/check_teacher/answers_small/checks $D/hand_small/checked_phone_2.jsonl small --also $D/check_teacher/answers/checks
 ```
 
+The sets made again from the labels of 2026-10-06 (the health bar no longer a target on two bar crops, one robot
+crop decided, the small targets above), each in a new folder (checked_data.py keeps a set it has made). The next model
+trains on these in place of `data_bars_checked`, `data_bars_recolored`, `data_robots_checked` and `data_small_checked`:
+
+```bash
+python python/model/checked_data.py --labels $D/data_bars/checked_phone.jsonl --out $D/data_bars_checked2 --tag chk_bars__
+python python/model/recolor_bars.py --data $D/data_bars_checked2 --out $D/data_bars_recolored2
+python python/model/checked_data.py --labels $D/hand_robots/checked_phone.jsonl --out $D/data_robots_checked2 --tag chk_robot_ --leave-out train/Switching_Humanoid_-_120529.50_-_2026.10_a3b9a0_002.npz,train/OW_Mirror_-_2591.96_-_2026.10.05-02.51.4_f649f4_006.npz
+python python/model/checked_data.py --labels $D/hand_small/checked_phone_2.jsonl --out $D/data_small_checked2 --tag chk_small_
+```
+
+They give 354 bar crops (495 boxes), 851 recolored copies, 310 robot crops (2 left out) and 104 small-target crops
+(the 1 unsure left out).
+
 The health-bar set (2026-10-05): bots' health bars the model boxes, the box crossed out (`build_bars.py`'s docstring
 has the rules). It reads build_mined.py's reviews (full_v3's tracks of 215 recordings, the checks' runs left out) and
 boxes their frames again with full_v7, the model that boxes bars most. The four parts run at once, and give the same
