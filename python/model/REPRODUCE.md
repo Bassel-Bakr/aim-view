@@ -235,6 +235,19 @@ ones. 196 crops of cubes and spheres, all in train/ (tag `auto_kill_`), with a s
 python python/model/build_auto_labels.py $D/data_auto_tiles2 large_v11 --match tile --per-recording 60
 ```
 
+The auto labels again with large_v13e4 (2026-10-06), on 150 clicking recordings outside the gate (one a scenario):
+164 crops (`data_auto_v13`). The census of kills with no box near the crosshair before them: tiles and jumbo targets
+(Tile Frenzy 180 131, Huge Poke Tile Frenzy 82, 1wall8tiles 79, VT DotTS Advanced S5 Jumbo 42; for a big target the
+census over-counts, its box's center being farther than 1.5 degrees), Microshot Speed 35, Reactive Flick 25; the
+extra-small runs (5 Sphere Hipfire Extra Small 36, 1w2tes 34) gave no labels (their targets are as small as the
+crosshair). The labeller now also refuses two overlapping targets as one part (`two_targets`: a second peak of the
+distance to the part's edge behind a saddle; a smaller one straight above is a bot's head): it set aside 1 of these
+crops and 4 of the 196 tile crops (`set_aside_two_targets/` beside them):
+
+```bash
+python python/model/build_auto_labels.py $D/data_auto_v13 large_v13e4 --match "" --recordings 150 --per-recording 25 --seed 13
+```
+
 The robots checked by Claude (2026-10-06): large_v12 found Smoothbot Switch Robots' robots in pieces (6 flicks fewer
 than large_v11, the gate's only fail). Crops a few frames before the stats files' kills on 9 bot recordings outside
 the gate (`build_kill_feedback.py --rules kill`), the robots boxed whole by the teacher (not snapped: snapping cuts a

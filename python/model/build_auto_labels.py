@@ -12,8 +12,9 @@ gives a crop of 256 x 256 round the crosshair (shifted up to 48 px at random), l
   MIN_CONTRAST; the fixed map's pixels next to such pixels join them (the crosshair drawn over a target), holes are
   filled (a sphere's highlight), and the connected parts taken;
 - the part at the crosshair is the killed target: it must be a target's shape (SOLID_SHARE of its box filled, its sides
-  within MAX_ASPECT, and convex: CONVEX_SHARE of its hull filled, where two targets touching are not), stay off the
-  crop's edge and be MIN_AREA_PX or more; else the next frame back is tried;
+  within MAX_ASPECT, convex: CONVEX_SHARE of its hull filled, where two targets touching are not, and one target: its
+  distance transform has no second peak behind a saddle, as two overlapping targets have and a capsule's even ridge
+  has not), stay off the crop's edge and be MIN_AREA_PX or more; else the next frame back is tried;
 - every other part of a like size (AREA_RANGE times it) and shape, off the crop's edge, is a target too; any other part,
   and a detector box over no part, is left to train.py as "ignore" (learnt neither as a target nor as wall).
 The boxes are the parts' extents and the target mask their pixels. It suits plain targets on a plain wall (tiles,
@@ -63,6 +64,10 @@ MIN_AREA_PX = 12
 SOLID_SHARE = 0.5               # a target fills at least this share of its box (a sphere 0.79, a cube's face 1)
 MAX_ASPECT = 4.0                # a target's box is at most this many times as long as it is wide
 CONVEX_SHARE = 0.9              # a target's pixels against its pixel centers' hull (a cube or sphere over 1)
+PEAK_SHARE = 0.6                # a second peak of the distance to the part's edge counts from this share of the first
+SADDLE_SHARE = 0.8              # two peaks are two targets when the distance dips under this share of the lower between
+PEAK_PX = 3                     # a peak is the greatest distance within this many pixels
+HEAD_SLANT = 0.5                # a head is above its body within this run over rise
 AREA_RANGE = (0.2, 5.0)         # another target's area against the killed one's
 BRIDGE_PX = 2                   # fixed-map pixels this near the target's color join it
 SHEET_COLUMNS, THUMB = 10, 128
@@ -110,6 +115,29 @@ def parts(rgb, fixed, at):
     return labelled, count
 
 
+def two_targets(mask):
+    """Whether a part is two overlapping targets: its distance to the edge has a second peak (PEAK_SHARE of the first
+    or more, farther from it than the first's distance) and dips between them under SADDLE_SHARE of the lower one. A
+    sphere or a cube has one peak; a capsule's ridge has many, but no dip between them. A smaller peak straight above
+    the first (within HEAD_SLANT of upright) is a bot's head on its body: one target."""
+    distance = ndimage.distance_transform_edt(mask)
+    top = distance.max()
+    peaks = np.argwhere((distance == ndimage.maximum_filter(distance, size=2 * PEAK_PX + 1))
+                        & (distance >= PEAK_SHARE * top))
+    first = np.unravel_index(int(distance.argmax()), distance.shape)
+    for second in peaks:
+        gap = np.hypot(*(second - first))
+        rise, across = first[0] - second[0], abs(second[1] - first[1])
+        if gap <= top or (rise > 0 and across <= HEAD_SLANT * rise and distance[tuple(second)] < top):
+            continue
+        steps = np.linspace(0, 1, int(gap) + 2)[:, None]
+        line = np.round(np.array(first) + steps * (second - np.array(first))).astype(int)
+        lowest = distance[line[:, 0], line[:, 1]].min()
+        if lowest < SADDLE_SHARE * min(top, distance[tuple(second)]):
+            return True
+    return False
+
+
 def shape_of(mask):
     """A part's box (cx, cy, w, h in crop pixels), area, whether it has a target's shape, and whether it touches the
     crop's edge."""
@@ -121,7 +149,7 @@ def shape_of(mask):
     except QhullError:                                  # a line of pixels
         hull = 0.0
     solid = (area >= SOLID_SHARE * width * height and max(width, height) <= MAX_ASPECT * min(width, height)
-             and area >= CONVEX_SHARE * hull)
+             and area >= CONVEX_SHARE * hull and not two_targets(mask))
     edge = x0 == 0 or y0 == 0 or x1 == CROP or y1 == CROP
     return [(x0 + x1) / 2, (y0 + y1) / 2, width, height], area, solid, edge
 
