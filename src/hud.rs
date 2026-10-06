@@ -1247,6 +1247,13 @@ impl HudWatch {
         }
     }
 
+    /// The rows of a frame's Y plane `add` reads, from the top (KovaaK's box and Aim Lab's value line): the rows below
+    /// them can be left out of the plane it is given.
+    pub fn rows_read(&self) -> usize {
+        let last = |scale: &Scale| scale.y.taps.iter().map(|(first, weights)| first + weights.len()).max().unwrap_or(0);
+        last(&self.region).max(last(&self.aim)).min(self.height)
+    }
+
     fn readable(&self, luma: &[u8]) -> bool {
         self.width > 0 && self.height > 0 && luma.len() >= self.width * self.height
     }

@@ -105,7 +105,8 @@ rust-analyzer's call hierarchy.
   stand-out and change maps).
 - `service/src/gpu_frames.rs`: A run's frames decoded on the GPU (Windows): Media Foundation decodes the recording into
   D3D11 textures, and a compute shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1
-  integer arithmetic and lays out the full-size Y plane the camera and the HUD read.
+  integer arithmetic, the 720p luma the camera reads (the same means), and the Y plane's top rows the HUD reads (only
+  those: the whole plane, 3.7 MB a frame, was most of what the CPU copied back).
 - `service/src/labels.rs`: Labelling (python/server.py): the recordings the user marked as another game, the queue of
   recordings to label areas in and the ones skipped there, kept in the data folder as the review server keeps them
   (not_aim_trainer.json, label_skipped.json: sorted lists of recording ids).
@@ -245,7 +246,8 @@ rust-analyzer's call hierarchy.
   model's _u8in export on frames of noise, `batch` a call, in one session or several at once (a review runs one a part),
   with the time a frame.
 - `service/examples/frames_check.rs`: A video's frames from the GPU (gpu_frames.rs) against ffmpeg's, converted by the
-  core (video.rs, convert.rs), byte for byte: each frame's RGB and Y plane, from the start or from a time on.
+  core (video.rs, convert.rs), byte for byte: each frame's RGB, 720p luma and Y plane (all its rows), from the start or
+  from a time on.
 - `service/examples/mouse_read.rs`: A raw mouse log read (python/mouse_read.py's command line, on the core's reader:
   src/mouse.rs).
 - `service/examples/track.rs`: A recording reviewed natively, without the app: its tracks, readings and HUD reading
@@ -411,8 +413,8 @@ KovaaK's Kill Count counts up one kill at a time, Aim Lab's timer down one secon
 - `HudKeys` (struct): What a watch reads in the key frames (`HudWatch::keys`): KovaaK's box, None without one, and its
   text rows. Methods: `session`.
 - `HudWatch` (struct): Reads a recording's HUD: first every key frame (`add_key`, for where KovaaK's box and its rows
-  are), then every frame in order (`add`), then `finish`. Methods: `new`, `add_key`, `session_box`, `keys`, `from_keys`,
-  `skip`, `add`, `frames`, `part`, `join`, `finish`.
+  are), then every frame in order (`add`), then `finish`. Methods: `new`, `rows_read`, `add_key`, `session_box`, `keys`,
+  `from_keys`, `skip`, `add`, `frames`, `part`, `join`, `finish`.
 
 ## src/kill_check.rs
 
@@ -649,7 +651,7 @@ reviewed at once (one decoder is the limit, in the browser and natively alike), 
   part of the video to track (None: all of it), the runs to split it into, and the detector model's settings (its
   settings file; today's values without one).
 - `Review` (struct): A review: its setup and the runs it is split into. Methods: `new`, `setup`, `set_model`, `runs`,
-  `frames`, `keys`, `tracking`, `watching`, `joining`.
+  `frames`, `keys`, `tracking`, `hud_rows`, `watching`, `joining`.
 - `Keys` (struct): The key frames' pass (`Review::keys`). Methods: `add`, `add_contrast`, `finish`.
 - `KeysRead` (struct): What the key frames give every run: the fixed map (1280 x 720, 1 fixed) and where the HUD's boxes
   are.
@@ -657,7 +659,7 @@ reviewed at once (one decoder is the limit, in the browser and natively alike), 
 - `RunTracking` (struct): A run's tracking (`Review::tracking`): which frames it reads, each tracked frame's excluded
   areas watched for pop-ups, and the detector's maps in order. Methods: `next_frame`, `watch`, `maps`, `part`.
 - `RunWatching` (struct): A run's watches (`Review::watching`): the camera watch and the HUD watch, fed each frame the
-  run reads. Methods: `frame`, `y_bytes`, `part`.
+  run reads. Methods: `frame`, `frame_with_luma`, `y_bytes`, `part`.
 - `WatchPart` (struct): A run's part of the watches (`RunWatching::part`).
 - `Tracks` (struct): The tracks as tracks.json keeps them: the frame rate, each frame's targets, the share of the frame
   the fixed map covers, and the detector that found them.
@@ -957,18 +959,19 @@ areas.rs reads for /api/find_areas.
 ## service/src/gpu_frames.rs
 
 A run's frames decoded on the GPU (Windows): Media Foundation decodes the recording into D3D11 textures, and a compute
-shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1 integer arithmetic and lays out
-the full-size Y plane the camera and the HUD read. Both are read back a few frames behind, through a ring of staging
-buffers, so the GPU never waits for the CPU. The CPU does no decoding and no conversion: ffmpeg's software decode took
-about 7 ms of CPU a 1440p frame. prototypes/gpu_decode checked the decoded frames against ffmpeg's and the RGB against
+shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1 integer arithmetic, the 720p luma
+the camera reads (the same means), and the Y plane's top rows the HUD reads (only those: the whole plane, 3.7 MB a
+frame, was most of what the CPU copied back). They are read back a few frames behind, through a ring of staging buffers,
+so the GPU never waits for the CPU. The CPU does no decoding and no conversion: ffmpeg's software decode took about 7 ms
+of CPU a 1440p frame. prototypes/gpu_decode checked the decoded frames against ffmpeg's and the RGB against
 convert.rs's, byte for byte. Media Foundation counts its times from the file's earliest frame, the pre-roll an MP4 edit
 list hides included (OBS's AV1 files have about 100 such frames; its H.264 files none), where ffmpeg's and the browser's
 start at the first frame shown: a frame's time here is its time there less `VideoInfo::earliest`. Only 2560 x 1440 MP4s
-(`usable`); other videos keep ffmpeg (video.rs). In: the video, its `VideoInfo`, where a run starts. Out: each frame's
-RGB and Y plane.
+(`usable`); other videos keep ffmpeg (video.rs). In: the video, its `VideoInfo`, where a run starts, the Y plane's rows
+wanted. Out: each frame's RGB, 720p luma and those rows.
 
-- `GpuFrames` (struct): A run's frames from the GPU, in order: `next_into` gives each one's RGB and Y plane. Methods:
-  `open`, `next_into`.
+- `GpuFrames` (struct): A run's frames from the GPU, in order: `next_into` gives each one's RGB, 720p luma and Y plane's
+  top rows. Methods: `open`, `next_into`.
 - Functions: `usable`.
 
 ## service/src/labels.rs
@@ -1459,9 +1462,9 @@ detector_speed -- <model _u8in.onnx> [batch] [frames] [sessions]
 ## service/examples/frames_check.rs
 
 A video's frames from the GPU (gpu_frames.rs) against ffmpeg's, converted by the core (video.rs, convert.rs), byte for
-byte: each frame's RGB and Y plane, from the start or from a time on. Reports the frames that differ and, for the first,
-which of ffmpeg's frames near it the GPU's equals (a frame lost or doubled shows as a shift). cargo run -p
-aimview-service --release --example frames_check -- <video> [frames] [from (seconds)]
+byte: each frame's RGB, 720p luma and Y plane (all its rows), from the start or from a time on. Reports the frames that
+differ and, for the first, which of ffmpeg's frames near it the GPU's equals (a frame lost or doubled shows as a shift).
+cargo run -p aimview-service --release --example frames_check -- <video> [frames] [from (seconds)]
 
 ## service/examples/mouse_read.rs
 

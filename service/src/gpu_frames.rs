@@ -1,13 +1,14 @@
 //! A run's frames decoded on the GPU (Windows): Media Foundation decodes the recording into D3D11 textures, and a
-//! compute shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1 integer arithmetic
-//! and lays out the full-size Y plane the camera and the HUD read. Both are read back a few frames behind, through a
+//! compute shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1 integer arithmetic,
+//! the 720p luma the camera reads (the same means), and the Y plane's top rows the HUD reads (only those: the whole
+//! plane, 3.7 MB a frame, was most of what the CPU copied back). They are read back a few frames behind, through a
 //! ring of staging buffers, so the GPU never waits for the CPU. The CPU does no decoding and no conversion: ffmpeg's
 //! software decode took about 7 ms of CPU a 1440p frame. prototypes/gpu_decode checked the decoded frames against
 //! ffmpeg's and the RGB against convert.rs's, byte for byte. Media Foundation counts its times from the file's
 //! earliest frame, the pre-roll an MP4 edit list hides included (OBS's AV1 files have about 100 such frames; its H.264
 //! files none), where ffmpeg's and the browser's start at the first frame shown: a frame's time here is its time there
 //! less `VideoInfo::earliest`. Only 2560 x 1440 MP4s (`usable`); other videos keep ffmpeg (video.rs). In: the video,
-//! its `VideoInfo`, where a run starts. Out: each frame's RGB and Y plane.
+//! its `VideoInfo`, where a run starts, the Y plane's rows wanted. Out: each frame's RGB, 720p luma and those rows.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -34,7 +35,9 @@ use crate::video::VideoInfo;
 const SRC_W: u32 = 2 * DST_W as u32;
 const SRC_H: u32 = 2 * DST_H as u32;
 const RGB_BYTES: usize = DST_W * DST_H * 3;
-const LUMA_BYTES: usize = (SRC_W * SRC_H) as usize;
+const SMALL_BYTES: usize = DST_W * DST_H;
+/// The shader's constant buffer: the Y plane's rows it lays out, padded to D3D11's 16 bytes.
+const ROWS_CONSTANTS: usize = 4;
 /// Frames read back this many behind the newest the GPU was given.
 const RING: usize = 4;
 /// Media Foundation's version (MF_SDK_VERSION << 16 | MF_API_VERSION) and its full start.
@@ -227,6 +230,46 @@ fn output_buffer(device: &ID3D11Device, bytes: usize) -> Result<(ID3D11Buffer, I
     Ok((out, view.ok_or("no GPU buffer view")?))
 }
 
+/// The texture a decoded frame is copied into, and the shader's views of it (luma, chroma) and of the colour tables.
+fn inputs(device: &ID3D11Device, info: &VideoInfo) -> Result<(ID3D11Texture2D, InputViews), String> {
+    let nv12_desc = D3D11_TEXTURE2D_DESC {
+        Width: SRC_W,
+        Height: SRC_H,
+        MipLevels: 1,
+        ArraySize: 1,
+        Format: DXGI_FORMAT_NV12,
+        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+        Usage: D3D11_USAGE_DEFAULT,
+        BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+        CPUAccessFlags: 0,
+        MiscFlags: 0,
+    };
+    let mut nv12 = None;
+    unsafe { device.CreateTexture2D(&nv12_desc, None, Some(&mut nv12)) }.map_err(failed("a frame texture"))?;
+    let nv12 = nv12.ok_or("no frame texture")?;
+    let views = [
+        Some(texture_view(device, &nv12, DXGI_FORMAT_R8_UINT)?),
+        Some(texture_view(device, &nv12, DXGI_FORMAT_R8G8_UINT)?),
+        Some(table_view(device, info.matrix, info.full)?),
+    ];
+    Ok((nv12, views))
+}
+
+/// The shader's constant buffer: the Y plane's rows it lays out (gpu_frames.hlsl's `plane_rows`).
+fn rows_buffer(device: &ID3D11Device, plane_rows: usize) -> Result<ID3D11Buffer, String> {
+    let desc = D3D11_BUFFER_DESC {
+        ByteWidth: (ROWS_CONSTANTS * size_of::<i32>()) as u32,
+        Usage: D3D11_USAGE_IMMUTABLE,
+        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+        CPUAccessFlags: 0,
+        MiscFlags: 0,
+        StructureByteStride: 0,
+    };
+    let mut constants = [0i32; ROWS_CONSTANTS];
+    constants[0] = plane_rows as i32;
+    buffer(device, &desc, Some(&constants))
+}
+
 fn staging_buffer(device: &ID3D11Device, bytes: usize) -> Result<ID3D11Buffer, String> {
     let desc = D3D11_BUFFER_DESC {
         ByteWidth: bytes as u32,
@@ -283,24 +326,32 @@ fn table_view(device: &ID3D11Device, matrix: Matrix, full_range: bool) -> Result
     view.ok_or_else(|| "no tables view".to_string())
 }
 
-/// One slot of the read-back ring: where a frame's RGB and Y plane wait for the CPU, and its decoded sample, held so
-/// the decoder cannot reuse its surface before the GPU has copied it.
+/// The shader's views of a frame's luma and chroma and of the colour tables (gpu_frames.hlsl's t0 to t2).
+type InputViews = [Option<ID3D11ShaderResourceView>; 3];
+
+/// One slot of the read-back ring: where a frame's RGB, 720p luma and Y plane's top rows wait for the CPU, and its
+/// decoded sample, held so the decoder cannot reuse its surface before the GPU has copied it.
 struct Readback {
     rgb: ID3D11Buffer,
-    luma: ID3D11Buffer,
+    small: ID3D11Buffer,
+    plane: ID3D11Buffer,
     sample: Option<IMFSample>,
 }
 
-/// A run's frames from the GPU, in order: `next_into` gives each one's RGB and Y plane.
+/// A run's frames from the GPU, in order: `next_into` gives each one's RGB, 720p luma and Y plane's top rows.
 pub struct GpuFrames {
     context: ID3D11DeviceContext,
     reader: IMFSourceReader,
     nv12: ID3D11Texture2D,
     shader: ID3D11ComputeShader,
-    views: [Option<ID3D11ShaderResourceView>; 3],
-    outputs: [Option<ID3D11UnorderedAccessView>; 2],
+    views: InputViews,
+    outputs: [Option<ID3D11UnorderedAccessView>; 3],
+    rows: Option<ID3D11Buffer>,
     rgb: ID3D11Buffer,
-    luma: ID3D11Buffer,
+    small: ID3D11Buffer,
+    plane: ID3D11Buffer,
+    /// The Y plane's bytes laid out: its first rows, as many as `open` was asked for.
+    plane_bytes: usize,
     ring: Vec<Readback>,
     /// The ring's slots holding frames not read back yet, oldest first.
     waiting: VecDeque<usize>,
@@ -315,8 +366,14 @@ pub struct GpuFrames {
 
 impl GpuFrames {
     /// Every frame, or from a key frame's time on (`from`, seconds from the first shown frame), at most `count` of
-    /// them, as video.rs's `Frames::open` gives them.
-    pub fn open(video: &Path, info: &VideoInfo, from: Option<f64>, count: Option<usize>) -> Result<GpuFrames, String> {
+    /// them, as video.rs's `Frames::open` gives them; of each Y plane its first `plane_rows` rows (0: none).
+    pub fn open(
+        video: &Path,
+        info: &VideoInfo,
+        from: Option<f64>,
+        count: Option<usize>,
+        plane_rows: usize,
+    ) -> Result<GpuFrames, String> {
         let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         let mut started = Ok(());
         MF_STARTED.call_once(|| started = unsafe { MFStartup(MF_VERSION, MF_START_FULL) });
@@ -330,32 +387,23 @@ impl GpuFrames {
             unsafe { reader.SetCurrentPosition(&GUID::zeroed(), &position) }.map_err(failed("seeking"))?;
         }
         let half_frame = UNITS_PER_SECOND / info.fps.max(1.0) / 2.0;
-        let nv12_desc = D3D11_TEXTURE2D_DESC {
-            Width: SRC_W,
-            Height: SRC_H,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-            Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
-        let mut nv12 = None;
-        unsafe { device.CreateTexture2D(&nv12_desc, None, Some(&mut nv12)) }.map_err(failed("a frame texture"))?;
-        let nv12 = nv12.ok_or("no frame texture")?;
-        let views = [
-            Some(texture_view(&device, &nv12, DXGI_FORMAT_R8_UINT)?),
-            Some(texture_view(&device, &nv12, DXGI_FORMAT_R8G8_UINT)?),
-            Some(table_view(&device, info.matrix, info.full)?),
-        ];
+        let (nv12, views) = inputs(&device, info)?;
+        let plane_rows = plane_rows.min(SRC_H as usize);
+        let plane_bytes = plane_rows * SRC_W as usize;
+        // a buffer has at least one row: D3D11 makes none of no bytes
+        let plane_buffer_bytes = plane_bytes.max(SRC_W as usize);
         let (rgb, rgb_view) = output_buffer(&device, RGB_BYTES)?;
-        let (luma, luma_view) = output_buffer(&device, LUMA_BYTES)?;
+        let (small, small_view) = output_buffer(&device, SMALL_BYTES)?;
+        let (plane, plane_view) = output_buffer(&device, plane_buffer_bytes)?;
+        let rows = rows_buffer(&device, plane_rows)?;
         let ring = (0..RING)
             .map(|_| {
-                let (rgb, luma) = (staging_buffer(&device, RGB_BYTES)?, staging_buffer(&device, LUMA_BYTES)?);
-                Ok(Readback { rgb, luma, sample: None })
+                Ok(Readback {
+                    rgb: staging_buffer(&device, RGB_BYTES)?,
+                    small: staging_buffer(&device, SMALL_BYTES)?,
+                    plane: staging_buffer(&device, plane_buffer_bytes)?,
+                    sample: None,
+                })
             })
             .collect::<Result<Vec<_>, String>>()?;
         Ok(GpuFrames {
@@ -364,9 +412,12 @@ impl GpuFrames {
             reader,
             nv12,
             views,
-            outputs: [Some(rgb_view), Some(luma_view)],
+            outputs: [Some(rgb_view), Some(plane_view), Some(small_view)],
+            rows: Some(rows),
             rgb,
-            luma,
+            small,
+            plane,
+            plane_bytes,
             ring,
             waiting: VecDeque::with_capacity(RING),
             next_slot: 0,
@@ -426,10 +477,14 @@ impl GpuFrames {
             self.context.CopySubresourceRegion(&self.nv12, 0, 0, 0, 0, &texture, slice, Some(&whole));
             self.context.CSSetShader(&self.shader, None);
             self.context.CSSetShaderResources(0, Some(&self.views));
-            self.context.CSSetUnorderedAccessViews(0, 2, Some(self.outputs.as_ptr()), None);
+            self.context.CSSetConstantBuffers(0, Some(std::slice::from_ref(&self.rows)));
+            self.context.CSSetUnorderedAccessViews(0, 3, Some(self.outputs.as_ptr()), None);
             self.context.Dispatch(threads.div_ceil(THREADS_PER_GROUP), 1, 1);
             self.context.CopyResource(&slot.rgb, &self.rgb);
-            self.context.CopyResource(&slot.luma, &self.luma);
+            self.context.CopyResource(&slot.small, &self.small);
+            if self.plane_bytes > 0 {
+                self.context.CopyResource(&slot.plane, &self.plane);
+            }
         }
         self.ring[self.next_slot].sample = Some(sample);
         self.waiting.push_back(self.next_slot);
@@ -440,9 +495,10 @@ impl GpuFrames {
         Ok(true)
     }
 
-    /// The next frame's RGB (1280 x 720 x 3) into `rgb` and its Y plane (2560 x 1440) into `luma`; false when there
-    /// are no more.
-    pub fn next_into(&mut self, rgb: &mut [u8], luma: &mut [u8]) -> Result<bool, String> {
+    /// The next frame's RGB (1280 x 720 x 3) into `rgb`, its 720p luma (1280 x 720) into `small`, and its Y plane's
+    /// first rows (2560 bytes each, as many as `open` was asked for) into the start of `plane`; an empty `small` or
+    /// `plane` is left out. False when there are no more.
+    pub fn next_into(&mut self, rgb: &mut [u8], small: &mut [u8], plane: &mut [u8]) -> Result<bool, String> {
         while !self.ended && self.waiting.len() < RING {
             if !self.submit()? {
                 self.ended = true;
@@ -450,7 +506,9 @@ impl GpuFrames {
         }
         let Some(slot) = self.waiting.pop_front() else { return Ok(false) };
         let readback = &mut self.ring[slot];
-        for (staging, out) in [(&readback.rgb, rgb), (&readback.luma, luma)] {
+        let plane_bytes = if plane.is_empty() { 0 } else { self.plane_bytes };
+        let copies = [(&readback.rgb, rgb), (&readback.small, small), (&readback.plane, &mut plane[..plane_bytes])];
+        for (staging, out) in copies.into_iter().filter(|(_, out)| !out.is_empty()) {
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             unsafe {
                 self.context.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)).map_err(failed("reading a frame"))?;

@@ -200,6 +200,13 @@ impl Review {
         RunTracking { tracker, from: part.from, frames: part.frames, reads: part.reads(), read: 0, pushed: 0 }
     }
 
+    /// The rows of each frame's Y plane the watches read, from the top, when the frame's 720p luma comes made
+    /// (`RunWatching::frame_with_luma`): the HUD's.
+    pub fn hud_rows(&self) -> usize {
+        let format = self.setup.format;
+        HudWatch::new(format.width, format.height, format.full).rows_read()
+    }
+
     /// Run `run`'s watches, from what the key frames gave. In a review from part way in, the first run's watches have
     /// nothing before its first frame.
     pub fn watching(&self, run: usize, keys: &KeysRead) -> RunWatching {
@@ -381,9 +388,26 @@ impl RunWatching {
     /// format's size), and its countdown rows (`countdown_bytes` of its 720p RGB24). The camera watch reads its 720p
     /// luma, the same bytes as ffmpeg's.
     pub fn frame(&mut self, y: &[u8], rows: &[u8]) {
-        self.convert.luma(&y[..self.y_bytes], &mut self.luma[..]);
+        self.watch(y, None, rows);
+    }
+
+    /// `frame` with the frame's 720p luma made already (the GPU's frames make it, the same bytes): `y` need hold only
+    /// the rows the HUD reads (`Review::hud_rows`), the rest of the format's size as it may be.
+    pub fn frame_with_luma(&mut self, y: &[u8], luma: &[u8], rows: &[u8]) {
+        self.watch(y, Some(luma), rows);
+    }
+
+    /// A frame's watching, its 720p luma given (`luma`) or made here from `y`.
+    fn watch(&mut self, y: &[u8], luma: Option<&[u8]>, rows: &[u8]) {
+        let luma = match luma {
+            Some(luma) => luma,
+            None => {
+                self.convert.luma(&y[..self.y_bytes], &mut self.luma[..]);
+                &self.luma[..]
+            }
+        };
         self.rgb[countdown_bytes()].copy_from_slice(rows);
-        self.camera.add(&self.luma[..], &self.rgb[..]);
+        self.camera.add(luma, &self.rgb[..]);
         self.hud.add(y);
         self.read += 1;
     }

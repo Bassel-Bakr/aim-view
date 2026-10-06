@@ -27,8 +27,10 @@ DirectML's upload of the same RGB back to the GPU 5.4% (a round trip); the 720p 
 (`mean_2x2`) 10%; the camera's FFTs 11%; the HUD 2.7%; allocation 3.8%. dhat: 8.45 GB in 3.2 million blocks, the
 detector's output copies (2.9 GB), the camera's tiles and buffers (2.3 GB), the decoder's countdown rows (0.3 GB) and
 the HUD's small vectors (1.8 million blocks) first; with those buffers kept and the detector's maps read where ONNX
-Runtime leaves them, 2.39 GB in 1.2 million blocks (the same review's files, byte for byte). A review's fixed cost (the model, DirectML's session, the key
-frames) is about 1.5 s.
+Runtime leaves them, 2.39 GB in 1.2 million blocks (the same review's files, byte for byte). The GPU's frames now also
+give the 720p luma (the shader's means, which `mean_2x2` made again on the CPU) and only the Y plane's rows the HUD
+reads (`Review::hud_rows`: 330 of 1,440 at 1440p), so a frame's Y reads back as 0.9 MB of luma and 0.8 MB of rows
+instead of 3.7 MB. A review's fixed cost (the model, DirectML's session, the key frames) is about 1.5 s.
 
 ## Every frame (about 6,000 a review)
 

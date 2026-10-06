@@ -223,10 +223,11 @@ fn check_part(
     let mine: Vec<usize> = needed.iter().copied().filter(|&frame| frame >= part.first && frame < end).collect();
     let Some(&last) = mine.last() else { return Ok(()) };
     let mut wanted = mine.iter().copied().peekable();
-    let mut frames = FrameSource::open(req, info, (part.first > 0).then_some(part.from), Some(last + 1 - part.first))?;
-    let (mut rgb, mut luma) = (vec![0u8; RGB_BYTES], vec![0u8; info.width * info.height]);
+    let from = (part.first > 0).then_some(part.from);
+    let mut frames = FrameSource::open(req, info, from, Some(last + 1 - part.first), 0)?;
+    let mut rgb = vec![0u8; RGB_BYTES];
     for frame in part.first..=last {
-        if !frames.next_into(&mut rgb, &mut luma)? {
+        if !frames.next_into(&mut rgb, &mut [], None)? {
             return Err(format!("the kill check's frames ended at frame {frame} where it needs {last}"));
         }
         if wanted.next_if_eq(&frame).is_some() {
@@ -395,9 +396,10 @@ struct RunContext<'a> {
 #[cfg(feature = "native")]
 type Batch = (Vec<u8>, usize);
 
-/// A frame for the watch: its Y plane (at the video's size) and its countdown rows.
+/// A frame for the watch: its Y plane (at the video's size; from the GPU only the rows the HUD reads), its 720p luma
+/// where the GPU made it (else empty: the watch makes it from the plane), and its countdown rows.
 #[cfg(feature = "native")]
-type WatchFrame = (Vec<u8>, Vec<u8>);
+type WatchFrame = (Vec<u8>, Vec<u8>, Vec<u8>);
 
 /// Where a run's frames come from: ffmpeg's software decode, converted here, or the GPU, which decodes and converts.
 #[cfg(feature = "native")]
@@ -409,11 +411,19 @@ enum FrameSource {
 
 #[cfg(feature = "native")]
 impl FrameSource {
-    /// A run's frames: from the GPU when the request asks and the video allows it, else from ffmpeg.
-    fn open(req: &Request, info: &VideoInfo, from: Option<f64>, count: Option<usize>) -> Result<FrameSource, String> {
+    /// A run's frames: from the GPU when the request asks and the video allows it (of each Y plane only its first
+    /// `plane_rows` rows, the rest left as they were), else from ffmpeg.
+    fn open(
+        req: &Request,
+        info: &VideoInfo,
+        from: Option<f64>,
+        count: Option<usize>,
+        plane_rows: usize,
+    ) -> Result<FrameSource, String> {
         #[cfg(windows)]
         if req.gpu_frames && crate::gpu_frames::usable(&req.video, info) {
-            return Ok(FrameSource::Gpu(crate::gpu_frames::GpuFrames::open(&req.video, info, from, count)?));
+            let frames = crate::gpu_frames::GpuFrames::open(&req.video, info, from, count, plane_rows)?;
+            return Ok(FrameSource::Gpu(frames));
         }
         Ok(FrameSource::Ffmpeg {
             frames: Frames::open(&req.video, from, count)?,
@@ -422,20 +432,30 @@ impl FrameSource {
         })
     }
 
-    /// The next frame's RGB (1280 x 720) into `rgb` and its Y plane (at the video's size) into `luma`; false at the
-    /// end.
-    fn next_into(&mut self, rgb: &mut [u8], luma: &mut [u8]) -> Result<bool, String> {
+    /// The next frame's RGB (1280 x 720) into `rgb`, its Y plane (at the video's size) into `plane`, and, when
+    /// `small` is given, its 720p luma into it where the GPU makes it (left empty from ffmpeg: the watch makes it);
+    /// false at the end.
+    fn next_into(&mut self, rgb: &mut [u8], plane: &mut [u8], small: Option<&mut Vec<u8>>) -> Result<bool, String> {
         match self {
             FrameSource::Ffmpeg { frames, convert, yuv } => {
                 if !frames.next_into(yuv)? {
                     return Ok(false);
                 }
                 convert.rgb24(yuv, rgb);
-                luma.copy_from_slice(&yuv[..luma.len()]);
+                plane.copy_from_slice(&yuv[..plane.len()]);
+                if let Some(small) = small {
+                    small.clear();
+                }
                 Ok(true)
             }
             #[cfg(windows)]
-            FrameSource::Gpu(frames) => frames.next_into(rgb, luma),
+            FrameSource::Gpu(frames) => match small {
+                Some(small) => {
+                    small.resize(DST_W * DST_H, 0);
+                    frames.next_into(rgb, small, plane)
+                }
+                None => frames.next_into(rgb, &mut [], plane),
+            },
         }
     }
 }
@@ -456,7 +476,8 @@ fn review_run(context: &RunContext, run: usize) -> Result<RunPart, String> {
     let RunContext { req, review, keys, info, .. } = *context;
     let planned = &review.runs()[run];
     let batch = req.batch.max(1);
-    let mut frames = FrameSource::open(req, info, (planned.first > 0).then_some(planned.from), Some(planned.reads()))?;
+    let from = (planned.first > 0).then_some(planned.from);
+    let mut frames = FrameSource::open(req, info, from, Some(planned.reads()), review.hud_rows())?;
     let detector = Detector::new(&req.model, batch, &keys.fixed, req.device)?;
     let device = detector.device;
     (context.on_device)(device);
@@ -503,10 +524,10 @@ fn decode_run(
     let mut waiting = vec![0u8; batch * RGB_BYTES];
     let mut count = 0;
     loop {
-        // the frame's Y plane and countdown rows go straight into buffers the watch gave back
-        let (mut luma, mut countdown) =
-            to_watch.spare.try_recv().unwrap_or_else(|_| (vec![0u8; luma_bytes], vec![0u8; rows.len()]));
-        if !frames.next_into(&mut rgb, &mut luma)? {
+        // the frame's Y plane, 720p luma and countdown rows go straight into buffers the watch gave back
+        let (mut plane, mut small, mut countdown) =
+            to_watch.spare.try_recv().unwrap_or_else(|_| (vec![0u8; luma_bytes], Vec::new(), vec![0u8; rows.len()]));
+        if !frames.next_into(&mut rgb, &mut plane, Some(&mut small))? {
             break;
         }
         let next = tracking.lock().map_err(|_| "the tracker failed")?.next_frame();
@@ -514,7 +535,7 @@ fn decode_run(
             break;
         }
         countdown.copy_from_slice(&rgb[rows.clone()]);
-        to_watch.send.send((luma, countdown)).map_err(|_| "the camera watch stopped")?;
+        to_watch.send.send((plane, small, countdown)).map_err(|_| "the camera watch stopped")?;
         if next == NextFrame::Watch {
             continue;
         }
@@ -570,8 +591,8 @@ fn detect(
     Ok(())
 }
 
-/// The watch's side of a run: the camera's turn and the HUD read from each frame's Y plane and countdown rows, each
-/// frame's buffers sent back to be filled again.
+/// The watch's side of a run: the camera's turn and the HUD read from each frame's Y plane (and its 720p luma, when the
+/// GPU made it) and countdown rows, each frame's buffers sent back to be filled again.
 #[cfg(feature = "native")]
 fn watch_run(
     review: &Review,
@@ -581,9 +602,13 @@ fn watch_run(
     spare: &Sender<WatchFrame>,
 ) -> Result<WatchPart, String> {
     let mut watching = review.watching(run, keys);
-    for (luma, rows) in frames {
-        watching.frame(&luma, &rows);
-        let _ = spare.send((luma, rows));
+    for (plane, small, rows) in frames {
+        if small.is_empty() {
+            watching.frame(&plane, &rows);
+        } else {
+            watching.frame_with_luma(&plane, &small, &rows);
+        }
+        let _ = spare.send((plane, small, rows));
     }
     watching.part()
 }
