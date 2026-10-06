@@ -73,7 +73,7 @@ fn clicking_reviews(group: &mut BenchmarkGroup<WallTime>, video: &str) {
     let tracks: Option<Tracks> = inputs::json("report/hud_av1", &format!("{dir}/tracks.json"));
     let hud: Option<Option<HudReading>> = inputs::json("report/hud_av1", &format!("{dir}/hud.json"));
     if let (Some(tracks), Some(hud)) = (tracks, hud) {
-        let kills = KillTimes::Unpaired { hud: hud.as_ref() };
+        let kills = KillTimes::Unpaired { hud: hud.as_ref(), checked: None };
         group.bench_function("hud_av1", |bencher| {
             bencher.iter(|| review_clicks(black_box(&tracks), kills, video, None, None))
         });

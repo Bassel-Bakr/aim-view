@@ -289,7 +289,13 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   miss after the last redraw), its kill frames within a frame on 25. The video alone (matching.rs `match_video`, its
   `Paths`: a false camera turn at a kill repaired, a target found again only where and as big as it was) finds 94.5%
   of the stats files' kills within 3 frames on 47 runs (97.6% on the 18 held out; was 83%), precision 95.8% (held out
-  97.4%); switching runs are the weakest (90% precision held out). Where the detector marks the crosshair (matching.rs
+  97.4%); switching runs are the weakest (90% precision held out). Each kill the video alone gives is then checked in
+  the frames round it (src/kill_check.rs): a target that still stands out from the wall where it died 3 to 6 frames
+  later, by half as much as 2 to 4 frames before or more, is no kill. The native review reads the video a second time
+  for it, only for a recording without a stats file (service/src/review.rs `check_kills`, kept as kills.json; about 4.6
+  s a run); the browser does not check yet. With large_v11 on the 48 runs it takes precision from 0.958 to 0.968 and
+  recall from 0.944 to 0.938, 23 of the 34 kills it loses on 1wall 2targets xsmall valorant (see Open: its stats
+  file's clock is 9 frames late). Where the detector marks the crosshair (matching.rs
   `crosshair_spots`: boxes piled at the screen's center while the camera turns, 5 times as dense as 0.2 to 0.4 degrees
   around it; no search, so no knife edge), a track the tracker hands to the crosshair's box when its target dies is cut
   back to its last target box (`without_crosshair_ends`), with a stats file too: its clock was 7 to 10 frames late on

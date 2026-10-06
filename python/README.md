@@ -274,6 +274,14 @@ degree, and 3 times the shifts of the frames either side), or when the jump is m
 "near" of a track that ended the frame before. Its first part ends where the target died. At a spike, the camera's
 turn is the mean of the frames either side.
 
+Last, each kill is checked in the frames round it (src/kill_check.rs). A target that dies leaves wall where it was;
+one the tracker only lost, or a crosshair the detector boxed, still shows there. Before the kill (frames kill-4 to
+kill-2) the target's patch, a disc 0.6 times its box's longer side across, is measured at its tracked place: the
+distance between the disc's mean color and the mean color of a ring of wall round it, the fixed map's pixels left out.
+After it (kill+3 to kill+6) the same is measured where it died, moved by the camera's turn since. A kill whose patch
+still stands out after by half as much as before, or more, is no kill. The native review reads the video a second
+time for these frames (service/src/review.rs `check_kills`), only when the recording has no stats file.
+
 python/review.py's `match_video` keeps the old rules: a track picked up again within 0.5 s (allowing for the camera's
 turn) continues it, with no repair, no test of where and how big a target comes back, and no limit on blob size. It
 stays only as the reference for the parity of the HUD path; the core's video-alone path differs from it on purpose.

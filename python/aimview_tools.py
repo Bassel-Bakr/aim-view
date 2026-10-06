@@ -209,7 +209,7 @@ class Library:
         """Nothing to do: the stats files were paired when the library opened."""
 
     def review_video(self, video, model=None, out=None, *, stats=None, kind=None, limit=None, cap=None, areas=None,
-                     runs=None, batch=4, window=None, quiet=False):
+                     runs=None, batch=4, window=None, quiet=False, kill_check=False):
         """A video reviewed as the app reviews a recording, without touching the library's reviews (`aimview-tool
         review`): {tracks, readings, hud, seconds}. With `out`, a folder: tracks.json, readings.json, hud.json and
         the report the app shows (report.json, and `report` here) are written there; without it, no report.
@@ -218,7 +218,8 @@ class Library:
         cap: the scenario's kind ("static", "dynamic", "tracking", "switching"), time limit (s) and targets alive at
         once. areas: [[x0, y0, x1, y1, kind], ...] to leave out (None: the recording's in the app, else KovOBS's).
         runs: the parts reviewed at once (None: 2 with 8 threads or more). window: (start, end) in seconds, only that
-        part tracked. quiet: no progress on stderr."""
+        part tracked. quiet: no progress on stderr. kill_check: the kills the video alone gives checked in the frames
+        round them (kill_check.rs: the video read again), kept as kills.json and in the result as `kills`."""
         args = ["review", video, *self.options, "--batch", batch]
         if os.environ.get(GPU_SHARE_VAR):
             # a game beside the review keeps the GPU the rest of the time; the results do not change
@@ -233,11 +234,13 @@ class Library:
             args += ["--window", window[0], window[1]]
         if quiet:
             args.append("--quiet")
+        if kill_check:
+            args.append("--kill-check")
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary) if out is None else Path(out)
             answer = run(*args, "--out", folder, *([] if out is not None else ["--no-report"]))
             result = {name: json.loads((folder / f"{name}.json").read_bytes())
-                      for name in ("tracks", "readings", "hud")}
+                      for name in ("tracks", "readings", "hud", "kills") if (folder / f"{name}.json").is_file()}
             result["seconds"] = answer["seconds"]
             if answer["report"]:
                 result["report"] = json.loads((folder / "report.json").read_bytes())

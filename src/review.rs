@@ -5,7 +5,7 @@
 //! which the run page shows.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
 
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,7 @@ use crate::capped::Capped;
 use crate::faint::{FaintSetting, without_faint};
 use crate::geometry::{CX, CY, H, K, W};
 use crate::hud::{HudFinal, HudGame, HudReading};
+use crate::kill_check::{KillEvidence, ruled_out};
 use crate::matching::{
     appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
     JOIN_GAP_S, JOIN_RADIUS_DEG, SPOTS,
@@ -97,11 +98,12 @@ pub struct Reviewed {
 }
 
 /// Where a run's kills come from: its stats file (its name and text), or, for a run without one, the HUD read in the
-/// video (None where it did not read).
+/// video (None where it did not read) and, for the kills the video alone gives, their check in the frames round them
+/// (kill_check.rs; None: not checked).
 #[derive(Clone, Copy)]
 pub enum KillTimes<'a> {
     Stats { name: &'a str, text: &'a str },
-    Unpaired { hud: Option<&'a HudReading> },
+    Unpaired { hud: Option<&'a HudReading>, checked: Option<&'a [KillEvidence]> },
 }
 
 /// The number a text starts with (digits, then a point and digits), as written; None where it starts with no digit.
@@ -326,7 +328,7 @@ pub fn review_clicks(
     let window = run.as_ref().and_then(|marks| click_window(marks, tracks.fps, tracks.frames.len()));
     let kills = match kills {
         KillTimes::Stats { name, text } => stats_kills(tracks, name, text, window.as_ref())?,
-        KillTimes::Unpaired { hud } => unpaired_kills(tracks, hud, video, window.as_ref()),
+        KillTimes::Unpaired { hud, checked } => unpaired_kills(tracks, hud, checked, video, window.as_ref()),
     };
     let ClickKills { flicks, info, meta, shots, hits, stats } = kills;
     let cost = run_reload_cost(reload, &shots, hits, &meta);
@@ -355,6 +357,24 @@ pub fn review_clicks(
     Ok(Reviewed { flicks, report })
 }
 
+/// The video's kills less those their check in the frames round them rules out (kill_check.rs: the target still
+/// showed after), the rest numbered again in order; all of them when they were not checked.
+fn confirmed((flicks, mut info): (Vec<Flick>, MatchInfo), checked: Option<&[KillEvidence]>) -> (Vec<Flick>, MatchInfo) {
+    let Some(checked) = checked else { return (flicks, info) };
+    let out: HashSet<i64> =
+        checked.iter().filter(|evidence| ruled_out(evidence)).map(|evidence| evidence.frame).collect();
+    let before = flicks.len();
+    let flicks: Vec<Flick> = flicks
+        .into_iter()
+        .filter(|flick| !out.contains(&flick.kill_frame))
+        .enumerate()
+        .map(|(at, flick)| Flick { kill_number: at + 1, ..flick })
+        .collect();
+    info.kills_video -= (before - flicks.len()).min(info.kills_video);
+    info.matched = flicks.len();
+    (flicks, info)
+}
+
 /// The stats file's facts the HUD gives: the kills, the score (from the file name, else Aim Lab's points) and the hits
 /// and misses.
 fn add_hud_facts(meta: &mut HashMap<String, String>, hud: &HudReading, score: Option<String>) {
@@ -374,6 +394,7 @@ fn add_hud_facts(meta: &mut HashMap<String, String>, hud: &HudReading, score: Op
 fn unpaired_kills(
     tracks: &Tracks,
     hud: Option<&HudReading>,
+    checked: Option<&[KillEvidence]>,
     video: &str,
     window: Option<&RangeInclusive<i64>>,
 ) -> ClickKills<'static> {
@@ -386,7 +407,7 @@ fn unpaired_kills(
                 || reading.kills.len() as f64 <= AIMLAB_MAX_KILLS_PER_VIDEO_KILL * match_video(tracks).0.len() as f64)
     });
     let Some(reading) = hud else {
-        let (flicks, info) = match_video(tracks);
+        let (flicks, info) = confirmed(match_video(tracks), checked);
         let all = ClickKills { flicks, info, meta, shots: Vec::new(), hits: None, stats: None };
         let Some(window) = window else {
             return all;
@@ -525,7 +546,7 @@ pub fn review_tracking(
     let (fps, limit) = (tracks.fps, scenario.limit);
     let kills = match kills {
         KillTimes::Stats { name, text } => tracking_stats_kills(tracks, name, text, limit)?,
-        KillTimes::Unpaired { hud } => tracking_hud_kills(hud, video, limit),
+        KillTimes::Unpaired { hud, .. } => tracking_hud_kills(hud, video, limit),
     };
     let TrackingKills { meta, stats, source, deaths, mut start, mut limit } = kills;
     if start.is_none()
@@ -623,6 +644,8 @@ pub struct ReviewRequest {
     pub faint: Option<FaintSetting>,
     #[serde(default)]
     pub hitbox: Option<Hitbox>,
+    #[serde(default)]
+    pub kill_check: Option<Vec<KillEvidence>>,
 }
 
 /// A clicking run's report or a tracking run's.
@@ -643,7 +666,7 @@ pub enum Outcome {
 
 fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
     let kills = if request.stats_text.is_empty() {
-        KillTimes::Unpaired { hud: request.hud.as_ref() }
+        KillTimes::Unpaired { hud: request.hud.as_ref(), checked: request.kill_check.as_deref() }
     } else {
         KillTimes::Stats { name: &request.stats, text: &request.stats_text }
     };

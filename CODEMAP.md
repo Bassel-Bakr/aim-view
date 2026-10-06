@@ -28,6 +28,9 @@ rust-analyzer's call hierarchy.
 - `src/hud.rs`: A recording's on-screen HUD, read frame by frame for a run without a stats file (python/hud.py's
   algorithm): KovaaK's session box (Kill Count, and Accuracy as hits/shots) or, when there is none, Aim Lab's POINTS and
   TIME boxes.
+- `src/kill_check.rs`: The kills the video alone gives (matching.rs `match_video`), checked in the frames round them: a
+  target that dies leaves wall where it was, while a target the tracking only lost, or a crosshair the detector boxed,
+  still shows there.
 - `src/lib.rs`: Aim View's review core.
 - `src/matching.rs`: Each kill matched to the target it killed, and the flick to it (review.py: `match_times`,
   `_attach_kills`, `appearances`, `crosshair_spots`).
@@ -411,6 +414,22 @@ KovaaK's Kill Count counts up one kill at a time, Aim Lab's timer down one secon
   are), then every frame in order (`add`), then `finish`. Methods: `new`, `add_key`, `session_box`, `keys`, `from_keys`,
   `skip`, `add`, `frames`, `part`, `join`, `finish`.
 
+## src/kill_check.rs
+
+The kills the video alone gives (matching.rs `match_video`), checked in the frames round them: a target that dies leaves
+wall where it was, while a target the tracking only lost, or a crosshair the detector boxed, still shows there. Before a
+kill (frames kill-4 to kill-2) its target's patch is measured at its tracked place against the wall round it; after it
+(kill+3 to kill+6) the same at the place it died, carried along by the camera's turn (a frame's shift moves a still spot
+on screen by as much). A kill whose target still shows after, by half as much as before or more, is no kill
+(`ruled_out`): on the gate's static runs that left out 34% of the video's false kills and 0.65% of its true ones, on its
+dynamic runs 37% and 0.31% (measured against the stats files, 2026-10-06).
+
+- `KillEvidence` (struct): A kill's evidence: how much its target stood out from the wall before it and after it (the
+  median over the frames measured; None where none could be: the place was off screen, or the frames were missing).
+- `KillCheck` (struct): The kills of a review being checked: the measurements each frame needs, and those made. Methods:
+  `new`, `frames`, `add`, `evidence`.
+- Functions: `ruled_out`.
+
 ## src/lib.rs
 
 Aim View's review core. It is built natively for the desktop app and as WebAssembly for the browser. The Python code in
@@ -556,7 +575,8 @@ run's tracks, its stats file and what the video read); the report goes back as r
 - `Report` (struct): A clicking run's report, as report.json keeps it.
 - `Reviewed` (struct): A review's results: the flicks matched to the kills (flicks.json) and the report.
 - `KillTimes` (enum): Where a run's kills come from: its stats file (its name and text), or, for a run without one, the
-  HUD read in the video (None where it did not read).
+  HUD read in the video (None where it did not read) and, for the kills the video alone gives, their check in the frames
+  round them (kill_check.rs; None: not checked).
 - `TrackReport` (struct): A tracking run's report, as report.json keeps it: the summary, with the clicking run's parts
   empty.
 - `VideoReadings` (struct): What a tracking run reads from its video besides the tracks: per frame the camera's reading,
@@ -1086,11 +1106,13 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
 - `Request` (struct): What to review: the video, the detector model (its _u8in export) and the device it runs on, the
   frames it takes at once, the scenario's target count (0: not known), the runs to split the recording into, the part of
   the video to track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's,
-  areas.rs), a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), and the share
-  of the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it).
-- `Reviewed` (struct): A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas
-  the area finder found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames
-  then).
+  areas.rs), a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of
+  the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), and whether the
+  kills the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
+  without a stats file, whose report takes its kills from the video).
+- `Reviewed` (struct): A review's tracks, the video's readings, what the HUD read (None: no HUD was read), the areas the
+  area finder found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames
+  then), and the check of the kills the video alone gives (None: not asked for).
 - `Progress` (type): Where a review stands: its stage ("looking" at the key frames, "tracking", "linking"), frames done,
   of how many.
 - `DeviceNote` (type): Told the device each run's detector runs on ("DirectML", "CUDA" or "CPU") once it has loaded:

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::names::free_name;
-use super::reviews::{Job, keep_review, to_tenths};
+use super::reviews::{Job, ReviewFiles, keep_review, to_tenths};
 use super::{Answer, Failure, Library};
 use crate::review::Request;
 
@@ -102,7 +102,8 @@ impl Library {
             return Err(Failure::bad(format!("not a model's name: {model}")));
         }
         let out = self.review_dir(id).join("models").join(&model);
-        let outcome = keep_review(&out, &review.tracks, &review.readings, &review.hud, review.found.as_ref());
+        let files = ReviewFiles { tracks: &review.tracks, readings: &review.readings, hud: &review.hud, kills: None };
+        let outcome = keep_review(&out, &files, review.found.as_ref());
         let Some(job) = job else {
             outcome?;
             return Ok(json!(Job::new("done", &model)));

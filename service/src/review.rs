@@ -27,6 +27,7 @@ use aimview::convert::{Converter, DST_H, DST_W};
 #[cfg(feature = "native")]
 use aimview::fixed::FixedMap;
 use aimview::hud::HudReading;
+use aimview::kill_check::{KillCheck, KillEvidence};
 #[cfg(feature = "native")]
 use aimview::session::{
     FrameFormat, Joined, KeysRead, NextFrame, Review, RunTracking, Setup, WatchPart, countdown_bytes,
@@ -60,8 +61,10 @@ const WATCH_FRAMES_WAITING: usize = 8;
 /// What to review: the video, the detector model (its _u8in export) and the device it runs on, the frames it takes at
 /// once, the scenario's target count (0: not known), the runs to split the recording into, the part of the video to
 /// track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's, areas.rs),
-/// a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), and the share of the
-/// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it).
+/// a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of the
+/// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), and whether the
+/// kills the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a
+/// recording without a stats file, whose report takes its kills from the video).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
@@ -76,19 +79,22 @@ pub struct Request {
     /// MP4s); else, or false, ffmpeg's software decode.
     pub gpu_frames: bool,
     pub gpu_share: f64,
+    pub kill_check: bool,
 }
 
 /// The least share of the time a review's detector may run (`Request::gpu_share`): below it a review would barely
 /// move.
 pub const MIN_GPU_SHARE: f64 = 0.05;
 
-/// A review's tracks, the video's readings, what the HUD read (None: no HUD was read), and the areas the area finder
-/// found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames then).
+/// A review's tracks, the video's readings, what the HUD read (None: no HUD was read), the areas the area finder
+/// found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames then), and
+/// the check of the kills the video alone gives (None: not asked for).
 pub struct Reviewed {
     pub tracks: Tracks,
     pub readings: VideoReadings,
     pub hud: Option<HudReading>,
     pub found: Option<Found>,
+    pub kills: Option<Vec<KillEvidence>>,
 }
 
 /// Where a review stands: its stage ("looking" at the key frames, "tracking", "linking"), frames done, of how many.
@@ -167,7 +173,36 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
     progress("linking", total, total);
     let joined = join_runs(req, &review, &keys, parts)?;
     let found = finding.join().map_err(|_| "the area finder failed")?;
-    Ok(Reviewed { tracks: joined.tracks, readings: joined.readings, hud: joined.hud, found })
+    let kills = if req.kill_check {
+        progress("checking", 0, total);
+        Some(check_kills(req, &info, &keys.fixed, &joined.tracks)?)
+    } else {
+        None
+    };
+    Ok(Reviewed { tracks: joined.tracks, readings: joined.readings, hud: joined.hud, found, kills })
+}
+
+/// The kills the video alone gives, checked in the frames round them (aimview::kill_check): the video read again from
+/// its start up to the last frame the check needs, each frame it needs fed to it.
+#[cfg(feature = "native")]
+fn check_kills(req: &Request, info: &VideoInfo, fixed: &[u8], tracks: &Tracks) -> Result<Vec<KillEvidence>, String> {
+    let frames = tracks.frames.to_vec();
+    let core_tracks = aimview::track::Tracks { fps: tracks.fps, frames, version: tracks.version };
+    let mut check = KillCheck::new(&core_tracks, fixed);
+    let needed = check.frames();
+    let Some(&last) = needed.last() else { return Ok(check.evidence()) };
+    let mut frames = FrameSource::open(req, info, None, Some(last + 1))?;
+    let (mut rgb, mut luma) = (vec![0u8; RGB_BYTES], vec![0u8; info.width * info.height]);
+    let mut wanted = needed.iter().peekable();
+    for frame in 0..=last {
+        if !frames.next_into(&mut rgb, &mut luma)? {
+            break;
+        }
+        if wanted.next_if_eq(&&frame).is_some() {
+            check.add(frame, &rgb);
+        }
+    }
+    Ok(check.evidence())
 }
 
 /// Reads the key frames for the fixed map and the HUD's boxes, and for the area finder when the recording has enough

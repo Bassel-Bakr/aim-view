@@ -57,7 +57,7 @@ KINDS = ("static", "dynamic", "switching")
 # KovOBS's areas as the review service gives them (service/src/areas.rs: kovobs_areas): each kind by its id
 AREAS = [[x0, y0, x1, y1, re.sub(r"[^a-z0-9]+", "_", kind.lower()).strip("_")]
          for x0, y0, x1, y1, kind in old_review.OVERLAY_SHARES]
-TRACKED = ("tracks.json", "readings.json", "hud.json")
+TRACKED = ("tracks.json", "readings.json", "hud.json", "kills.json")
 HITS_COLUMN = 6                     # a stats file's kill row: the bot's hits, "0" when it died without one
 MICROS = 1_000_000
 HOUR_S, DAY_S = 3600, 86400
@@ -89,14 +89,16 @@ def review_program():
 
 def core_review(program, folder, video, stats):
     """The report the app works out from the run's folder (service/src/report.rs: work_out) with no run marks, facts
-    or faint cut-off: with the stats file, or (stats None) with neither the stats file nor the HUD."""
+    or faint cut-off: with the stats file, or (stats None) with neither the stats file nor the HUD, the video's kills
+    checked in the frames round them (kills.json) as the app checks a run without a stats file."""
     readings = json.loads((folder / "readings.json").read_bytes())
+    kills = folder / "kills.json"
     request = dict(tracks=json.loads((folder / "tracks.json").read_bytes()),
                    statsText=stats.read_bytes().decode("utf-8", "replace") if stats else "", video=video.name,
                    stats=stats.name if stats else "",
                    hud=json.loads((folder / "hud.json").read_bytes()) if stats else None,
                    run=None, tracking=False, limit=None, camera=readings["camera"], countdown=readings["countdown"],
-                   faint=None)
+                   faint=None, killCheck=json.loads(kills.read_bytes()) if not stats and kills.is_file() else None)
     return request_report(program, request)
 
 
@@ -182,7 +184,7 @@ def track_all(runs, name, model, retrack):
     for i, run in enumerate(todo, 1):
         started, folder = time.time(), cache / slug(run["id"])
         lib.review_video(str(lib.resolve(run["id"])), str(model), str(folder), stats=str(run["stats_file"]),
-                         areas=AREAS, quiet=True)
+                         areas=AREAS, quiet=True, kill_check=True)
         (folder / "model.json").write_text(json.dumps(dict(model=str(model), sha256=digest)))
         print(f"tracked {i}/{len(todo)} in {time.time() - started:5.1f} s: {run['id']}", flush=True)
     return cache

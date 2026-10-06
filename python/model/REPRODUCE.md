@@ -445,6 +445,10 @@ python python/model/eval_video_alone.py full_v3
 
 full_v3 (2026-10-04): recall 0.945 and precision 0.955 on 47 runs (one has no clock offset); held out, 0.973 and 0.967.
 
+Since 2026-10-06 each run is tracked with the kill check (`--kill-check`: kills.json beside the tracks), and the score
+leaves out the kills it rules out, as the app does for a recording without a stats file. large_v11: recall 0.938 and
+precision 0.968 (0.944 and 0.958 without the check); held out, 0.979 and 0.989 (0.982 and 0.979).
+
 Results land in `test_out/vod_model/eval/`.
 
 ## 4. Export to ONNX

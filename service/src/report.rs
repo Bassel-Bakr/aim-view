@@ -34,6 +34,8 @@ pub fn work_out(
     let Some(tracks) = read(&dir.join("tracks.json")) else { return Ok(None) };
     let readings = read(&dir.join("readings.json")).unwrap_or(json!({ "camera": [], "countdown": [] }));
     let hud = read(&dir.join("hud.json")).unwrap_or(Value::Null);
+    // the check of the kills the video alone gives (kills.json; null or missing: not checked)
+    let kill_check = read(&dir.join("kills.json")).unwrap_or(Value::Null);
     let stats_text = match stats {
         Some(path) => {
             let bytes = crate::disk::read(path).map_err(|error| error.to_string())?;
@@ -52,6 +54,7 @@ pub fn work_out(
         "limit": facts.and_then(|facts| facts.limit),
         "reload": facts.and_then(|facts| facts.reload.as_ref()),
         "hitbox": facts.and_then(|facts| facts.hitbox),
+        "killCheck": kill_check,
         "camera": readings["camera"],
         "countdown": readings["countdown"],
         "faint": faint,

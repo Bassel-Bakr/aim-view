@@ -10,6 +10,7 @@ pub mod faint;
 pub mod fixed;
 pub mod geometry;
 pub mod hud;
+pub mod kill_check;
 pub mod matching;
 pub mod measure;
 pub mod model;

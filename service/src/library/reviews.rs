@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use aimview::areas::Found;
+use aimview::kill_check::KillEvidence;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -87,19 +88,27 @@ pub(super) fn seconds_since(started: std::time::Instant) -> f64 {
     to_tenths(started.elapsed().as_secs_f64())
 }
 
-/// Writes a review's files in its folder `out` (models/<model> in the recording's): its tracks, the video's readings
-/// and what the HUD read, and keeps what the area finder found (`finder::keep_with_review`). The native review's end
-/// and the page's (/api/reviewed) both write them so.
-pub(super) fn keep_review(
+/// A review's files: its tracks, the video's readings, what the HUD read and the check of the video's kills (null:
+/// not checked).
+pub(super) struct ReviewFiles<'a, T: Serialize, R: Serialize, H: Serialize> {
+    pub tracks: &'a T,
+    pub readings: &'a R,
+    pub hud: &'a H,
+    pub kills: Option<&'a [KillEvidence]>,
+}
+
+/// Writes a review's files in its folder `out` (models/<model> in the recording's), and keeps what the area finder
+/// found (`finder::keep_with_review`). The native review's end and the page's (/api/reviewed) both write them so;
+/// kills.json is written null when the kills were not checked, so a review made again keeps no older check.
+pub(super) fn keep_review<T: Serialize, R: Serialize, H: Serialize>(
     out: &Path,
-    tracks: &impl Serialize,
-    readings: &impl Serialize,
-    hud: &impl Serialize,
+    files: &ReviewFiles<T, R, H>,
     found: Option<&Found>,
 ) -> Result<(), String> {
-    write_json(&out.join("tracks.json"), tracks).map_err(|failure| failure.message)?;
-    write_json(&out.join("readings.json"), readings).map_err(|failure| failure.message)?;
-    write_json(&out.join("hud.json"), hud).map_err(|failure| failure.message)?;
+    write_json(&out.join("tracks.json"), files.tracks).map_err(|failure| failure.message)?;
+    write_json(&out.join("readings.json"), files.readings).map_err(|failure| failure.message)?;
+    write_json(&out.join("hud.json"), files.hud).map_err(|failure| failure.message)?;
+    write_json(&out.join("kills.json"), &files.kills).map_err(|failure| failure.message)?;
     crate::finder::keep_with_review(out, found)
 }
 
@@ -215,6 +224,8 @@ impl Library {
             keep_parts: None,
             gpu_frames: self.config.gpu_frames,
             gpu_share: 1.0,
+            // without a stats file the report takes the kills from the video: check them in the frames round them
+            kill_check: self.stats_path(id).is_none(),
         })
     }
 
@@ -239,7 +250,13 @@ impl Library {
             let reviewed = crate::ffmpeg::ensure(|megabytes, of| progress("ffmpeg", megabytes, of))
                 .and_then(|()| review(&request, &progress, &on_device));
             let outcome = reviewed.and_then(|reviewed| {
-                keep_review(&out, &reviewed.tracks, &reviewed.readings, &reviewed.hud, reviewed.found.as_ref())
+                let files = ReviewFiles {
+                    tracks: &reviewed.tracks,
+                    readings: &reviewed.readings,
+                    hud: &reviewed.hud,
+                    kills: reviewed.kills.as_deref(),
+                };
+                keep_review(&out, &files, reviewed.found.as_ref())
             });
             if let Ok(mut job) = job.lock() {
                 // one line in the log for each review: the model, the device it ran on, and the time or the error

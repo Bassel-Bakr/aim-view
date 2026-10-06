@@ -121,6 +121,7 @@ const REVIEW: Options = &[
     ("window", Takes::Two),
     ("no-report", Takes::Nothing),
     ("quiet", Takes::Nothing),
+    ("kill-check", Takes::Nothing),
 ];
 
 /// A command line: the values given before or between the options, and each option with its values, in order.
@@ -471,7 +472,9 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
     let cap: Option<usize> = line.number("cap")?;
     let limit: Option<f64> = line.number("limit")?;
     let facts =
-        line.one("kind").map(kind).transpose()?.map(|kind| Facts { kind, limit, targets: cap, reload: None, hitbox: None });
+        line.one("kind").map(kind).transpose()?.map(|kind| {
+            Facts { kind, limit, targets: cap, reload: None, hitbox: None }
+        });
     let window = review_window(line)?;
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     let request = Request {
@@ -486,6 +489,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         keep_parts: None,
         gpu_frames: library.config().gpu_frames,
         gpu_share: line.number("gpu-share")?.unwrap_or(1.0),
+        kill_check: line.has("kill-check"),
     };
     let progress = Progress::new(line.has("quiet"));
     let started = Instant::now();
@@ -502,6 +506,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
     write("tracks", serde_json::to_vec(&reviewed.tracks))?;
     write("readings", serde_json::to_vec(&reviewed.readings))?;
     write("hud", serde_json::to_vec(&reviewed.hud))?;
+    write("kills", serde_json::to_vec(&reviewed.kills))?;
     let stats = line.path("stats-file");
     let report = if line.has("no-report") {
         None
