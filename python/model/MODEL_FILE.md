@@ -26,8 +26,9 @@ the code.
   (`ModelSettings::for_kind`; the review gets the kind from the scenario's facts, aimview-tool from `--kind`, the
   gate's reviews from their run's kind). Without `kinds`, every run has it. Without the section, nothing changes. Measured on large_v11 (2026-10-06, the gate
   against itself without it): tracking's gap to the stats files 0.065 to 0.049, but the video alone worse (dynamic
-  recall 0.979 to 0.951: what a dying target leaves at the crosshair keeps its track alive), so no model's file has
-  it yet.
+  recall 0.979 to 0.951: what a dying target leaves at the crosshair keeps its track alive). For tracking runs only
+  (`"kinds": ["tracking"]`), large_v13e4 gated against itself (2026-10-06): tracking's gap 0.062 to 0.048 and its mean
+  -0.036 to -0.018, every clicking number the same; large_v13e4's file has it.
 
 Every score the review keeps is the mapped one: the boxes' scores, the tracks' `s` (which the faint cut-off reads) and
 the score that `keep` compares with 0.5. Other fields are allowed and ignored.
