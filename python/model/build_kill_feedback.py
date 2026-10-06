@@ -10,12 +10,14 @@ does. Two rules give crops 256 x 256 round the crosshair (shifted up to 48 px at
   the video timed wrong, so nothing is crossed out in advance.
 - missed_kill: a kill of the stats file the video did not find, at its frame: the target under or near the crosshair
   that the detector lost.
+- kill (--rules kill): a kill of the stats file, BEFORE_KILL frames before it: the target at or near the crosshair, for
+  a teacher to box (teacher_label.py) where the detector finds it in pieces (robots).
 The crops carry the review's boxes, for the user to judge and fix. Saved like build_mined.py's (rgb, fixed, tmask: each
 box's pill, boxes, scores, mined, frame, why) in the split folder
 build_data.split_of gives the scenario folder, with a manifest.jsonl for make_page.py.
 
 Usage: python python/model/build_kill_feedback.py <out> <model> [--kind static] [--match xsmall,extra small,...]
-       [--recordings 20] [--per-rule 4] [--seed 0]
+       [--recordings 20] [--per-rule 4] [--rules false_kill,missed_kill,kill] [--seed 0]
 """
 import argparse
 import hashlib
@@ -42,6 +44,7 @@ import teacher_label  # noqa: E402
 CROP, JITTER_PX = build_mined.CROP, build_mined.JITTER_PX
 WIDTH, HEIGHT = build_mined.WIDTH, build_mined.HEIGHT
 TOLERANCE = 3                   # frames, as the gate matches kills
+BEFORE_KILL = (2, 6)            # the kill rule's frames before a kill: at the crosshair, and still on the way to it
 
 
 def gate_videos(lib):
@@ -86,7 +89,7 @@ def kills(lib, video, stats, args):
     first, last = eval_video_alone.challenge(stats, offset, fps)
     got = [frame for frame in got if first - TOLERANCE <= frame <= last + TOLERANCE]
     _, missed, false = eval_video_alone.match(truth, got, TOLERANCE)
-    return frames, false, missed
+    return frames, false, missed, truth
 
 
 def save(path, rgb, fixed, labels, rule, i, why, rnd):
@@ -107,9 +110,14 @@ def crops_of(lib, video, stats, args, rnd):
     found = kills(lib, video, stats, args)
     if found is None:
         return dict(video=str(video), crops=0, reason="the stats file gives no clock offset")
-    frames, false, missed = found
-    rules = [("false_kill", frame) for frame in rnd.sample(false, min(args.per_rule, len(false)))]
-    rules += [("missed_kill", frame) for frame in rnd.sample(missed, min(args.per_rule, len(missed)))]
+    frames, false, missed, truth = found
+    rules = []
+    if "false_kill" in args.rules:
+        rules += [("false_kill", frame) for frame in rnd.sample(false, min(args.per_rule, len(false)))]
+    if "missed_kill" in args.rules:
+        rules += [("missed_kill", frame) for frame in rnd.sample(missed, min(args.per_rule, len(missed)))]
+    if "kill" in args.rules:
+        rules += [("kill", kill - rnd.choice(BEFORE_KILL)) for kill in rnd.sample(truth, min(args.per_rule, len(truth)))]
     stem = hashlib.md5(video.name.encode()).hexdigest()[:10]
     folder = args.out / build_data.split_of(video.parent.name)
     folder.mkdir(parents=True, exist_ok=True)
@@ -120,8 +128,9 @@ def crops_of(lib, video, stats, args, rnd):
         if i not in decoded:
             continue
         labels = build_disagreements.boxes_px(frames[i])
-        why = ("the video gave a kill here and the stats file has none: is the box at the crosshair a target?"
-               if rule == "false_kill" else "the stats file has a kill here and the video found none")
+        why = {"false_kill": "the video gave a kill here and the stats file has none: is the box at the crosshair a target?",
+               "missed_kill": "the stats file has a kill here and the video found none",
+               "kill": "a few frames before a kill of the stats file: the target at or near the crosshair"}[rule]
         save(folder / f"{stem}_{i:05d}_{rule[0]}{n:02d}.npz", decoded[i], fixed, labels, rule, i, why, rnd)
         written += 1
     print(f"{video.name}: {len(false)} false kills, {len(missed)} missed; {written} crops", flush=True)
@@ -138,6 +147,7 @@ def main():
                         help="comma-separated words, one of which the scenario's name must have")
     parser.add_argument("--recordings", type=int, default=20)
     parser.add_argument("--per-rule", type=int, default=4, help="crops of each rule per recording at most")
+    parser.add_argument("--rules", default="false_kill,missed_kill", help="comma-separated: false_kill, missed_kill, kill")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     rnd = random.Random(args.seed)

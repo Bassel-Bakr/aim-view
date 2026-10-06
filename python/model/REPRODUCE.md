@@ -235,6 +235,21 @@ ones. 196 crops of cubes and spheres, all in train/ (tag `auto_kill_`), with a s
 python python/model/build_auto_labels.py $D/data_auto_tiles2 large_v11 --match tile --per-recording 60
 ```
 
+The robots checked by Claude (2026-10-06): large_v12 found Smoothbot Switch Robots' robots in pieces (6 flicks fewer
+than large_v11, the gate's only fail). Crops a few frames before the stats files' kills on 9 bot recordings outside
+the gate (`build_kill_feedback.py --rules kill`), the robots boxed whole by the teacher (not snapped: snapping cuts a
+humanoid to its torso), then each crop checked by eye on numbered sheets by Claude, the user's rules (a robot whole,
+never a tag or bar, a crop with an unboxed target left out): 33 kept the teacher's boxes, 56 the model's (sphere and
+pill bots, which the robot prompt does not box), 6 had no target, 13 were left out (`checked_claude.jsonl`):
+
+```bash
+for kind in switching dynamic; do
+  python python/model/build_kill_feedback.py $D/data_robot_kills large_v12 --kind $kind --match "smoothbot,humanoid,bot"     --recordings 12 --per-rule 12 --rules kill --seed 3
+done
+python python/model/teacher_label.py $D/data_robot_kills --prompt "humanoid robot . person ." --threshold 0.5 --no-snap
+python python/model/checked_data.py --labels $D/data_robot_kills/checked_claude.jsonl --out $D/data_robot_kills_checked   --tag chk_claude --split train
+```
+
 ```bash
 python python/model/build_kill_feedback.py $D/data_kill_feedback large_v10 --recordings 20
 python python/model/crop_check/make_page.py $D/check_kill_feedback kills $D/data_kill_feedback --title "Kills the stats files disagree with (large_v10)"

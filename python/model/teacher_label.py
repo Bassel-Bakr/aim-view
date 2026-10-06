@@ -3,7 +3,9 @@ the user reviews a pretrained detector's boxes instead of drawing every target. 
 teacher's (the boxes it had are kept as model_boxes and model_scores), with a pill-shaped target mask (the Crops page
 shows a box as a pill), and why says which teacher and prompt. Run make_page.py on the folder after it.
 
-Each box is snapped to the target's pixels (`snap`): Grounding DINO's boxes are loose. On the 16 Centering crops whose
+Each box is snapped to the target's pixels (`snap`): Grounding DINO's boxes are loose. Not for robots (--no-snap):
+snap sizes a box by the target's mean width per row, which cuts a humanoid down to its torso, where a robot's box
+must take it whole, arms and legs. On the 16 Centering crops whose
 box the user fixed (2026-10-06), its width was 3.4 px too wide (the user's: 0.61 of it) and its height 1.7 px too
 tall; snapped, 0.2 and 0.3 px off. A box whose target does not stand out from the wall round it keeps its size.
 
@@ -13,6 +15,7 @@ at 0.3 (all 12 of a sample boxed whole, where "capsule . cylinder ." found 8 and
 worse than our own model on small targets (spheres, tiles): there, the user labels first.
 
 Usage: python python/model/teacher_label.py <crop folder> --prompt "black pole . black stick ." [--threshold 0.3]
+       [--no-snap]
 """
 import argparse
 from pathlib import Path
@@ -103,11 +106,13 @@ def pill_mask(boxes, size):
     return mask
 
 
-def label(path, teacher, note):
-    """One crop file relabelled by the teacher; whether it boxed anything."""
+def label(path, teacher, note, snapped=True):
+    """One crop file relabelled by the teacher (each box snapped to its target's pixels unless not `snapped`);
+    whether it boxed anything."""
     crop = dict(np.load(path, allow_pickle=True))
     boxes, scores = teacher.boxes(crop["rgb"])
-    boxes = [snap(crop["rgb"], box) for box in boxes]
+    if snapped:
+        boxes = [snap(crop["rgb"], box) for box in boxes]
     if "model_boxes" not in crop:
         crop["model_boxes"], crop["model_scores"] = crop["boxes"], crop.get("scores", np.zeros(0, np.float32))
     crop["boxes"] = np.array(boxes, np.float32).reshape(-1, 4)
@@ -123,11 +128,12 @@ def main():
     parser.add_argument("folder", type=Path)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--threshold", type=float, default=0.3)
+    parser.add_argument("--no-snap", action="store_true", help="keep the teacher's boxes as they are (robots)")
     args = parser.parse_args()
     teacher = Teacher(args.prompt, args.threshold, "cuda" if torch.cuda.is_available() else "cpu")
     note = f"Grounding DINO: \"{args.prompt}\" at {args.threshold}"
     files = sorted(args.folder.glob("**/*.npz"))
-    boxed = sum(label(path, teacher, note) for path in files)
+    boxed = sum(label(path, teacher, note, not args.no_snap) for path in files)
     print(f"{boxed} of {len(files)} crops boxed by {note}")
 
 
