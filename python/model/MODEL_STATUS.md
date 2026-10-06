@@ -640,6 +640,29 @@ file), which large_v11's wider boxes suit; full_v8_s3 measured 0.099 without it.
 video alone's static precision (0.9449 against 0.9561, before the kill check). The gate's report:
 `python/model/reports/accept_large_v11.json`.
 
+## large_v12 and large_v13: tiles from the stats files, robots checked by Claude (2026-10-06)
+
+large_v11 missed most tiles: before 90 to 212 kills a tile recording, no box near the crosshair (a sweep of 40 other
+clicking recordings found almost none missing). `build_auto_labels.py` labelled them from the stats files with no one
+drawing (196 crops of cubes and spheres): at a stats file's kill the target is under the crosshair, and its color
+stands out from the wall. large_v12 (large_v11 fine-tuned with them) found Tile Frenzy 180's kills from the video
+alone 190 of 212 times against 152, but failed the gate on switching flicks (390 of 404 against 396): Smoothbot Switch
+Robots' robots came apart. So 108 crops a few frames before bot runs' kills were boxed by the teacher (unsnapped) and
+checked by Claude by eye (95 kept, `chk_claude`), and large_v13 trained on both. Its epoch 1 was best on val (0.9507,
+val has no tiles or robots); epoch 4 found more tiles (Tile Frenzy 180 flicks with the stats file: 184 against 169
+and large_v11's 141) and kept the robots (Smoothbot 45 flicks against 46). Exported as large_v13e4, it passed:
+
+| Check | large_v13e4 | large_v11 | Allowed |
+| --- | --- | --- | --- |
+| Contract | meets it | meets it | every check |
+| Static, dynamic, switching kills | 854, 796, 404 | 854, 796, 404 | 0 |
+| Static, dynamic, switching flicks | 849, 788, 393 | 848, 786, 396 | 5.1, 6.8, 5.8 |
+| Tracking gap: mean size, mean | 0.0622, -0.0364 | 0.0645, -0.0461 | 0.0348, 0.0446 |
+| Report (4 static runs) kills, flicks (496) | 496, 493 | 496, 494 | 0, 2.9 |
+| Video alone, all: recall, precision | 0.9591, 0.9718 | 0.9515, 0.9708 | 0.0064, 0.0049 |
+| Video alone, static: recall, precision | 0.9537, 0.9695 | 0.9396, 0.9691 | 0.0100, 0.0073 |
+| Gate | PASS | | |
+
 ## Current best model
 
 **large_v11** (2026-10-06, "large_v11: the large model" above), threshold 0.3 (its scores calibrated). 148,709 parameters;

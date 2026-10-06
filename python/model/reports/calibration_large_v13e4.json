@@ -1,0 +1,197 @@
+{
+ "settings": {
+  "format": 1,
+  "name": "large_v13e4",
+  "threshold": 0.3,
+  "score_map": null,
+  "reference": "large_v11"
+ },
+ "val": [
+  "test_out/vod_model/data_v3",
+  "test_out/vod_model/data_kills4",
+  "test_out/vod_model/data_moving_dark"
+ ],
+ "crops": 8559,
+ "labels": 11103,
+ "scenarios": 60,
+ "largest_move": 0.0,
+ "knots": [
+  {
+   "reference": 0.05,
+   "fitted": null,
+   "low": null,
+   "high": null,
+   "raw": 0.05
+  },
+  {
+   "reference": 0.1,
+   "fitted": 0.1014,
+   "low": 0.0952,
+   "high": 0.1191,
+   "raw": 0.1
+  },
+  {
+   "reference": 0.15,
+   "fitted": 0.1535,
+   "low": 0.1474,
+   "high": 0.1709,
+   "raw": 0.15
+  },
+  {
+   "reference": 0.2,
+   "fitted": 0.1926,
+   "low": 0.1748,
+   "high": 0.2287,
+   "raw": 0.2
+  },
+  {
+   "reference": 0.25,
+   "fitted": 0.2642,
+   "low": 0.2011,
+   "high": 0.2963,
+   "raw": 0.25
+  },
+  {
+   "reference": 0.3,
+   "fitted": 0.315,
+   "low": 0.2722,
+   "high": 0.3507,
+   "raw": 0.3
+  },
+  {
+   "reference": 0.35,
+   "fitted": 0.3712,
+   "low": 0.3183,
+   "high": 0.4175,
+   "raw": 0.35
+  },
+  {
+   "reference": 0.4,
+   "fitted": 0.4162,
+   "low": 0.3734,
+   "high": 0.4401,
+   "raw": 0.4
+  },
+  {
+   "reference": 0.45,
+   "fitted": 0.4333,
+   "low": 0.4141,
+   "high": 0.4696,
+   "raw": 0.45
+  },
+  {
+   "reference": 0.5,
+   "fitted": 0.4795,
+   "low": 0.4386,
+   "high": 0.5125,
+   "raw": 0.5
+  },
+  {
+   "reference": 0.55,
+   "fitted": 0.5417,
+   "low": 0.5007,
+   "high": 0.5624,
+   "raw": 0.55
+  },
+  {
+   "reference": 0.6,
+   "fitted": 0.6025,
+   "low": 0.5576,
+   "high": 0.6313,
+   "raw": 0.6
+  },
+  {
+   "reference": 0.65,
+   "fitted": 0.6523,
+   "low": 0.6238,
+   "high": 0.6766,
+   "raw": 0.65
+  },
+  {
+   "reference": 0.7,
+   "fitted": 0.6924,
+   "low": 0.6732,
+   "high": 0.7223,
+   "raw": 0.7
+  },
+  {
+   "reference": 0.75,
+   "fitted": 0.7389,
+   "low": 0.7185,
+   "high": 0.7617,
+   "raw": 0.75
+  },
+  {
+   "reference": 0.8,
+   "fitted": 0.7905,
+   "low": 0.7785,
+   "high": 0.8714,
+   "raw": 0.8
+  },
+  {
+   "reference": 0.85,
+   "fitted": 0.8884,
+   "low": 0.8323,
+   "high": 0.9198,
+   "raw": 0.85
+  },
+  {
+   "reference": 0.9,
+   "fitted": 0.9084,
+   "low": 0.8828,
+   "high": 0.9415,
+   "raw": 0.9
+  },
+  {
+   "reference": 0.95,
+   "fitted": 0.9486,
+   "low": 0.9423,
+   "high": 0.9553,
+   "raw": 0.95
+  }
+ ],
+ "sweep_data": "test_out/vod_model/data",
+ "best_over_reference_threshold": null,
+ "sweep": {
+  "0.2": {
+   "precision": 0.9369,
+   "recall": 0.9617,
+   "f1": 0.9492,
+   "tp": 3696,
+   "fp": 249,
+   "fn": 147
+  },
+  "0.3": {
+   "precision": 0.959,
+   "recall": 0.9446,
+   "f1": 0.9518,
+   "tp": 3630,
+   "fp": 155,
+   "fn": 213
+  },
+  "0.4": {
+   "precision": 0.9668,
+   "recall": 0.9321,
+   "f1": 0.9491,
+   "tp": 3582,
+   "fp": 123,
+   "fn": 261
+  },
+  "0.5": {
+   "precision": 0.9727,
+   "recall": 0.9279,
+   "f1": 0.9498,
+   "tp": 3566,
+   "fp": 100,
+   "fn": 277
+  },
+  "0.6": {
+   "precision": 0.9807,
+   "recall": 0.9144,
+   "f1": 0.9464,
+   "tp": 3514,
+   "fp": 69,
+   "fn": 329
+  }
+ }
+}

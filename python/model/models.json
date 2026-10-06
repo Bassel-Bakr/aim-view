@@ -44,6 +44,14 @@
       "checks": {"static": [854, 848], "moving": [1200, 1182], "tracking": [-0.046, 0.065]},
       "accepted": "2026-10-06: python/model/reports/accept_large_v11.json (the app's native review)"
     },
+    "large_v13e4": {
+      "params": 148709, "kb": 587.1,
+      "trained": "large_v11 fine-tuned for 4 epochs with tiles labelled from the stats files' kills (no one drawing) and robot crops checked by Claude: the epoch-4 checkpoint of large_v13.",
+      "best": "Finds tiles large_v11 missed (Tile Frenzy 180 from the video alone: 195 of 212 kills against 152) and keeps robots whole; the video alone's recall 0.959 against 0.952, tracking's gap 0.062 against 0.065.",
+      "weak": "Switching runs: 3 flicks fewer than large_v11 (within the gate's limit), precision 0.915 against 0.919.",
+      "checks": {"static": [854, 849], "moving": [1200, 1181], "tracking": [-0.036, 0.062]},
+      "accepted": "2026-10-06: python/model/reports/accept_large_v13e4.json (the app's native review)"
+    },
     "hand": {
       "label": "Hand-written",
       "trained": "No training: the rule-based finder in review.py. The first training labels came from it.",

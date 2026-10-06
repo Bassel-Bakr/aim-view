@@ -434,6 +434,20 @@ python python/model/export.py $D/runs/large_v11/best.pt
 python python/model/accept.py large_v11 --list
 ```
 
+large_v12 and large_v13 (2026-10-06): large_v11 fine-tuned for 4 epochs with the auto-labelled tiles
+(`repeat_large_v12.txt` adds `auto_kill_ 3`), and for large_v13 the robots Claude checked too (`repeat_large_v13.txt`
+adds `chk_claude 3`). large_v12 failed the gate (switching flicks); large_v13's epoch-4 checkpoint passed as
+large_v13e4 (its config's name changed in a copy of `last.pt`, since export.py names a model from its checkpoint):
+
+```bash
+python python/model/train.py python/model/configs/large_v13.json --data $D/data_v3 $SETS \
+  --extra $D/data_centering_checked_snapped --extra $D/data_kill_feedback_checked --extra $D/data_auto_tiles2 \
+  --extra $D/data_robot_kills_checked --repeat $D/repeat_large_v13.txt --times 3 --init $D/runs/large_v11/best.pt
+python -c "import torch; c = torch.load('$D/runs/large_v13/last.pt', weights_only=False); c['config']['name'] = 'large_v13e4'; torch.save(c, '$D/runs/large_v13e4/best.pt')"
+python python/model/export.py $D/runs/large_v13e4/best.pt
+python python/model/accept.py large_v13e4 --list
+```
+
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
 and forked from any snapshot with `<new config> --fork test_out/vod_model/runs/<name>/snapshots/<snapshot>.pt`.
 
