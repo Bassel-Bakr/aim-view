@@ -225,6 +225,16 @@ file's kills it does not find, on 20 small-target static recordings outside the 
 large_v10: 34 false and 50 missed, its Kills tab in `check_kill_feedback/`). A false kill's box is often a real target
 the video timed wrong, not the crosshair, so the user judges every box:
 
+The auto-labelled tiles (2026-10-06): where large_v11 has no box near the crosshair before a stats file's kill, the
+target it missed is found in the pixels and labelled with no one drawing (`build_auto_labels.py`: the killed target
+is the part of the crosshair's color at the crosshair, a convex target's shape; others like it are targets too). The
+detector missed most tiles: 90 to 212 kills a recording on the 6 tile recordings, almost none on 40 other clicking
+ones. 196 crops of cubes and spheres, all in train/ (tag `auto_kill_`), with a sheet of their outlines to look over:
+
+```bash
+python python/model/build_auto_labels.py $D/data_auto_tiles2 large_v11 --match tile --per-recording 60
+```
+
 ```bash
 python python/model/build_kill_feedback.py $D/data_kill_feedback large_v10 --recordings 20
 python python/model/crop_check/make_page.py $D/check_kill_feedback kills $D/data_kill_feedback --title "Kills the stats files disagree with (large_v10)"
