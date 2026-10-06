@@ -58,6 +58,7 @@ Measured from 2026-10-02 to 2026-10-04, before 4b7ddc4. Remeasure only for a cha
 | h264_1920_tv, whole review, browser | WebGPU | 14.0 s |
 | 2:1 RGB conversion, a frame | `test_out/browser_check/rgb-bench.html`; native AVX2 | 0.93 ms / 0.29 ms |
 | The browser's stages | `test_out/browser_check/profile.html`, `decode-bench.html` | 380 frames a second on the GPU; one decoder about 430 |
+| The detector a frame by model, browser | `test_out/browser_check/model-speed.html?models=...` (onnxruntime-web, the same plain settings for every model: not the app's tuned GPU path), served by `serve_static.py`; `test_out/baselines/d19e766/model_speed/` (2026-10-06) | WebGPU, 4 frames a call: full_v3 5.31 ms, large_v13e4 5.50 ms, small_v13 4.19 ms; the CPU (8 threads): full_v3 20.6 ms, large_v13e4 31.0 ms, small_v13 11.1 ms |
 | KovaaK's files into the browser | browser mode, 3,000 files | shown in 14 ms, copied in 1.0 s |
 | The recordings list, native | `/api/vods?quick=1` / `/api/vods` | 0.04 s / 0.16 s |
 | The recordings list, browser | the browser build on a stand-in VODs folder in the browser's storage (the real 3,351 names in 786 folders, 1-byte files; `test_out/baselines/browser_list/`) | the full list 0.5 s after the quick one, 2.6 to 2.9 s from page load (4b7ddc4: 2.4 s after, 4.5 s from load) |
