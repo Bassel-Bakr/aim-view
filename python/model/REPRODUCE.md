@@ -5,8 +5,10 @@ Every command runs from the repository root (`D:\Projects\flowfix`) in Git Bash.
 
 ## What you need
 
-- Python 3.14 with `torch` (CUDA build; 2.14 + cu130 was used), `numpy`, `scipy`, `onnx` 1.23, `onnxruntime` 1.30,
-  `onnxscript`, `psutil` and `pillow`. Only ONNX Runtime and NumPy are needed to *run* an exported model.
+- Python 3.14 with `torch` (CUDA build; 2.14 + cu130 was used), `numpy`, `scipy`, `onnx` 1.23, `onnxruntime-gpu` 1.30
+  (its CUDA provider runs the gate's contract on the GPU, on PyTorch's CUDA libraries; plain `onnxruntime` 1.30 runs
+  it on the CPU), `onnxscript`, `psutil` and `pillow`; `triton-windows` lets training compile its augmentations. Only
+  ONNX Runtime and NumPy are needed to *run* an exported model.
 - `ffmpeg` and `ffprobe` on the PATH.
 - The KovOBS library at `E:\OBS\KovOBS` (one folder per scenario) and KovaaK's installed, because the dataset builder
   reads each scenario's `.sce` file to keep only static scenarios, and the end-to-end check reads the stats files.

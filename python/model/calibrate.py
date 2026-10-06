@@ -90,9 +90,16 @@ def u8in_of(model):
     return u8
 
 
-def session(path):
+def session(path, gpu=False):
+    """The export's ONNX Runtime session, on the CPU; with gpu, on CUDA where ONNX Runtime's CUDA build is installed
+    (onnxruntime-gpu, on the CUDA and cuDNN libraries PyTorch brings, loaded with it first), about 3 ms a frame against
+    25 on the CPU, with cuDNN's default algorithms so a rerun gives the same numbers."""
     import onnxruntime as ort
-    return ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    cuda = []
+    if gpu and "CUDAExecutionProvider" in ort.get_available_providers():
+        import torch  # noqa: F401 (its CUDA libraries, which ONNX Runtime's CUDA build loads)
+        cuda = [("CUDAExecutionProvider", {"cudnn_conv_algo_search": "HEURISTIC", "use_tf32": "0"})]
+    return ort.InferenceSession(str(path), providers=[*cuda, "CPUExecutionProvider"])
 
 
 def crop_files(folders, split):

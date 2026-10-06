@@ -137,7 +137,9 @@ class Model:
 
     def __init__(self, model, settings):
         self.path = calibrate.u8in_of(model)
-        self.session = calibrate.session(self.path)
+        self.session = calibrate.session(self.path, gpu=True)
+        # where it runs: the GPU's numbers differ from the CPU's a little, so each keeps its own cache
+        self.device = "cuda" if self.session.get_providers()[0] == "CUDAExecutionProvider" else "cpu"
         self.threshold, self.score_map = float(settings["threshold"]), settings["score_map"]
 
     def mapped(self, peaks, threshold=None):
@@ -267,9 +269,10 @@ def crosshair_area(fixed):
 
 def peaks_on(model, video, need, batch=4):
     """The model's raw peaks on the frames `need` of a recording, cached in test_out/vod_model/contract/ per export
-    (its size and time) and recording."""
+    (its size and time), device and recording."""
     stat, export = Path(video).stat(), model.path.stat()
-    path = CACHE / f"peaks_{model.path.stem}_{video_key(video)}.npz"
+    device = "" if model.device == "cpu" else f"_{model.device}"
+    path = CACHE / f"peaks_{model.path.stem}{device}_{video_key(video)}.npz"
     key = np.array([stat.st_size, stat.st_mtime, export.st_size, export.st_mtime])
     if path.is_file():
         cached = np.load(path)

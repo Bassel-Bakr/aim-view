@@ -56,11 +56,12 @@ def mask_of(runs):
     return flat.reshape(CROP, CROP)
 
 
-def write_crop(source, out, tag, file, row, counts):
-    """One checked crop's npz in its split folder of `out`, its boxes and mask replaced and its covered boxes added."""
+def write_crop(source, out, tag, file, row, counts, split=None):
+    """One checked crop's npz in its split folder of `out` (or `split`), its boxes and mask replaced and its covered
+    boxes added."""
     crop = np.load(source / file)
     boxes = np.array(row["boxes"] if row["verdict"] == "correct" else [], np.float32).reshape(-1, BOX_VALUES)
-    split = Path(file).parent.name
+    split = split or Path(file).parent.name
     (out / split).mkdir(parents=True, exist_ok=True)
     extra = {}
     if row.get("covered"):                              # a target under the crosshair: train.py learns nothing there
@@ -83,6 +84,9 @@ def main():
                         "key)")
     parser.add_argument("--leave-out", default="", help="comma-separated crop files (as the labels name them) to leave "
                         "out")
+    parser.add_argument("--split", choices=("train", "val", "test"), help="every crop in this split, whatever its own "
+                        "(crops checked to fix a model's mistakes on a scenario whose folder falls in val: the gate's "
+                        "own runs stay the test)")
     args = parser.parse_args()
     if len(args.tag) != TAG_CHARS:
         parser.error("--tag must be 10 characters: train.py --repeat reads a name's first 10")
@@ -100,7 +104,7 @@ def main():
             continue
         if row["verdict"] not in ("correct", "skip"):
             raise SystemExit(f"{file}: verdict {row['verdict']!r}")
-        write_crop(source, out, args.tag, file, row, counts)
+        write_crop(source, out, args.tag, file, row, counts, args.split)
     if (source / "manifest.jsonl").is_file():
         shutil.copyfile(source / "manifest.jsonl", out / "manifest.jsonl")
     print(dict(counts), "in", out)
