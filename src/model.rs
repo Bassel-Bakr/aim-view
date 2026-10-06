@@ -1,7 +1,7 @@
 //! The detector model's settings file (python/model/MODEL_FILE.md): `detector_<name>.json` beside the model's exports,
-//! so a retrained model needs no change to the code. Format 1: the score a cell must pass to be a target, and the map
-//! that puts the model's scores on the reference model's scale. A model with no file gets today's values
-//! (`ModelSettings::default`).
+//! so a retrained model needs no change to the code. Format 1: the score a cell must pass to be a target, the map that
+//! puts the model's scores on the reference model's scale, and (optional) the weaker score a cell at the crosshair may
+//! pass instead (`AtCrosshair`). A model with no file gets today's values (`ModelSettings::default`).
 //!
 //! In: the file's text (the service reads it beside the model: service/src/detector.rs; the browser's page sends it to
 //! src/wasm.rs). Out: the settings the review session and its tracker decode the detector's maps with (detect.rs).
@@ -32,6 +32,19 @@ pub struct ModelSettings {
     #[serde(default)]
     pub score_map: Option<Vec<[f64; 2]>>,
     pub reference: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_crosshair: Option<AtCrosshair>,
+}
+
+/// Weaker cells kept at the crosshair: a cell whose score passes `threshold` (on the reference model's scale, under the
+/// model's own) is a target too when its box's center is within `reach_px` of the crosshair (1280 x 720 pixels). A
+/// target being shot is under the crosshair, and the empty crosshair scores low: on Tile Frenzy 180 (large_v11,
+/// 2026-10-06) 98 of the 109 kills the model had no box for had a candidate over 0.2 within 30 px of the crosshair
+/// before the kill, and none of them 6 to 8 frames after, the cube gone.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AtCrosshair {
+    pub threshold: f32,
+    pub reach_px: f64,
 }
 
 impl Default for ModelSettings {
@@ -43,6 +56,7 @@ impl Default for ModelSettings {
             threshold: DEFAULT_THRESHOLD,
             score_map: None,
             reference: REFERENCE.into(),
+            at_crosshair: None,
         }
     }
 }
@@ -58,6 +72,11 @@ impl ModelSettings {
         }
         if !(0.0..=1.0).contains(&settings.threshold) {
             return Err(format!("the threshold {} is not from 0 to 1", settings.threshold));
+        }
+        if let Some(weak) = settings.at_crosshair
+            && (!(0.0..=settings.threshold).contains(&weak.threshold) || weak.reach_px.is_nan() || weak.reach_px < 0.0)
+        {
+            return Err("at_crosshair needs a threshold from 0 to the model's and a reach of 0 px or more".into());
         }
         if let Some(points) = &settings.score_map {
             if points.len() < 2 {
@@ -103,13 +122,19 @@ impl ModelSettings {
         (score > self.threshold).then_some(score)
     }
 
-    /// The raw score at or under which no cell passes, so a decoder can skip those cells without mapping them (most
-    /// cells are far under it). Without a map it is the threshold itself. With one, the last point whose mapped value
-    /// is under the threshold (by more than float64's rounding, so a value mapped between the points before it cannot
-    /// round up past it); -infinity when there is none.
+    /// The lowest threshold a cell can pass: the weaker one at the crosshair when the model has it.
+    pub fn lowest_threshold(&self) -> f32 {
+        self.at_crosshair.map_or(self.threshold, |weak| weak.threshold)
+    }
+
+    /// The raw score at or under which no cell passes even at the crosshair, so a decoder can skip those cells without
+    /// mapping them (most cells are far under it). Without a map it is the lowest threshold itself. With one, the last
+    /// point whose mapped value is under it (by more than float64's rounding, so a value mapped between the points
+    /// before it cannot round up past it); -infinity when there is none.
     pub fn floor(&self) -> f64 {
-        let Some(points) = &self.score_map else { return self.threshold as f64 };
-        let under = self.threshold as f64 - FLOOR_MARGIN;
+        let threshold = self.lowest_threshold() as f64;
+        let Some(points) = &self.score_map else { return threshold };
+        let under = threshold - FLOOR_MARGIN;
         points.iter().rev().find(|point| point[1] < under).map_or(f64::NEG_INFINITY, |point| point[0])
     }
 }

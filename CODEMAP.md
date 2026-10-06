@@ -479,10 +479,14 @@ Each flick measured (review.py: `target_radius`, `measure`, `choices`).
 ## src/model.rs
 
 The detector model's settings file (python/model/MODEL_FILE.md): `detector_<name>.json` beside the model's exports, so a
-retrained model needs no change to the code. Format 1: the score a cell must pass to be a target, and the map that puts
-the model's scores on the reference model's scale. A model with no file gets today's values (`ModelSettings::default`).
+retrained model needs no change to the code. Format 1: the score a cell must pass to be a target, the map that puts the
+model's scores on the reference model's scale, and (optional) the weaker score a cell at the crosshair may pass instead
+(`AtCrosshair`). A model with no file gets today's values (`ModelSettings::default`).
 
-- `ModelSettings` (struct): A model's settings. Methods: `from_json`, `mapped`, `passes`, `floor`.
+- `ModelSettings` (struct): A model's settings. Methods: `from_json`, `mapped`, `passes`, `lowest_threshold`, `floor`.
+- `AtCrosshair` (struct): Weaker cells kept at the crosshair: a cell whose score passes `threshold` (on the reference
+  model's scale, under the model's own) is a target too when its box's center is within `reach_px` of the crosshair
+  (1280 x 720 pixels).
 - Functions: `settings_file`.
 - Constants: `FORMAT`, `DEFAULT_THRESHOLD`, `REFERENCE`.
 

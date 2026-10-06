@@ -19,6 +19,12 @@ the code.
   the map is linear; below the first point and above the last, it gives that point's mapped value. The core works it
   out as NumPy's `interp` does, in float64, and keeps the result as a float32.
 - `reference`: the model whose scale the mapped scores are on (full_v3).
+- `at_crosshair` (optional): `{"threshold": 0.2, "reach_px": 30}`. A cell under `threshold` but over this one (on the
+  same scale) is a target too when its box's center is within `reach_px` of the crosshair (1280 x 720 pixels): a
+  target being shot is under the crosshair. Without it, nothing changes. Measured on large_v11 (2026-10-06, the gate
+  against itself without it): tracking's gap to the stats files 0.065 to 0.049, but the video alone worse (dynamic
+  recall 0.979 to 0.951: what a dying target leaves at the crosshair keeps its track alive), so no model's file has
+  it yet.
 
 Every score the review keeps is the mapped one: the boxes' scores, the tracks' `s` (which the faint cut-off reads) and
 the score that `keep` compares with 0.5. Other fields are allowed and ignored.
