@@ -1,10 +1,21 @@
-import { Flick, Geometry, TargetSize, TrackFrame, TrackPoint, TrackReport, Tracks } from '../api';
+import {
+  Flick,
+  Geometry,
+  Hitbox,
+  TargetSize,
+  TrackFrame,
+  TrackPoint,
+  TrackReport,
+  Tracks,
+} from '../api';
 import {
   boxes,
   clock,
   describe as describeMoment,
   flickAt,
   nearest,
+  onShape,
+  targetShape,
   timeline,
   toPx,
   TrackState,
@@ -72,6 +83,40 @@ describe('boxes and nearest', () => {
     // 4 deg tall and 0.5 wide, 2 above the crosshair: its axis runs from 0.25 to 3.75 above it
     const [capsule] = boxes(trackFrame(0, [[1, 0, 2]], [[0.5, 4]]));
     expect(capsule.centerLineDeg).toBeCloseTo(0.25);
+  });
+});
+
+describe('targetShape and onShape', () => {
+  const sphere: Hitbox = { kind: 'spheroid', widthToHeight: 1 };
+  const capsule: Hitbox = { kind: 'cylindrical', widthToHeight: 0.25 };
+
+  it('keeps a plain box without a hitbox, as before', () => {
+    const shape = targetShape(1, 2, null);
+    expect(shape).toEqual({ kind: 'box', halfWidthDeg: 0.5, halfHeightDeg: 1 });
+    expect(onShape(0.5, 1, shape)).toBe(true);
+  });
+
+  it("leaves out a sphere's corners", () => {
+    // a sphere 2 deg across: its box's corner is on the box but off the ball
+    const shape = targetShape(2, 2, sphere);
+    expect(shape.kind).toBe('ellipse');
+    expect(onShape(0.9, 0.9, shape)).toBe(false);
+    expect(onShape(0.9, 0, shape)).toBe(true);
+  });
+
+  it("sizes a capsule from its height and the hitbox's ratio, its round ends left out at the corners", () => {
+    // the box 1 wide (blur) and 4 tall: the capsule is 4 tall and a quarter of that wide
+    const shape = targetShape(1, 4, capsule);
+    expect(shape).toEqual({ kind: 'capsule', halfWidthDeg: 0.5, halfHeightDeg: 2 });
+    expect(onShape(0.45, 0, shape)).toBe(true);
+    expect(onShape(0.45, 1.98, shape)).toBe(false);
+  });
+
+  it('gives the boxes of a frame their shape and the core on-target test', () => {
+    const [ball] = boxes(trackFrame(0, [[1, 0.9, 0.9]], [[2, 2]]), sphere);
+    expect(ball.shape.kind).toBe('ellipse');
+    expect(ball.inside).toBe(false);
+    expect(boxes(trackFrame(0, [[1, 0.9, 0.9]], [[2, 2]]))[0].inside).toBe(true);
   });
 });
 

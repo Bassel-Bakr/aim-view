@@ -26,6 +26,8 @@ export type { CropEntry } from './generated/crop-entry';
 export type { CropPage } from './generated/crop-page';
 export type { CropSet } from './generated/crop-set';
 export type { CropVerdict } from './generated/crop-verdict';
+export type { Hitbox } from './generated/hitbox';
+export type { HitboxKind } from './generated/hitbox-kind';
 export type { CrosshairSpot } from './generated/crosshair-spot';
 export type { Direction } from './generated/direction';
 export type { DirectionGroup as DirectionBand } from './generated/direction-group';

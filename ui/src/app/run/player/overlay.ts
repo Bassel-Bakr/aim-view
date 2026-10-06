@@ -10,7 +10,7 @@ import {
 import { formatMs } from '../../format';
 import { FastestOrder } from '../fastest-path/order-solver';
 import { NEW_MS, newCut, PathAnalysis } from '../fastest-path/path-analysis';
-import { boxes, flickAt, nearest, Point, TargetBox, toPx } from '../track';
+import { boxes, flickAt, nearest, Point, TargetBox, TargetShapeKind, toPx } from '../track';
 
 /** How the overlay draws: its colors, font and line widths, from the player's tokens (themes/player.scss). */
 export interface OverlayStyle {
@@ -127,8 +127,9 @@ export function drawClick(
 }
 
 /**
- * A tracking run: every target as a box, the one the review follows (nearest the crosshair) green while the crosshair
- * is on it and orange with a dashed line and its distance when not; "switching" after a bot's death.
+ * A tracking run: every target in its bots' hitbox shape (an ellipse for spheres, a capsule, a box; a box without a
+ * hitbox), the one the review follows (nearest the crosshair) green while the crosshair is on it and orange with a
+ * dashed line and its distance when not; "switching" after a bot's death.
  */
 export function drawTrack(
   context: CanvasRenderingContext2D,
@@ -142,7 +143,7 @@ export function drawTrack(
   const trackFrame = tracks.frames[frame];
   if (!trackFrame || outsideRun(summary, frame)) return;
   const geometry = report.geometry;
-  const targetBoxes = boxes(trackFrame);
+  const targetBoxes = boxes(trackFrame, report.hitbox ?? null);
   const best = nearest(targetBoxes);
   const corner = drawBoxes(context, geometry, scale, style, targetBoxes, best);
   const center = toPx(geometry, 0, 0, scale);
@@ -170,7 +171,7 @@ function boxColor(style: OverlayStyle, box: TargetBox, followed: boolean): strin
   return box.inside ? style.onTarget : style.offTarget;
 }
 
-/** Every target's box. Returns the followed box's lower right corner, where its label goes. */
+/** Every target in its shape. Returns the followed target's lower right corner, where its label goes. */
 function drawBoxes(
   context: CanvasRenderingContext2D,
   geometry: Geometry,
@@ -181,15 +182,41 @@ function drawBoxes(
 ): Point | null {
   let corner: Point | null = null;
   for (const box of targetBoxes) {
-    const [x0, y0] = toPx(geometry, box.x - box.widthDeg / 2, box.y + box.heightDeg / 2, scale);
-    const [x1, y1] = toPx(geometry, box.x + box.widthDeg / 2, box.y - box.heightDeg / 2, scale);
+    const { halfWidthDeg, halfHeightDeg } = box.shape;
+    const [x0, y0] = toPx(geometry, box.x - halfWidthDeg, box.y + halfHeightDeg, scale);
+    const [x1, y1] = toPx(geometry, box.x + halfWidthDeg, box.y - halfHeightDeg, scale);
     const followed = box === best;
     context.strokeStyle = boxColor(style, box, followed);
     context.lineWidth = followed ? style.lineStrong : style.line;
-    context.strokeRect(x0 - BOX_PAD, y0 - BOX_PAD, x1 - x0 + 2 * BOX_PAD, y1 - y0 + 2 * BOX_PAD);
+    strokeShape(
+      context,
+      box.shape.kind,
+      [x0 - BOX_PAD, y0 - BOX_PAD],
+      [x1 + BOX_PAD, y1 + BOX_PAD],
+    );
     if (followed) corner = [x1, y1];
   }
   return corner;
+}
+
+/** A target's outline between two corners: a box, the ellipse inside it, or an upright capsule. */
+function strokeShape(
+  context: CanvasRenderingContext2D,
+  kind: TargetShapeKind,
+  [left, top]: Point,
+  [right, bottom]: Point,
+): void {
+  const width = right - left;
+  const height = bottom - top;
+  if (kind === 'box') {
+    context.strokeRect(left, top, width, height);
+    return;
+  }
+  context.beginPath();
+  if (kind === 'ellipse')
+    context.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, 2 * Math.PI);
+  else context.roundRect(left, top, width, height, width / 2);
+  context.stroke();
 }
 
 /** The followed box's label: switching after a death, on, or how far off its edge the crosshair is. */

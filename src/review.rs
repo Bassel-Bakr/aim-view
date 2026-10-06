@@ -458,6 +458,11 @@ pub struct TrackReport {
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub run: Option<serde_json::Value>,
     pub limit: Option<f64>,
+    /// The bots' hitbox its time on target was measured with (None: each target's box), for the page to draw and test
+    /// targets the same way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub hitbox: Option<Hitbox>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub outdated: bool,
@@ -593,6 +598,7 @@ pub fn review_tracking(
         crosshair: Capped::new(),
         run,
         limit,
+        hitbox: scenario.hitbox,
         outdated: false,
     })
 }

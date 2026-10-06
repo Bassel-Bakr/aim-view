@@ -1,4 +1,4 @@
-import { ClickReport, Flick, Geometry, TrackFrame, TrackReport, Tracks } from '../../api';
+import { ClickReport, Flick, Geometry, Hitbox, TrackFrame, TrackReport, Tracks } from '../../api';
 import { analysePaths } from '../fastest-path/path-analysis';
 import { recordingContext } from '../recording-context';
 import { drawClick, drawPaths, drawTrack, OverlayStyle } from './overlay';
@@ -145,6 +145,20 @@ describe('drawTrack', () => {
       NOTHING,
       NOTHING,
     ]);
+  });
+
+  it("draws a sphere's target as an ellipse and a capsule's as a round-ended box", () => {
+    const shapes = (hitbox: Hitbox): string[] => {
+      const recording = recordingContext();
+      const report = { ...TRACK_REPORT, hitbox } as TrackReport;
+      drawTrack(recording.context, report, TRACK_TRACKS, 1, SCALE, STYLE);
+      return recording.calls
+        .map(([name]) => name)
+        .filter((name) => ['ellipse', 'roundRect', 'strokeRect'].includes(name));
+    };
+    expect(shapes({ kind: 'spheroid', widthToHeight: 1 })).toEqual(['ellipse']);
+    expect(shapes({ kind: 'cylindrical', widthToHeight: 0.25 })).toEqual(['roundRect']);
+    expect(shapes({ kind: 'cuboid', widthToHeight: 1 })).toEqual(['strokeRect']);
   });
 });
 

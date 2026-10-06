@@ -1,4 +1,4 @@
-import { Flick, Geometry, TrackFrame, TrackReport, Tracks } from '../api';
+import { Flick, Geometry, Hitbox, TrackFrame, TrackReport, Tracks } from '../api';
 
 /** A point on the canvas, in CSS pixels. */
 export type Point = [x: number, y: number];
@@ -19,12 +19,23 @@ export function flickAt(flicks: Flick[], frame: number): Flick | null {
   return at;
 }
 
-/** A target's box in degrees, and how the crosshair stands to it. */
+/** A target's shape on screen: an ellipse (a spheroid's), an upright capsule, or a box. */
+export type TargetShapeKind = 'ellipse' | 'capsule' | 'box';
+
+/** A target's shape on screen, centered on its box: its kind and its half sides in degrees. */
+export interface TargetShape {
+  kind: TargetShapeKind;
+  halfWidthDeg: number;
+  halfHeightDeg: number;
+}
+
+/** A target's box in degrees, its shape, and how the crosshair stands to it. */
 export interface TargetBox {
   x: number;
   y: number;
   widthDeg: number;
   heightDeg: number;
+  shape: TargetShape;
   /** From the crosshair to the target's center line (a capsule's long axis, a sphere's center). */
   centerLineDeg: number;
   /** The crosshair is on it. */
@@ -37,8 +48,38 @@ export interface TargetBox {
 const DEFAULT_SIZE_DEG = 0.6;
 const EDGE_DEG = 0.05;
 
-/** Each target in a frame as a box. */
-export function boxes(frame: TrackFrame): TargetBox[] {
+/**
+ * A target's shape from its box and the bots' hitbox (the report's; null: a plain box), sized as the core's on-target
+ * test sizes it (src/tracking.rs: `on_box`): the box's side along the hitbox's longer axis, the other side from the
+ * hitbox's width over its height, which stays as the bot comes near or goes far.
+ */
+export function targetShape(
+  widthDeg: number,
+  heightDeg: number,
+  hitbox: Hitbox | null,
+): TargetShape {
+  if (!hitbox) return { kind: 'box', halfWidthDeg: widthDeg / 2, halfHeightDeg: heightDeg / 2 };
+  const ratio = hitbox.widthToHeight;
+  const tall = ratio < 1 ? heightDeg : ratio > 1 ? widthDeg / ratio : Math.max(widthDeg, heightDeg);
+  const halfWidthDeg = (tall * ratio) / 2;
+  const halfHeightDeg = tall / 2;
+  const capsule = hitbox.kind === 'cylindrical' && halfHeightDeg > halfWidthDeg;
+  const kind = hitbox.kind === 'cuboid' ? 'box' : capsule ? 'capsule' : 'ellipse';
+  return { kind, halfWidthDeg, halfHeightDeg };
+}
+
+/** Whether the crosshair (the origin) is on a target at (x, y) of this shape, or within EDGE_DEG of it. */
+export function onShape(x: number, y: number, shape: TargetShape): boolean {
+  const halfWidth = shape.halfWidthDeg + EDGE_DEG;
+  const halfHeight = shape.halfHeightDeg + EDGE_DEG;
+  if (shape.kind === 'box') return Math.abs(x) <= halfWidth && Math.abs(y) <= halfHeight;
+  if (shape.kind === 'capsule')
+    return Math.hypot(x, Math.max(0, Math.abs(y) - (halfHeight - halfWidth))) <= halfWidth;
+  return (x / halfWidth) ** 2 + (y / halfHeight) ** 2 <= 1;
+}
+
+/** Each target in a frame as a box, in the bots' hitbox shape when the report has one. */
+export function boxes(frame: TrackFrame, hitbox: Hitbox | null = null): TargetBox[] {
   return frame.t.map(([, x, y], targetIndex) => {
     const [widthDeg, heightDeg] = frame.wh
       ? frame.wh[targetIndex]
@@ -46,10 +87,10 @@ export function boxes(frame: TrackFrame): TargetBox[] {
     const axisX = Math.sign(x) * Math.max(0, Math.abs(x) - Math.max(0, widthDeg - heightDeg) / 2);
     const axisY = Math.sign(y) * Math.max(0, Math.abs(y) - Math.max(0, heightDeg - widthDeg) / 2);
     const centerLineDeg = Math.hypot(axisX, axisY);
-    const inside =
-      Math.abs(x) <= widthDeg / 2 + EDGE_DEG && Math.abs(y) <= heightDeg / 2 + EDGE_DEG;
+    const shape = targetShape(widthDeg, heightDeg, hitbox);
+    const inside = onShape(x, y, shape);
     const outsideDeg = Math.max(0, centerLineDeg - Math.min(widthDeg, heightDeg) / 2);
-    return { x, y, widthDeg, heightDeg, centerLineDeg, inside, outsideDeg };
+    return { x, y, widthDeg, heightDeg, shape, centerLineDeg, inside, outsideDeg };
   });
 }
 
@@ -98,7 +139,7 @@ export function timeline(report: TrackReport, tracks: Tracks): Timeline {
   for (let i = start; i < end; i++) {
     const trackFrame = tracks.frames[i];
     if (!trackFrame) continue;
-    const targetBoxes = boxes(trackFrame);
+    const targetBoxes = boxes(trackFrame, report.hitbox ?? null);
     const best = nearest(targetBoxes);
     const switching = summary.switches.some(([a, b]) => i >= a && i < b);
     const inside = targetBoxes.some((box) => box.inside);
