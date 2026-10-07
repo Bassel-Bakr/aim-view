@@ -10,6 +10,7 @@ use std::str::FromStr;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use aimview::local_config::LocalConfig;
 use aimview::scenario::{Facts, Kind};
 use aimview_service::areas::kovobs_areas;
 use aimview_service::library::parse_name;
@@ -17,6 +18,7 @@ use aimview_service::review::{AreaBox, Request, TimeWindow, parts_at_once, revie
 use aimview_service::{Config, Device, Failure, Ffmpeg, Layout, Library};
 use serde_json::{Value, json};
 
+/// The help text: the commands and their options, with each option's default in brackets.
 const USAGE: &str = concat!(
     "aimview-tool: Aim View's library and native review for scripts. ",
     "JSON on stdout; a review's progress on stderr.",
@@ -38,10 +40,11 @@ aimview-tool review VIDEO --out FOLDER [review options] [library options]
     readings.json, hud.json and report.json in FOLDER, and {seconds, out, report} on stdout.
 
 Library options:
-  --data FOLDER           the data folder [the repo's test_out]
+  --data FOLDER           the data folder [aimview.json's data: the repo's test_out]
   --layout python|app     its layout [python]
-  --models FOLDER         the models (detector_<name>_u8in.onnx, models.json) [the repo's python/model/exports]
-  --vods FOLDER           the recordings; --vods= for the folder chosen in the app [E:\OBS\KovOBS]
+  --models FOLDER         the models (detector_<name>_u8in.onnx, models.json) [aimview.json's models: the repo's
+                          python/model/exports]
+  --vods FOLDER           the recordings; --vods= for the folder chosen in the app [aimview.json's vods]
   --stats FOLDER          KovaaK's stats folder [FPSAimTrainer\stats in Steam's folder]
   --scenarios FOLDER...   the scenario folders [KovaaK's and the workshop's]
   --device auto|directml|cuda|cpu   where the detector runs [auto]
@@ -71,8 +74,6 @@ Review options:
 
 /// The exit code for a command line that cannot be read (the usage is printed).
 const USAGE_EXIT: u8 = 2;
-/// The recordings when --vods is not given (Windows only): KovOBS's folder.
-const DEFAULT_VODS: &str = r"E:\OBS\KovOBS";
 /// The frames the detector takes at once when --batch is not given.
 const DEFAULT_BATCH: usize = 4;
 /// How often a terminal's progress line is written again within a stage.
@@ -81,15 +82,20 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 /// The values an option takes.
 #[derive(Clone, Copy, PartialEq)]
 enum Takes {
+    /// None: a switch.
     Nothing,
+    /// One value.
     One,
+    /// Two values.
     Two,
-    /// One or more, up to the next option
+    /// One or more, up to the next option.
     Many,
 }
 
+/// A command's options: each name (without "--") and the values it takes.
 type Options = &'static [(&'static str, Takes)];
 
+/// The options every command takes: where the library is and how it reviews.
 const LIBRARY: Options = &[
     ("data", Takes::One),
     ("layout", Takes::One),
@@ -103,10 +109,13 @@ const LIBRARY: Options = &[
     ("download-ffmpeg", Takes::Nothing),
 ];
 
+/// The lookup command's options, each given as often as wanted.
 const LOOKUP: Options = &[("video", Takes::One), ("id", Takes::One), ("run", Takes::Two)];
 
+/// The crop-labels command's options.
 const CROP_LABELS: Options = &[("sets", Takes::Many)];
 
+/// The review command's options (--kill-check also checks the kills the video alone gives; the usage leaves it out).
 const REVIEW: Options = &[
     ("out", Takes::One),
     ("model", Takes::One),
@@ -126,7 +135,9 @@ const REVIEW: Options = &[
 
 /// A command line: the values given before or between the options, and each option with its values, in order.
 struct Line {
+    /// The values that belong to no option (a review's video, a crop-labels page).
     free: Vec<String>,
+    /// Each option given, with its values, in the order given.
     given: Vec<(&'static str, Vec<String>)>,
 }
 
@@ -156,6 +167,7 @@ impl Line {
         Ok(line)
     }
 
+    /// Whether the option was given.
     fn has(&self, name: &str) -> bool {
         self.given.iter().any(|(given, _)| *given == name)
     }
@@ -171,10 +183,12 @@ impl Line {
         self.all(name).last().map(|values| values[0].as_str())
     }
 
+    /// The option's value as a path.
     fn path(&self, name: &str) -> Option<PathBuf> {
         self.one(name).map(PathBuf::from)
     }
 
+    /// The option's value as a number; None when it was not given, a bad value (400) when it is not one.
     fn number<T: FromStr>(&self, name: &str) -> Result<Option<T>, Failure> {
         let parse = |value: &str| value.parse().map_err(|_| Failure::bad(format!("--{name}: not a number: {value}")));
         self.one(name).map(parse).transpose()
@@ -216,28 +230,25 @@ fn option_values(
     Ok(values)
 }
 
-/// The repo this tool was built from (the defaults point into it).
-fn repo() -> PathBuf {
-    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
-    here.parent().unwrap_or(here).to_path_buf()
-}
-
-/// The library's configuration from the options, over the defaults (python/aimview_tools.py's: the repo's test_out/ in
-/// Python's layout, KovOBS's recordings, KovaaK's folders, the models in python/model/exports, ffmpeg from the PATH).
+/// The library's configuration from the options, over the repo's settings (aimview.defaults.json under this
+/// computer's aimview.json, aimview::local_config: the data folder in Python's layout, the recordings, KovaaK's
+/// folders under Steam's, the models) and ffmpeg from the PATH. Fails when neither names the data or models folder.
 fn config(line: &Line) -> Result<Config, Failure> {
-    let repo = repo();
+    let settings = LocalConfig::load();
     let layout = match line.one("layout").unwrap_or("python") {
         "python" => Layout::Python,
         "app" => Layout::App,
         other => return Err(Failure::bad(format!("--layout: python or app, not {other}"))),
     };
-    let data = line.path("data").unwrap_or_else(|| repo.join("test_out"));
-    let models = line.path("models").unwrap_or_else(|| repo.join("python").join("model").join("exports"));
-    let mut config = Config::new(data, layout, models);
+    let folder = |key: &str| {
+        let missing = || Failure::bad(format!("no {key} folder: give --{key}, or name it in aimview.json"));
+        line.path(key).or_else(|| settings.folder(key)).ok_or_else(missing)
+    };
+    let mut config = Config::new(folder("data")?, layout, folder("models")?);
     config.vods = match line.one("vods") {
         Some("") => None,
         Some(folder) => Some(folder.into()),
-        None => cfg!(windows).then(|| PathBuf::from(DEFAULT_VODS)),
+        None => settings.folder("vods"),
     };
     if let Some(stats) = line.path("stats") {
         config.stats = stats;
@@ -358,6 +369,7 @@ fn lookup(library: &Library, line: &Line) -> Value {
     json!({ "videos": videos, "ids": ids, "runs": runs })
 }
 
+/// A scenario kind by its name (--kind); a bad value (400) for another name.
 fn kind(name: &str) -> Result<Kind, Failure> {
     match name {
         "static" => Ok(Kind::Static),
@@ -393,23 +405,31 @@ fn area_boxes(given: &str) -> Result<Vec<AreaBox>, Failure> {
 
 /// A review's progress on stderr: one line that changes, in a terminal; else a line for each stage.
 struct Progress {
+    /// --quiet: nothing is shown.
     quiet: bool,
+    /// Whether stderr is a terminal, where one line is written over.
     terminal: bool,
+    /// What was last shown; the review's runs tell progress from several threads.
     last: Mutex<Shown>,
 }
 
 /// The stage a progress line last showed, and when it was last told.
 struct Shown {
+    /// The stage's name.
     stage: String,
+    /// When progress was last told.
     at: Instant,
 }
 
 impl Progress {
+    /// Progress on stderr, shown unless `quiet`.
     fn new(quiet: bool) -> Progress {
         let last = Mutex::new(Shown { stage: String::new(), at: Instant::now() });
         Progress { quiet, terminal: std::io::stderr().is_terminal(), last }
     }
 
+    /// Tells a stage's progress (`done` of `total`): in a terminal at most every PROGRESS_INTERVAL within a stage,
+    /// else once a stage.
     fn show(&self, stage: &str, done: usize, total: usize) {
         if self.quiet {
             return;
@@ -427,6 +447,7 @@ impl Progress {
         last.at = Instant::now();
     }
 
+    /// Ends the progress with the review's time in seconds.
     fn finish(&self, seconds: f64) {
         if !self.quiet {
             eprintln!("{}reviewed in {seconds:.1} s", if self.terminal { "\n" } else { "" });
@@ -547,6 +568,8 @@ fn answer(command: &str, line: &Line) -> Result<Value, Failure> {
     }
 }
 
+/// Reads the command line, answers the command and prints the answer: exit code 0, 1 on a failure, 2 when the line
+/// cannot be read.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let usage = |error: &str| {
