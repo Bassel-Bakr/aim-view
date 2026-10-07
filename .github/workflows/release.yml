@@ -96,7 +96,8 @@ jobs:
           path: aim-view-browser-*.zip
           if-no-files-found: error
 
-  server:
+  # the server and the installer in one job, so the native Rust they share (the service, ONNX Runtime) compiles once
+  windows:
     needs: version
     if: needs.version.outputs.version != ''
     runs-on: windows-latest
@@ -149,25 +150,8 @@ jobs:
           name: server
           path: aim-view-server-*.zip
           if-no-files-found: error
-
-  desktop:
-    needs: version
-    if: needs.version.outputs.version != ''
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: windows
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun install --frozen-lockfile
-        working-directory: ui
-      - run: bun scripts/stamp-version.ts ${{ needs.version.outputs.version }}
-      # Tauri's CLI runs the desktop build first (tauri.conf.json: bun run build:desktop), then bundles the installer
+      # Tauri's CLI runs the desktop build first (tauri.conf.json: bun run build:desktop; the assets above are reused),
+      # then bundles the installer
       - run: bunx @tauri-apps/cli@^2 build
         working-directory: desktop
       # named as the other two are (Tauri names it after the product: "Aim View_<version>_x64-setup.exe")
@@ -183,7 +167,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [version, browser, server, desktop]
+    needs: [version, browser, windows]
     if: needs.version.outputs.version != '' && (github.event_name == 'push' || inputs.publish)
     runs-on: ubuntu-latest
     steps:
