@@ -8,8 +8,11 @@ the parity tests compare with its stored outputs (`test_out/parity/`, frozen), a
 parts (`python/model/old_review.py`), so a change to the review is made once, in Rust. Read `README.md` first, then
 `python/README.md` (how the review works) and `python/model/MODEL_STATUS.md` (the detector's results and limits).
 Every command to rebuild the detector is in
-`python/model/REPRODUCE.md`. Every benchmark, its baseline and when to rerun it are in `BENCH.md`: check it before
-running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing. Where
+`python/model/REPRODUCE.md`. What every command costs is in `COSTS.md`: its time by model and configuration, with
+the date and commit it was measured at. Read it before running a command, never run a command only to learn its cost
+or what it does, and time a new one through `bun scripts/costs.ts run <name> [--config a=b] -- <command>` so its
+cost lands there (the build scripts time themselves). Every benchmark, its baseline and when to rerun it are in
+`BENCH.md`: check it before running one. Where a review spends its time, stage by stage, is in `HOT_PATHS.md`: check it before optimizing. Where
 each thing lives in the Rust code is in `CODEMAP.md` (every file's header comment and public items, made by
 `tests/code_map.rs`): read its file list before a Rust change, search the rest, and follow calls with rust-analyzer's
 call hierarchy instead of reading whole files.
@@ -42,7 +45,10 @@ python python/model/crop_check/make_page.py <page> <set> <crops>   # a set of cr
 bun run dev                                    # the Angular UI in browser mode, http://localhost:4200/
 bun run dev:server                             # the same in server mode (needs the server above)
 bun run dev:server:lan                         # the same, open to the local network (http://<this machine's IP>:4200)
-bun run build                                  # every mode's build: ui/dist/browser, server, desktop
+bun run build                                  # every mode's build: ui/dist/browser, server, desktop (scripts/build.ts:
+                                               # the assets once, the Angular builds at once; build:<mode> for one;
+                                               # times in COSTS.md)
+bun run costs                                  # COSTS.md's measured table again, from test_out/costs.jsonl
 bun run app                                    # the desktop app (Tauri 2, desktop/) on the desktop build's dev server
 bun run build:app                              # its installer: target/release/bundle/nsis/
 bun run test:ui                                # the UI's tests
@@ -59,7 +65,8 @@ cargo test --profile quick                     # the Rust core, checked against 
 python scripts/extract_module.py <src.py> <out.py> <name> ...   # copies a module's definitions and what they use,
                                                # verbatim (how old_review.py was made)
 bun run assets                                 # the core as WebAssembly, the models and the area finder's data,
-                                               # into ui/generated/ (--no-data: without the data; see below)
+                                               # into ui/generated/ (--no-data: without the data; see below; only
+                                               # what changed is redone, --modes for fewer)
 bun run types                                  # the UI's types of the JSON the Rust structs write (ts-rs), into
                                                # ui/src/app/generated/: run after changing a Rust struct the UI reads
 bun scripts/next-version.ts [--notes]          # the next release's semver from the Conventional Commits since the last
@@ -96,7 +103,7 @@ keeps them there, as the review server keeps its own: it learns into them when a
 download them and load the review server's files into them. The examples name the user's recordings, so a build for others
 must not ship them. `bun run assets` and the `dev*` scripts copy them (`--no-data` leaves them out). `--release`, which
 every `build:*` script uses, leaves them out unless `--data` is given. For a browser build with them, run
-`bun run assets --release --data`, then `bun run --cwd ui build --configuration production,browser`. The browser runs
+`bun run build:browser --data`. The browser runs
 every model `python/model/models.json` lists, from its `_u8in` export in `python/model/exports/`. A newly trained model
 shows up once it is exported (`python python/model/export.py <best.pt>`, or `--u8in` for that file only), listed in
 models.json, and `bun run assets` has run again; `assets` names any listed model with no export.

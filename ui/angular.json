@@ -30,14 +30,9 @@
                 "input": "public"
               },
               {
-                "glob": "ort-wasm-simd-threaded{,.asyncify}.{wasm,mjs}",
-                "input": "node_modules/onnxruntime-web/dist",
-                "output": "ort"
-              },
-              {
                 "glob": "**/*",
-                "input": "generated",
-                "output": "/"
+                "input": "generated/core",
+                "output": "core"
               }
             ],
             "styles": [
@@ -84,6 +79,22 @@
                 {
                   "replace": "src/app/modes/mode.ts",
                   "with": "src/app/modes/mode.browser.ts"
+                }
+              ],
+              "assets": [
+                {
+                  "glob": "**/*",
+                  "input": "public"
+                },
+                {
+                  "glob": "ort-wasm-simd-threaded{,.asyncify}.{wasm,mjs}",
+                  "input": "node_modules/onnxruntime-web/dist",
+                  "output": "ort"
+                },
+                {
+                  "glob": "**/*",
+                  "input": "generated",
+                  "output": "/"
                 }
               ],
               "outputPath": "dist/browser"
