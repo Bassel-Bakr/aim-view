@@ -1,0 +1,1 @@
+{"format": 1, "name": "large_v14_s4", "threshold": 0.3, "score_map": null, "reference": "large_v13e4", "at_crosshair": {"threshold": 0.2, "reach_px": 30.0, "kinds": ["tracking"]}}

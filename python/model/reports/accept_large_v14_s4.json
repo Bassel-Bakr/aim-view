@@ -1,0 +1,90 @@
+{
+ "model": "large_v14_s4",
+ "best": "large_v13e4",
+ "date": "2026-10-06",
+ "passed": false,
+ "files": {
+  "model": {
+   "export": "a809314f2ceae421c24578d3a2fe4e7100bd470ba0bd386171c550bb304350c6",
+   "settings": "d5de5f2ee68044e46fc84aa8be61fbd93478c8c88272c29b154dcae8ddb3d64f"
+  },
+  "best": {
+   "export": "fb5598551d149c0b1a5b7cdcc6a77b280fdebf442300397c30ca12bec7c0f484",
+   "settings": "0cb16dd53e9ed10d88330c8275426a30fc4c69f55208045d3e38acb9978fba76"
+  },
+  "programs": null
+ },
+ "limits": {
+  "draws": 400,
+  "standard_deviations": 2.0,
+  "seed": 0,
+  "kills_matched": "no drop",
+  "flicks_recall_precision": "2 SD of the best model's share over draws of its kills",
+  "tracking": "2 SD of the best model's number over draws of the runs"
+ },
+ "contract": {
+  "passed": false,
+  "report": "test_out\\vod_model\\accept\\large_v14_s4\\contract.json",
+  "checks": {
+   "export": true,
+   "crosshair": false,
+   "screen_fixed": true,
+   "boxes_per_frame": true,
+   "box_fit": true,
+   "one_box": true,
+   "under_crosshair": true,
+   "calibrated": true,
+   "targets_found": true
+  },
+  "failed": [
+   "crosshair: pairs over large_v13e4's: 0.0098 of all (allowed 0.005)",
+   "crosshair: recordings 1wall 6targets extra small - 849.91 - 2026.10.01: 0.0668 against large_v13e4's 0.0283 (allowed gap 0.02)"
+  ]
+ },
+ "checks": [
+  {
+   "check": "contract",
+   "kind": "all",
+   "model": "fails",
+   "best": "",
+   "difference": "",
+   "allowed": "every check",
+   "unit": "",
+   "passed": false
+  }
+ ],
+ "not_run": [
+  "moving switching",
+  "moving dynamic",
+  "moving static",
+  "report",
+  "moving tracking",
+  "video alone"
+ ],
+ "model_results": {
+  "moving": {},
+  "report": {},
+  "video_alone": {},
+  "video_alone_left_out": {},
+  "fresh": {
+   "moving_tracked": [],
+   "report_reviewed": false,
+   "video_alone_tracked": 0
+  },
+  "seconds": 0.0
+ },
+ "best_results": {
+  "moving": {},
+  "report": {},
+  "video_alone": {},
+  "video_alone_left_out": {},
+  "fresh": {
+   "moving_tracked": [],
+   "report_reviewed": false,
+   "video_alone_tracked": 0
+  },
+  "seconds": 0.0
+ },
+ "listed": null,
+ "default_lines": []
+}
