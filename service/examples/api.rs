@@ -2,9 +2,10 @@
 //! printed as a line of JSON ({"status": ..., "body": ...}), to check the answers against python/retired/server.py's
 //! on copies of its data.
 //! cargo run -p aimview-service --example api -- <data folder> <models folder> <requests file> [--layout app|python]
-//!   [--vods <folder>] [--stats <KovaaK's stats folder>]
+//!   [--vods <folder>] [--stats <KovaaK's stats folder>] [--files]
 //! The app's layout (the default) reads the VODs folder from the data folder's settings.json; Python's layout takes
-//! test_out/ as the data folder and the VODs folder from --vods. Each line of the requests file: METHOD PATH (with its
+//! test_out/ as the data folder and the VODs folder from --vods. The app's layout keeps what it keeps in the data folder's
+//! database; --files keeps it in files instead. Each line of the requests file: METHOD PATH (with its
 //! query), then a tab and the body when there is one; or POLL PATH KEYS: the GET asked again (for up to 10 minutes)
 //! until one of its answer's KEYS (a|b) is not null; or SLEEP SECONDS: a wait, for work the library does in the
 //! background (the area finder learning).
@@ -61,6 +62,9 @@ fn main() {
     };
     let mut config = Config::new(PathBuf::from(&args[DATA_ARG]), layout, PathBuf::from(&args[MODELS_ARG]));
     config.vods = option("--vods").map(PathBuf::from);
+    if args.iter().any(|arg| arg == "--files") {
+        config.database = false;
+    }
     if let Some(stats) = option("--stats") {
         config.stats = stats.into();
     }

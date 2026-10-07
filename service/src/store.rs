@@ -1,5 +1,5 @@
 //! What the library keeps, through one interface (`Store`), so where it is kept can change (docs/storage-design.md):
-//! today the files in the data folder (`Files`, laid out as config.rs's layout says), later one SQLite database. The
+//! the files in the data folder (`Files`, laid out as config.rs's layout says) or one SQLite database (database.rs). The
 //! library formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes
 //! it is given and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes
 //! them) and the crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same
@@ -165,11 +165,11 @@ pub trait Store: Send + Sync {
 
 /// The bytes at the end of an old tracks.json (python/retired/server.py's, kept in the recording's own folder) read for
 /// the detector's name.
-const OLD_TRACKS_TAIL_BYTES: u64 = 200;
+pub(crate) const OLD_TRACKS_TAIL_BYTES: u64 = 200;
 /// The key an old tracks.json ends with when a model made it (the hand-written detector's has none).
-const DETECTOR_KEY: &[u8] = b"\"detector\"";
+pub(crate) const DETECTOR_KEY: &[u8] = b"\"detector\"";
 /// The folder of a recording's reviews by model, one folder each.
-const MODELS: &str = "models";
+pub(crate) const MODELS: &str = "models";
 
 /// A recording's folder in a layout's recordings folder: aimview-tool gives it to Python's scripts.
 pub fn recording_folder(folders: &Folders, id: &str) -> PathBuf {
@@ -226,7 +226,7 @@ impl Files {
 }
 
 /// Whether Python keeps the item as a text file (`pyjson::dump`, `write_text`): on Windows each "\n" is "\r\n".
-fn python_text(item: Item<'_>) -> bool {
+pub(crate) fn python_text(item: Item<'_>) -> bool {
     match item {
         Item::AreaKinds | Item::AreaExamples | Item::UploadAreas | Item::Ids(_) | Item::CutoffRows => true,
         Item::Mark(_, mark) => matches!(mark, Mark::Cutoff | Mark::SavedAreas | Mark::FoundAreas),

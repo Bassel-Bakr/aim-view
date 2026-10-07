@@ -113,6 +113,8 @@ mod tests {
         assert_eq!(state.status(), StatusCode::OK);
         let state: Value = serde_json::from_slice(state.body()).unwrap();
         assert_eq!(state["on"], false);
-        std::fs::remove_dir(&data).unwrap();
+        // the library keeps its database in the data folder; closed first, so Windows lets its file go
+        drop(lib);
+        std::fs::remove_dir_all(&data).unwrap();
     }
 }

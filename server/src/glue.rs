@@ -47,6 +47,8 @@ fn config(settings: &Settings) -> Config {
     Config {
         data: settings.data.clone(),
         layout: Layout::Python,
+        // Python's layout stays files: the training scripts read them (docs/storage-design.md)
+        database: false,
         vods: settings.vods.clone(),
         stats: settings.stats.clone(),
         scenarios: settings.scenarios.clone(),

@@ -1,6 +1,6 @@
 # Storage: one SQLite database per data folder
 
-Status: step 1 done (2026-10-07), steps 2 to 4 proposed. The prototype that backs it: `prototypes/sqlite_opfs/`
+Status: steps 1 and 2 done (2026-10-07), steps 3 and 4 proposed. The prototype that backs it: `prototypes/sqlite_opfs/`
 (README.md has its numbers).
 
 ## Why
@@ -31,25 +31,23 @@ backends: files (today's code, for the Python layout) and SQLite (the app's layo
 
 ## Schema, version 1
 
-`PRAGMA user_version = 1`. Times are seconds since 1970 (REAL), JSON is text, blobs are bytes.
+`PRAGMA user_version = 1`. Times are seconds since 1970 (REAL). Step 2 keeps what store.rs's `Item`s name, one row
+each, so the database gives back the bytes `Files` would (service/src/database.rs):
 
-| Table | Columns | Notes |
+| Table | Columns | Holds |
 | --- | --- | --- |
-| `settings` | `key TEXT PRIMARY KEY, value TEXT` | each setting's JSON |
-| `recordings` | `id TEXT PRIMARY KEY, path TEXT, size INTEGER, modified REAL, scenario TEXT, game TEXT, kind TEXT, run TEXT, stats_file TEXT, faint TEXT, not_aim_trainer INTEGER, label_skipped INTEGER` | one row per recording the app has seen; `run` and `faint` are today's run.json and faint.json |
-| `reviews` | `recording TEXT, model TEXT, version INTEGER, made REAL, device TEXT, tracks BLOB, readings BLOB, hud BLOB, kills BLOB, PRIMARY KEY (recording, model)` | each blob is today's JSON, gzip-compressed: read back, the same bytes, so reports stay byte-identical |
-| `areas` | `recording TEXT PRIMARY KEY, excluded TEXT, found TEXT, maps BLOB` | today's exclude.json, areas.json and areas_maps.npz |
-| `area_kinds` | `id TEXT PRIMARY KEY, kind TEXT` | area_kinds.json |
-| `area_examples` | `id INTEGER PRIMARY KEY, example TEXT` | one row per line of area_examples.jsonl |
-| `cutoff_labels` | `id INTEGER PRIMARY KEY, recording TEXT, row TEXT, crop BLOB` | a checked.jsonl row and its crop's npz; the download (cutoff.zip) is built from them |
-| `stats_files` | `name TEXT PRIMARY KEY, scenario TEXT, played REAL, size INTEGER, modified REAL, csv BLOB` | browser mode's copy, the CSV text gzip-compressed (the core parses it as today); index on `(scenario, played)` |
-| `scenarios` | `name TEXT PRIMARY KEY, source TEXT, kind TEXT, time_limit REAL, targets INTEGER, sce BLOB` | browser mode's copy of the .sce files and what the service reads from them |
-| `mouse_logs` | `name TEXT PRIMARY KEY, recorded REAL, log BLOB` | today's mouse/*.bin |
+| `library` | `name TEXT PRIMARY KEY, bytes BLOB, changed REAL` | the library's own items by file name: settings.json, area_kinds.json, area_examples.jsonl, exclude_uploads.json, the three id lists, the cut-off's checked.jsonl |
+| `marks` | `recording TEXT, mark TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, mark)` | each recording's marks by its folder name (slug) and the mark's file name: run.json, stats.json, faint.json, exclude.json, areas.json, areas_maps.npz |
+| `reviews` | `recording TEXT, model TEXT, part TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, model, part)` | each review's parts (tracks, readings, hud, kills), gzip-compressed; `model` is "" for the old review |
+| `cutoff_crops` | `file TEXT PRIMARY KEY, bytes BLOB, changed REAL` | the cut-off labels' crops by their file (train/<name>.npz) |
 
-Reviews are one blob per kind, not a row per frame: 6,000 frames of several boxes each would make millions of rows,
+Text Python keeps as text is kept with Windows' line ends, as `Files` writes it. Models and recordings are listed in a
+Windows folder's order (NTFS: by upper case), as `Files` read them. The proposal's wider tables (a recording's path,
+size and scenario; stats files and scenarios in the browser; mouse logs) come with the steps that need them.
+
+Reviews are one row per part, not a row per frame: 6,000 frames of several boxes each would make millions of rows,
 slower to write and to read, and the core reads the whole review at once anyway. On the desktop and the server the
-stats files are read from KovaaK's folder as today (no copy); `stats_files` and `scenarios` fill only in the browser,
-which cannot keep access to a folder under Program Files.
+stats files are read from KovaaK's folder as today (no copy); only the browser will need a copy.
 
 ## The engine in each mode
 
@@ -116,7 +114,11 @@ Each ends in a check, and each is committed on its own.
    app's data; the Rust tests pass.
 2. **SQLite natively.** The `Sql` trait, `rusqlite`, the schema, the import from files. Check: on a copy of the desktop
    app's data and of test_out converted to the app's layout, every review's report and the API's answers equal the
-   file backend's.
+   file backend's. Done: `Database` (service/src/database.rs) over `Sql` (service/src/sql.rs, rusqlite natively), on
+   for the app's layout natively (`Config.database`); the review server keeps Python's layout and its files. Checked
+   with `scripts/storage_check.py backends`: test_out converted to the app's layout twice, every reviewed recording's
+   report and tracks and the check's questions answered the same by both stores; the database's unit tests compare
+   it with `Files` on a small data folder.
 3. **SQLite in the browser.** `host_sql`, SQLite's build in the worker, the tab lock, the import from OPFS files and
    IndexedDB. Check: the browser mode's specs, and a review made and reopened in Chrome, the same report as natively.
 4. **The data panel** and **the export zip**, on the interface.

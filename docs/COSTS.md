@@ -31,6 +31,8 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode browser | 6 s | 6.0 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 3.7 s | 4.2 s | 4 | 2026-10-07, 78c5844+ |
+| rust-tests | profile quick | 13.5 s | 13.5 s | 1 | 2026-10-07, 75e908f+ |
+| storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
 <!-- costs:end -->
 
 ## Recorded by hand

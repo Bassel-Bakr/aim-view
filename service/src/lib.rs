@@ -9,8 +9,8 @@
 //! detector crops and their answers (the Crops page). mouse.rs: the mouse logs' measures.
 //! review.rs, detector.rs, video.rs, ffmpeg.rs, gpu_frames.rs: the native review. report.rs: the report the core works
 //! out. run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them. ytdlp.rs: yt-dlp, for
-//! recordings added from a link. store.rs: where the library keeps what it keeps. disk.rs: the file system and the
-//! clock.
+//! recordings added from a link. store.rs: where the library keeps what it keeps, as files or in database.rs's SQLite
+//! database (sql.rs: its statements). disk.rs: the file system and the clock.
 //!
 //! The `native` feature (on by default) builds what needs this computer: ONNX Runtime, ffmpeg, yt-dlp, threads and the
 //! time zone. Without it the service is built for the browser (browser-service/, WebAssembly): its files are the
@@ -20,6 +20,7 @@ pub mod api;
 pub mod areas;
 pub mod config;
 pub mod crops;
+pub mod database;
 #[cfg(feature = "native")]
 pub mod detector;
 pub mod disk;
@@ -35,6 +36,7 @@ pub mod pyjson;
 pub mod report;
 pub mod review;
 pub mod run_window;
+pub mod sql;
 pub mod store;
 #[cfg(feature = "native")]
 pub mod video;

@@ -11,7 +11,7 @@
 //! (faint.rs), labelling (labels.rs) and the mouse logs' measures (mouse.rs) are kept beside it.
 //!
 //! In: the library's `Config` and the API's requests (api.rs). Out: the answers, and what the library keeps
-//! (store.rs: today the files in the data folder).
+//! (store.rs: the data folder's files, or its database).
 
 #[cfg(not(feature = "native"))]
 mod browser;
@@ -129,6 +129,18 @@ pub(crate) fn keep_json(store: &dyn Store, item: Item<'_>, value: &impl Serializ
     store.write(item, &bytes).map_err(|error| error.to_string().into())
 }
 
+/// Where the library keeps what it keeps: the database when `config` asks for one (natively), else the files.
+fn open_store(config: &Config, folders: &Folders) -> Result<Arc<dyn Store>, String> {
+    #[cfg(feature = "native")]
+    if config.database {
+        let database = crate::database::Database::open_file(&config.data, folders);
+        return Ok(Arc::new(database.map_err(|error| format!("the data folder's database: {error}"))?));
+    }
+    #[cfg(not(feature = "native"))]
+    let _ = config;
+    Ok(Arc::new(Files::new(folders.clone())))
+}
+
 impl Library {
     /// The library `config` describes, with ffmpeg taken from where it says (for the whole process). Area examples kept
     /// before area kinds had ids are given ids (python/retired/server.py did it at its start); when they cannot be read
@@ -139,7 +151,7 @@ impl Library {
         crate::disk::create_dir_all(&folders.files).map_err(|error| format!("{}: {error}", folders.files.display()))?;
         #[cfg(feature = "native")]
         crate::ffmpeg::set_source(config.ffmpeg.clone());
-        let store: Arc<dyn Store> = Arc::new(Files::new(folders.clone()));
+        let store = open_store(&config, &folders)?;
         let settings = Settings::read(&*store);
         let library = Arc::new(Library {
             config,

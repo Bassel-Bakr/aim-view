@@ -8,10 +8,16 @@ no review, so no review is made again.
 Folders come from aimview.defaults.json and aimview.json (python/local_config.py); the desktop app's data folder is
 its identifier (desktop/tauri.conf.json) in the roaming app data. The runs go in test_out/storage_check/<name>/.
 
+The backends check compares the two stores of one build instead (step 2): test_out's app data is copied twice into
+the app's layout, one copy kept as files (--files) and one in the data folder's database, which imports the files on
+its first opening (its copy's files are then moved aside, so only the database answers); both are asked the
+questions above and every reviewed recording's report and tracks, and their answers must be the same.
+
 Usage: python scripts/storage_check.py <name> <api exe>
            (the exe: cargo build --profile quick -p aimview-service --example api, then copy
            target/quick/examples/api.exe aside per build)
        python scripts/storage_check.py compare <name a> <name b>
+       python scripts/storage_check.py backends <name> <api exe>
 """
 import glob
 import hashlib
@@ -179,6 +185,79 @@ def compare(a, b):
     return same
 
 
+# the library's own files in Python's vod_app/, which the app's layout keeps at the data folder's top
+LIBRARY_FILES = ("settings.json", "area_kinds.json", "area_examples.jsonl", "exclude_uploads.json",
+                 "not_aim_trainer.json", "label_skipped.json", "faint_skipped.json")
+# the GET routes asked about every reviewed recording in the backends check
+EVERY_REVIEW = ("report", "tracks", "run", "stats", "exclude", "faint")
+
+
+def app_copy(target):
+    """test_out's app data copied to `target` in the app's layout (config.rs: Layout::App): the library's files at
+    the top, each recording's folder in reviews/, and uploads/, mouse/ and cutoff/."""
+    app = DATA / "vod_app"
+    target.mkdir(parents=True)
+    for name in LIBRARY_FILES:
+        if (app / name).is_file():
+            shutil.copy2(app / name, target / name)
+    for folder in app.iterdir():
+        if folder.is_dir():
+            shutil.copytree(folder, target / "reviews" / folder.name)
+    for source, part in (("vod_uploads", "uploads"), ("mouse", "mouse"), ("vod_model/hand/cutoff", "cutoff")):
+        shutil.copytree(DATA / source, target / part)
+
+
+def ask(exe, data, lines, asked, files):
+    """The build `exe`'s answers to `lines` on the app-layout data folder `data` (kept as files when `files`), the
+    lines written to `asked`; returns the answer lines and the error output."""
+    asked.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    args = [exe, str(data), str(MODELS), str(asked), "--layout", "app", "--stats", str(STATS), "--vods", str(VODS)]
+    answers = subprocess.run(args + (["--files"] if files else []), capture_output=True, text=True, encoding="utf-8",
+                             check=False)
+    return answers.stdout.splitlines(), answers.stderr
+
+
+def backends(name, exe):
+    """The two stores of the build `exe` on two copies of test_out's app data (see the module's comment): prints
+    whether their answers are the same, and each differing answer's first characters."""
+    out, exe = CHECKS / name, str(Path(exe).resolve())
+    if out.exists():
+        shutil.rmtree(out)
+    stores = ("files", "database")
+    for store in stores:
+        app_copy(out / store)
+    (out / "day.txt").write_text(time.strftime("%Y.%m.%d"), encoding="utf-8")
+    listed = {store: ask(exe, out / store, ["GET /api/vods"], out / f"{store}_list.txt", store == "files")[0]
+              for store in stores}
+    # the database has imported its copy's files; moved aside, they cannot answer in its place
+    imported = out / "database"
+    for name in [*LIBRARY_FILES, "reviews", "cutoff"]:
+        if (imported / name).exists():
+            (imported / name).rename(imported / f"{name}.imported")
+    ids = [row["id"] for row in json.loads(listed["files"][-1])["body"] if row.get("analysed")]
+    saved = json.loads((DATA / "vod_app" / cutoff_slug() / "exclude.json").read_text(encoding="utf-8"))
+    lines = requests([WITH_CUTOFF, TWO_MODELS, OLD_ONLY, UPLOAD, UPLOAD_PLAIN], saved)
+    lines += [f"GET /api/{path}?id={q(video_id)}" for video_id in ids for path in EVERY_REVIEW]
+    answers = {}
+    for store in stores:
+        started = time.time()
+        got, errors = ask(exe, out / store, lines, out / f"{store}_requests.txt", store == "files")
+        answers[store] = listed[store] + got
+        (out / f"{store}_answers.jsonl").write_text("\n".join(answers[store]) + "\n", encoding="utf-8")
+        (out / f"{store}_stderr.txt").write_text(errors, encoding="utf-8")
+        print(store, "answers", len(answers[store]), f"in {time.time() - started:.1f} s")
+    days = {time.strftime("%Y.%m.%d")}
+    left, right = ([steady(line, days) for line in answers[store]] for store in stores)
+    diff = [i for i in range(max(len(left), len(right))) if left[i:i + 1] != right[i:i + 1]]
+    print(len(ids), "reviewed recordings,", len(lines), "requests")
+    for i in diff[:10]:
+        print("answer", i, "differs")
+        print("  files:   ", str(left[i] if i < len(left) else "")[:300])
+        print("  database:", str(right[i] if i < len(right) else "")[:300])
+    print("SAME" if not diff else f"DIFFERENT: {len(diff)} answers")
+    return not diff
+
+
 def cutoff_slug():
     """The cut-off's recording's folder name (library/names.rs: slug)."""
     out, gap = [], False
@@ -195,4 +274,6 @@ def cutoff_slug():
 if __name__ == "__main__":
     if sys.argv[1] == "compare":
         sys.exit(0 if compare(sys.argv[2], sys.argv[3]) else 1)
+    if sys.argv[1] == "backends":
+        sys.exit(0 if backends(sys.argv[2], sys.argv[3]) else 1)
     run(sys.argv[1], sys.argv[2])

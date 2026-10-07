@@ -253,7 +253,7 @@ impl Library {
         let not_aim = self.not_aim();
         // the recordings with a folder in the data folder: only they can have a review or a chosen stats file, so the
         // others need no look at the disk (in the browser each look waits on the page)
-        let kept: HashSet<String> = if quick { HashSet::new() } else { self.kept_folders() };
+        let kept: HashSet<String> = if quick { HashSet::new() } else { self.store().kept() };
         let mut rows: Vec<Value> = Vec::new();
         if let Some(vods) = self.vods() {
             for folder in crate::disk::read_dir(&vods).into_iter().flatten().flatten() {
@@ -276,16 +276,6 @@ impl Library {
         }
         sort_rows(&mut rows, quick);
         Ok(Value::Array(rows))
-    }
-
-    /// The names of the recordings' folders in the data folder.
-    fn kept_folders(&self) -> HashSet<String> {
-        crate::disk::read_dir(&self.folders.recordings)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .collect()
     }
 
     /// The row of a file in the VODs folder's `folder` (None when it is not named as KovOBS names a recording): from

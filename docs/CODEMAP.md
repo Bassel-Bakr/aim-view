@@ -96,6 +96,8 @@ rust-analyzer's call hierarchy.
   (python/model/crop_check/make_page.py writes each: its crops.json, sets.json and crops/<id>.png), the user's answer to
   each crop (answers/checks/<id>.json, the file the claude.ai check pages' answers were saved to), and the answers moved
   between modes as one document (browser mode exports it, the review server imports it).
+- `service/src/database.rs`: The store as one SQLite database in the data folder (docs/storage-design.md): what
+  store.rs's `Files` keeps as files, kept as rows instead, the same bytes in and out, so every answer is the same.
 - `service/src/detector.rs`: The detector model on this computer, on the device the configuration says (config.rs:
   `Device`): ONNX Runtime with DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature) or on the
   CPU; `Auto` tries the GPU first and falls back to the CPU.
@@ -159,9 +161,12 @@ rust-analyzer's call hierarchy.
   turn and the HUD, and joins the runs.
 - `service/src/run_window.rs`: The user's run window for a recording: where the run starts and ends, kept with the
   recording (store.rs; as python/retired/server.py kept it, run.json in its folder).
+- `service/src/sql.rs`: The SQL the data folder's database runs (database.rs), behind one interface (`Sql`) so its
+  statements are written once (docs/storage-design.md): natively SQLite built into the exe through rusqlite (`Sqlite`),
+  in the browser build SQLite's own WebAssembly in the page.
 - `service/src/store.rs`: What the library keeps, through one interface (`Store`), so where it is kept can change
-  (docs/storage-design.md): today the files in the data folder (`Files`, laid out as config.rs's layout says), later one
-  SQLite database.
+  (docs/storage-design.md): the files in the data folder (`Files`, laid out as config.rs's layout says) or one SQLite
+  database (database.rs).
 - `service/src/video.rs`: A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as
   Python's review decoded them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a
   pipe, so the core converts them to the same bytes.
@@ -928,6 +933,17 @@ desktop app) and test_out/vod_model/check_* in Python's (the review server).
   `import_crop_answers`, `crop_labels`.
 - Constants: `CROP_PX`.
 
+## service/src/database.rs
+
+The store as one SQLite database in the data folder (docs/storage-design.md): what store.rs's `Files` keeps as files,
+kept as rows instead, the same bytes in and out, so every answer is the same. The reviews' parts are kept
+gzip-compressed. On its first opening it imports what the data folder's files hold, in one transaction, and leaves the
+files where they are. The SQL runs through sql.rs, natively SQLite through rusqlite. In: the library's items and their
+bytes, and on first opening the data folder's files. Out: the same bytes, and what is kept for each recording.
+
+- `Database` (struct): The store as one SQLite database (see the module's comment). Methods: `open_file`, `open`.
+- Constants: `DATABASE_FILE`.
+
 ## service/src/detector.rs
 
 The detector model on this computer, on the device the configuration says (config.rs: `Device`): ONNX Runtime with
@@ -1169,14 +1185,25 @@ report measures within (report.rs).
 - `RunMarks` (struct): The marks in seconds, any of them None. Methods: `read`, `is_set`, `parse`, `save`, `tracked`.
 - Functions: `covers`.
 
+## service/src/sql.rs
+
+The SQL the data folder's database runs (database.rs), behind one interface (`Sql`) so its statements are written once
+(docs/storage-design.md): natively SQLite built into the exe through rusqlite (`Sqlite`), in the browser build SQLite's
+own WebAssembly in the page. In: a statement and its values. Out: the rows it gives, as values.
+
+- `SqlValue` (enum): A value a statement takes or a row gives (SQLite's five kinds).
+- `Sql` (trait): One connection to a database: one caller at a time (database.rs holds it behind a mutex).
+- `Sqlite` (struct): A database file through rusqlite, in WAL mode: readers don't wait on a writer, and a crash
+  mid-write loses nothing committed. Methods: `open`.
+
 ## service/src/store.rs
 
-What the library keeps, through one interface (`Store`), so where it is kept can change (docs/storage-design.md): today
-the files in the data folder (`Files`, laid out as config.rs's layout says), later one SQLite database. The library
-formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes it is given
-and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and the
-crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same bytes, and what is kept
-for each recording.
+What the library keeps, through one interface (`Store`), so where it is kept can change (docs/storage-design.md): the
+files in the data folder (`Files`, laid out as config.rs's layout says) or one SQLite database (database.rs). The
+library formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes it
+is given and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and
+the crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same bytes, and what is
+kept for each recording.
 
 - `IdList` (enum): A list of recording ids the user marked.
 - `Mark` (enum): What is kept for a recording beside its reviews. Methods: `file_name`.
@@ -1498,10 +1525,11 @@ scripts/same-json.ts <before> <after> [path=name ...]` (docs/BENCH.md, Correctne
 The API without a window or a server: requests answered by `api::handle` on a library in a data folder, each answer
 printed as a line of JSON ({"status": ..., "body": ...}), to check the answers against python/retired/server.py's on
 copies of its data. cargo run -p aimview-service --example api -- <data folder> <models folder> <requests file>
-[--layout app|python] [--vods <folder>] [--stats <KovaaK's stats folder>] The app's layout (the default) reads the VODs
-folder from the data folder's settings.json; Python's layout takes test_out/ as the data folder and the VODs folder from
---vods. Each line of the requests file: METHOD PATH (with its query), then a tab and the body when there is one; or POLL
-PATH KEYS: the GET asked again (for up to 10 minutes) until one of its answer's KEYS (a|b) is not null; or SLEEP
+[--layout app|python] [--vods <folder>] [--stats <KovaaK's stats folder>] [--files] The app's layout (the default) reads
+the VODs folder from the data folder's settings.json; Python's layout takes test_out/ as the data folder and the VODs
+folder from --vods. The app's layout keeps what it keeps in the data folder's database; --files keeps it in files
+instead. Each line of the requests file: METHOD PATH (with its query), then a tab and the body when there is one; or
+POLL PATH KEYS: the GET asked again (for up to 10 minutes) until one of its answer's KEYS (a|b) is not null; or SLEEP
 SECONDS: a wait, for work the library does in the background (the area finder learning).
 
 ## service/examples/detector_speed.rs

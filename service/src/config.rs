@@ -12,6 +12,9 @@ pub struct Config {
     pub data: PathBuf,
     /// How the library's files are laid out in the data folder.
     pub layout: Layout,
+    /// Keep what the library keeps in one SQLite database in the data folder (database.rs), filled from the data
+    /// folder's files the first time; else in those files (store.rs: `Files`). On for the app's layout natively.
+    pub database: bool,
     /// The VODs folder: OBS's recordings, one folder per scenario. None: the folder the user chose in the app
     /// (settings.json), if any.
     pub vods: Option<PathBuf>,
@@ -191,6 +194,7 @@ impl Config {
         Config {
             data,
             layout,
+            database: layout == Layout::App && cfg!(feature = "native"),
             vods: None,
             stats,
             scenarios,
