@@ -13,11 +13,17 @@ publish = false
 members = ["browser-service", "desktop", "service", "server"]
 exclude = ["python/model/rust", "prototypes/gpu_decode"]
 
+[workspace.lints.rust]
+# AGENTS.md, "Readable code": every public item has a doc comment
+missing_docs = "warn"
+
 [workspace.lints.clippy]
 # AGENTS.md, "Readable code": warnings, which the refactor clears file by file; new code adds none (limits: clippy.toml)
 min_ident_chars = "warn"
 too_many_lines = "warn"
 cognitive_complexity = "warn"
+# every private item too: functions, methods, types, traits, fields, enum variants, constants and modules
+missing_docs_in_private_items = "warn"
 
 [lints]
 workspace = true
