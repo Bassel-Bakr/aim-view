@@ -1,3 +1,12 @@
+/**
+ * The shapes of "The run at a glance" for a clicking run: nine SVG charts, all in one box.
+ *
+ * In: the clicking report (its flicks, their parts and paths, the summary's target radius) and
+ * the kill parts' colors (report/budget.ts `PARTS`).
+ * Out: bars, dots, lines, wedges and ticks in the box's units, which run-charts.html draws; the
+ * box and the axis helpers the track charts and the flick profile share.
+ */
+
 import { ClickReport, Direction, Flick } from '../../api';
 import { DIRECTION_ARROWS, formatMs, formatPercent } from '../../format';
 import { PARTS } from '../report/budget';
@@ -7,42 +16,63 @@ import { speeds } from '../speed';
 
 /** A chart's drawing box, in its own units (the SVG's viewBox), and the plot inside its margins. */
 export interface ChartBox {
+  /** The viewBox's width. */
   width: number;
+  /** The viewBox's height. */
   height: number;
+  /** The margin left of the plot, where the values' labels go. */
   left: number;
+  /** The margin right of the plot. */
   right: number;
+  /** The margin above the plot. */
   top: number;
+  /** The margin below the plot, where the labels along it go. */
   bottom: number;
 }
 
 /** A labelled place on an axis, in the chart's units. */
 export interface AxisTick {
+  /** The place along the axis, in the chart's units. */
   at: number;
+  /** The tick's text. */
   label: string;
 }
 
 /** One part of a kill's bar. */
 export interface BarSegment {
+  /** The part's top, in the chart's units. */
   y: number;
+  /** The part's height, in the chart's units. */
   height: number;
+  /** The part's CSS color: its kill step's series token. */
   color: string;
 }
 
 /** A kill's bar: its place, its parts from the bottom up, and what it says on hover. */
 export interface KillBar {
+  /** The kill: a click on the bar plays it. */
   flick: Flick;
+  /** The bar's left edge, in the chart's units. */
   x: number;
+  /** The bar's width, in the chart's units. */
   width: number;
+  /** The bar's top, in the chart's units. */
   top: number;
+  /** The bar's parts. */
   segments: BarSegment[];
+  /** The kill's number, TTK and parts in words, on hover. */
   title: string;
 }
 
 /** Every kill's time through the run, each in its five parts, and the run's median. */
 export interface KillTimesModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One bar for each kill, in the run's order. */
   bars: KillBar[];
+  /** The kill numbers. */
   xTicks: AxisTick[];
+  /** The TTK, in milliseconds. */
   yTicks: AxisTick[];
   /** The median kill's height, and its label. */
   median: AxisTick | null;
@@ -50,41 +80,61 @@ export interface KillTimesModel {
 
 /** A kill as a dot. */
 export interface ChartDot {
+  /** The kill: a click on the dot plays it. */
   flick: Flick;
+  /** The dot's place across, in the chart's units. */
   x: number;
+  /** The dot's place down, in the chart's units. */
   y: number;
+  /** The kill and its numbers in words, on hover. */
   title: string;
 }
 
-/** Each kill's time against its distance, with the time Fitts' law fitted to the run gives for each distance. */
+/**
+ * Each kill's time against its distance, with the time Fitts' law fitted to the run gives for each
+ * distance.
+ */
 export interface FittsModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One dot for each kill. */
   dots: ChartDot[];
+  /** The fitted curve, as an SVG path. */
   curve: string;
+  /** The distance, in degrees. */
   xTicks: AxisTick[];
+  /** The TTK, in milliseconds. */
   yTicks: AxisTick[];
 }
 
 /** A click on the target: a kill that took more than one shot is marked. */
 export interface ClickDot extends ChartDot {
+  /** The kill took more than one shot. */
   missed: boolean;
 }
 
 /** A point in the chart's units. */
 export interface ChartPoint {
+  /** Across, from the viewBox's left. */
   x: number;
+  /** Down, from the viewBox's top. */
   y: number;
 }
 
 /**
- * Where each click landed on its target, turned so every flick comes from the left: left of the center is short,
- * right is past. The target's edge, its center, and the clicks' average.
+ * Where each click landed on its target, turned so every flick comes from the left: left of the
+ * center is short, right is past. The target's edge, its center, and the clicks' average.
  */
 export interface ClickGroupModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** The target's center, in the middle of the plot. */
   center: ChartPoint;
+  /** The target's radius, in the chart's units. */
   radius: number;
+  /** One dot for each click whose place is known. */
   dots: ClickDot[];
+  /** The clicks' average place; null with none. */
   average: ChartPoint | null;
   /** How many degrees the scale bar is, and its length. */
   scale: AxisTick;
@@ -95,41 +145,57 @@ export type TimedSpeed = [seconds: number, speed: number];
 
 /** A flick's speed curve. */
 export interface SpeedLine {
+  /** The kill the flick led to. */
   flick: Flick;
+  /** The curve, as an SVG path. */
   path: string;
 }
 
 /** Every flick's speed, lined up at the end of its main flick, and their median. */
 export interface SpeedsModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One curve for each flick with a reaction, a main flick and a path. */
   lines: SpeedLine[];
+  /** The median curve, as an SVG path. */
   median: string;
   /** Where the main flick ends: the time every curve is lined up at. */
   zero: number;
+  /** The milliseconds from the end of the main flick. */
   xTicks: AxisTick[];
+  /** The speed, in degrees a second. */
   yTicks: AxisTick[];
 }
 
+/** Every run chart's box: a 520 by 200 viewBox with room for the labels. */
 export const BOX: ChartBox = { width: 520, height: 200, left: 44, right: 12, top: 10, bottom: 24 };
-/** A float's rounding error is below this, so a value this close to a whole step counts as on it. */
+/**
+ * A float's rounding error is below this, so a value this close to a whole step counts as on it.
+ */
 export const ROUNDING_SLACK = 1e-9;
 /** An axis reaches this far past the largest value it shows. */
 const HEADROOM = 1.05;
-/** The time axes reach at least this far (seconds; a flick's own axis less), the distance axes this far (degrees). */
+/** The TTK axes reach at least this far, in seconds. */
 const MIN_TOP_SECONDS = 0.2;
+/** The flick time axis reaches at least this far, in seconds. */
 const MIN_FLICK_SECONDS = 0.1;
+/** The distance axes reach at least this far, in degrees. */
 const MIN_FAR_DEG = 5;
 /** A bar fills this share of its slot. */
 const BAR_FILL = 0.7;
-/** The speeds chart's span around the end of the main flick, in seconds. */
+/** The speeds chart starts this long before the end of the main flick, in seconds. */
 const SPEEDS_BEFORE = 0.3;
+/** The speeds chart ends this long after the end of the main flick, in seconds. */
 const SPEEDS_AFTER = 0.4;
 
+/** The plot's width, inside the box's margins. */
 export const plotWidth = (b: ChartBox) => b.width - b.left - b.right;
+/** The plot's bottom edge, from the box's top. */
 export const plotBottom = (b: ChartBox) => b.height - b.bottom;
+/** The plot's height, inside the box's margins. */
 export const plotHeight = (b: ChartBox) => plotBottom(b) - b.top;
 
-/** A round step for an axis that reaches top, giving about four to six lines. */
+/** A round step (1, 2 or 5 times a power of ten) for an axis that reaches top: 3.5 to 9 steps. */
 export function niceStep(top: number): number {
   const raw = top / 5;
   const power = 10 ** Math.floor(Math.log10(raw));
@@ -137,7 +203,10 @@ export function niceStep(top: number): number {
   return (unit < 1.5 ? 1 : unit < 3.5 ? 2 : unit < 7.5 ? 5 : 10) * power;
 }
 
-/** The ticks from 0 to top, each placed by at() and labelled by label(). */
+/**
+ * The ticks from 0 to top, each placed by at() and labelled by label(), a round step apart (at
+ * least `minStep`).
+ */
 export function ticks(
   top: number,
   at: (v: number) => number,
@@ -151,9 +220,13 @@ export function ticks(
   return out;
 }
 
+/** A time axis's label: seconds as whole milliseconds, no unit. */
 const msLabel = (seconds: number) => String(Math.round(1000 * seconds));
 
-/** The kill numbers under a row of kills: the first kill and every 5th, 10th or 20th, by how many there are. */
+/**
+ * The kill numbers under a row of kills: the first kill and every 5th, 10th or 20th, by how many
+ * there are.
+ */
 function killTicks(kills: KillMark[]): AxisTick[] {
   const every = kills.length > 60 ? 20 : kills.length > 20 ? 10 : 5;
   return kills
@@ -161,7 +234,10 @@ function killTicks(kills: KillMark[]): AxisTick[] {
     .map((kill) => ({ at: kill.x, label: String(kill.flick.kill_number) }));
 }
 
-/** The kills' times, each as a bar of its five parts (a kill whose parts were not found: one grey bar). */
+/**
+ * The kills' times, each as a bar of its five parts (a kill whose parts were not found: one grey
+ * bar).
+ */
 export function killTimes(report: ClickReport): KillTimesModel {
   const box = BOX;
   const flicks = report.flicks;
@@ -237,8 +313,8 @@ export function fittsChart(report: ClickReport): FittsModel {
 }
 
 /**
- * The crosshair's place on the target at each click, turned so the flick comes from the left (along the flick to
- * the right, across it upward), and scaled so the target and nearly every click fit.
+ * The crosshair's place on the target at each click, turned so the flick comes from the left (along
+ * the flick to the right, across it upward), and scaled so the target and nearly every click fit.
  */
 export function clickGroup(report: ClickReport): ClickGroupModel {
   const box = BOX;
@@ -297,7 +373,11 @@ export function clickGroup(report: ClickReport): ClickGroupModel {
   };
 }
 
-/** Each flick's speed (smoothed, as the speed chart's "Smooth" draws it), lined up at the end of its main flick. */
+/**
+ * Each flick's speed (smoothed, as the speed chart's "Smooth" draws it), lined up at the end of its
+ * main flick, from 0.3 s before it to 0.4 s after. The median curve goes where half the curves or
+ * more reach.
+ */
 export function flickSpeeds(report: ClickReport): SpeedsModel {
   const box = BOX;
   const lined = report.flicks
@@ -329,7 +409,8 @@ export function flickSpeeds(report: ClickReport): SpeedsModel {
         ([seconds, speed], i) => `${i ? 'L' : 'M'}${x(seconds).toFixed(1)},${y(speed).toFixed(1)}`,
       )
       .join('');
-  // the median curve: at each frame's time, the median of the curves that reach it (each at its nearest point)
+  // the median curve: at each frame's time, the median of the curves that reach it (each at its
+  // nearest point)
   const step = 1 / report.fps;
   const mid: TimedSpeed[] = [];
   for (let seconds = -SPEEDS_BEFORE; seconds <= SPEEDS_AFTER + ROUNDING_SLACK; seconds += step) {
@@ -353,8 +434,8 @@ export function flickSpeeds(report: ClickReport): SpeedsModel {
 }
 
 /**
- * Every word the charts below use for a kill's parts and a flick's landing, in one place. Micro is the time budget's
- * "onto the target" and "settle" together.
+ * Every word the charts below use for a kill's parts and a flick's landing, in one place. Micro is
+ * the time budget's "onto the target" and "settle" together.
  */
 export const CHART_WORDS = {
   reaction: 'Reaction',
@@ -369,9 +450,14 @@ export const CHART_WORDS = {
   flickSpeed: 'Flick speed',
 };
 
-/** A part of a kill as the charts below draw it: its name, its color, and the budget's parts it adds up. */
+/**
+ * A part of a kill as the charts below draw it: its name, its color, and the budget's parts it adds
+ * up.
+ */
 export interface KillStep {
+  /** The part's name (CHART_WORDS). */
   label: string;
+  /** The part's CSS color: the budget's series token. */
   color: string;
   /** Indexes into the kill's KillParts. */
   parts: number[];
@@ -387,17 +473,25 @@ export const KILL_STEPS: KillStep[] = [
 
 /** A part in a legend: its name and color, and its share of the run's time. */
 export interface StepLegend {
+  /** The part's name. */
   label: string;
+  /** The part's CSS color. */
   color: string;
+  /** The part's share of the kills' time, over the kills whose parts were found. */
   share: string;
 }
 
 /** Every kill's time as shares of its four parts, in the order of the run. */
 export interface KillSharesModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One full-height bar for each kill whose parts were found. */
   bars: KillBar[];
+  /** The kill numbers. */
   xTicks: AxisTick[];
+  /** The share of the kill's time, 0% to 100%. */
   yTicks: AxisTick[];
+  /** The four parts and their shares of the run's time. */
   legend: StepLegend[];
 }
 
@@ -406,112 +500,171 @@ export type Landing = 'under' | 'on' | 'over';
 
 /** A flick in the landing histogram: one block in its column. */
 export interface LandingCell {
+  /** The kill the flick led to: a click on the block plays it. */
   flick: Flick;
+  /** The block's left edge, in the chart's units. */
   x: number;
+  /** The block's top, in the chart's units. */
   y: number;
+  /** The block's width, in the chart's units. */
   width: number;
+  /** The block's height, in the chart's units. */
   height: number;
+  /** Where the flick ended, for the block's color. */
   landing: Landing;
+  /** The kill and where its flick ended in words, on hover. */
   title: string;
 }
 
 /** A stretch along an axis. */
 export interface ChartSpan {
+  /** Where the stretch starts. */
   from: number;
+  /** Where it ends. */
   to: number;
 }
 
 /** Where each flick ended against the target's center, every flick turned to come from the left. */
 export interface LandingModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One block for each flick whose end was measured. */
   cells: LandingCell[];
+  /** The degrees from the target's center, signed. */
   xTicks: AxisTick[];
+  /** The flick counts. */
   yTicks: AxisTick[];
+  /** The target's center, across. */
   zero: number;
   /** The target's edges: a flick that ends between them ends on the target. */
   target: ChartSpan;
+  /** The median end, across, and its label; null with no flicks. */
   median: AxisTick | null;
 }
 
 /** Each flick's time against its distance, and Fitts' law fitted to the flicks. */
 export interface FlickTimesModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One dot for each flick with a main flick and a distance. */
   dots: ChartDot[];
   /** The fitted line; empty with too few flicks. */
   curve: string;
   /** The fit's numbers, in words; null with too few flicks. */
   fit: string | null;
+  /** The distance, in degrees. */
   xTicks: AxisTick[];
+  /** The flick time, in milliseconds. */
   yTicks: AxisTick[];
 }
 
 /** The direction a wedge stands out for. */
 export type WheelMark = 'best' | 'weakest';
 
-/** One of the eight directions: its wedge (empty with too few flicks), its arrow's place, and its speed. */
+/**
+ * One of the eight directions: its wedge (empty with too few flicks), its arrow's place, and its
+ * speed.
+ */
 export interface DirectionWedge {
+  /** The direction's name. */
   name: Direction;
+  /** The direction's arrow. */
   arrow: string;
+  /** The wedge, as an SVG path; '' with too few flicks. */
   path: string;
+  /** Where the arrow goes, past the wedges' reach. */
   label: ChartPoint;
+  /** How many flicks went this way (in distance groups with a median). */
   flicks: number;
   /** The median flick speed toward it, against the run's median for the distance (1: the same). */
   speed: number | null;
   /** The speed in words: "1.12×". */
   value: string;
+  /** Whether it is the best or the weakest direction; null for the others. */
   mark: WheelMark | null;
+  /** The direction, its flicks and its speed in words, on hover. */
   title: string;
 }
 
-/** Flick speed in each of the eight directions, as wedges around a center; the ring is the run's median speed. */
+/**
+ * Flick speed in each of the eight directions, as wedges around a center; the ring is the run's
+ * median speed.
+ */
 export interface DirectionWheelModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** The wheel's center, the box's middle. */
   center: ChartPoint;
   /** The ring's radius: a speed of 1, the run's median for the distance. */
   ring: number;
+  /** The wedges' longest reach, in the chart's units: the scale's top speed. */
   outer: number;
+  /** One wedge for each direction, right first, then counterclockwise. */
   wedges: DirectionWedge[];
+  /** The fastest direction; null when fewer than two have a speed. */
   best: DirectionWedge | null;
+  /** The slowest direction; null when fewer than two have a speed. */
   weakest: DirectionWedge | null;
 }
 
 /** The best 10 s of the run: its stretch, the line's point there, and its label. */
 export interface PaceWindow {
+  /** The stretch's left edge, in the chart's units. */
   x: number;
+  /** The stretch's width, in the chart's units. */
   width: number;
+  /** The line's point for the stretch. */
   peak: ChartPoint;
+  /** "best 10 s: 12 kills". */
   label: string;
 }
 
 /** A kill's place on the run's time line. */
 export interface KillMark {
+  /** The kill. */
   flick: Flick;
+  /** Its place across, in the chart's units. */
   x: number;
 }
 
 /** The kills in each 10 s of the run, its best 10 s, and the run's own rate. */
 export interface PaceModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** The kills in each window, at its middle, as an SVG path. */
   line: string;
+  /** The best window; null when the run is shorter than a window. */
   best: PaceWindow | null;
+  /** The run's own kills in 10 s, as a line; null when the run is shorter than a window. */
   average: AxisTick | null;
+  /** Each kill's mark along the bottom. */
   kills: KillMark[];
+  /** The seconds from the run's first flick. */
   xTicks: AxisTick[];
+  /** The kill counts. */
   yTicks: AxisTick[];
 }
 
 /** A 10 s window of the run: its start (seconds into the video) and the kills in it. */
 interface PaceCount {
+  /** The window's start, in seconds into the video. */
   start: number;
+  /** The kills after its start, up to its end. */
   kills: number;
 }
 
-/** The landing histogram's span takes in this share of the flicks; the rest go in its end columns. */
+/**
+ * The landing histogram's span takes in this share of the flicks; the rest go in its end columns.
+ */
 const LANDING_SHOWN = 0.98;
-/** The direction wheel: each wedge's half width (degrees), and the room left for the arrows around it. */
+/** The direction wheel's wedges are this many degrees either side of their direction. */
 const WEDGE_HALF = 20;
+/** The room left round the wheel for the arrows, in the chart's units. */
 const WHEEL_LABEL_ROOM = 20;
-/** The distance groups the direction wheel compares speeds within (degrees; src/summary.rs DISTANCES). */
+/**
+ * The distance groups the direction wheel compares speeds within (degrees; src/summary.rs
+ * DISTANCES).
+ */
 const DISTANCE_GROUPS: ChartSpan[] = [
   { from: 0, to: 5 },
   { from: 5, to: 10 },
@@ -519,34 +672,44 @@ const DISTANCE_GROUPS: ChartSpan[] = [
   { from: 15, to: 25 },
   { from: 25, to: 90 },
 ];
+/** The eight directions, in the order of `sector`: right first, then counterclockwise. */
 const DIRECTIONS = Object.keys(DIRECTION_ARROWS) as Direction[];
 /** Each of the eight directions spans this many degrees. */
 const SECTOR_DEG = 45;
-/** A distance group gives a median from this many flicks; a direction needs this many and this share of them. */
+/** A distance group gives a median from this many flicks. */
 const MIN_GROUP_FLICKS = 3;
+/** A direction needs at least this many flicks for a speed. */
 const MIN_DIRECTION_FLICKS = 3;
+/** A direction needs at least this share of the flicks compared for a speed. */
 const MIN_DIRECTION_SHARE = 0.05;
 /** The wheel's scale reaches at least this speed (25% above the run's median). */
 const WHEEL_MIN_TOP = 1.25;
 /** The pace chart's window, in seconds. */
 const PACE_WINDOW = 10;
 
+/** A share as a whole percent, "25%". */
 const percentLabel = (share: number) => `${Math.round(100 * share)}%`;
+/** A number with its sign and `digits` decimals, "+0.25"; a rounding error reads as 0. */
 const signed = (value: number, digits: number) =>
   `${value > 0 ? '+' : ''}${(Math.abs(value) < ROUNDING_SLACK ? 0 : value).toFixed(digits)}`;
 /** A flick with its main flick's time (null without a main flick). */
 interface TimedFlick extends Flick {
+  /** The main flick's time, in seconds. */
   flick: number;
 }
 
 /** A flick with its reaction's and its main flick's time. */
 interface ReactedFlick extends TimedFlick {
+  /** The reaction's time, in seconds. */
   react: number;
 }
 
+/** Whether a kill has a main flick that took time. */
 const timedFlick = (kill: Flick): kill is TimedFlick => kill.flick != null && kill.flick > 0;
 
-/** Each kill's time as shares of its four parts (a kill whose parts were not found leaves a gap). */
+/**
+ * Each kill's time as shares of its four parts (a kill whose parts were not found leaves a gap).
+ */
 export function killShares(report: ClickReport): KillSharesModel {
   const box = BOX;
   const flicks = report.flicks;
@@ -604,6 +767,7 @@ function landingOf(kill: Flick, radius: number): Landing {
   return kill.end_left < -radius ? 'over' : 'on';
 }
 
+/** Where a flick's main movement ended, in words, with its degrees from the target's center. */
 function landingWords(kill: Flick, landing: Landing): string {
   if (landing === 'under') {
     return `${CHART_WORDS.underflick}, ${kill.end_left.toFixed(2)}° short of the center`;
@@ -614,7 +778,10 @@ function landingWords(kill: Flick, landing: Landing): string {
   return `${CHART_WORDS.onTarget}, ${signed(-kill.end_left, 2)}° from the center`;
 }
 
-/** The landing chart's degrees: round steps from edge to edge, signed, with as many decimals as the step needs. */
+/**
+ * The landing chart's degrees: round steps from edge to edge, signed, with as many decimals as the
+ * step needs.
+ */
 function landingTicks(edge: number, x: (deg: number) => number): AxisTick[] {
   const tick = niceStep(2 * edge);
   const digits = Math.max(0, -Math.floor(Math.log10(tick) + ROUNDING_SLACK));
@@ -628,9 +795,9 @@ function landingTicks(edge: number, x: (deg: number) => number): AxisTick[] {
 }
 
 /**
- * Where each flick's main movement ended, in degrees from the target's center along the flick (end_left turned
- * around: below 0 short of the center, above 0 past it), each flick a block in its column. Beyond the target's edge
- * it is an underflick or an overflick.
+ * Where each flick's main movement ended, in degrees from the target's center along the flick
+ * (end_left turned around: below 0 short of the center, above 0 past it), each flick a block in its
+ * column. Beyond the target's edge it is an underflick or an overflick.
  */
 export function landings(report: ClickReport): LandingModel {
   const box = BOX;
@@ -683,8 +850,9 @@ export function landings(report: ClickReport): LandingModel {
 }
 
 /**
- * Fitts' law (time = a + b log2(1 + D / W), W the target's width) fitted by least squares to each flick's time
- * against its distance at the start; null with fewer than 3 flicks or a single distance.
+ * Fitts' law (time = a + b log2(1 + D / W), W the target's width) fitted by least squares to each
+ * flick's time against its distance at the start; null with fewer than 3 flicks or a single
+ * distance. `radius` is the target's, in degrees.
  */
 export function fitFlickTimes(flicks: Flick[], radius: number): Fitts | null {
   const widthDeg = 2 * radius;
@@ -736,14 +904,18 @@ export function flickTimes(report: ClickReport): FlickTimesModel {
   };
 }
 
-/** The direction (0 right, 90 up) as one of the eight: 0 for right, round to 7 for down-right. */
+/**
+ * A direction in degrees (0 right, 90 up) as the nearest of the eight: 0 for right, round to 7 for
+ * down-right.
+ */
 export function sector(directionDeg: number): number {
   return Math.round((((directionDeg % 360) + 360) % 360) / SECTOR_DEG) % DIRECTIONS.length;
 }
 
 /**
- * For each of the eight directions, each flick's speed toward it (the way it covered over its time) against the
- * median speed of its distance group. A group needs MIN_GROUP_FLICKS flicks to give a median.
+ * For each of the eight directions, each flick's speed toward it (the way it covered over its time)
+ * against the median speed of its distance group. A group needs MIN_GROUP_FLICKS flicks to give a
+ * median.
  */
 function relativeSpeeds(report: ClickReport): number[][] {
   const byDirection: number[][] = DIRECTIONS.map(() => []);
@@ -767,7 +939,10 @@ function relativeSpeeds(report: ClickReport): number[][] {
   return byDirection;
 }
 
-/** The direction whose speed wins by better(), among those with a speed; null when fewer than two have one. */
+/**
+ * The direction whose speed wins by better(), among those with a speed; null when fewer than two
+ * have one.
+ */
 function pickDirection(
   speeds: (number | null)[],
   better: (a: number, b: number) => boolean,
@@ -779,14 +954,22 @@ function pickDirection(
   );
 }
 
-/** The wheel's center, the room its wedges reach to (the arrows sit past it), and the speed at that room's edge. */
+/**
+ * The wheel's center, the room its wedges reach to (the arrows sit past it), and the speed at that
+ * room's edge.
+ */
 interface WheelLayout {
+  /** The wheel's center. */
   center: ChartPoint;
+  /** The wedges' longest reach, in the chart's units. */
   outer: number;
+  /** The speed a wedge of `outer` length stands for. */
   top: number;
 }
 
-/** A point on the wheel at an angle (degrees, 0 right, 90 up) and a radius, as an SVG path's "x,y". */
+/**
+ * A point on the wheel at an angle (degrees, 0 right, 90 up) and a radius, as an SVG path's "x,y".
+ */
 function wheelPoint(center: ChartPoint, angleDeg: number, radius: number): string {
   const angleRad = (angleDeg * Math.PI) / 180;
   const x = center.x + radius * Math.cos(angleRad);
@@ -832,16 +1015,18 @@ function wedge(
   };
 }
 
+/** A direction's mark: best, weakest, or null for the others (indexes into DIRECTIONS). */
 function markOf(direction: number, best: number | null, weakest: number | null): WheelMark | null {
   if (direction === best) return 'best';
   return direction === weakest ? 'weakest' : null;
 }
 
 /**
- * Flick speed toward each of the eight directions, as the what-if line "Flick every direction like your best one"
- * takes it: each flick's speed (the way it covered over its time) against the median of its distance group (groups
- * of 3 or more), and the median of those for each direction. A direction needs 3 flicks and 5% of them; the best
- * and weakest are marked when two or more have enough.
+ * Flick speed toward each of the eight directions, as the what-if line "Flick every direction like
+ * your best one" takes it: each flick's speed (the way it covered over its time) against the median
+ * of its distance group (groups of 3 or more), and the median of those for each direction. A
+ * direction needs 3 flicks and 5% of them; the best and weakest are marked when two or more have
+ * enough.
  */
 export function directionWheel(report: ClickReport): DirectionWheelModel {
   const box = BOX;
@@ -878,10 +1063,10 @@ export function directionWheel(report: ClickReport): DirectionWheelModel {
 }
 
 /**
- * The kills in each 10 s of the run, as the what-if line "Keep up your best 10 seconds all run" counts them: windows
- * that start at the run's first flick or at a kill and end by the last kill, each counting the kills after its start
- * up to its end, drawn at the window's middle. The run's rate is its kills over the time from its first flick to
- * its last kill.
+ * The kills in each 10 s of the run, as the what-if line "Keep up your best 10 seconds all run"
+ * counts them: windows that start at the run's first flick or at a kill and end by the last kill,
+ * each counting the kills after its start up to its end, drawn at the window's middle. The run's
+ * rate is its kills over the time from its first flick to its last kill.
  */
 export function pace(report: ClickReport): PaceModel {
   const box = BOX;

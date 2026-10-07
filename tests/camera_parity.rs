@@ -14,6 +14,7 @@ use aimview::tracking::CameraReading;
 mod common;
 use common::{GrayFrames, parity_root};
 
+/// The parity cases with gray frames (python/retired/tests/fixtures.py --review).
 const CASES: [&str; 3] = ["spectral", "flower", "pokeball5"];
 /// The largest difference allowed between a reading and Python's, in degrees.
 const MAX_DIFFERENCE_DEG: f64 = 1e-3;
@@ -22,8 +23,11 @@ const MAX_DIFFERENCE_DEG: f64 = 1e-3;
 /// where one side read and the other did not, or the tiles that agreed differ.
 #[derive(Default)]
 struct Agreement {
+    /// The frames both sides read, with the same tiles agreeing.
     readings: usize,
+    /// The largest difference in x or y over those frames, in degrees.
     worst_deg: f64,
+    /// Each frame where the two disagree, described.
     wrong: Vec<String>,
 }
 
@@ -57,6 +61,7 @@ fn compare_case(dir: &Path) -> Option<(Agreement, usize)> {
     Some((agreement, picks.len()))
 }
 
+/// On each case's picked frames the core and Python read the same frames with the same tiles, within 0.001 degrees.
 #[test]
 fn camera_readings_match_python() {
     for case in CASES {

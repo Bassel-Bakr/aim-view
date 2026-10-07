@@ -5,9 +5,9 @@ shows a box as a pill), and why says which teacher and prompt. Run make_page.py 
 
 Each box is snapped to the target's pixels (`snap`): Grounding DINO's boxes are loose. Not for robots (--no-snap):
 snap sizes a box by the target's mean width per row, which cuts a humanoid down to its torso, where a robot's box
-must take it whole, arms and legs. On the 16 Centering crops whose
-box the user fixed (2026-10-06), its width was 3.4 px too wide (the user's: 0.61 of it) and its height 1.7 px too
-tall; snapped, 0.2 and 0.3 px off. A box whose target does not stand out from the wall round it keeps its size.
+must take it whole, arms and legs. On the 16 Centering crops whose box the user fixed (2026-10-06), its width was
+3.4 px too wide (the user's: 0.61 of it) and its height 1.7 px too tall; snapped, 0.2 and 0.3 px off. A box whose
+target does not stand out from the wall round it keeps its size.
 
 The prompt and threshold depend on the targets: pick them on a sample first. Grounding DINO base (2026-10-05): robots
 "humanoid robot . person ." at 0.5; the thin black pill bots of the Centering scenarios "black pole . black stick ."
@@ -33,7 +33,7 @@ WALL_COLUMNS = 2                # the wall's color: the window's outermost colum
 TARGET_SHARE = 0.3              # a pixel is the target's where it differs from the wall by this share of the most
 COVERAGE_FLOOR = 0.05           # under this share a pixel is the wall's texture, not a target's edge
 MIN_CONTRAST = 40               # the target must differ from the wall by this much (RGB distance) to be snapped
-MIN_SNAPPED_PX = 2.0
+MIN_SNAPPED_PX = 2.0            # a snapped box narrower or shorter than this keeps the teacher's box
 
 
 def snap(rgb, box):
@@ -67,7 +67,10 @@ def snap(rgb, box):
 
 
 class Teacher:
+    """Grounding DINO (TEACHER, from Hugging Face) with one text prompt and one score threshold."""
+
     def __init__(self, prompt, threshold, device):
+        """Loads the model onto `device` ("cuda" or "cpu"). The prompt names the targets, phrases ending in " ."."""
         from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
         self.processor = AutoProcessor.from_pretrained(TEACHER)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(TEACHER).to(device).eval()
@@ -124,6 +127,7 @@ def label(path, teacher, note, snapped=True):
 
 
 def main():
+    """Relabels every crop file under the folder, in place, and prints how many the teacher boxed anything in."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("folder", type=Path)
     parser.add_argument("--prompt", required=True)

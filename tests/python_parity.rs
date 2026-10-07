@@ -12,6 +12,7 @@ use common::parity_root;
 /// How many differing pairs the test prints before it fails.
 const SHOWN_PAIRS: usize = 3;
 
+/// Every stored pair's `hypot` equals CPython's to the bit.
 #[test]
 fn hypot_matches_cpython() {
     let path = parity_root().join("hypot.json");
@@ -27,6 +28,7 @@ fn hypot_matches_cpython() {
     assert!(wrong.is_empty(), "{} of {} differ", wrong.len(), rows.len());
 }
 
+/// The KovOBS overlay's shares of the frame equal Python's to the bit.
 #[test]
 fn kovobs_overlay_matches_python() {
     let path = parity_root().join("overlay.json");

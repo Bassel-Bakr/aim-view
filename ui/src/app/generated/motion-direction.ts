@@ -6,9 +6,24 @@ import type { Direction } from './direction';
  * median distance from its center line and the median offset along the motion.
  */
 export interface MotionDirection {
+  /**
+   * The direction's name in DIRECTIONS (src/summary.rs).
+   */
   name: Direction;
+  /**
+   * The share of the measured (moving) frames the target moved this way.
+   */
   share: number;
+  /**
+   * The share of those frames the crosshair was on the target.
+   */
   on: number;
+  /**
+   * The median distance from the target's center line in those frames, degrees.
+   */
   distance: number;
+  /**
+   * The median offset along the motion in those frames, degrees (positive: ahead of the target's center).
+   */
   lag: number;
 }

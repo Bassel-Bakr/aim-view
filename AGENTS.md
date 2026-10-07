@@ -184,7 +184,11 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   `y`) and a comparison's two sides (`a`, `b`). Short forms only from GLOSSARY.md, which names every domain
   word and the type that holds it. A number with a meaning is a named constant
   (`const MAX_GAP_FRAMES: usize = 2`). Every file starts with a comment on what it does, where its data comes from and
-  where it goes; a function's doc gives its units. Comments say why, not what: if a comment says what, rename instead.
+  where it goes; a function's doc gives its units. Every declaration has a doc comment: functions, methods, classes,
+  structs, traits, interfaces and their members, enums and each variant, fields, type aliases and constants (rustc's
+  `missing_docs`, clippy's `missing_docs_in_private_items`, ESLint's `jsdoc/require-jsdoc` and Ruff's D100 to D107
+  warn; specs and the generated types are left out). `python scripts/comments_only.py <commit>` checks that a change
+  touched only comments. Comments say why, not what: if a comment says what, rename instead.
   Functions stay under about 60 lines. Clippy (`min_ident_chars`, `too_many_lines`, `cognitive_complexity`), ESLint
   (`id-length`, `max-lines-per-function`, `complexity`) and Ruff (`ruff.toml`) warn on these. The refactor clears the
   warnings file by file, and new code adds none. It uses refactoring.guru's catalog (Rename Variable, Extract Method,

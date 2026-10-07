@@ -7,11 +7,32 @@
  * braking takes, from the last frame at 90% of the peak speed to the first under 15% (medians over the flicks).
  */
 export interface FlickProfile {
+  /**
+   * How many flicks were averaged.
+   */
   flicks: number;
+  /**
+   * The time between two points, as a share of the flick (`PROFILE_STEP`).
+   */
   step: number;
+  /**
+   * The mean speed at each point, as a share of each flick's own peak, to 3 decimals.
+   */
   mean: number[];
+  /**
+   * The 25th percentile of the speeds at each point, as `mean` is.
+   */
   p25: number[];
+  /**
+   * The 75th percentile of the speeds at each point, as `mean` is.
+   */
   p75: number[];
+  /**
+   * When the peak comes, as a share of the flick (the median over the flicks).
+   */
   peak_at: number;
+  /**
+   * How much of the flick the braking takes, as a share of it (the median over the flicks).
+   */
   braking: number;
 }

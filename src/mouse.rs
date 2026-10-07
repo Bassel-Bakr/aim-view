@@ -26,19 +26,23 @@ use crate::python::{hypot, round};
 use crate::statistics::median;
 use crate::stats_file::lines;
 
-/// The file's first bytes, and the format's version.
+/// The file's first bytes ("FFML": Flow Fix's mouse log).
 pub const MAGIC: [u8; 4] = *b"FFML";
+/// The format's version, after MAGIC: the reader takes only this one.
 pub const VERSION: u16 = 1;
-/// Bytes in the header, and in each record after it.
+/// Bytes in the header.
 pub const HEADER_SIZE: usize = 32;
+/// Bytes in each record after the header (written in the header too).
 pub const RECORD_SIZE: usize = 24;
-/// A record's first field when it holds no event's QPC time: a device's record, or the stop record.
+/// The first field of a device's record. A record's first field is an event's QPC time unless it is negative.
 pub const KIND_DEVICE: i64 = -1;
+/// The first field of the stop record, which the logger appends when it stops.
 pub const KIND_STOP: i64 = -2;
 /// RAWMOUSE's usFlags bit for a move given as an absolute place, not counts moved: the reader skips those events.
 pub const MOUSE_MOVE_ABSOLUTE: u16 = 0x01;
-/// RAWMOUSE's usButtonFlags bits for the left button.
+/// RAWMOUSE's usButtonFlags bit for a press of the left button.
 pub const LEFT_BUTTON_DOWN: u16 = 0x0001;
+/// RAWMOUSE's usButtonFlags bit for the left button's release.
 pub const LEFT_BUTTON_UP: u16 = 0x0002;
 
 /// The speed profile's grid step, seconds (mouse_read.py: `DT`).
@@ -50,6 +54,7 @@ const OFFSET_SEARCH_S: f64 = 1.0;
 /// An event's motion is spread over at most MIN_SPREAD_S (seconds), or SPREAD_MEDIAN_INTERVALS median intervals if
 /// that is longer.
 const MIN_SPREAD_S: f64 = 0.001;
+/// How many median intervals between events an event's motion is spread over, when that is more than MIN_SPREAD_S.
 const SPREAD_MEDIAN_INTERVALS: f64 = 2.0;
 /// The speed window is widened to this many median intervals when the events are farther apart than that.
 const WINDOW_MEDIAN_INTERVALS: f64 = 2.0;
@@ -59,21 +64,27 @@ const MIN_EVENTS_FOR_RATE: usize = 200;
 const THROTTLED_INTERVAL_S: f64 = 0.002;
 /// The busiest rate is counted over this long, seconds.
 const BUSIEST_WINDOW_S: f64 = 0.1;
-/// The sensitivity when neither the options nor the stats file give one.
+/// The sensitivity when neither the options nor the stats file give one: the mouse's dots per inch.
 const DEFAULT_DPI: f64 = 1600.0;
+/// The default sensitivity's centimeters for a full turn.
 const DEFAULT_CM360: f64 = 70.0;
-/// mouse_read.py's default speed window (ms), start and stop speeds (deg/s) and hold (ms).
+/// mouse_read.py's default speed window, ms: speeds are measured over this long.
 const DEFAULT_WINDOW_MS: f64 = 4.0;
+/// mouse_read.py's default speed a flick starts at, degrees a second.
 const DEFAULT_START_DEG_S: f64 = 30.0;
+/// mouse_read.py's default speed a flick stops under, degrees a second.
 const DEFAULT_STOP_DEG_S: f64 = 10.0;
+/// mouse_read.py's default hold: how long the speed stays under the stop speed for a stop, ms.
 const DEFAULT_HOLD_MS: f64 = 5.0;
-/// Centimeters in an inch, and degrees in a full turn.
+/// Centimeters in an inch.
 const CM_PER_INCH: f64 = 2.54;
+/// Degrees in a full turn.
 const DEGREES_PER_TURN: f64 = 360.0;
 /// The parts `statistics.quantiles` cuts the values into for the deciles.
 const DECILE_PARTS: usize = 10;
-/// Seconds in a day, and microseconds in a second.
+/// Seconds in a day.
 const SECONDS_PER_DAY: i64 = 86_400;
+/// Microseconds in a second.
 const MICROS_PER_SECOND: i64 = 1_000_000;
 /// A time of day more than this (microseconds) after the stats file was written is from the day before: the run went
 /// over midnight.
@@ -89,25 +100,32 @@ const MAX_YEAR: i64 = 9999;
 /// Howard Hinnant's civil calendar: years in an era (the Gregorian cycle), the days in one, and the days from
 /// 0000-03-01 to 1970-01-01.
 const YEARS_PER_ERA: i64 = 400;
+/// The days in an era of YEARS_PER_ERA years.
 const DAYS_PER_ERA: i64 = 146_097;
+/// The days from 0000-03-01, where the eras count from, to 1970-01-01.
 const DAYS_TO_UNIX_EPOCH: i64 = 719_468;
 /// Python's `format(x, "g")`: 6 significant digits, in fixed point for exponents from -4 up to that.
 const G_SIGNIFICANT_DIGITS: i32 = 6;
+/// The least exponent `format(x, "g")` writes in fixed point; a smaller one is written in scientific notation.
 const G_MIN_FIXED_EXPONENT: i32 = -4;
 
 // ---- the file ----
 
 /// A record (or the header) written field by field in the format's order; the bytes after the last field stay 0.
 struct FieldWriter<const SIZE: usize> {
+    /// The record's bytes so far.
     bytes: [u8; SIZE],
+    /// How many bytes the fields have filled: where the next field goes.
     written: usize,
 }
 
 impl<const SIZE: usize> FieldWriter<SIZE> {
+    /// An empty record, all zeros.
     fn new() -> Self {
         FieldWriter { bytes: [0; SIZE], written: 0 }
     }
 
+    /// The record with `field`'s bytes written after the fields before; panics past the record's end.
     fn field(mut self, field: &[u8]) -> Self {
         self.bytes[self.written..self.written + field.len()].copy_from_slice(field);
         self.written += field.len();
@@ -160,33 +178,41 @@ pub fn stop(qpc: i64, ns: i64) -> [u8; RECORD_SIZE] {
 
 /// A record's (or the header's) fields, read in the format's order.
 struct FieldReader<'a> {
+    /// The record's bytes.
     bytes: &'a [u8],
+    /// How many bytes the fields read so far took: where the next field starts.
     read: usize,
 }
 
 impl<'a> FieldReader<'a> {
+    /// A reader at the start of `bytes`.
     fn new(bytes: &'a [u8]) -> Self {
         FieldReader { bytes, read: 0 }
     }
 
+    /// The next `SIZE` bytes; panics past the end of the bytes.
     fn take<const SIZE: usize>(&mut self) -> [u8; SIZE] {
         let field = self.bytes[self.read..self.read + SIZE].try_into().unwrap();
         self.read += SIZE;
         field
     }
 
+    /// The next field as a little-endian i64.
     fn i64(&mut self) -> i64 {
         i64::from_le_bytes(self.take())
     }
 
+    /// The next field as a little-endian u64.
     fn u64(&mut self) -> u64 {
         u64::from_le_bytes(self.take())
     }
 
+    /// The next field as a little-endian i32.
     fn i32(&mut self) -> i32 {
         i32::from_le_bytes(self.take())
     }
 
+    /// The next field as a little-endian u16.
     fn u16(&mut self) -> u16 {
         u16::from_le_bytes(self.take())
     }
@@ -195,17 +221,25 @@ impl<'a> FieldReader<'a> {
 /// An event record: the QPC time it was handled, the counts moved (x right, y down), RAWMOUSE's flags and the
 /// device's index.
 struct Event {
+    /// The QPC time the logger handled the event (the performance counter's count).
     qpc: i64,
+    /// The counts moved right.
     x_counts: i32,
+    /// The counts moved down.
     y_counts: i32,
+    /// RAWMOUSE's usFlags (MOUSE_MOVE_ABSOLUTE).
     flags: u16,
+    /// RAWMOUSE's usButtonFlags: the buttons pressed and released (LEFT_BUTTON_DOWN, LEFT_BUTTON_UP).
     button_flags: u16,
+    /// RAWMOUSE's usButtonData: the wheel's turn.
     button_data: u16,
+    /// The device's index among the log's device records.
     device: u16,
 }
 
 /// One record of the log.
 enum Record {
+    /// A mouse event.
     Event(Event),
     /// A device's handle.
     Device(u64),
@@ -216,6 +250,7 @@ enum Record {
 }
 
 impl Record {
+    /// The record in `bytes` (RECORD_SIZE of them), by its first field.
     fn read(bytes: &[u8]) -> Record {
         let mut fields = FieldReader::new(bytes);
         let qpc = fields.i64();
@@ -251,25 +286,30 @@ pub struct MouseLog {
     pub wall0: f64,
     /// The stop pair (QPC, time_ns), when the logger stopped cleanly.
     pub stop: Option<(i64, i64)>,
-    /// The wall clock against QPC from the start pair to the stop pair, ms.
+    /// How far the wall clock ran ahead of QPC from the start pair to the stop pair, ms; None without a stop pair.
     pub drift_ms: Option<f64>,
     /// Seconds from the start pair to the stop pair, or to the last event without one.
     pub duration: f64,
     /// The devices' handles, by index.
     pub devices: Vec<u64>,
+    /// Each event's time, seconds since the start pair.
     pub times_s: Vec<f64>,
-    /// The counts each event moved: x right, y down.
+    /// The counts each event moved right.
     pub x_counts: Vec<i32>,
+    /// The counts each event moved down.
     pub y_counts: Vec<i32>,
-    /// RAWMOUSE's usFlags, usButtonFlags and usButtonData.
+    /// Each event's RAWMOUSE usFlags (MOUSE_MOVE_ABSOLUTE).
     pub flags: Vec<u16>,
+    /// Each event's RAWMOUSE usButtonFlags: the buttons pressed and released.
     pub button_flags: Vec<u16>,
+    /// Each event's RAWMOUSE usButtonData: the wheel's turn.
     pub button_data: Vec<u16>,
     /// The device each event came from: its index in `devices`.
     pub device_indexes: Vec<u16>,
 }
 
 impl MouseLog {
+    /// A log with no events or devices yet, for a QPC frequency and the start pair's wall time (seconds since 1970).
     fn empty(qpc_frequency: i64, wall0: f64) -> MouseLog {
         MouseLog {
             qpc_frequency,
@@ -288,6 +328,7 @@ impl MouseLog {
         }
     }
 
+    /// Adds an event's counts, flags and device to the columns; its time comes later, from `set_times`.
     fn push_event(&mut self, event: &Event) {
         self.x_counts.push(event.x_counts);
         self.y_counts.push(event.y_counts);
@@ -458,13 +499,18 @@ pub fn deg_per_count(dpi: f64, cm360: f64) -> f64 {
 /// over at most `spread_s` (MIN_SPREAD_S, or SPREAD_MEDIAN_INTERVALS median intervals if that is longer), so a report
 /// never counts as all in or all out of a speed window.
 struct Motion {
+    /// Each relative event's time, seconds since the log's start.
     times_s: Vec<f64>,
+    /// The position after each event, degrees right of the start.
     x_deg: Vec<f64>,
+    /// The position after each event, degrees up from the start.
     y_deg: Vec<f64>,
+    /// The longest an event's motion is spread over, seconds.
     spread_s: f64,
 }
 
 impl Motion {
+    /// The log's motion at `degrees_per_count` (the sensitivity's degrees for one count).
     fn new(log: &MouseLog, degrees_per_count: f64) -> Motion {
         let events = log.times_s.len();
         let mut motion = Motion {
@@ -538,16 +584,23 @@ impl Motion {
 
 /// Speeds on the analysis grid up to a click: each grid time (seconds since the log's start) and the speed there.
 struct SpeedProfile {
+    /// The grid's times, GRID_STEP_S apart and ending at the click, seconds since the log's start.
     times_s: Vec<f64>,
+    /// The speed at each grid time, degrees a second.
     speeds_deg_s: Vec<f64>,
 }
 
 /// A flick in a speed profile: when the mouse starts moving, the peak's grid index, when it stops and when it settles
 /// (the start of the final still stretch), seconds since the log's start; None where there is none.
 struct FlickTimes {
+    /// When the speed rose to the start speed; None when it never did.
     start_s: Option<f64>,
+    /// The grid index of the highest speed from the start on (from the profile's first point without a start).
     peak: usize,
+    /// When the speed, after the peak, fell under the stop speed and stayed there for the hold (or until the click);
+    /// None when it never did.
     stop_s: Option<f64>,
+    /// When the final stretch under the stop speed began; None when the click came while moving.
     settle_s: Option<f64>,
 }
 
@@ -652,11 +705,13 @@ impl SpeedProfile {
 pub struct Options {
     /// The sensitivity; None (or 0): the stats file's, else 1600 dpi and 70 cm/360.
     pub dpi: Option<f64>,
+    /// The sensitivity's centimeters for a full turn; None (or 0) as for `dpi`.
     pub cm360: Option<f64>,
     /// The speed window, ms.
     pub window: f64,
     /// A flick starts at this speed and stops under that one, deg/s.
     pub start: f64,
+    /// The speed a flick stops under, deg/s.
     pub stop: f64,
     /// A stop holds under the stop speed this long, ms.
     pub hold: f64,
@@ -678,7 +733,9 @@ impl Default for Options {
 /// A sensitivity in cm/360: the mouse's dots per inch, and the centimeters it moves for a full turn.
 #[derive(Clone, Copy, Debug)]
 pub struct Sensitivity {
+    /// The mouse's dots (counts) per inch.
     pub dpi: f64,
+    /// The centimeters the mouse moves for a full turn.
     pub cm360: f64,
 }
 
@@ -692,10 +749,12 @@ impl Options {
         }
     }
 
+    /// The options' dpi, None when not given or 0.
     fn given_dpi(&self) -> Option<f64> {
         self.dpi.filter(|&dpi| dpi != 0.0)
     }
 
+    /// The options' cm/360, None when not given or 0.
     fn given_cm360(&self) -> Option<f64> {
         self.cm360.filter(|&cm360| cm360 != 0.0)
     }
@@ -707,26 +766,35 @@ impl Options {
 pub struct KillMeasure {
     /// The kill's number in the stats file.
     pub n: i64,
-    /// The kill's time in the stats file, and the press's, local.
+    /// The kill's time of day as the stats file writes it, local.
     pub kill_local: String,
+    /// The press's time of day, local ("%H:%M:%S.%f").
     pub press_local: String,
     /// The press, seconds since the log's start.
     pub press_s: f64,
     /// The press minus the kill (after the offset), ms.
     pub gap_ms: f64,
+    /// The shots the kill took, from the stats file.
     pub shots: i64,
+    /// When the mouse started moving (reached the start speed), seconds since the log's start.
     pub start_s: Option<f64>,
+    /// When the mouse stopped (stayed under the stop speed for the hold), seconds since the log's start.
     pub stop_s: Option<f64>,
+    /// When the final stretch under the stop speed before the click began, seconds since the log's start.
     pub settle_s: Option<f64>,
     /// From the previous press until the mouse starts moving, ms.
     pub reaction_ms: Option<f64>,
     /// From the start until the mouse stops, ms.
     pub flick_ms: Option<f64>,
+    /// The highest speed from the start to the click, degrees a second.
     pub peak_dps: f64,
+    /// When the peak came, ms from the previous press.
     pub peak_ms: f64,
+    /// From the stop until the click, ms.
     pub stop_to_click_ms: Option<f64>,
     /// How long the speed stayed under the stop speed right before the click, ms (0 when the click came while moving).
     pub still_ms: f64,
+    /// The speed at the click, degrees a second.
     pub click_dps: f64,
     /// The times the speed rose to the stop speed again after the stop.
     pub corrections: Option<usize>,
@@ -808,7 +876,9 @@ pub fn presses_of(log: &MouseLog) -> Vec<f64> {
 /// A device in the log: its handle and its events.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeviceFacts {
+    /// The device's raw input handle, as Windows gave it.
     pub handle: u64,
+    /// How many events came from it.
     pub events: usize,
 }
 
@@ -817,12 +887,17 @@ pub struct DeviceFacts {
 pub struct LogFacts {
     /// The start's wall time, seconds since 1970.
     pub wall0: f64,
+    /// The log's start, local time of day ("%H:%M:%S.%f").
     pub start_local: String,
+    /// The log's end, local time of day.
     pub end_local: String,
+    /// The log's length, seconds.
     pub duration: f64,
+    /// How many events it holds.
     pub events: usize,
     /// The wall clock against QPC over the log, ms; None without a stop pair (the logger was killed).
     pub drift_ms: Option<f64>,
+    /// The mice the events came from, in the order their records came.
     pub devices: Vec<DeviceFacts>,
     /// Absolute events (MOUSE_MOVE_ABSOLUTE), skipped.
     pub absolute: usize,
@@ -863,12 +938,17 @@ pub fn log_facts(log: &MouseLog, utc_offset: i64) -> LogFacts {
 /// A log without its run (mouse_read.py's summary mode): its facts, the total travel and the left-button presses.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogSummary {
+    /// What the log says.
     pub log: LogFacts,
+    /// The sensitivity's dots per inch: the options', else the default.
     pub dpi: f64,
+    /// The sensitivity's centimeters for a full turn: the options', else the default.
     pub cm360: f64,
+    /// Degrees the view turns for one count at that sensitivity.
     pub deg_per_count: f64,
     /// The travel in 1 ms steps, degrees.
     pub travel_deg: f64,
+    /// How many times the left button was pressed.
     pub presses: usize,
 }
 
@@ -910,9 +990,13 @@ fn travel_counts(log: &MouseLog) -> f64 {
 /// A kill in the stats file: its number, its local time as written, that time in seconds since 1970, and its shots.
 #[derive(Clone, Debug)]
 pub struct StatsKill {
+    /// The kill's number in the kill table.
     pub number: i64,
+    /// Its time of day as the file writes it ("%H:%M:%S.%f", local).
     pub local_time: String,
+    /// That time, seconds since 1970 (UTC).
     pub epoch_s: f64,
+    /// The shots the kill took (the table's sixth column).
     pub shots: i64,
 }
 
@@ -920,11 +1004,17 @@ pub struct StatsKill {
 /// since 1970), the shots, the sensitivity when it is in cm/360, and the scenario.
 #[derive(Clone, Debug)]
 pub struct StatsRun {
+    /// The kill table's rows, in order.
     pub kills: Vec<StatsKill>,
+    /// The run's start, seconds since 1970: the Challenge Start, else a second before the first kill.
     pub start_epoch_s: f64,
+    /// The run's end, seconds since 1970: the end of the second in the file's name.
     pub end_epoch_s: f64,
+    /// The weapon table's shots, 0 without one.
     pub shots: i64,
+    /// The file's sensitivity when its scale is cm/360.
     pub sensitivity: Option<Sensitivity>,
+    /// The scenario's name; empty when the file gives none.
     pub scenario: String,
 }
 
@@ -940,6 +1030,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * DAYS_PER_ERA + day_of_era - DAYS_TO_UNIX_EPOCH
 }
 
+/// The days in a month (1 to 12) of a year of the Gregorian calendar.
 fn days_in_month(year: i64, month: i64) -> i64 {
     match month {
         2 if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 => 29,
@@ -1018,6 +1109,7 @@ struct StatsClock {
 }
 
 impl StatsClock {
+    /// A time of day as the file writes it ("%H:%M:%S.%f"), as seconds since 1970; an error when it does not read.
     fn epoch_s(&self, time_of_day: &str) -> Result<f64, String> {
         let time_of_day = time_of_day.trim();
         let time_of_day_micros = clock_micros(time_of_day)
@@ -1116,7 +1208,9 @@ pub fn read_stats(name: &str, text: &str, utc_offset: i64) -> Result<StatsRun, S
 
 /// A press within OFFSET_SEARCH_S of a kill: the press's time minus the kill's (seconds), and the kill's index.
 struct PressNearKill {
+    /// The press's time minus the kill's, seconds.
     gap_s: f64,
+    /// The kill's index in the stats file's kills.
     kill: usize,
 }
 
@@ -1183,18 +1277,26 @@ fn match_kills(presses_s: &[f64], kills_s: &[f64]) -> (Option<f64>, Vec<Option<u
 pub struct Spread {
     /// The measure's field in `KillMeasure`.
     pub key: String,
+    /// How many kills have the measure.
     pub n: usize,
+    /// Its 10th percentile (`statistics.quantiles`, inclusive).
     pub p10: f64,
+    /// Its median.
     pub median: f64,
+    /// Its 90th percentile.
     pub p90: f64,
 }
 
 /// A measure the run's spreads cover: its field in `KillMeasure`, its label and decimals in the printed report, and
 /// its value in a kill's measures.
 struct SpreadField {
+    /// The field's name in `KillMeasure` (and the JSON).
     key: &'static str,
+    /// The measure's label in the printed report.
     label: &'static str,
+    /// The decimals the printed report gives it.
     decimals: usize,
+    /// The measure in a kill's measures; None where the kill has none.
     value: fn(&KillMeasure) -> Option<f64>,
 }
 
@@ -1242,37 +1344,53 @@ fn spreads(kills: &[KillMeasure]) -> Vec<Spread> {
 /// A run measured from its mouse log (mouse_read.py's run mode): everything it prints, and the kills it writes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MouseRun {
+    /// What the log says.
     pub log: LogFacts,
+    /// The scenario's name, from the stats file.
     pub scenario: String,
+    /// The sensitivity's dots per inch.
     pub dpi: f64,
+    /// The sensitivity's centimeters for a full turn.
     pub cm360: f64,
     /// Where the sensitivity came from: "options", "the stats file" or "defaults".
     pub sens_from: String,
+    /// Degrees the view turns for one count at that sensitivity.
     pub deg_per_count: f64,
-    /// The speed window, ms, and whether it was widened to twice the median interval.
+    /// The speed window, ms (after any widening).
     pub window_ms: f64,
+    /// Whether the speed window was widened to WINDOW_MEDIAN_INTERVALS median intervals.
     pub window_widened: bool,
+    /// The speed a flick starts at, degrees a second.
     pub start_dps: f64,
+    /// The speed a flick stops under, degrees a second.
     pub stop_dps: f64,
+    /// How long a stop holds under the stop speed, ms.
     pub hold_ms: f64,
-    /// The press minus the stats file's kill time, ms (3 decimals), and unrounded in s.
+    /// The clock offset: a press minus its kill's time in the stats file, ms, to 3 decimals.
     pub offset_ms: f64,
+    /// The same offset unrounded, seconds.
     pub offset_s: f64,
-    /// The kills in the stats file, and those matched with a press within 10 ms.
+    /// The kills in the stats file.
     pub kill_count: usize,
+    /// The kills matched with a press within MATCH_TOLERANCE_S.
     pub matched: usize,
     /// The p90 of the matched gaps between press and kill, ms.
     pub gap_p90_ms: f64,
+    /// The left-button presses from the run's start to its end.
     pub presses_in_run: usize,
     /// The shots in the stats file.
     pub shots: i64,
     /// The presses in the run that killed nothing, s since the log's start (6 decimals).
     pub misses_s: Vec<f64>,
+    /// Each matched kill's measures.
     pub kills: Vec<KillMeasure>,
+    /// The spreads of the kills' measures, in the order SPREAD_FIELDS gives.
     pub spreads: Vec<Spread>,
-    /// Kills clicked while moving, kills with no stop before the click, and kills with corrections.
+    /// Kills clicked while moving (no still stretch before the click).
     pub moving_clicks: usize,
+    /// Kills with no stop before the click.
     pub no_stop: usize,
+    /// Kills with at least one correction after the stop.
     pub corrected: usize,
 }
 
@@ -1321,8 +1439,11 @@ fn kills_on_log_clock(log: &MouseLog, stats: &StatsRun, utc_offset: i64) -> Resu
 
 /// A run's kills matched with its log's presses, all on the log's clock (seconds since its start).
 struct MatchedRun<'a> {
+    /// The mouse log.
     log: &'a MouseLog,
+    /// The run's stats file.
     stats: &'a StatsRun,
+    /// The left-button presses, seconds since the log's start.
     presses_s: Vec<f64>,
     /// Each kill's stats time, before the offset.
     kills_s: Vec<f64>,
@@ -1431,12 +1552,16 @@ pub fn run(log: &MouseLog, stats: &StatsRun, options: &Options, utc_offset: i64)
 /// the UTC offset (local minus UTC, seconds) for local times.
 #[derive(Deserialize)]
 pub struct ReadRequest {
+    /// The stats file's name, which holds its date.
     #[serde(default)]
     pub stats_name: Option<String>,
+    /// The stats file's text.
     #[serde(default)]
     pub stats_text: Option<String>,
+    /// The reader's settings; mouse_read.py's defaults when left out.
     #[serde(default)]
     pub options: Options,
+    /// Local minus UTC, seconds; 0 when left out.
     #[serde(default)]
     pub utc_offset: i64,
 }
@@ -1445,8 +1570,11 @@ pub struct ReadRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReadOutcome {
+    /// The run's measures, when the request gave a stats file.
     Run(Box<MouseRun>),
+    /// The log's summary, when it gave none.
     Summary(LogSummary),
+    /// Why the log or the stats file could not be read or matched.
     Error(String),
 }
 

@@ -1,6 +1,6 @@
-//! KovaaK's stats files and each recording's pairing with one (python/server.py: stats_index, stats_for, stats_of,
-//! stats_info, set_stats): the user's choice (stats.json in the recording's folder), else one uploaded beside it, else
-//! the stats file of the same scenario whose time is nearest the recording's.
+//! KovaaK's stats files and each recording's pairing with one (python/retired/server.py: stats_index, stats_for,
+//! stats_of, stats_info, set_stats): the user's choice (stats.json in the recording's folder), else one uploaded beside
+//! it, else the stats file of the same scenario whose time is nearest the recording's.
 //!
 //! In: KovaaK's stats folder (listed again once a minute; a file's run read from its last few kB), the stats files
 //! uploaded for a recording, and the page's choice. Out: each recording's stats file for its report and the list, the
@@ -31,12 +31,14 @@ const INDEX_AGE_S: u64 = 60;
 const NEAR_S: f64 = 5.0;
 /// The end of a stats file read for its "Key:,value" lines, in bytes (they take about 1.5 kB).
 const FOOTER_BYTES: u64 = 4096;
-/// Where a picked stats file is kept: KovaaK's stats folder, or the uploads (`Pick`'s source).
+/// Where a picked stats file is kept (`Pick`'s source): KovaaK's stats folder.
 const KOVAAK_SOURCE: &str = "kovaak";
+/// Where a picked stats file is kept: the uploads' stats folder.
 pub(super) const UPLOAD_SOURCE: &str = "upload";
-/// The threads that read stats files at once natively, at most, and when the computer's count is not known.
+/// The most threads that read stats files at once natively.
 #[cfg(feature = "native")]
 const MAX_READ_THREADS: usize = 16;
+/// The threads that read stats files at once when the computer's count is not known.
 #[cfg(feature = "native")]
 const READ_THREADS_UNKNOWN: usize = 4;
 
@@ -44,15 +46,21 @@ const READ_THREADS_UNKNOWN: usize = 4;
 /// when it was last changed (seconds since 1970).
 #[derive(Clone)]
 pub(super) struct StatsEntry {
+    /// When its run ended: its name's stamp in seconds from 2000-01-01.
     end_s: f64,
+    /// Its file name in the stats folder.
     name: String,
+    /// Its name's time stamp (yyyy.mm.dd-hh.mm.ss).
     stamp: String,
+    /// Its time of change in seconds since 1970 (0 in the browser until `history` reads it).
     modified: f64,
 }
 
 /// A stats file's run as read, kept with the file's time of change then (None: the file has no score).
 struct ReadRun {
+    /// The file's time of change when it was read: a newer one reads it again.
     modified: f64,
+    /// The run; None when the file has no score.
     run: Option<PastRun>,
 }
 
@@ -60,17 +68,24 @@ struct ReadRun {
 /// and its accuracy (hits over shots).
 #[derive(Clone, Serialize)]
 struct PastRun {
+    /// The file name's time stamp.
     stamp: String,
+    /// KovaaK's score.
     score: f64,
+    /// The kills, when the file gives them.
     kills: Option<f64>,
+    /// Hits over shots, 0 to 1; None without hits and misses.
     accuracy: Option<f64>,
 }
 
 /// KovaaK's stats files by scenario name, and when the folder was listed; and the runs read from them, by file name.
 #[derive(Default)]
 pub(super) struct StatsIndex {
+    /// The stats files by scenario name.
     by_scenario: HashMap<String, Vec<StatsEntry>>,
+    /// When the folder was last listed; None: not yet, or forgotten.
     listed: Option<Instant>,
+    /// The runs read for `history`, by file name.
     runs: HashMap<String, ReadRun>,
 }
 
@@ -165,7 +180,9 @@ fn pairing_how(pick: Option<&Pick>, file: Option<&Path>, id: &str, video: &Path)
 /// The user's choice of stats file for a recording (stats.json): a file and where it is, or no file.
 #[derive(Serialize, Deserialize)]
 pub(super) struct Pick {
+    /// The stats file's name; None: the user chose no stats file.
     file: Option<String>,
+    /// Where it is: `KOVAAK_SOURCE` or `UPLOAD_SOURCE`.
     source: String,
 }
 
@@ -213,7 +230,7 @@ impl Library {
     }
 
     /// The stats file of a scenario's run that ended at `stamp` (a file-name time stamp): the one of that scenario
-    /// nearest it, within 5 s (python/server.py: stats_for).
+    /// nearest it, within 5 s (python/retired/server.py: stats_for).
     pub fn stats_for(&self, scenario: &str, stamp: &str) -> Option<PathBuf> {
         let end_s = stamp_seconds(stamp)?;
         let distance_s = |entry: &StatsEntry| (entry.end_s - end_s).abs();
@@ -257,10 +274,13 @@ impl Library {
         Ok(serde_json::to_value(past_runs).map_err(|error| error.to_string())?)
     }
 
+    /// The user's choice of stats file for the recording (stats.json); None when none is kept.
     pub(super) fn pairing(&self, id: &str) -> Option<Pick> {
         read_kept(self.store(), Item::Mark(id, Mark::StatsPick))
     }
 
+    /// The path of a stats file by its name and source; an error for a name that is not a plain .csv file name, or an
+    /// unknown source.
     fn stats_file(&self, name: &str, source: &str) -> Answer<PathBuf> {
         let plain = Path::new(name).file_name().is_some_and(|file_name| file_name == name)
             && name.to_lowercase().ends_with(".csv");
@@ -368,10 +388,13 @@ impl Library {
     }
 }
 
+/// Reading past runs.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// A run's score, kills and accuracy come from the file's end, or the whole file when the end has no score; a file
+    /// with no score gives no run.
     #[test]
     fn a_run_is_read_from_the_footer_or_the_whole_file() {
         let dir = std::env::temp_dir().join(format!("aimview-history-{}", std::process::id()));

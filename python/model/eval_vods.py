@@ -26,7 +26,8 @@ import local_config  # noqa: E402
 
 STATS = local_config.required(local_config.kovaak("stats"), "KovaaK's stats folder (Steam's)")
 VODS = local_config.required(local_config.folder("vods"), "recordings' folder (vods)")
-DEFAULT = [str(VODS / video) for video in (
+# the held-out recordings reviewed when --vods names none
+DEFAULT =[str(VODS / video) for video in (
     "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
     "10 Sphere Hipfire Extra Small/10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4",
     "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD/Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4",
@@ -37,6 +38,8 @@ VIDEO_CHARS, ERROR_CHARS = 46, 60   # the printed line's columns
 
 
 def stats_for(video):
+    """The stats file of a recording KovOBS named "<scenario> - <score> - <stamp>.mp4", found by its scenario and
+    exact stamp, or None."""
     scenario, _, stamp = Path(video).stem.rsplit(" - ", 2)
     path = Path(STATS) / f"{scenario} - Challenge - {stamp} Stats.csv"
     return path if path.exists() else None
@@ -88,6 +91,8 @@ def review_row(lib, video, model, stats):
 
 
 def main():
+    """Reviews each VOD that has a stats file, prints a line per VOD, and writes the rows to
+    <out>/vods_<name>_native.json (<name>: an .onnx file's name, else its folder's)."""
     parser = argparse.ArgumentParser()
     parser.add_argument("model")
     parser.add_argument("--vods", nargs="*", default=DEFAULT)

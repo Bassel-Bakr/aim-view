@@ -1,3 +1,11 @@
+/**
+ * The excluded areas editor's geometry and drawing: which area and edge the pointer holds, moving
+ * and resizing an area, drawing a new one, comparing two lists of areas, and painting the areas on
+ * the canvas. In: areas and points as shares of the frame, the video's size on screen, and the
+ * areas' tokens (themes/areas.scss). Out: area-canvas (pointer and drawing) and AreaDraft
+ * (`sameAreas`, whether to track again).
+ */
+
 import { AreaBox, AreaRect } from '../../api';
 
 /** An area, its kind or not. */
@@ -8,21 +16,31 @@ export type SharePoint = [x: number, y: number];
 
 /** The video's size on screen, in pixels. */
 export interface ScreenSize {
+  /** The video's width on screen, in CSS pixels. */
   width: number;
+  /** The video's height on screen, in CSS pixels. */
   height: number;
 }
 
 /** The edges of an area the pointer holds: one, or two at a corner. */
 export interface HeldEdges {
+  /** The pointer holds the left edge. */
   left: boolean;
+  /** The pointer holds the right edge. */
   right: boolean;
+  /** The pointer holds the top edge. */
   top: boolean;
+  /** The pointer holds the bottom edge. */
   bottom: boolean;
 }
 
-/** Where the pointer took hold of an area: which one, and its edges (null: its inside, to move it). */
+/**
+ * Where the pointer took hold of an area: which one, and its edges (null: its inside, to move it).
+ */
 export interface AreaHold {
+  /** The area's index in the list. */
   index: number;
+  /** The edges held, or null when the pointer is inside the area, away from its edges. */
   edges: HeldEdges | null;
 }
 
@@ -32,14 +50,21 @@ const EDGE_PX = 6;
 const MIN_PX = 8;
 /** How far (pixels) the pointer goes before a press on an area moves it, rather than selects it. */
 export const DRAG_PX = 3;
-/** A drag on the empty video shorter than this (pixels) both ways is a click: it selects nothing. */
+/**
+ * A drag on the empty video shorter than this (pixels) both ways is a click: it selects nothing.
+ */
 const CLICK_PX = 6;
 /** Two areas whose edges are this close (shares of the video) cover the same part of it. */
 const SAME_SHARE = 1e-9;
 
+/** The value kept between low and high. */
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-/** The area under the point and the edges held there: the selected area first, then the topmost (the last drawn). */
+/**
+ * The area under the point and the edges held there: the selected area first, then the topmost (the
+ * last drawn). A point within EDGE_PX of an area's edge counts as on it. Null when the point is on
+ * no area.
+ */
 export function holdAt(
   boxes: readonly AreaBounds[],
   selected: number,
@@ -66,7 +91,10 @@ export function holdAt(
   return null;
 }
 
-/** The pointer's shape over the video: draw a new area, move one, or resize one by its edge or corner. */
+/**
+ * The CSS cursor over the video for what a press would do: draw a new area, move one, or resize one
+ * by its edge or corner.
+ */
 export function cursorFor(hold: AreaHold | null): string {
   if (!hold) return 'crosshair';
   if (!hold.edges) return 'move';
@@ -77,8 +105,8 @@ export function cursorFor(hold: AreaHold | null): string {
 }
 
 /**
- * An area dragged from where it was by [dx, dy] (shares): moved and kept on screen, or with the held edges moved and
- * kept at least MIN_PX across.
+ * An area dragged from where it was by [dx, dy] (shares): moved and kept on screen, or with the
+ * held edges moved and kept at least MIN_PX across.
  */
 export function dragArea(
   [left, top, right, bottom]: AreaRect,
@@ -101,7 +129,10 @@ export function dragArea(
   ];
 }
 
-/** Areas overlap: the next one under the point after `from`, going down the stack; -1 when there is none. */
+/**
+ * Areas overlap: the next one under the point after `from`, going down the stack and round to the
+ * top; -1 when there is none.
+ */
 export function nextUnder(boxes: readonly AreaBounds[], from: number, [x, y]: SharePoint): number {
   const count = boxes.length;
   for (let step = 1; step < count; step++) {
@@ -112,7 +143,9 @@ export function nextUnder(boxes: readonly AreaBounds[], from: number, [x, y]: Sh
   return -1;
 }
 
-/** The area a drag on the empty video draws, kept on screen; null for a drag so short it is a click. */
+/**
+ * The area a drag on the empty video draws, kept on screen; null for a drag so short it is a click.
+ */
 export function drawnArea(
   [x0, y0]: SharePoint,
   [x1, y1]: SharePoint,
@@ -137,20 +170,34 @@ export function sameAreas(a: readonly AreaBounds[], b: readonly AreaBounds[]): b
   return a.length === b.length && a.every((box, i) => near(box, b[i]));
 }
 
-/** How the areas are drawn: their colors, lines and label font, from the areas' tokens (themes/areas.scss). */
+/**
+ * How the areas are drawn: their colors, lines and label font, from the areas' tokens
+ * (themes/areas.scss).
+ */
 export interface AreaStyle {
+  /** An area's fill (--area-fill). */
   fill: string;
+  /** The selected area's fill (--area-fill-selected). */
   fillSelected: string;
+  /** An area's outline color (--area-line). */
   line: string;
+  /** The selected area's outline color (--area-line-selected). */
   lineSelected: string;
+  /** An area's outline width, in pixels (--area-line-width). */
   lineWidth: number;
+  /** The selected area's outline width, in pixels (--area-line-width-selected). */
   lineWidthSelected: number;
+  /** The kind labels' font (--area-label-font). */
   labelFont: string;
+  /** The background behind a label on an area that is not selected (--area-label-bg). */
   labelBg: string;
+  /** A label's text color (--area-label-text). */
   labelText: string;
+  /** The selected area's label color (--area-label-text-selected). */
   labelTextSelected: string;
 }
 
+/** The areas' drawing style, read from the CSS variables in effect on an element. */
 export function readAreaStyle(element: Element): AreaStyle {
   const css = getComputedStyle(element);
   const token = (name: string) => css.getPropertyValue(name).trim();
@@ -168,24 +215,34 @@ export function readAreaStyle(element: Element): AreaStyle {
   };
 }
 
-/** What the editor draws: the areas, the selected one, the one being drawn, and the one whose label is hidden. */
+/**
+ * What the editor draws: the areas, the selected one, the one being drawn, and the one whose label
+ * is hidden.
+ */
 export interface AreaScene {
+  /** The areas on screen, as shares of the frame, each with its kind's id. */
   boxes: readonly AreaBox[];
+  /** The selected area's index; -1 for none. */
   selected: number;
+  /** The area the pointer is drawing, or null. */
   drawing: AreaRect | null;
-  /** The area being dragged: its label is hidden while it moves. */
+  /** The area being dragged: its label is hidden while it moves (-1 for none). */
   moving: number;
+  /** A kind's name from its id, for the labels. */
   kindName: (id: string) => string;
 }
 
-/** A label's inset from the area's corner, its padding and its height, in pixels. */
+/** A label's inset from the area's corner, in pixels. */
 const LABEL_INSET = 2;
+/** The space either side of a label's text, in pixels. */
 const LABEL_PAD = 4;
+/** A label's height, in pixels. */
 const LABEL_HEIGHT = 16;
 
 /**
- * The areas over the video, each with its kind's name: plain to read on the others, see-through on the selected one
- * (its corner must stay visible), hidden while it is dragged. The area being drawn has no name yet.
+ * The areas over the video, each with its kind's name: plain to read on the others, see-through on
+ * the selected one (its corner must stay visible), hidden while it is dragged. The area being drawn
+ * has no name yet.
  */
 export function drawAreas(
   context: CanvasRenderingContext2D,

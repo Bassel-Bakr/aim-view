@@ -1,8 +1,18 @@
+/**
+ * Puts decoded frames into a worker's core and converts them as ffmpeg does. In: Mediabunny's
+ * VideoSamples (I420 from a software decoder, NV12 from a hardware one). Out: each frame as YUV
+ * 4:2:0 in the core's memory, and its 1280 x 720 YUV or RGB, for the review, area finder and
+ * cut-off workers.
+ */
+
 import { VideoSample } from 'mediabunny';
 import { Core, CoreBlock, matrixNumber } from './core';
 import { FrameFormat } from './review-messages';
 
-/** A frame's planes packed as YUV 4:2:0 (I420): Y, then U, then V, each row as wide as its plane. */
+/**
+ * A frame's planes packed as YUV 4:2:0 (I420): Y, then U, then V, each row as wide as its plane.
+ * Takes the frame's size in pixels; gives the layout VideoSample.copyTo takes.
+ */
 export function i420Layout(width: number, height: number): PlaneLayout[] {
   const chromaWidth = width >> 1;
   const chromaHeight = height >> 1;
@@ -21,8 +31,8 @@ export function unreadableFormat(sample: VideoSample, reader: string): Error {
 }
 
 /**
- * An NV12 frame (a hardware decoder's), copied into `scratch` as the decoder lays it out (`planes`), packed into `out`
- * as I420: the luma as it is, the chroma's interleaved U and V apart.
+ * An NV12 frame (a hardware decoder's), copied into `scratch` as the decoder lays it out
+ * (`planes`), packed into `out` as I420: the luma as it is, the chroma's interleaved U and V apart.
  */
 export function packNv12(
   scratch: Uint8Array,
@@ -49,8 +59,9 @@ export function packNv12(
 }
 
 /**
- * A frame's planes written into the core's memory as YUV 4:2:0 (Y, U, V), whatever layout the decoder gave. An I420
- * frame (the software decoder's) is copied by the decoder straight into place, packed; another, through scratch.
+ * A frame's planes written into the core's memory as YUV 4:2:0 (Y, U, V), whatever layout the
+ * decoder gave. The decoder copies an I420 frame (the software decoder's) straight into place,
+ * packed; an NV12 one goes through scratch. Throws for any other format.
  */
 async function writeI420(
   sample: VideoSample,
@@ -61,7 +72,8 @@ async function writeI420(
   const { width, height } = sample.visibleRect;
   if (sample.format === 'I420') {
     const packed = i420Layout(width, height);
-    // the core's memory can grow while the copy waits (the tracker takes a call's maps meanwhile): copy again then
+    // the core's memory can grow while the copy waits (the tracker takes a call's maps meanwhile):
+    // copy again then
     for (;;) {
       const memory = core.exports.memory.buffer;
       try {
@@ -78,22 +90,26 @@ async function writeI420(
 }
 
 /**
- * Decoded frames into a worker's core, which turns them into ffmpeg's pixels: its converter (src/wasm.rs:
- * converter_new), made for the first frame's size and colors, and the block each frame is written into.
+ * Decoded frames into a worker's core, which turns them into ffmpeg's pixels: its converter
+ * (src/wasm.rs: converter_new), made for the first frame's size and colors, and the block each
+ * frame is written into.
  */
 export class FrameConverter {
   /** The converter; 0 until the first frame. */
   converter = 0;
   /** The frames' format, from the first frame; null until then. */
   format: FrameFormat | null = null;
+  /** The core memory every frame is written into, sized for the first frame; null until then. */
   private block: CoreBlock | null = null;
+  /** Where an NV12 frame is copied before it is packed; grown to the largest frame's size. */
   private scratch = new Uint8Array(0);
 
+  /** Writes into the given core's memory, with its converter. */
   constructor(private readonly core: Core) {}
 
   /**
-   * A decoded frame written into the core's memory as YUV 4:2:0 at its own size, and closed: the block it is in, the
-   * same for every frame (the next frame takes its place).
+   * A decoded frame written into the core's memory as YUV 4:2:0 at its own size, and closed: the
+   * block it is in, the same for every frame (the next frame takes its place).
    */
   async write(sample: VideoSample): Promise<CoreBlock> {
     const { width, height } = sample.visibleRect;
@@ -120,7 +136,10 @@ export class FrameConverter {
     return block;
   }
 
-  /** The frame in `block` at 1280 x 720 as YUV 4:2:0, into `out` (ffmpeg's `scale=1280:720:flags=area`). */
+  /**
+   * The frame in `block` at 1280 x 720 as YUV 4:2:0, into `out` (ffmpeg's
+   * `scale=1280:720:flags=area`).
+   */
   yuv720(block: CoreBlock, out: CoreBlock): void {
     this.core.exports.converter_yuv420p(this.converter, block.ptr, block.len, out.ptr);
   }
@@ -130,7 +149,7 @@ export class FrameConverter {
     this.core.exports.converter_rgb24(this.converter, block.ptr, block.len, out.ptr);
   }
 
-  /** The converter is done. */
+  /** Frees the converter; the frames' block stays reserved. */
   free(): void {
     if (this.converter) this.core.exports.converter_free(this.converter);
     this.converter = 0;

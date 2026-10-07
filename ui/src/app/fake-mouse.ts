@@ -1,3 +1,9 @@
+/**
+ * Mouse log measures for the UI's tests: a kill and a run shaped as the core's reader gives them
+ * (src/mouse.rs). Out: the specs of the mouse panel, the desktop mode's mouse logs and the
+ * MouseLogs contract.
+ */
+
 // The mouse reader's JSON (mouse-api.ts) numbers each kill and counts each spread's kills as `n`.
 /* eslint-disable id-length */
 import { MouseKill, MouseRun } from './mouse-api';

@@ -13,10 +13,11 @@ compares it with full_v3's results on the same data (the limits and their reason
                    old_review.py alike). Pass or fail, no limit.
   crosshair        the crosshair is not a target. On the static recordings of eval_moving.py: the frames where the
                    room moved 0.5 degrees or more since the frame before, and at least half that either side (the
-                   camera's turn, read from the video by old_review.camera_motion; a one-frame jump is a shot's flash), with
-                   a box on the fixed map's crosshair that stayed put (moved under half the room's move, and no box of
-                   the frame before moved there with the room). A static target moves with the room; only something
-                   fixed to the screen stays. A frame where most boxes stayed put is left out: the reading is wrong.
+                   camera's turn, read from the video by old_review.camera_motion; a one-frame jump is a shot's
+                   flash), with a box on the fixed map's crosshair that stayed put (moved under half the room's move,
+                   and no box of the frame before moved there with the room). A static target moves with the room;
+                   only something fixed to the screen stays. A frame where most boxes stayed put is left out: the
+                   reading is wrong.
   screen_fixed     the same on the fixed map's other parts in the area the review reads: the HUD and overlay are left
                    out. (A box elsewhere that seems to stay put is mostly a tiled wall's seam meeting another seam's
                    place; that is the wall, not the screen, and the acceptance checks judge it.)
@@ -35,11 +36,12 @@ compares it with full_v3's results on the same data (the limits and their reason
 Writes a JSON report (python/model/reports/contract_<name>.json by default) and exits 1 when a check fails. The
 recordings' camera readings and the model's peaks on them are kept in test_out/vod_model/contract/ (new files only),
 so a second run takes minutes, not a quarter of an hour.
-Usage: python python/model/contract.py <model> [--report FILE] [--settings FILE]
+Usage: python python/model/contract.py <model> [--report FILE] [--settings FILE] [--vods <mp4> ...]
   <model>: a name (small_v13), or an export (python/model/exports/detector_<name>_u8in.onnx, or any detector_<name>*
   file beside it).
   --settings: another settings file, or a calibration report (calibrate.py --report), to check settings before they
   are written.
+  --vods: other static recordings for the recording checks.
 """
 import argparse
 import hashlib
@@ -69,9 +71,9 @@ NEAR = 24                                            # px from the crosshair's c
 MAX_BOXES = 50                                       # link(): 2,500 pairings at most
 BANDS = (0.4, 0.5, 0.6, 0.7, 0.8)                    # the calibration's bands over the threshold (and 1.0)
 DRAWS = 400                                          # draws of the val scenarios for full_v3's spread
-SETTINGS_FORMAT = 1
+SETTINGS_FORMAT = 1                                  # the settings file's format the pipeline reads
 MAP_AXES, MAP_COLUMNS = 2, 2                         # a score map: a table of [raw, mapped] points
-MIN_MAP_POINTS = 2
+MIN_MAP_POINTS = 2                                   # of which it has at least this many
 RGB_AXES, FIXED_AXES = 4, 3                          # the inputs: (n, h, w, 3) and (n, h, w)
 SHIFT_PX = 37                                        # the batch's other frames: the frame rolled by multiples of this
 CELL_PX = 4                                          # the score map's cells
@@ -83,8 +85,8 @@ CROSSHAIR_DOT_PX = 3                                 # the disc at the crosshair
 GROW_PX = 2                                          # the crosshair area and the HUD grown by this
 EXAMPLES = 5                                         # screen-fixed examples kept per recording
 CROP_PX = 256
-TINY = 1e-9
-HASH_CHARS = 10
+TINY = 1e-9                                          # the smallest denominator
+HASH_CHARS = 10                                      # a recording's cache files are named by this much of its md5
 
 
 def recordings():
@@ -95,6 +97,7 @@ def recordings():
 
 
 def video_key(video):
+    """A recording's key in the cache's file names: the start of its path's md5."""
     return hashlib.md5(str(video).encode()).hexdigest()[:HASH_CHARS]
 
 
@@ -136,6 +139,8 @@ class Model:
     """The _u8in export with its settings: boxes (cx, cy, w, h, mapped score) over the threshold."""
 
     def __init__(self, model, settings):
+        """Opens the export on the GPU where ONNX Runtime can (calibrate.session), with the settings' threshold and
+        score map."""
         self.path = calibrate.u8in_of(model)
         self.session = calibrate.session(self.path, gpu=True)
         # where it runs: the GPU's numbers differ from the CPU's a little, so each keeps its own cache
@@ -149,8 +154,8 @@ class Model:
         return peaks[peaks[:, 4] > (self.threshold if threshold is None else threshold)]
 
     def raw(self, rgb, fixed):
-        """rgb (n, 720, 1280, 3) uint8 and one fixed map (720, 1280) -> per frame, its peaks over calibrate.FLOOR with
-        their raw scores."""
+        """Each frame's peaks over calibrate.FLOOR with their raw scores, from rgb (n, 720, 1280, 3) uint8 and one
+        fixed map (720, 1280) the frames share."""
         if len(rgb) > 1 and self.session.get_inputs()[0].shape[0] == 1:    # an export traced for one frame
             return [peaks for frame in rgb for peaks in self.raw(frame[None], fixed)]
         count = len(rgb)
@@ -213,6 +218,8 @@ def fixed_map_rule():
 
 
 def check_export(model, settings, name):
+    """The export check: the settings file, the graph's inputs and outputs, its outputs on a real frame, a batch of 4,
+    and the fixed map's rule; passed with no problems."""
     session = model.session
     inputs = {node.name: node for node in session.get_inputs()}
     outputs = {node.name: node for node in session.get_outputs()}
@@ -239,8 +246,8 @@ def check_export(model, settings, name):
 
 # ---- 2 to 4. recordings: the crosshair, other screen-fixed boxes, boxes per frame -----------------------------------
 def camera(video):
-    """The recording's fixed map (old_review.fixed_map) and the room's move on screen per frame (old_review.camera_motion,
-    degrees; NaN where it has no reading), cached in test_out/vod_model/contract/."""
+    """The recording's fixed map (old_review.fixed_map) and the room's move on screen per frame
+    (old_review.camera_motion, degrees; NaN where it has no reading), cached in test_out/vod_model/contract/."""
     stat = Path(video).stat()
     path = CACHE / f"{video_key(video)}.npz"
     if path.is_file():
@@ -330,14 +337,18 @@ def turning_pairs(room):
 
 
 def recording(model, video):
+    """One recording's row for the crosshair, screen_fixed and boxes_per_frame checks: its turning pairs, the shares
+    of them with a box that stayed put on the crosshair or on the fixed map's other parts, the most boxes in a frame,
+    and a few examples."""
     fixed, room = camera(video)
     deg, pairs = turning_pairs(room)
     raw = peaks_on(model, video, set(pairs) | {i - 1 for i in pairs})
     cross = crosshair_area(fixed)
     hud = ndimage.binary_dilation(fixed, iterations=GROW_PX) & ~cross   # the fixed map's other parts: HUD, overlay
 
-    def boxes(i):                                      # over the threshold, center where the review reads (KovOBS's
-        found = model.mapped(raw[i])                   # layout)
+    def boxes(i):
+        """Frame i's boxes over the threshold whose center is where the review reads (KovOBS's layout)."""
+        found = model.mapped(raw[i])
         return found[[bool(old_review.MASK[min(old_review.H - 1, max(0, int(box[1]))),
                                            min(old_review.W - 1, max(0, int(box[0])))]) for box in found]] \
             if len(found) else found
@@ -394,6 +405,7 @@ def box_fit(scored, crop_weight=None):
     weights = (np.ones(len(scored.dets)) if crop_weight is None else crop_weight)[scored.crop] * scored.hit
 
     def at(values, percentile):
+        """The values' weighted percentile over the boxes that took a label, to 4 places, or None."""
         value = weighted_percentile(values, weights, percentile)
         return None if value is None else round(value, 4)
     return dict(boxes=int(scored.hit.sum()), centre_error_median=at(scored.err, 50),
@@ -434,10 +446,11 @@ def per_crop(scored):
                 kind=np.array([1 if KILLS in str(file) else 2 if "moving" in str(file) else 0 for file in scored.files]))
 
 
-KINDS = ("static", "kill_moments", "moving")
+KINDS = ("static", "kill_moments", "moving")         # per_crop's crop kinds, by their number there
 
 
 def bands(threshold):
+    """The calibration bands' edges: the threshold, each of BANDS over it, and 1."""
     return [threshold] + [band for band in BANDS if band > threshold] + [1.0]
 
 
@@ -451,6 +464,7 @@ def crop_checks(scored, per, edges, crop_weight=None):
     crop_weight = np.ones(len(scored.dets)) if crop_weight is None else crop_weight
 
     def ratio(a, b):
+        """Two per-crop counts' weighted sums, the first over the second."""
         return float((crop_weight * a).sum() / max(TINY, (crop_weight * b).sum()))
     weights = crop_weight[scored.crop]
     precision = []
@@ -511,9 +525,9 @@ def crop_numbers(model, val, hand):
 # killed target, but the tracking summary has no such rule. small_v10, which took KovaaK's crosshair for a target
 # (MODEL_STATUS.md), boxes it in 14.9% of 1w4ts's turning pairs, where full_v3 boxes it in none. The review's rule
 # engages only when such boxes pile up in 2% of the turning frames; below that it takes them for targets. So the pairs
-# where a model boxes the crosshair (or the fixed map's HUD) and full_v3 does not, recording by recording, may be at most
-# 0.5% of all the turning pairs, and on any one recording under 2% of its pairs (under 2 pairs, on a recording with
-# fewer than 100).
+# where a model boxes the crosshair (or the fixed map's HUD) and full_v3 does not, recording by recording, may be at
+# most 0.5% of all the turning pairs, and on any one recording under 2% of its pairs (under 2 pairs, on a recording
+# with fewer than 100).
 SCREEN_ALL, SCREEN_ONE = 0.005, 0.02
 # Crops (relative). No worse than full_v3 by more than 2 standard deviations of full_v3's own number over 400 draws of
 # the val scenarios: the range full_v3's number keeps on 95% of the draws, so a model that fails is worse than full_v3
@@ -522,16 +536,16 @@ SCREEN_ALL, SCREEN_ONE = 0.005, 0.02
 # finds nearly every kill-moment target (0.998, spread 0.001), and a 2-SD gap there is 4 labels in 2,500, which nothing
 # downstream resolves (on the four stats-file recordings small_v13, at 0.995 there, matches all 496 kills, as full_v3
 # does, and confirms 410 against 400).
-SDS = 2.0
-SHARE_FLOOR = 0.01
+SDS = 2.0                           # the standard deviations a crop number may be worse
+SHARE_FLOOR = 0.01                  # the least gap allowed on a share
 # A box's width or height over its label's is judged by its distance from 1 (a box as wide as the target): a model whose
 # boxes fit the labels better than full_v3's passes, however far that is from full_v3's own ratio.
 RATIO = "ratio"
-SHARES = ("one_box", "under_crosshair", "band_precision", "recall_by_kind")
+SHARES = ("one_box", "under_crosshair", "band_precision", "recall_by_kind")   # the numbers SHARE_FLOOR applies to
 BAND_BOXES = 50                     # a calibration band needs this many boxes for its precision to count
 
 SCREEN_ONE_PAIRS = 2                # or under 2 pairs, on a recording with fewer than 100
-VIDEO_CHARS = 48
+VIDEO_CHARS = 48                    # a recording's name kept in its row
 
 
 def recording_rows(report, reference_rows, key):
@@ -547,6 +561,7 @@ def screen_check(rows, reference_rows, key):
     """The crosshair or screen_fixed check: the pairs more than full_v3's, recording by recording (fewer on one
     recording does not make up for more on another), over all the pairs."""
     def share(recorded):
+        """The pairs with such a box over all the turning pairs of the rows."""
         return sum(row[f"{key}_pairs"] for row in recorded) / max(1, sum(row["turning_pairs"] for row in recorded))
     per = recording_rows(rows, reference_rows, key)
     more = sum(max(0.0, row[f"{key}_share"] - ref[f"{key}_share"]) * row["turning_pairs"]
@@ -580,6 +595,7 @@ def judge(rep, ref, sd, ref_rec):
     flat_reference = flat(ref)
 
     def rel(key, value, worse):
+        """relative() against full_v3's numbers and spread."""
         return relative(flat_reference, sd, key, value, worse)
 
     fit = rep["box_fit"]
@@ -634,6 +650,8 @@ def recording_part(model, reference, videos):
 
 
 def main():
+    """Checks the model against full_v3, prints each check's verdict, writes the report, and exits with 0 when it
+    meets the contract, else 1."""
     parser = argparse.ArgumentParser()
     parser.add_argument("model")
     parser.add_argument("--settings", help="a settings file or calibration report [exports/detector_<name>.json beside "

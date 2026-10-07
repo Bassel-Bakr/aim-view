@@ -1,3 +1,12 @@
+/**
+ * The kill lanes under a clicking run's video.
+ *
+ * In: the clicking report, the video's time (Playback), the picked kill (FlickFocus) and the user's
+ * pointer and arrow keys.
+ * Out: the lanes drawn on a canvas (kill-lanes-drawing.ts) with the playhead over them; a click
+ * plays a kill or seeks the video.
+ */
+
 import {
   afterNextRender,
   afterRenderEffect,
@@ -22,9 +31,9 @@ const PICK_DISTANCE = 6;
 const STEP_SECONDS = 1;
 
 /**
- * A clicking run's kills under the video, moment by moment: a mark at each kill, and under it the kill's time as a
- * bar (coral past a second). Click near a kill to play it, anywhere else to go there; the playhead follows every frame
- * outside change detection.
+ * A clicking run's kills under the video, moment by moment: a mark at each kill, and under it the
+ * kill's time as a bar (coral past a second). Click near a kill to play it, anywhere else to go
+ * there; the playhead follows every frame outside change detection.
  */
 @Component({
   selector: 'app-kill-lanes',
@@ -32,15 +41,24 @@ const STEP_SECONDS = 1;
   styleUrl: './kill-lanes.scss',
 })
 export class KillLanes {
+  /** The clicking run's report. */
   readonly report = input.required<ClickReport>();
+  /** The video: its time moves the playhead, and a click seeks it. */
   private readonly playback = inject(Playback);
+  /** The picked kill, drawn apart; a click near a kill plays it. */
   private readonly focus = inject(FlickFocus);
+  /** Stops the frame callback and the listeners when the lanes go. */
   private readonly destroyRef = inject(DestroyRef);
+  /** The lanes' box: the slider that takes the pointer and the keys. */
   private readonly box = viewChild.required<ElementRef<HTMLElement>>('box');
+  /** The canvas the lanes are drawn on. */
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('lanes');
+  /** The playhead, moved on every frame outside the template. */
   private readonly head = viewChild.required<ElementRef<HTMLElement>>('head');
+  /** The tip that names the kill under the pointer. */
   private readonly tip = viewChild.required<ElementRef<HTMLElement>>('tip');
 
+  /** How many kills the review measured, for the label. */
   protected readonly kills = computed(() => formatCount(this.report().flicks.length));
   /** The run's length in seconds: the video's, else to just after the last kill. */
   protected readonly seconds = computed(() => {
@@ -51,8 +69,13 @@ export class KillLanes {
       (last ? last.kill_frame / report.fps + STEP_SECONDS : STEP_SECONDS)
     );
   });
+  /** The lanes' colors and sizes, read from the tokens on the first draw. */
   private style: LaneStyle | null = null;
 
+  /**
+   * Starts following the video after the first render, and redraws when the kills or the pick
+   * change.
+   */
   constructor() {
     afterNextRender(() => this.follow());
     afterRenderEffect(() => {
@@ -100,6 +123,10 @@ export class KillLanes {
     });
   }
 
+  /**
+   * Sizes the canvas to its box at the screen's pixel ratio, draws the lanes and puts the playhead
+   * at the video's time; nothing while the canvas has no width.
+   */
   private draw(): void {
     const canvas = this.canvas().nativeElement;
     const widthPx = canvas.clientWidth;
@@ -124,6 +151,7 @@ export class KillLanes {
     this.moveHead(this.playback.time);
   }
 
+  /** Puts the playhead at `seconds` into the run, and tells assistive tech the slider's value. */
   private moveHead(seconds: number): void {
     const head = this.head().nativeElement;
     head.hidden = false;
@@ -155,6 +183,7 @@ export class KillLanes {
     return best;
   }
 
+  /** Names the kill under the pointer (its TTK and distance) in the tip, or hides the tip. */
   private showTip(event: PointerEvent): void {
     const tip = this.tip().nativeElement;
     const near = this.flickNear(event);
@@ -165,6 +194,7 @@ export class KillLanes {
     tip.style.left = `${Math.min(bounds.width - tip.offsetWidth, Math.max(0, event.clientX - bounds.left))}px`;
   }
 
+  /** Left and Right seek the video a second back or on. */
   protected moveWithKeys(event: KeyboardEvent): void {
     const by =
       event.key === 'ArrowLeft' ? -STEP_SECONDS : event.key === 'ArrowRight' ? STEP_SECONDS : 0;

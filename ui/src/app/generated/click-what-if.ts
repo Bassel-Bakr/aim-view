@@ -6,9 +6,24 @@ import type { ClickWhatIfGroup } from './click-what-if-group';
  * assumed.
  */
 export interface ClickWhatIf {
+  /**
+   * The part of the run the line is about.
+   */
   group: ClickWhatIfGroup;
+  /**
+   * The line's title, the change to make ("React faster").
+   */
   what: string;
+  /**
+   * The kills the change would add over the run, at the run's own pace.
+   */
   kills: number;
+  /**
+   * The score those kills would add at the run's points a kill; None when the run gives no score per kill.
+   */
   score: number | null;
+  /**
+   * What the line assumed, in a sentence.
+   */
   how: string;
 }

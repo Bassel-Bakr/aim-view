@@ -33,12 +33,17 @@ static LIBRARY: Mutex<Option<Arc<Library>>> = Mutex::new(None);
 /// `service_open`'s config: the page's mounted folders.
 #[derive(Deserialize)]
 struct Open {
+    /// The data folder, in the app's layout (/data).
     data: PathBuf,
+    /// The VODs folder the page mounted (/vods); None: not chosen yet.
     #[serde(default)]
     vods: Option<PathBuf>,
+    /// KovaaK's stats files the page copied in (/kovaak/stats).
     stats: PathBuf,
+    /// The scenario folders the page copied in.
     #[serde(default)]
     scenarios: Vec<PathBuf>,
+    /// The models (/models).
     models: PathBuf,
 }
 
@@ -46,8 +51,11 @@ struct Open {
 /// (`upload`, `ApiRequest::upload`: moved into place, never read into memory).
 #[derive(Deserialize)]
 struct Request {
+    /// "GET" or "POST".
     method: String,
+    /// The path with its query.
     path: String,
+    /// The file an upload's body is in.
     #[serde(default)]
     upload: Option<PathBuf>,
 }
@@ -75,6 +83,7 @@ unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     if len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(ptr, len) } }
 }
 
+/// A count as a little-endian u32, as the blocks hold it.
 fn u32le(number: usize) -> [u8; 4] {
     (number as u32).to_le_bytes()
 }

@@ -11,6 +11,7 @@ use aimview::geometry::{H, W};
 mod common;
 use common::{GrayFrames, parity_root};
 
+/// The parity cases with gray frames.
 const CASES: [&str; 3] = ["spectral", "flower", "pokeball5"];
 /// How many of flower's frames the join test watches, cut at every frame between.
 const JOIN_FRAMES: usize = 12;
@@ -18,6 +19,7 @@ const JOIN_FRAMES: usize = 12;
 /// A tile's shift as the bits of its two floats, so equal means equal to the bit; None where it was not read.
 type ShiftBits = Option<(u32, u32)>;
 
+/// Every stored frame's tile shifts equal the stored ones to the bit (or, with AIMVIEW_KEEP_SHIFTS, are stored).
 #[test]
 fn camera_shifts_are_unchanged() {
     let keep = std::env::var("AIMVIEW_KEEP_SHIFTS").is_ok();

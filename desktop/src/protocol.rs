@@ -77,17 +77,21 @@ fn pick_folder(lib: &Library) -> Answer<Value> {
     }
 }
 
+/// The protocol's answers.
 #[cfg(test)]
 mod tests {
     use super::*;
     use aimview_service::{Config, Layout};
 
+    /// The answer to a request with `method` and `path` (with its query) and no body.
     fn ask(lib: &Arc<Library>, method: &str, path: &str) -> Response<Vec<u8>> {
         let uri = format!("http://api.localhost{path}");
         let req = Request::builder().method(method).uri(uri).body(Vec::new()).unwrap();
         handle(lib, &req)
     }
 
+    /// A preflight, the service's routes and the mouse logger's state all answer with the window's CORS headers; a
+    /// missing video is 404.
     #[test]
     fn the_window_gets_the_services_answers() {
         let data = std::env::temp_dir().join(format!("aimview-protocol-{}", std::process::id()));

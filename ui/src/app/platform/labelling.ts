@@ -1,16 +1,29 @@
+/**
+ * The Labelling contract: the area queue, skipping a recording, marking one as another game, and
+ * the area finder's training data where the browser keeps it. In: each mode's implementation
+ * (modes/mode.*.ts). Out: the labelling tools (labelling/) and the label queue
+ * (services/label-queue.ts).
+ */
+
 import { Signal } from '@angular/core';
 
 /** What loading files did: the area examples and area types read, and the files it could not use (with why). */
 export interface ExamplesLoaded {
+  /** How many examples it read. */
   examples: number;
+  /** How many area types it read. */
   kinds: number;
+  /** The files it could not use, each with why. */
   refused: string[];
 }
 
 /** The area finder's training data kept here: how many examples, from how many recordings, and how many area types. */
 export interface ExamplesCount {
+  /** How many examples are kept. */
   examples: number;
+  /** How many recordings they come from. */
   recordings: number;
+  /** How many area types are kept. */
   kinds: number;
 }
 
@@ -20,12 +33,16 @@ export interface ExamplesCount {
  * files to start from what they labelled there.
  */
 export interface ExamplesStore {
+  /** How much training data is kept, kept up to date. */
   readonly count: Signal<ExamplesCount>;
   /** The names of the review server's files it downloads as: area_examples.jsonl and area_kinds.json. */
   readonly fileNames: readonly string[];
   /** One of those files, as the review server writes it. */
   file(name: string): Promise<Blob>;
-  /** Loads area_examples.jsonl and area_kinds.json: what they hold replaces what is kept of the same recordings and types. */
+  /**
+   * Loads area_examples.jsonl and area_kinds.json: what they hold replaces what is kept of the
+   * same recordings and types.
+   */
   load(files: readonly File[]): Promise<ExamplesLoaded>;
 }
 

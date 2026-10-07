@@ -10,9 +10,13 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class Handler(SimpleHTTPRequestHandler):
+    """Serves the files under the repo's root, with the headers the benchmark page needs."""
+
+    # browsers load a module script or a WebAssembly file only with its own type
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".mjs": "text/javascript", ".wasm": "application/wasm"}
 
     def end_headers(self):
+        """Adds cross-origin isolation (so the page gets SharedArrayBuffer) and no caching to every answer."""
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         # readable from the UI's dev server (another port) too, which is cross-origin isolated as well
@@ -22,6 +26,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
+        """Logs nothing, where the default prints a line per request."""
         pass
 
 

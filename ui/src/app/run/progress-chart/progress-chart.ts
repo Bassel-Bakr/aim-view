@@ -1,3 +1,12 @@
+/**
+ * The progress chart on the run page: the run's score against the scenario's past runs.
+ *
+ * In: the recording (its scenario and time stamp), the scenario's past runs from KovaaK's stats
+ * files (ScoreHistory), the recordings in the list (Library) and the user's pointer.
+ * Out: the chart drawn on a canvas (progress-chart-drawing.ts), a tip on the run under the pointer,
+ * and a click that opens a run's recording (Library `selectedId`).
+ */
+
 import {
   afterNextRender,
   afterRenderEffect,
@@ -30,9 +39,10 @@ import {
 import { drawProgressChart, HistoryStyle, readStyle } from './progress-chart-drawing';
 
 /**
- * Every past score of the run's scenario, from KovaaK's stats files, over the days it was played: each run a dot, the
- * median of the runs around each as a line, the personal best ringed and this run marked. Clicking a run opens its
- * recording when the list has one; else its date and score show under the chart.
+ * Every past score of the run's scenario, from KovaaK's stats files, over the days it was played:
+ * each run a dot, the median of the runs around each as a line, the personal best ringed and this
+ * run marked. Clicking a run opens its recording when the list has one; else its date and score
+ * show under the chart.
  */
 @Component({
   selector: 'app-progress-chart',
@@ -42,17 +52,26 @@ import { drawProgressChart, HistoryStyle, readStyle } from './progress-chart-dra
   styleUrl: './progress-chart.scss',
 })
 export class ProgressChart {
+  /** The recording on the page: its scenario's runs are charted, and its own run marked. */
   readonly recording = input.required<Recording>();
+  /** The recordings in the list: a click on a run opens its recording there. */
   private readonly library = inject(Library);
+  /** Stops the resize observer and the listeners when the chart goes. */
   private readonly destroyRef = inject(DestroyRef);
   /** Whether the user can give the stats folder here (the browser mode). */
   protected readonly needsFolder = inject(StatsFiles).chooseFolder !== null;
+  /** The chart's box, which takes the pointer. */
   private readonly box = viewChild.required<ElementRef<HTMLElement>>('box');
+  /** The canvas the chart is drawn on. */
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('chart');
+  /** The tip that describes the run under the pointer. */
   private readonly tip = viewChild.required<ElementRef<HTMLElement>>('tip');
 
+  /** The scenario's past runs, oldest first, as a resource. */
   protected readonly runs = inject(ScoreHistory).runs(() => this.recording().scenario);
+  /** The canvas's size on screen, in CSS pixels, kept by a resize observer. */
   private readonly size = signal<HistorySize>({ width: 0, height: 0 });
+  /** The chart's layout; null with no runs or before the canvas has a size. */
   protected readonly model = computed<HistoryModel | null>(() => {
     const runs = this.runs.hasValue() ? this.runs.value() : undefined;
     const size = this.size();
@@ -60,18 +79,30 @@ export class ProgressChart {
       ? progressChart(runs, this.recording().stamp, size)
       : null;
   });
+  /** How many past runs there are; 0 while they load. */
   protected readonly count = computed(() => (this.runs.hasValue() ? this.runs.value()?.length : 0));
+  /** The median line's legend. */
   protected readonly legend = `Median of ${MEDIAN_RUNS} runs`;
+  /**
+   * What the chart says when the scenario has no stats files: where to give them, in browser mode.
+   */
   protected readonly emptyText = this.needsFolder
     ? "No stats files of this scenario yet: give KovaaK's stats folder with Stats folder at the top."
     : "No stats files of this scenario in KovaaK's stats folder.";
-  /** The run clicked that has no recording: its date and score (cleared when another recording opens). */
+  /**
+   * The run clicked that has no recording: its date and score (cleared when another recording
+   * opens).
+   */
   protected readonly picked = linkedSignal<Recording, string | null>({
     source: this.recording,
     computation: () => null,
   });
+  /** The chart's colors and sizes, read from the tokens on the first draw. */
   private style: HistoryStyle | null = null;
 
+  /**
+   * Starts watching the canvas's size and the pointer after the first render; redraws on change.
+   */
   constructor() {
     afterNextRender(() => this.follow());
     afterRenderEffect(() => {
@@ -80,6 +111,7 @@ export class ProgressChart {
     });
   }
 
+  /** The chart follows its canvas's size; the pointer shows a run's tip, and a click opens it. */
   private follow(): void {
     const box = this.box().nativeElement;
     const resize = new ResizeObserver(([entry]) => {
@@ -101,6 +133,7 @@ export class ProgressChart {
     });
   }
 
+  /** Sizes the canvas at the screen's pixel ratio and draws the chart; nothing without a layout. */
   private draw(): void {
     const model = this.model();
     const canvas = this.canvas().nativeElement;
@@ -115,7 +148,7 @@ export class ProgressChart {
     drawProgressChart(context, model, style);
   }
 
-  /** The run under the pointer. */
+  /** The run under the pointer, within the style's reach; null with none. */
   private dotAt(event: PointerEvent): HistoryDot | null {
     const model = this.model();
     if (!model) return null;
@@ -148,6 +181,10 @@ export class ProgressChart {
     return parts.join(' · ');
   }
 
+  /**
+   * Describes the run under the pointer in the tip, says whether a click opens it, and marks the
+   * box (`data-over`) while a run is under the pointer; hides the tip otherwise.
+   */
   private showTip(event: PointerEvent): void {
     const tip = this.tip().nativeElement;
     const dot = this.dotAt(event);
@@ -161,6 +198,10 @@ export class ProgressChart {
     tip.style.left = `${Math.min(bounds.width - tip.offsetWidth, Math.max(0, dot.x - tip.offsetWidth / 2))}px`;
   }
 
+  /**
+   * A click on a run opens its recording; a run with no recording in the list shows its date and
+   * score under the chart instead.
+   */
   private openRun(event: PointerEvent): void {
     const dot = this.dotAt(event);
     if (!dot) return;

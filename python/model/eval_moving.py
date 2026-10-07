@@ -7,10 +7,10 @@
 
 Clicking kinds (static, dynamic, switching): kills matched to a target and flicks measured. Tracking: the review's
 time on the target against the stats file's accuracy, hits over hits and misses: the game's own measure of the same
-thing. All from the core's review of the tracks (`core_numbers`: examples/review.rs, as the app's report works them out).
-The tracks come from the app's native review (the review service's aimview-tool, through python/aimview_tools.py: the
-model's _u8in export, see eval_vods.u8in, and the app's areas for each recording). They are cached per model name in
-test_out/vod_model/eval/moving_<name>_native.pkl.
+thing. All from the core's review of the tracks (`core_numbers`: examples/review.rs, as the app's report works them
+out). The tracks come from the app's native review (the review service's aimview-tool, through
+python/aimview_tools.py: the model's _u8in export, see eval_vods.u8in, and the app's areas for each recording). They
+are cached per model name in test_out/vod_model/eval/moving_<name>_native.pkl.
 Usage: python python/model/eval_moving.py name=model [name=model ...] [--reports <folder>]
 --reports also writes the core's whole report of each run to <folder>/<name>/<video>.json: run it before and after a
 change to the core's tracking or clicking review and compare the folders (`diff -rq`; BENCH.md).
@@ -31,6 +31,7 @@ import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import old_review  # noqa: E402
 
+# the recordings picked of each moving kind, one a folder
 PER = {"dynamic": 6, "switching": 6, "tracking": 12}
 KOVOBS = str(eval_vods.VODS)
 SKIP = {"voxTS Voltaic Easy - 111 - 2026.08.13-01.17.08.mp4"}     # a recording of another game, not KovaaK's
@@ -41,6 +42,7 @@ NAME_CHARS, CELL_CHARS = 39, 14     # the table's columns
 
 
 def stats_of(video):
+    """The recording's stats file (eval_vods.stats_for), or None, also for a file not named the KovOBS way."""
     try:
         return eval_vods.stats_for(video)
     except ValueError:                                  # a file not named the KovOBS way
@@ -48,6 +50,8 @@ def stats_of(video):
 
 
 def picks(lib):
+    """The recordings checked, by kind: [(video, stats file)], the static ones from STATIC and the others as the
+    module's docstring says."""
     kinds = lib.scenario_kinds()
     out = {"static": [(video, str(stats_of(video))) for video in STATIC if stats_of(video)],
            "dynamic": [], "switching": [], "tracking": []}
@@ -95,6 +99,7 @@ def parse_args(args):
 
 
 def scenario_of(video):
+    """The scenario of a recording KovOBS named, in lower case (the scenario facts' key)."""
     return Path(video).stem.rsplit(" - ", 2)[0].lower()
 
 
@@ -151,6 +156,7 @@ def print_table(pick, results):
 
 
 def main():
+    """Works out every name=model's numbers on the picked recordings and prints the table."""
     lib = eval_vods.library()
     program = eval_video_alone.review_program()
     pick = picks(lib)

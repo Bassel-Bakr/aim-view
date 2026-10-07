@@ -19,6 +19,7 @@ use crate::what_if::{click_what_if, ClickWhatIf};
 
 /// Each sector of DIRECTIONS spans this many degrees, centered on its direction.
 const SECTOR_DEG: f64 = 45.0;
+/// Degrees in a full turn: directions are taken modulo it.
 const FULL_TURN_DEG: f64 = 360.0;
 /// The spread of the TTKs needs this many kills.
 const MIN_KILLS_FOR_SPREAD: usize = 3;
@@ -36,23 +37,35 @@ const MID_DISTANCE_DEG: Range<f64> = 10.0..25.0;
 const MIN_HELD_S: f64 = 1e-9;
 /// A share times this is a percentage; seconds times MS_PER_S are milliseconds.
 const PERCENT: f64 = 100.0;
+/// Milliseconds in a second.
 const MS_PER_S: f64 = 1000.0;
 
 /// The checks' thresholds, which their texts give too: first guesses until the issue list is settled. A check is
-/// flagged for attention past them (under MIN_NEAREST_SHARE).
+/// flagged for attention past them (under MIN_NEAREST_SHARE). This one: the median reaction, seconds.
 const SLOW_START_S: f64 = 0.15;
+/// The share of flicks that overflicked (ended past the target's far edge).
 const OVERFLICK_SHARE: f64 = 0.15;
+/// What underflicking cost on mid-distance flicks, seconds (`mid_short_cost`).
 const UNDERFLICK_COST_S: f64 = 0.03;
+/// The share of a hold-fire run's held kills where the crosshair slipped off the target.
 const SLIPPED_SHARE: f64 = 0.3;
+/// The share of a hold-fire run's held time spent off the target.
 const OFF_TARGET_SHARE: f64 = 0.15;
+/// The median confirmation (still on the target before the click), seconds.
 const LONG_CONFIRMATION_S: f64 = 0.08;
+/// The share of clicks on the move (faster than MOVING_CLICK_DEG_S).
 const MOVING_CLICKS_SHARE: f64 = 0.10;
+/// The share of next targets that were the nearest: flagged under it, not past it.
 const MIN_NEAREST_SHARE: f64 = 0.6;
+/// How much longer the last third's median TTK is than the first third's, as a share of the first's.
 const PACE_DROP_SHARE: f64 = 0.10;
+/// The slowest direction's extra time over the others', as a share of the median TTK.
 const DIRECTION_BIAS_SHARE: f64 = 0.15;
+/// The misses' share of the shots.
 const MISS_SHARE: f64 = 0.08;
 /// Direction bias compares the directions with this many flicks or more, when there are MIN_BIAS_DIRECTIONS of them.
 const MIN_BIAS_FLICKS: usize = 10;
+/// The fewest directions with MIN_BIAS_FLICKS flicks for the direction bias check: fewer leave too little to compare.
 const MIN_BIAS_DIRECTIONS: usize = 3;
 
 /// Click: one shot a kill. Hold: the trigger is held on the target (the median kill takes more than 3 shots).
@@ -61,8 +74,11 @@ const MIN_BIAS_DIRECTIONS: usize = 3;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
+    /// One shot a kill: the confirmation and the clicks on the move are checked.
     Click,
+    /// The trigger is held on the target: the holding is checked instead.
     Hold,
+    /// A tracking run (src/tracking.rs), on the target all along.
     Track,
 }
 
@@ -71,10 +87,13 @@ pub enum Mode {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Holding {
+    /// The median hold: seconds from reaching the target to its kill, over the kills held for some time.
     #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub hold: Option<f64>,
+    /// The share of the held kills where the crosshair slipped off the target at least once.
     #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub slipped: f64,
+    /// The share of all the held time spent off the target.
     #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub off_share: f64,
 }
@@ -83,8 +102,10 @@ pub struct Holding {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Pace {
+    /// The median TTK of the first third's kills, seconds.
     #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub pace_first: Option<f64>,
+    /// The median TTK of the last third's kills, seconds.
     #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub pace_last: Option<f64>,
 }
@@ -94,13 +115,21 @@ pub struct Pace {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[expect(clippy::min_ident_chars, reason = "`n` is the JSON's key, which review.py wrote and the run page reads")]
 pub struct DistanceGroup {
+    /// The group's low end: flicks that started this far from the target or more, degrees.
     pub lo: u32,
+    /// The group's high end: flicks that started less than this far, degrees.
     pub hi: u32,
+    /// How many flicks are in the group.
     pub n: usize,
+    /// Their median TTK, seconds.
     pub interval: Option<f64>,
+    /// Their median reaction, seconds.
     pub react: Option<f64>,
+    /// The share of them that underflicked (the main flick ended short of the target).
     pub short: f64,
+    /// The share of them that overflicked (the main flick ended past the target's far edge).
     pub past: f64,
+    /// Their median confirmation, seconds.
     pub still: Option<f64>,
 }
 
@@ -109,60 +138,112 @@ pub struct DistanceGroup {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[expect(clippy::min_ident_chars, reason = "`n` is the JSON's key, which review.py wrote and the run page reads")]
 pub struct DirectionGroup {
+    /// The direction's name in DIRECTIONS ("right", "up-right", ...).
     #[cfg_attr(feature = "ts", ts(as = "Direction"))]
     pub name: &'static str,
+    /// How many flicks went this way.
     pub n: usize,
+    /// Their median TTK, seconds.
     pub interval: Option<f64>,
+    /// Their median distance to the target at the start, degrees.
     pub distance: Option<f64>,
+    /// The share of them that underflicked.
     pub short: f64,
+    /// The share of them that overflicked.
     pub past: f64,
+    /// Their median TTK beyond what Fitts' law, fitted to the run, predicts for their distance (seconds; below 0:
+    /// faster); None without a fit.
     pub beyond: Option<f64>,
 }
 
-/// A clicking run's summary: the stats file's facts, then the medians and shares of the measures.
+/// A clicking run's summary: the stats file's facts, then the medians and shares of the measures. Without a stats
+/// file the facts are those the HUD and the recording's name give (src/review.rs `unpaired_kills`). Times are in
+/// seconds, distances in degrees and speeds in degrees a second.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Summary {
+    /// The scenario's name, from the stats file (without one, from the recording's name).
     pub scenario: Option<String>,
+    /// The stats file's score; None from the video alone or when the file gives none.
     pub score: Option<f64>,
+    /// The stats file's kill count (0 when it gives none); from the video alone, the kills matched.
     pub kills: i64,
+    /// The stats file's Miss Count.
     pub misses: Option<i64>,
+    /// The game's average frames a second over the run, from the stats file.
     pub fps_avg: Option<f64>,
+    /// The sensitivity and its scale as the stats file gives them ("2.5 cm/360"; "None" for a missing scale).
     pub sens: Option<String>,
+    /// The field of view as the stats file writes it.
     pub fov: Option<String>,
+    /// The targets' radius, degrees (src/measure.rs `target_radius`).
     pub radius: f64,
+    /// How many kills were measured: the flicks with a long enough path.
     pub measured: usize,
+    /// How the kills were matched to the tracks (src/matching.rs).
     pub info: MatchInfo,
+    /// The median TTK, seconds.
     pub median_interval: Option<f64>,
+    /// How much the TTKs vary: their standard deviation over their mean, with MIN_KILLS_FOR_SPREAD kills or more.
     pub spread: Option<f64>,
+    /// The median reaction, seconds.
     pub react: Option<f64>,
+    /// The median main flick, seconds.
     pub flick: Option<f64>,
+    /// The median peak speed, degrees a second.
     pub peak: Option<f64>,
+    /// The median time to reach the target, seconds.
     pub arrive: Option<f64>,
+    /// The median confirmation (still on the target before the click), seconds.
     pub still: Option<f64>,
+    /// The median speed at the click, degrees a second.
     pub click_speed: Option<f64>,
+    /// The median distance from the target's center at the click, degrees.
     pub click_off: Option<f64>,
+    /// The share of flicks that underflicked: the main flick ended short of the target.
     pub ended_short: Option<f64>,
+    /// The share of flicks that overflicked: the main flick ended past the target's far edge.
     pub ended_past: Option<f64>,
+    /// The share of flicks that went past the target's edge at some point from the reaction's end on.
     pub crossed_past: Option<f64>,
+    /// The share of clicks on the move, faster than MOVING_CLICK_DEG_S.
     pub moving_clicks: Option<f64>,
+    /// The shots the measured kills took, from the kill times; None from the video alone.
     pub shots: Option<i64>,
+    /// Whether the run clicks, holds the trigger or tracks.
     pub mode: Mode,
+    /// The stats file's hits over its hits and misses.
     pub accuracy: Option<f64>,
+    /// A hold-fire run's holding, over the kills held on the target; its keys are left out without one.
     #[serde(flatten)]
     pub holding: OptionalFields<Holding>,
+    /// The median confirmation of the flicks whose main flick did not end short (it landed on the target or past it),
+    /// seconds.
     pub still_landed: Option<f64>,
+    /// The median confirmation of the flicks whose main flick ended short, so micros brought the crosshair on, seconds.
     pub still_corrected: Option<f64>,
+    /// How much of the way an underflick covered (the median share), over flicks that started more than
+    /// MIN_UNDERFLICK_DISTANCE_DEG away.
     pub short_covered: Option<f64>,
+    /// What underflicking cost: the median TTK of the underflicks in MID_DISTANCE_DEG less that of the other flicks
+    /// there, seconds.
     pub mid_short_cost: Option<f64>,
+    /// The mean time of each kill step over the kills that have them (react, main flick, onto the target, settle,
+    /// still), seconds.
     #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::KillParts>"))]
     pub budget: Option<[f64; 5]>,
+    /// The flicks of each distance group in DISTANCES that has any.
     #[cfg_attr(feature = "ts", ts(as = "Vec<DistanceGroup>"))]
     pub by_distance: Capped<DistanceGroup, { DISTANCES.len() }>,
+    /// The flicks of each direction in DIRECTIONS that has any.
     #[cfg_attr(feature = "ts", ts(as = "Vec<DirectionGroup>"))]
     pub by_direction: Capped<DirectionGroup, { DIRECTIONS.len() }>,
+    /// The share of kills after the first whose next target was the nearest on screen (src/measure.rs `choices`).
     pub nearest_chosen: Option<f64>,
+    /// When the next target was not the nearest: how much farther it was (the median), degrees.
     pub extra_when_not_nearest: Option<f64>,
+    /// The median TTK in the first and the last third, in a run of MIN_KILLS_FOR_PACE kills or more; its keys are left
+    /// out in a shorter one.
     #[serde(flatten)]
     pub pace: OptionalFields<Pace>,
     /// What would raise the score, biggest first (src/what_if.rs; Python's report has none).
@@ -184,13 +265,21 @@ pub const DIRECTIONS: [&str; 8] = ["right", "up-right", "up", "up-left", "left",
 #[derive(ts_rs::TS)]
 #[ts(export, rename_all = "kebab-case")]
 pub enum Direction {
+    /// "right": 0 degrees.
     Right,
+    /// "up-right": 45 degrees.
     UpRight,
+    /// "up": 90 degrees.
     Up,
+    /// "up-left": 135 degrees.
     UpLeft,
+    /// "left": 180 degrees.
     Left,
+    /// "down-left": 225 degrees.
     DownLeft,
+    /// "down": 270 degrees.
     Down,
+    /// "down-right": 315 degrees.
     DownRight,
 }
 
@@ -469,18 +558,26 @@ pub fn summarize(
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Flag {
+    /// Past the check's threshold: worth a look.
     Attention,
+    /// Within the threshold.
     Fine,
 }
 
-/// One check: the issue's number (as in docs/issues.md), the number it reads, a plain verdict and why.
+/// One check: the issue's number, the number it reads, a plain verdict and why. The numbers are those of the old
+/// review's issue list (python/retired/review.py cites docs/issues.md, which this repo does not have).
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Issue {
+    /// The issue's number in the issue list.
     pub issue: u32,
+    /// The check's name, shown as its heading ("Slow start").
     pub title: &'static str,
+    /// What the run measured, as a sentence with its number.
     pub value: String,
+    /// The verdict: past the threshold or not.
     pub flag: Flag,
+    /// Why it matters and the threshold it is flagged at.
     pub why: String,
 }
 
@@ -515,7 +612,9 @@ fn check(issue: u32, title: &'static str, value: String, attention: bool, why: i
     Issue { issue, title, value, flag, why: why.into() }
 }
 
-/// Provisional checks, one per issue. The thresholds are first guesses until the issue list is settled.
+/// The run's checks, each a provisional verdict on one issue (issue 24 has two); a check whose numbers the summary
+/// lacks, or that does not apply to the run's mode, is left out. The thresholds are first guesses until the issue list
+/// is settled.
 pub fn judge(summary: &Summary) -> Vec<Issue> {
     [
         slow_start(summary),
@@ -535,6 +634,7 @@ pub fn judge(summary: &Summary) -> Vec<Issue> {
     .collect()
 }
 
+/// The median reaction after a kill (issue 1); None without one.
 fn slow_start(summary: &Summary) -> Option<Issue> {
     let react_s = summary.react?;
     Some(check(
@@ -547,6 +647,7 @@ fn slow_start(summary: &Summary) -> Option<Issue> {
     ))
 }
 
+/// The share of flicks that ended past the target's far edge (issue 9); None with no measured flick.
 fn overflick(summary: &Summary) -> Option<Issue> {
     let past_share = summary.ended_past?;
     Some(check(
@@ -558,7 +659,8 @@ fn overflick(summary: &Summary) -> Option<Issue> {
     ))
 }
 
-/// Underflicking is flagged only when it costs time.
+/// The share of flicks that ended short (issue 10), flagged only when it costs time (`mid_short_cost`); None with no
+/// measured flick.
 fn underflick(summary: &Summary) -> Option<Issue> {
     let short_share = summary.ended_short?;
     let cost_s = summary.mid_short_cost;
@@ -585,6 +687,8 @@ fn hold_fire(summary: &Summary) -> Option<&Holding> {
     summary.holding.as_ref()
 }
 
+/// A hold-fire run's share of held kills where the crosshair slipped off the target (issue 24); None in any other run
+/// or without held kills.
 fn unstable_landing(summary: &Summary) -> Option<Issue> {
     let holding = hold_fire(summary)?;
     Some(check(
@@ -599,6 +703,8 @@ fn unstable_landing(summary: &Summary) -> Option<Issue> {
     ))
 }
 
+/// A hold-fire run's share of the held time spent off the target (issue 24 too); None in any other run or without
+/// held kills.
 fn time_off_while_holding(summary: &Summary) -> Option<Issue> {
     let holding = hold_fire(summary)?;
     Some(check(
@@ -614,7 +720,7 @@ fn time_off_while_holding(summary: &Summary) -> Option<Issue> {
     ))
 }
 
-/// The confirmation of a run that clicks (a hold-fire run has none), against its median TTK.
+/// The confirmation of a run that clicks (issue 36; a hold-fire run has none), against its median TTK.
 fn long_confirmation(summary: &Summary) -> Option<Issue> {
     if summary.mode == Mode::Hold {
         return None;
@@ -641,6 +747,7 @@ fn long_confirmation(summary: &Summary) -> Option<Issue> {
     ))
 }
 
+/// The share of clicks on the move (issue 34), in a run that clicks; None in a hold-fire run.
 fn click_on_the_move(summary: &Summary) -> Option<Issue> {
     if summary.mode == Mode::Hold {
         return None;
@@ -655,6 +762,7 @@ fn click_on_the_move(summary: &Summary) -> Option<Issue> {
     ))
 }
 
+/// The share of next targets that were the nearest on screen (issue 56), flagged when it is low; None without choices.
 fn target_choice(summary: &Summary) -> Option<Issue> {
     let nearest_share = summary.nearest_chosen?;
     let otherwise = truthy(summary.extra_when_not_nearest)
@@ -669,6 +777,8 @@ fn target_choice(summary: &Summary) -> Option<Issue> {
     ))
 }
 
+/// How much longer the last third's median TTK is than the first's (issue 49); None in a run too short for a pace, or
+/// when either median is missing or 0.
 fn pacing_drop(summary: &Summary) -> Option<Issue> {
     let &Pace { pace_first: Some(first_s), pace_last: Some(last_s) } = summary.pace.as_ref()? else {
         return None;
@@ -687,7 +797,7 @@ fn pacing_drop(summary: &Summary) -> Option<Issue> {
 }
 
 /// The direction that took the longest beyond what its distances predict, against the others, over the directions
-/// with enough flicks.
+/// with enough flicks (issue 13).
 fn direction_bias(summary: &Summary) -> Option<Issue> {
     let directions: Vec<&DirectionGroup> = summary
         .by_direction
@@ -722,7 +832,8 @@ fn direction_bias(summary: &Summary) -> Option<Issue> {
     ))
 }
 
-/// The misses' share of the shots, in a run that clicks and has kills.
+/// The misses' share of the shots (issue 39), in a run that clicks and has kills. The shots are the kills and the
+/// misses: one hit a kill.
 fn misses(summary: &Summary) -> Option<Issue> {
     if summary.mode == Mode::Hold || summary.kills == 0 {
         return None;
@@ -738,10 +849,12 @@ fn misses(summary: &Summary) -> Option<Issue> {
     ))
 }
 
+/// Tests of the checks' number formatting.
 #[cfg(test)]
 mod tests {
     use super::fixed;
 
+    /// `fixed` and `{:+.0}` round as Python's f-strings do, ties to even and the sign of -0 kept.
     #[test]
     fn writes_numbers_as_python_does() {
         // Python: f"{v:.0f}|{v:.1f}|{v:+.0f}|{v:.2f}"

@@ -12,18 +12,21 @@ const STATE_WORDS: usize = 624;
 const TWIST_OFFSET: usize = 397;
 /// The twist's matrix, applied when the joined word is odd (`MATRIX_A`).
 const TWIST_MATRIX: u32 = 0x9908_b0df;
-/// The top bit, and the bits below it: a twist joins one word's top bit with the next word's others (`UPPER_MASK`,
-/// `LOWER_MASK`).
+/// A word's top bit: a twist joins one word's top bit with the next word's others (`UPPER_MASK`).
 const UPPER_MASK: u32 = 0x8000_0000;
+/// The bits below the top one, which a twist takes from the next word (`LOWER_MASK`).
 const LOWER_MASK: u32 = 0x7fff_ffff;
 /// `init_by_array`'s seed for `init_genrand`, before the key is mixed in.
 const INIT_BY_ARRAY_SEED: u32 = 19_650_218;
-/// The multipliers of `init_genrand`, and of `init_by_array`'s two passes over the state.
+/// The multiplier of `init_genrand`, which fills the state from one seed word.
 const INIT_MULTIPLIER: u32 = 1_812_433_253;
+/// The multiplier of `init_by_array`'s first pass, which mixes the key in.
 const KEY_PASS_MULTIPLIER: u32 = 1_664_525;
+/// The multiplier of `init_by_array`'s second pass over the state.
 const FINAL_PASS_MULTIPLIER: u32 = 1_566_083_941;
-/// `genrand_uint32`'s tempering masks.
+/// `genrand_uint32`'s first tempering mask, after the shift left by 7.
 const TEMPER_MASK_B: u32 = 0x9d2c_5680;
+/// `genrand_uint32`'s second tempering mask, after the shift left by 15.
 const TEMPER_MASK_C: u32 = 0xefc6_0000;
 /// Bits in a draw of the twister.
 const DRAW_BITS: u32 = 32;
@@ -240,11 +243,12 @@ fn big_sigma1(word: u64) -> u64 {
     word.rotate_right(14) ^ word.rotate_right(18) ^ word.rotate_right(41)
 }
 
-/// FIPS 180-4's `σ0` and `σ1`, in the message schedule.
+/// FIPS 180-4's `σ0`, in the message schedule, on the word 15 back.
 fn small_sigma0(word: u64) -> u64 {
     word.rotate_right(1) ^ word.rotate_right(8) ^ (word >> 7)
 }
 
+/// FIPS 180-4's `σ1`, in the message schedule, on the word 2 back.
 fn small_sigma1(word: u64) -> u64 {
     word.rotate_right(19) ^ word.rotate_right(61) ^ (word >> 6)
 }
@@ -262,10 +266,13 @@ fn padded(data: &[u8], block_bytes: usize, length: &[u8]) -> Vec<u8> {
     message
 }
 
-/// MD5's message block, in bytes and in words, and its steps a block (four rounds of 16).
+/// MD5's message block, in bytes.
 const MD5_BLOCK_BYTES: usize = 64;
+/// MD5's message block, in 32-bit words.
 const MD5_BLOCK_WORDS: usize = 16;
+/// MD5's steps a block: four rounds of 16.
 const MD5_STEPS: usize = 64;
+/// The steps in each of MD5's four rounds, each round with its own function.
 const MD5_STEPS_A_ROUND: usize = 16;
 
 /// How far each step turns its sum left (RFC 1321, 3.4: `S11` to `S44`).
@@ -340,10 +347,12 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Checks the hashes and the twister against known values.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// MD5 and SHA-512 give the published digests, a SHA-512 over more than one block included.
     #[test]
     fn the_hashes_give_the_known_digests() {
         assert_eq!(hex(&md5(b"")), "d41d8cd98f00b204e9800998ecf8427e");
@@ -372,7 +381,10 @@ mod tests {
         assert_eq!(random.next_u32(), PYTHON_BITS);
     }
 
+    /// Python's five `randint(-48, 48)` for the seed "seed".
     const PYTHON_RANDINTS: [i64; 5] = [-31, -41, -18, -4, -12];
+    /// Python's `choice(range(7))` after them.
     const PYTHON_CHOICE: usize = 3;
+    /// Python's `getrandbits(32)` after that.
     const PYTHON_BITS: u32 = 185764099;
 }

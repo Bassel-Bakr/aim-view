@@ -7,16 +7,25 @@ import type { HudGame } from './hud-game';
  * first frame from time 0 on), on the video's own clock.
  */
 export interface HudReading {
+  /**
+   * Which game's HUD this is.
+   */
   game: HudGame;
   /**
    * One entry per kill: the frame its count went up.
    */
   kills: number[];
   /**
-   * One entry per shot, and per hit: the frame its count went up.
+   * One entry per shot: the frame its count went up.
    */
   shots: number[];
+  /**
+   * One entry per hit: the frame its count went up.
+   */
   hits: number[];
+  /**
+   * The run's totals at the end ("final" in the JSON).
+   */
   final: HudFinal;
   /**
    * The share of the count's steps that were a plausible step (+1 kill, a hit or a miss).

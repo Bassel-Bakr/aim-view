@@ -1,19 +1,39 @@
+/**
+ * The faint-target cut-off's marks on the video: rings round the tracks it leaves out and the one
+ * picked in the strip, track scores, and the scores of the track under the mouse. In: the review's
+ * geometry, every track of the review (the ones the cut-off leaves out among them), the tracks'
+ * scores and the panel's choices (FaintCutoff). Out: the player's overlay canvas (player/player.ts)
+ * and the track the mouse points at.
+ */
+
 import { Report, Tracks } from '../../api';
 import { FaintHover } from '../../services/faint-cutoff';
 import { Point, toPx } from '../track';
 
-/** How the cut-off draws on the video: its colors, font and sizes, from its tokens (themes/faint.scss). */
+/**
+ * How the cut-off draws on the video: its colors, font and sizes, from its tokens
+ * (themes/faint.scss).
+ */
 export interface FaintStyle {
+  /** The scores' font (--overlay-font). */
   font: string;
+  /** The dashed ring round a track the cut-off leaves out (--overlay-faint-ring). */
   ring: string;
+  /** The ring round the track picked in the strip (--overlay-faint-picked). */
   picked: string;
+  /** The rings' radius, in pixels (--overlay-faint-ring-radius). */
   radius: number;
+  /** The background behind a track's score (--overlay-faint-label-bg). */
   labelBg: string;
+  /** The background behind the hovered track's scores (--overlay-faint-hover-bg). */
   hoverBg: string;
+  /** The scores' text color (--overlay-faint-text). */
   text: string;
+  /** The score's color on a track the cut-off leaves out (--overlay-faint-text-out). */
   textOut: string;
 }
 
+/** The cut-off's drawing style, read from the CSS variables in effect on an element. */
 export function readFaintStyle(element: Element): FaintStyle {
   const css = getComputedStyle(element);
   const token = (name: string) => css.getPropertyValue(name).trim();
@@ -29,27 +49,46 @@ export function readFaintStyle(element: Element): FaintStyle {
   };
 }
 
-/** What the cut-off shows on a frame: the tracks it leaves out, the one picked, the scores, and the point hovered. */
+/**
+ * What the cut-off shows on a frame: the tracks it leaves out, the one picked, the scores, and the
+ * point hovered.
+ */
 export interface FaintLayer {
+  /** Each scored track's score, by track id. */
   scores: ReadonlyMap<number, number>;
+  /** The ids of the tracks the cut-off leaves out. */
   dropped: ReadonlySet<number>;
+  /** The id of the track picked in the strip, or null. */
   highlight: number | null;
+  /** Every track's score is written beside it. */
   showScores: boolean;
+  /** The track under the mouse and its scores, or null. */
   hover: FaintHover | null;
 }
 
+/** The dashes of a left-out track's ring: drawn and gap lengths, in pixels. */
 const DASH = [2, 3];
+/** A left-out track's ring width, in pixels. */
 const LINE = 1.2;
+/** The picked track's ring width, in pixels. */
 const LINE_PICKED = 2;
+/** A score label's left edge, right of the track's center, in pixels. */
 const LABEL_X = 10;
+/** A score label's top edge, above the track's center, in pixels. */
 const LABEL_Y = 16;
+/** A score label's height, in pixels. */
 const LABEL_H = 14;
+/** The space round a score label's text, in pixels. */
 const LABEL_PAD = 3;
 /** A score's text sits this far above its label's bottom padding, in pixels. */
 const LABEL_TEXT_LIFT = 2;
+/** The hovered scores' gap from the mouse point, sideways, in pixels. */
 const HOVER_X = 12;
+/** The hovered scores' top edge, below the mouse point, in pixels. */
 const HOVER_Y = 8;
+/** The hovered scores' box height, in pixels. */
 const HOVER_H = 18;
+/** The space round the hovered scores' text, in pixels. */
 const HOVER_PAD = 5;
 /** How near the mouse a track is pointed at, in pixels. */
 const POINT_RADIUS = 12;
@@ -59,7 +98,11 @@ function scoreText(score: number | undefined): string {
   return score === undefined ? '–' : score.toFixed(2);
 }
 
-/** A ring round a track the cut-off leaves out (dashed) or the one picked in the strip, and its score beside it. */
+/**
+ * A ring round a track the cut-off leaves out (dashed) or the one picked in the strip, and its
+ * score beside it when the scores are shown or the track is picked. The point is the track's place
+ * on the canvas.
+ */
 function drawTrackMark(
   context: CanvasRenderingContext2D,
   style: FaintStyle,
@@ -88,7 +131,10 @@ function drawTrackMark(
   }
 }
 
-/** The hovered point's scores beside it: to its right, or to its left where the video has no room for them. */
+/**
+ * The hovered point's scores beside it: to its right, or to its left where the video has no room
+ * for them.
+ */
 function drawHover(context: CanvasRenderingContext2D, style: FaintStyle, hover: FaintHover): void {
   const width = context.measureText(hover.text).width + 2 * HOVER_PAD;
   const fitsRight = hover.x + HOVER_X + width <= context.canvas.clientWidth;
@@ -100,9 +146,10 @@ function drawHover(context: CanvasRenderingContext2D, style: FaintStyle, hover: 
 }
 
 /**
- * The tracks the cut-off leaves out, on the frame shown: dimmed dashed rings, so the user sees what it removes. With
- * the scores shown, every track's score beside it; the track picked in the strip highlighted; the point under the mouse
- * with that frame's own score.
+ * The tracks the cut-off leaves out, on the frame shown: dimmed dashed rings, so the user sees what
+ * it removes. With the scores shown, every track's score beside it; the track picked in the strip
+ * highlighted; the point under the mouse with that frame's own score. `scale` is canvas pixels per
+ * frame pixel (toPx).
  */
 export function drawFaint(
   context: CanvasRenderingContext2D,
@@ -124,7 +171,10 @@ export function drawFaint(
   if (hover && hover.frame === frame) drawHover(context, style, hover);
 }
 
-/** The track the mouse points at on the frame shown (within 12 pixels), with its frame's score and its own. */
+/**
+ * The track the mouse points at on the frame shown (the nearest within 12 pixels), with its frame's
+ * score and its own; null when none is that near. The mouse is in canvas pixels.
+ */
 export function pointedTrack(
   report: Report,
   all: Tracks,

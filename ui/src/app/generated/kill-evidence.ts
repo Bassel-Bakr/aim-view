@@ -6,8 +6,22 @@
  * each frame after it, 1 to TRAIL (None where it could not be measured).
  */
 export interface KillEvidence {
+  /**
+   * The kill's frame, as the video alone gave it; the key a review request matches the kill by.
+   */
   frame: number;
+  /**
+   * The median of how much the target stood out at its tracked places 4 to 2 frames before the kill (the color
+   * distance between the disc and the ring, 8-bit levels).
+   */
   before: number | null;
+  /**
+   * The same median where it died, 3 to 6 frames after the kill.
+   */
   after: number | null;
+  /**
+   * How much the place it died stood out in each of the TRAIL frames after the kill (frame kill + 1 first); empty in
+   * a kills.json written before the trail.
+   */
   trail: (number | null)[];
 }

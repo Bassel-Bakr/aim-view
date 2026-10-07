@@ -1,4 +1,5 @@
-//! Each flick measured (review.py: `target_radius`, `measure`, `choices`).
+//! Each flick of a clicking run measured (the old review, python/retired/review.py: `target_radius`, `measure`,
+//! `choices`): how long each kill step took, how fast the crosshair moved, where it ended and where it clicked.
 //!
 //! In: the kills matched to their flicks (src/matching.rs), each with the target's path relative to the crosshair, and
 //! the tracks (src/track.rs) for the camera's turn and the targets on screen. Out: one `Measure` per kill, the flick
@@ -16,16 +17,20 @@ use crate::track::{TrackPoint, Tracks};
 
 /// The targets' radius when fewer than `MIN_AREAS_FOR_RADIUS` areas were seen (degrees; 1w4ts Voltaic's).
 pub(crate) const DEFAULT_TARGET_RADIUS_DEG: f64 = 0.43;
+/// The fewest flicks with a target area that give the targets' radius; with fewer, `DEFAULT_TARGET_RADIUS_DEG` stands.
 const MIN_AREAS_FOR_RADIUS: usize = 5;
 /// A flick is measured when its path has this many points and starts within `MAX_PATH_START_LAG_FRAMES` of the flick.
 const MIN_PATH_POINTS: usize = 4;
+/// How many frames after the flick's start its path may begin and still be measured: a path that starts later leaves
+/// out the flick's first frames, so its times would be short.
 const MAX_PATH_START_LAG_FRAMES: i64 = 2;
 /// The reaction ends at the first point from which the crosshair closes on the target faster than this for 2 points.
 const REACTION_SPEED_DEG_S: f64 = 30.0;
 /// The main flick ends at the first point after its peak below this share of the peak speed.
 const FLICK_END_SHARE: f64 = 0.15;
-/// A correction starts above the first speed and ends below the second.
+/// A correction (a burst of movement after the main flick) starts when the speed rises above this.
 const CORRECTION_START_DEG_S: f64 = 8.0;
+/// A correction ends when the speed falls below this; the gap between the two speeds keeps noise from counting twice.
 const CORRECTION_STOP_DEG_S: f64 = 4.0;
 /// The crosshair slips off the target beyond this share of its radius, and is back on inside the radius: the gap keeps
 /// a crosshair on the edge from slipping off every frame.
@@ -41,53 +46,80 @@ const MIN_BRAKING_FRAMES: i64 = 2;
 const BRAKING_START_SHARE: f64 = 0.9;
 /// A profile needs this many flicks, each at least `MIN_PROFILE_FLICK_FRAMES` long.
 const MIN_PROFILE_FLICKS: usize = 3;
+/// The fewest frames a main flick lasts to count in the profile: a shorter one has too few points to give a shape.
 const MIN_PROFILE_FLICK_FRAMES: usize = 3;
 /// The next target is the one nearest the crosshair this many frames after the kill.
 const CHOICE_DELAY_FRAMES: i64 = 3;
 /// A target counts as nearer than the chosen one when it is nearer by more than this.
 const NEARER_MARGIN_DEG: f64 = 0.3;
 
-/// One flick's measures (seconds, degrees and degrees a second): the keys measure.py has always written, plus
-/// settle, still and the time parts.
+/// One flick's measures (seconds, degrees and degrees a second): the keys the old review's `measure` wrote, plus
+/// settle, still and the time parts. Speeds and distances are the crosshair's relative to the target; times count
+/// from the flick's start (its path's first point), except where a field says otherwise.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Measure {
+    /// The kill's number in the run, from 1 (the flick's `kill_number`).
     pub kill_number: usize,
+    /// The shots the kill took, from the kill times; None from the video alone.
     pub shots: Option<i64>,
     /// The distance to the target when the flick started.
     #[serde(rename = "D0")]
     pub start_distance_deg: f64,
     /// The direction to the target (0 = right, 90 = up).
     pub direction_deg: f64,
+    /// The kill's TTK: seconds from the flick's start to the kill.
     pub total: f64,
+    /// The reaction: seconds until the crosshair closes on the target faster than `REACTION_SPEED_DEG_S` for 2
+    /// points; None when it never does.
     pub react: Option<f64>,
+    /// The main flick: seconds from the reaction's end to the first point after the peak below `FLICK_END_SHARE` of
+    /// the peak speed; None when there is no reaction or the flick ends before it.
     pub flick: Option<f64>,
+    /// The highest speed on the path, degrees a second.
     pub peak: f64,
     /// How far along the way to the target was left when the main flick ended (below 0: past it).
     pub end_left: f64,
+    /// The distance from the target's center when the main flick ended, degrees.
     pub end_off: f64,
     /// When the crosshair reached the target, from the flick's start: the first point of its path inside the target's
     /// circle, the path straight between two frames up to 2 frames apart, so it can fall between two frames (a fast
     /// flick can pass through the target between them). Dwell, settle and hold run from it.
     pub arrive: Option<f64>,
+    /// Seconds from the arrival to the kill; None when the crosshair never reached the target. The same as `hold`.
     pub dwell: Option<f64>,
+    /// How far the crosshair went past the target's center along the way to it, from the reaction's end on (degrees;
+    /// below 0 when it stopped short of the center). Past the target's edge when it is more than the radius.
     pub past: f64,
-    /// Bursts of movement after the main flick.
+    /// Bursts of movement after the main flick (the micros).
     pub corrections: usize,
+    /// The speed at the kill, degrees a second: above `MOVING_CLICK_DEG_S` (src/summary.rs) the click was on the move.
     pub click_speed: f64,
+    /// The distance from the target's center at the kill, degrees.
     pub click_off: f64,
+    /// The target's offset from the crosshair at the kill (degrees, right and up positive): where the click landed.
     #[cfg_attr(feature = "ts", ts(as = "crate::typescript::TargetOffset"))]
     pub click_off_xy: (f64, f64),
+    /// Seconds from the arrival until the crosshair settled (its smoothed speed stays below `SETTLED_DEG_S` until the
+    /// kill); None without an arrival.
     pub settle: Option<f64>,
+    /// The confirmation: seconds from the settling to the kill, the crosshair still on the target; None without an
+    /// arrival.
     pub still: Option<f64>,
+    /// The frame the flick starts on: the kill before's frame (the first kill's: the run's start or the target's first
+    /// sighting), or the frame the target appeared on when it appeared later.
     pub start_frame: i64,
+    /// The frame the target was last seen on near the kill.
     pub kill_frame: i64,
+    /// Whether the target appeared after the kill before, so the flick starts when it showed.
     pub spawned: bool,
+    /// The hold of a hold-fire run: seconds from the arrival to the kill; None without an arrival.
     pub hold: Option<f64>,
-    /// How often the crosshair slipped off the target after reaching it, and for how long in all.
+    /// How often the crosshair slipped off the target after reaching it.
     pub breaks: usize,
+    /// How long the crosshair was off the target in all after reaching it, seconds.
     pub off: f64,
-    /// React, main flick, onto the target, settle, still.
+    /// The kill steps in seconds: react, main flick, onto the target, settle, still. They add up to `total`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::KillParts>", optional))]
     pub parts: Option<[f64; 5]>,
@@ -95,11 +127,12 @@ pub struct Measure {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub speed: Option<SpeedCurve>,
-    /// The reloads an empty magazine forced in this kill, and their time in seconds (src/reload.rs; none without the
-    /// scenario's ammo rules or the kills' shots).
+    /// The reloads an empty magazine forced in this kill (src/reload.rs; none without the scenario's ammo rules or the
+    /// kills' shots).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reloads: Option<i64>,
+    /// The time those reloads took, seconds (src/reload.rs; none with `reloads`).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reload_time: Option<f64>,
@@ -111,19 +144,26 @@ pub struct Measure {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SpeedCurve {
+    /// The speed in each frame from the flick's start, degrees a second, to one decimal.
     pub speeds: Vec<f64>,
+    /// The index in `speeds` of the main flick's last frame; the values after it show the braking.
     pub flick_end: usize,
 }
 
 /// For a kill after the first: whether the next target was the nearest on screen (rank 0), and how much farther.
 #[derive(Clone, Debug, Serialize)]
 pub struct Choice {
+    /// The number of the kill the choice led to.
     pub kill_number: usize,
+    /// How many targets on screen were nearer than the chosen one by more than `NEARER_MARGIN_DEG`: 0 when it was the
+    /// nearest.
     pub rank: usize,
+    /// How much farther from the crosshair the chosen target was than the nearest target on screen, degrees.
     pub extra: f64,
 }
 
-/// The targets' radius in degrees, from their median area near the crosshair.
+/// The targets' radius in degrees, from their median area near the crosshair; `DEFAULT_TARGET_RADIUS_DEG` when fewer
+/// than `MIN_AREAS_FOR_RADIUS` flicks have an area.
 pub fn target_radius(flicks: &[Flick]) -> f64 {
     let areas: Vec<f64> = flicks.iter().filter_map(|flick| flick.area_px).filter(|&area| area != 0.0).collect();
     if areas.len() < MIN_AREAS_FOR_RADIUS {
@@ -205,12 +245,16 @@ fn circle_entry(from: (f64, f64), to: (f64, f64), radius_deg: f64) -> Option<f64
 
 /// A flick's path: each point's frame and the target's offset from the crosshair (degrees, right and up positive).
 struct Path {
+    /// Each point's frame, in order; frames where the target was not seen are missing.
     frames: Vec<i64>,
+    /// The target's offset from the crosshair at each point (degrees, right and up positive).
     offsets: Vec<(f64, f64)>,
+    /// The recording's frames a second, to turn frames into seconds.
     fps: f64,
 }
 
 impl Path {
+    /// The index of the path's last point: the kill.
     fn last(&self) -> usize {
         self.offsets.len() - 1
     }
@@ -270,6 +314,7 @@ impl Path {
     }
 }
 
+/// The distance between two offsets, degrees.
 fn distance_between(a: (f64, f64), b: (f64, f64)) -> f64 {
     hypot(a.0 - b.0, a.1 - b.1)
 }
@@ -292,7 +337,8 @@ fn reaction_end(closing_speeds: &[f64]) -> Option<usize> {
     (1..closing_speeds.len() - 1).find(|&index| fast(index) && fast(index + 1))
 }
 
-/// Separate bursts of movement in `speeds`, the speeds after the main flick.
+/// How many separate bursts of movement `speeds` (the speeds after the main flick) holds: a burst starts when the
+/// speed rises above `CORRECTION_START_DEG_S` and ends when it falls below `CORRECTION_STOP_DEG_S`.
 fn count_corrections(speeds: &[f64]) -> usize {
     let (mut bursts, mut moving) = (0, false);
     for &speed in speeds {
@@ -347,6 +393,9 @@ fn kill_parts(
     Some(std::array::from_fn(|step| bounds[step + 1] - bounds[step]))
 }
 
+/// One flick's measures, for targets of `radius_deg` and the camera's speed in each frame (`camera`, degrees a
+/// second); None when its path has fewer than `MIN_PATH_POINTS` points or starts more than
+/// `MAX_PATH_START_LAG_FRAMES` after the flick. The reload fields are left None for src/reload.rs.
 fn measure_one(flick: &Flick, fps: f64, radius_deg: f64, camera: &[f64]) -> Option<Measure> {
     let points = &flick.path;
     if points.len() < MIN_PATH_POINTS || points[0].0 > flick.start_frame + MAX_PATH_START_LAG_FRAMES {
@@ -412,6 +461,7 @@ fn measure_one(flick: &Flick, fps: f64, radius_deg: f64, camera: &[f64]) -> Opti
 
 /// The time steps of the flick speed profile: 0 to 125% of the flick, 5% apart (past 100%: after its end).
 pub const PROFILE_STEP: f64 = 0.05;
+/// The profile's points: 0 to 125% of the flick, `PROFILE_STEP` apart.
 const PROFILE_POINTS: usize = 26;
 
 /// The flick speed profile: each main flick's camera speed, as a share of its own peak, against the time as a share of
@@ -421,22 +471,33 @@ const PROFILE_POINTS: usize = 26;
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct FlickProfile {
+    /// How many flicks were averaged.
     pub flicks: usize,
+    /// The time between two points, as a share of the flick (`PROFILE_STEP`).
     pub step: f64,
+    /// The mean speed at each point, as a share of each flick's own peak, to 3 decimals.
     #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]
     pub mean: [f64; PROFILE_POINTS],
+    /// The 25th percentile of the speeds at each point, as `mean` is.
     #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]
     pub p25: [f64; PROFILE_POINTS],
+    /// The 75th percentile of the speeds at each point, as `mean` is.
     #[cfg_attr(feature = "ts", ts(as = "Vec<f64>"))]
     pub p75: [f64; PROFILE_POINTS],
+    /// When the peak comes, as a share of the flick (the median over the flicks).
     pub peak_at: f64,
+    /// How much of the flick the braking takes, as a share of it (the median over the flicks).
     pub braking: f64,
 }
 
 /// One flick's curve at the profile's points (a share of its peak), when its peak comes and how long it brakes.
 struct Shape {
+    /// The speed at each profile point, as a share of the flick's peak (linear between frames).
     at: [f64; PROFILE_POINTS],
+    /// The peak's frame, as a share of the flick's length.
     peak_at: f64,
+    /// The frames from the last at `BRAKING_START_SHARE` of the peak to the first under `FLICK_END_SHARE`, as a share
+    /// of the flick's length.
     braking: f64,
 }
 
@@ -489,6 +550,7 @@ pub fn flick_profile(measures: &[Measure]) -> Option<FlickProfile> {
 }
 
 /// For each kill after the first: was the next target the nearest one on screen `CHOICE_DELAY_FRAMES` after the kill.
+/// A kill with no target on screen then, or no point of the next target's path from then on, gives no choice.
 pub fn choices(tracks: &Tracks, flicks: &[Flick]) -> Vec<Choice> {
     let targets_by_frame: std::collections::HashMap<i64, &Vec<TrackPoint>> =
         tracks.frames.iter().map(|frame| (frame.i as i64, &frame.t)).collect();
@@ -510,14 +572,15 @@ pub fn choices(tracks: &Tracks, flicks: &[Flick]) -> Vec<Choice> {
     choices
 }
 
+/// Tests of the speed curve, the flick profile and the arrival on made-up paths.
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::track::TrackFrame;
 
-    /// A made-up flick at 100 frames a second: still for 5 frames, then 400, 800, 1200, 1200, 800, 400 and 100
-    /// degrees a second onto a target 50 degrees to the right, then still. The view's shift is lost in the two
-    /// fastest frames (12 degrees a frame), so the target's own move stands in there.
+    /// The speed curve and the profile of a made-up flick at 100 frames a second: still for 5 frames, then 400, 800,
+    /// 1200, 1200, 800, 400 and 100 degrees a second onto a target 50 degrees to the right, then still. The view's
+    /// shift is lost in the two fastest frames (12 degrees a frame), so the target's own move stands in there.
     #[test]
     fn speed_curve_and_profile_of_a_made_up_flick() {
         let moves = [0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 8.0, 12.0, 12.0, 8.0, 4.0, 1.0, 0.0, 0.0, 0.0, 0.0];
@@ -563,10 +626,13 @@ mod tests {
         assert_eq!((profile.flicks, profile.mean.len()), (3, 26));
         assert_eq!((profile.mean[0], profile.mean[10], profile.mean[20], profile.mean[25]), (0.375, 1.0, 0.156, 0.016));
         assert_eq!((profile.p25[5], profile.p75[5]), (profile.mean[5], profile.mean[5]));
-        // the peak at frame 2 of 6; the braking from the last frame at 90% (3) to the first under 15% (7, after the end)
+        // the peak at frame 2 of 6; the braking from the last frame at 90% (3) to the first under 15% (7, after the
+        // end)
         assert_eq!((profile.peak_at, profile.braking), (0.333, 0.667));
     }
 
+    /// The arrival falls where the path, straight between close frames, enters the target's circle, and at the first
+    /// frame inside across a longer gap.
     #[test]
     fn a_flick_reaches_the_target_where_its_path_enters_the_circle() {
         let radius = 0.5;

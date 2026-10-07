@@ -68,7 +68,8 @@ MODELS = HERE / "models.json"
 REPORTS = HERE / "reports"
 EVAL = ROOT / "test_out" / "vod_model" / "eval"
 WORK = ROOT / "test_out" / "vod_model" / "accept"
-DRAWS, SDS, SEED = 400, 2.0, 0
+DRAWS, SDS, SEED = 400, 2.0, 0                  # the draws behind a standard deviation, how many a number may drop, the
+                                                # draws' seed
 CLICKING = ("static", "dynamic", "switching")
 # the stages after the contract, in the order they run: the checks that failed most often and cost least first (the
 # switching and dynamic recordings), the video-alone runs, the costliest (about half the reviews), last
@@ -81,14 +82,17 @@ NAME_CHARS = 60                                 # a recording's name in the prog
 
 
 def say(*parts):
+    """Prints a line at once, so the progress shows while a review runs."""
     print(*parts, flush=True)
 
 
 def sha(path):
+    """A file's SHA-256, in hex."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def scenario_of(video):
+    """The scenario of a recording KovOBS named, in lower case (the scenario facts' key)."""
     return Path(video).stem.rsplit(" - ", 2)[0].lower()
 
 
@@ -97,8 +101,9 @@ class Model:
     """A model's export and settings file, and what tells a cache made with them from one made before."""
 
     def __init__(self, name):
+        """Stops when the model's _u8in export or its settings file is missing."""
         self.name = name
-        self.export = EXPORTS / f"detector_{name}_u8in.onnx"
+        self.export =EXPORTS / f"detector_{name}_u8in.onnx"
         self.settings = EXPORTS / f"detector_{name}.json"
         for file in (self.export, self.settings):
             if not file.is_file():
@@ -127,7 +132,8 @@ def best_model():
 # ---- one review program for the whole run ----------------------------------------------------------------------------
 def pin_programs(name):
     """Builds the review service's tool and the core's review example once, copies them into WORK/<name>/bin, and points
-    aimview_tools at the copy: the reviews of both models run the same code. The video-alone scoring program."""
+    aimview_tools at the copy: the reviews of both models run the same code. Returns the copied review example (the
+    video-alone scoring program) and both copies' SHA-256."""
     say("building the review programs (cargo, release and quick profiles)")
     subprocess.run(["cargo", "build", "-q", "--release", "--manifest-path", str(ROOT / "Cargo.toml"),
                     "-p", "aimview-service", "--bin", "aimview-tool"], check=True)
@@ -221,7 +227,8 @@ def moving(model, pick, lib, program):
     for kind, videos in pick.items():
         for video, stats in videos:
             limit = facts.get(scenario_of(video), (None, None))[1]
-            hitbox = lib.scenarios().get(scenario_of(video), {}).get("hitbox")     # the bots' shape: on the bot inside it
+            # the bots' shape: the crosshair is on the bot inside it
+            hitbox = lib.scenarios().get(scenario_of(video), {}).get("hitbox")
             out[Path(video).name] = list(eval_moving.core_numbers(program, kind, tracks[video], video, stats, limit,
                                                                   hitbox=hitbox))
     return out, fresh
@@ -336,6 +343,7 @@ def run_sd(values, stat):
 
 
 def row(check, kind, value, ref, diff, allowed, passed, unit=""):
+    """One check's row of the table and the report: the model's number against the best model's."""
     return dict(check=check, kind=kind, model=value, best=ref, difference=diff, allowed=allowed, unit=unit,
                 passed=bool(passed))
 
@@ -387,6 +395,7 @@ def video_alone_rows(candidate, base):
 
 
 def contract_row(con):
+    """The contract's row: whether the model meets every one of contract.py's checks."""
     return dict(check="contract", kind="all", model="meets it" if con["passed"] else "fails",
                 best="", difference="", allowed="every check", unit="", passed=con["passed"])
 
@@ -399,7 +408,8 @@ def moving_rows(kind, moving_model, moving_best):
 
 
 def report_rows(report_model, report_best):
-    videos = [video for video in report_best if video in report_model]
+    """The report's kills matched and flicks measured on the recordings both models have."""
+    videos =[video for video in report_best if video in report_model]
     return count_rows("report", "static", [report_model[video] for video in videos],
                       [report_best[video] for video in videos])
 
@@ -443,7 +453,8 @@ def entry(model, cand, rows):
     results = cand["moving"]
 
     def kills(kinds):
-        sums = np.sum([results[video][1:] for video in results if results[video][0] in kinds], axis=0)
+        """[kills matched, flicks measured] summed over the moving recordings of these kinds."""
+        sums =np.sum([results[video][1:] for video in results if results[video][0] in kinds], axis=0)
         return [int(sums[0]), int(sums[2])]
     track = {check["unit"]: check["model"] for check in rows if check["kind"] == "tracking"}
     out["checks"] = {"static": kills(("static",)), "moving": kills(("dynamic", "switching")),
@@ -482,7 +493,8 @@ def default_lines(best, name):
 
 # ---- the verdict -----------------------------------------------------------------------------------------------------
 def table(rows):
-    columns = ("check", "kind", "unit", "model", "best", "difference", "allowed", "result")
+    """Prints the rows as a table, each column as wide as its widest cell."""
+    columns =("check", "kind", "unit", "model", "best", "difference", "allowed", "result")
     cells = [[str(check[column]) if column != "result" else ("pass" if check["passed"] else "FAIL")
               for column in columns] for check in rows]
     widths = [max(len(column), *(len(line[i]) for line in cells)) for i, column in enumerate(columns)]
@@ -516,6 +528,8 @@ def say_verdict(model, best, passed):
 
 
 def main():
+    """Runs the contract and, when it passes (or with --all), the stages; prints the checks and the verdict, lists the
+    model on a pass with --list, writes the report, and exits with 0 on a pass, else 1."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("name", help="the model: python/model/exports/detector_<name>_u8in.onnx and detector_<name>.json")
     parser.add_argument("--list", action="store_true", help="on a pass, add the model to models.json")

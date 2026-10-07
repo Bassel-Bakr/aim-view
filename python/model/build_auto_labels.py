@@ -12,13 +12,14 @@ gives a crop of 256 x 256 round the crosshair (shifted up to 48 px at random), l
   MIN_CONTRAST; the fixed map's pixels next to such pixels join them (the crosshair drawn over a target), holes are
   filled (a sphere's highlight), and the connected parts taken;
 - the part at the crosshair is the killed target: it must be a target's shape (SOLID_SHARE of its box filled, its sides
-  within MAX_ASPECT and no wider than BAR_ASPECT times its height (a health bar lies flat), convex: CONVEX_SHARE of its hull filled, where two targets touching are not, and one target: its
-  distance transform has no second peak behind a saddle, as two overlapping targets have and a capsule's even ridge
-  has not, and no notch as deep as one of unlike size leaves: `notched`), stay off the crop's edge and be MIN_AREA_PX
-  or more; else the next frame back is tried;
+  within MAX_ASPECT and no wider than BAR_ASPECT times its height (a health bar lies flat), convex: CONVEX_SHARE of
+  its hull filled, where two targets touching are not, and one target: its distance transform has no second peak
+  behind a saddle, as two overlapping targets have and a capsule's even ridge has not, and no notch as deep as one of
+  unlike size leaves: `notched`), stay off the crop's edge and be MIN_AREA_PX or more; else the next frame back is
+  tried;
 - every other part of a target's shape, off the crop's edge and no bigger than AREA_RANGE[1] times it (no smaller than
   AREA_RANGE[0] times it beside a bot, whose head may be a part of its own), is a target too; any other part, and a
-  detector box over no part whose pixels stand out from the wall, is left to train.py as "ignore" (learnt neither as a
+  detector box over no part whose pixels stand out from the wall, is left to train.py as "ignore" (learned neither as a
   target nor as wall); a line (LINE_FILL of its box) and a detector box that does not stand out are left as wall
   (`stands_out`).
 Each kill's crop is paired with the same crop GONE_FRAMES after the kill (`gone_crop`), saved with the tag GONE_TAG:
@@ -30,10 +31,10 @@ The boxes are the parts' extents and the target mask their pixels. It suits plai
 spheres): on a sweep of 40 other clicking recordings (2026-10-06) the detector missed almost no kill's target, and the
 few crops it made held health bars and humanoid bots, which a color's parts cannot box as the detector must (a bot
 whole, never its bar). Flow Fix's recordings are left out: its shots were deleted or delayed, so its stats files are
-not the kills' truth. The crops are saved like build_kill_feedback.py's
-(rgb, fixed, tmask, boxes, scores, mined, frame, why, ignore), all in train/ with TAG before their names (train.py
---repeat), with a manifest.jsonl and a sheet of every crop (sheet.png, and sheet_gone.png for the pairs: each target's outline,
-its mask, in green; the boxes left out in yellow) to look over.
+not the kills' truth. The crops are saved like build_kill_feedback.py's (rgb, fixed, tmask, boxes, scores, mined,
+frame, why, ignore), all in train/ with TAG before their names (train.py --repeat), with a manifest.jsonl and a sheet
+of every crop (sheet.png, and sheet_gone.png for the pairs: each target's outline, its mask, in green; the boxes left
+out in yellow) to look over.
 
 Usage: python python/model/build_auto_labels.py <out> <model> [--match tile] [--kinds static,dynamic,switching]
        [--recordings 40] [--per-recording 25] [--seed 0]
@@ -64,14 +65,14 @@ import old_review  # noqa: E402
 CROP, JITTER_PX = build_mined.CROP, build_mined.JITTER_PX
 WIDTH, HEIGHT = build_mined.WIDTH, build_mined.HEIGHT
 TAG = "auto_kill_"              # 10 characters: train.py --repeat's key
-GONE_TAG = "auto_gone_"
+GONE_TAG = "auto_gone_"         # the same for the crops after a kill
 GONE_FRAMES = 8                 # frames after a kill its target has gone (the death's fade is about 6)
 NEAR_DEG = 1.5                  # a box this near the crosshair before a kill: the detector saw the target
 LOOK_BACK = (1, 2, 3, 4)        # frames before a kill its target is looked for in, nearest first
 MIN_CONTRAST = 60.0             # RGB distance a target's color must have from the wall's
 CROSSHAIR_REACH_PX = 3          # the target's color: the pixels this near the crosshair
 MIN_COLOR_PX = 3                # of which at least this many off the fixed map
-MIN_AREA_PX = 12
+MIN_AREA_PX = 12                # a target's part has at least this many pixels
 SOLID_SHARE = 0.5               # a target fills at least this share of its box (a sphere 0.79, a cube's face 1)
 MAX_ASPECT = 4.0                # a target's box is at most this many times as long as it is wide
 BAR_ASPECT = 1.8                # a part this many times wider than tall lies flat: a health bar, never a target
@@ -87,13 +88,14 @@ UPRIGHT_ASPECT = 2.2            # a part this many times taller than wide is a b
 AREA_RANGE = (0.2, 5.0)         # another target's area against the killed one's (the least only beside a bot)
 STANDS_OUT_SHARE = 0.1          # a detector box may hold a target where this share of its pixels stands out
 BRIDGE_PX = 2                   # fixed-map pixels this near the target's color join it
-SHEET_COLUMNS, THUMB = 10, 128
+SHEET_COLUMNS, THUMB = 10, 128  # the sheet's columns, and a crop's size on it (px)
 LEFT_OUT = ("flow fix",)        # scenarios whose stats files are not the kills' truth
 
 
 def missed_kills(lib, video, stats, args):
-    """The review's frames and the stats file's kills with no box near the crosshair before them, or None when the
-    stats file gives no clock offset."""
+    """(the review's track frames, the stats file's kills as frames with no box near the crosshair in the LOOK_BACK
+    frames before them), or None for a run reviewed as tracking or when the stats file gives no clock offset. Reviews
+    the video first when <out>/reviews/<model>/<stem>/ has no tracks."""
     folder = args.out / "reviews" / args.model / video.stem
     if not (folder / "tracks.json").is_file():
         lib.review_video(str(video), args.model, str(folder), stats=str(stats), areas=eval_video_alone.AREAS,
@@ -106,6 +108,7 @@ def missed_kills(lib, video, stats, args):
     truth = eval_video_alone.truth_frames(stats, offset, with_stats["fps"], len(frames))
 
     def seen(kill):
+        """Whether a box lay within NEAR_DEG of the crosshair in one of the LOOK_BACK frames before the kill."""
         return any(np.hypot(x, y) < NEAR_DEG for back in LOOK_BACK for _, x, y in frames[kill - back]["t"])
     return frames, [kill for kill in truth if max(LOOK_BACK) <= kill < len(frames) and not seen(kill)]
 
@@ -167,8 +170,8 @@ def notched(mask, width, height):
     """Whether a part is two overlapping targets of unlike size, which `two_targets` misses (the smaller one gives no
     peak): the largest disc in its convex hull but off the part is NOTCH_SHARE of its shorter side or more. A single
     cube or sphere reaches 0.057 (its shading's edge), a pair 0.06 to 0.13 and 4 px or more (2026-10-07, 557
-    auto-labelled parts), a target of 10 px 1 px (its pixel steps). Holes
-    are filled first (the crosshair over a target); an upright part is left alone (a bot's neck)."""
+    auto-labelled parts), a target of 10 px 1 px (its pixel steps). Holes are filled first (the crosshair over a
+    target); an upright part is left alone (a bot's neck)."""
     if height >= UPRIGHT_ASPECT * width:
         return False
     filled = ndimage.binary_fill_holes(mask)
@@ -296,8 +299,9 @@ def corner_of(rnd):
 
 
 def crop_kill(kill, frames, decoded, fixed, rnd):
-    """A kill's crop: (frame, rgb, fixed, boxes, ignore, mask) from the nearest frame before it whose pixels agree, or
-    None."""
+    """A kill's crop, (frame, rgb, fixed, boxes, ignore, mask), from the nearest frame before it whose pixels agree,
+    and its place for gone_crop: (corner, crosshair, the killed target's color, its area and whether it stands
+    upright). None when no frame of LOOK_BACK gives one."""
     (x0, y0), at = corner_of(rnd)
     window = (slice(y0, y0 + CROP), slice(x0, x0 + CROP))
     for back in LOOK_BACK:
@@ -383,6 +387,7 @@ def picked_recordings(lib, kinds, words, count, rnd):
 
 
 def main():
+    """Picks the recordings, writes their crops, the manifest and both sheets, and prints the counts."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
     parser.add_argument("model")

@@ -1,3 +1,9 @@
+/**
+ * Reading and changing the page's URL query, where the app keeps what a link should reopen: the
+ * recording (?id=), the page (?page=crops) and the Crops page's folder, set and crop. Out: the
+ * services and pages that keep state there.
+ */
+
 /** A value of the page's URL query; null when it has none. */
 export function queryValue(key: string): string | null {
   return new URLSearchParams(location.search).get(key);

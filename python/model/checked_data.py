@@ -77,6 +77,8 @@ def write_crop(source, out, tag, file, row, counts, split=None):
 
 
 def main():
+    """Writes the new set from the labels' last check of each crop and prints its counts. Stops when --out already
+    holds crops, when --leave-out names a crop the labels lack, or on a verdict it does not know."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--labels", required=True, help="checked.jsonl; its file paths are relative to its folder")
     parser.add_argument("--out", required=True)

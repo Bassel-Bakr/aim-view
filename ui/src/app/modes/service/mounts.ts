@@ -1,28 +1,49 @@
 /// <reference lib="webworker" />
+/**
+ * The review service's file system in the browser, in its worker. In: the service's host_fs calls
+ * (service-module.ts) and the page's own file tasks (service.worker.ts). Out: files and folders
+ * read from and written to the browser's private file system (/data, /kovaak), the VODs folder the
+ * user opened (/vods) and the models over HTTP (/models).
+ */
 import { ChosenFile, CopyDone, DirEntry } from './service-messages';
 import { FsResult } from './service-module';
 
-/** The codes of the host's file system calls (the contract's host_fs). */
+/** A host_fs call's code (the contract's): it worked. */
 const OK = 0;
+/** A host_fs call's code: no such file or folder. */
 const NOT_FOUND = 1;
+/** A host_fs call's code: it is there already, or a folder is not empty. */
 const EXISTS = 2;
+/** A host_fs call's code: any other failure (the bytes say why). */
 const OTHER = 3;
-/** The host's file system calls (the contract's host_fs ops, service/src/disk.rs `Op`). */
+/** The host_fs op that reads a file (the contract's ops, service/src/disk.rs `Op`). */
 const OP_READ = 0;
+/** The op that writes a file, replacing it. */
 const OP_WRITE = 1;
+/** The op that makes a folder and the folders above it. */
 const OP_CREATE_DIR_ALL = 2;
+/** The op that removes a file. */
 const OP_REMOVE_FILE = 3;
+/** The op that removes an empty folder. */
 const OP_REMOVE_DIR = 4;
+/** The op that removes a folder and everything in it. */
 const OP_REMOVE_DIR_ALL = 5;
+/** The op that moves a file or folder (the argument is the new path). */
 const OP_RENAME = 6;
+/** The op that lists a folder. */
 const OP_READ_DIR = 7;
+/** The op that gives a path's metadata. */
 const OP_METADATA = 8;
 /** File times are kept in ms; the service's metadata gives seconds. */
 const MS_PER_SECOND = 1000;
+/** The HTTP status of a model file the server does not have. */
 const HTTP_NOT_FOUND = 404;
-/** How much of a file is written at once. */
+/** How much of a file is written at once, in bytes (8 MiB). */
 const CHUNK = 8 << 20;
-/** The file a copy into a folder keeps what it copied in: each file's size and time, by its path below the folder. */
+/**
+ * The file a copy into a folder keeps what it copied in: each file's size and time, by its path
+ * below the folder.
+ */
 const COPIED = 'copied.json';
 /** How many files a copy writes in one turn of the worker's queue. */
 const COPY_STEP = 100;
@@ -34,6 +55,7 @@ export type MountName = 'data' | 'kovaak' | 'vods' | 'models';
 
 /** A file system call that failed: its code, and why. */
 export class FsError extends Error {
+  /** Keeps the host_fs code (`NOT_FOUND`, `EXISTS`, `OTHER`) and the message. */
   constructor(
     readonly code: number,
     message: string,
@@ -42,10 +64,16 @@ export class FsError extends Error {
   }
 }
 
-/** What metadata says of a path: a folder or a file, its size, when it changed (seconds since 1970). */
+/**
+ * What metadata says of a path: a folder or a file, its size, when it changed (seconds since
+ * 1970).
+ */
 export interface FsStat {
+  /** It is a folder. */
   dir: boolean;
+  /** Its size in bytes; 0 for a folder. */
   len: number;
+  /** When it last changed, in seconds since 1970; 0 for a folder. */
   modified: number;
 }
 
@@ -60,24 +88,38 @@ type CopiedIndex = Record<string, CopiedFile>;
 
 /** A handle that can move itself (the browser's OPFS; not every browser has it). */
 interface MovableHandle {
+  /** Moves the file or folder into parent under name. */
   move(parent: FileSystemDirectoryHandle, name: string): Promise<void>;
 }
 
 /** A file system under one mount: the names below the mount stand for a path. */
 interface MountFs {
+  /** The service may write here. */
   readonly writable: boolean;
+  /** The file at the path; rejects for a folder or nothing there. */
   file(names: string[]): Promise<File>;
+  /** What is at the path; rejects when nothing is. */
   stat(names: string[]): Promise<FsStat>;
-  /** A folder's entries (at most limit; 0: all), with each file's size and time where the mount has them cheaply. */
+  /**
+   * A folder's entries (at most limit; 0: all), with each file's size and time where the mount has
+   * them cheaply.
+   */
   list(names: string[], limit: number, stat?: boolean): Promise<DirEntry[]>;
+  /** Writes a file, replacing it; its folder must be there. */
   write(names: string[], data: Blob | Uint8Array, progress?: Progress): Promise<void>;
+  /** Makes a folder and those above it (on a read-only mount: only checks it is there). */
   mkdirs(names: string[]): Promise<void>;
+  /** Removes a file. */
   removeFile(names: string[]): Promise<void>;
+  /** Removes a folder: an empty one, or with all, everything in it. */
   removeDir(names: string[], all: boolean): Promise<void>;
+  /** Moves a file or folder within the mount. */
   rename(from: string[], to: string[]): Promise<void>;
 }
 
+/** The error for a path with nothing there. */
 const notFound = (path: string) => new FsError(NOT_FOUND, `${path}: not found`);
+/** The error for a write to a read-only mount. */
 const readOnly = () => new FsError(OTHER, 'read-only');
 
 /** A browser error as the call's code: not there, not empty, or other (with its message). */
@@ -91,7 +133,10 @@ function asFsError(error: unknown, path: string): FsError {
   return new FsError(OTHER, `${path}: ${error instanceof Error ? error.message : String(error)}`);
 }
 
-/** Writes data into a file, replacing it, a chunk at a time (a sync access handle: the worker's own). */
+/**
+ * Writes data into a file, replacing it, a chunk at a time (a sync access handle: the worker's
+ * own). progress hears the bytes written of a Blob.
+ */
 async function writeHandle(
   handle: FileSystemFileHandle,
   data: Blob | Uint8Array,
@@ -115,11 +160,15 @@ async function writeHandle(
   }
 }
 
-/** A folder handle's tree: the browser's private file system (writable), or the VODs folder the user opened. */
+/**
+ * A folder handle's tree: the browser's private file system (writable), or the VODs folder the
+ * user opened.
+ */
 export class DirMount implements MountFs {
   /** Folder handles by their path below the mount, found once. */
   private readonly dirs = new Map<string, Promise<FileSystemDirectoryHandle>>();
 
+  /** A mount over the folder root; writable for the private file system's folders. */
   constructor(
     private readonly root: Promise<FileSystemDirectoryHandle>,
     readonly writable: boolean,
@@ -159,12 +208,14 @@ export class DirMount implements MountFs {
     }
   }
 
+  /** The file at the path; rejects for a folder. */
   async file(names: string[]): Promise<File> {
     const entry = await this.entry(names);
     if (entry.kind !== 'file') throw new FsError(OTHER, `${names.join('/')}: a folder`);
     return (entry as FileSystemFileHandle).getFile();
   }
 
+  /** A file's size and time (read from the file), or a folder's zeros. */
   async stat(names: string[]): Promise<FsStat> {
     const entry = await this.entry(names);
     if (entry.kind === 'directory') return { dir: true, len: 0, modified: 0 };
@@ -173,8 +224,8 @@ export class DirMount implements MountFs {
   }
 
   /**
-   * The entries, and unless stat is false each file's size and time, its files read all at once: the service then
-   * needs no call a file for them (the recordings list reads thousands).
+   * The entries, and unless stat is false each file's size and time, its files read all at once:
+   * the service then needs no call a file for them (the recordings list reads thousands).
    */
   async list(names: string[], limit: number, stat = true): Promise<DirEntry[]> {
     const handles: FileSystemHandle[] = [];
@@ -203,11 +254,13 @@ export class DirMount implements MountFs {
     await writeHandle(handle, data, progress);
   }
 
+  /** Makes the folders; on a read-only mount, rejects unless they are there already. */
   async mkdirs(names: string[]): Promise<void> {
     if (this.writable) await this.dir(names, true);
     else await this.dir(names).catch(() => Promise.reject(readOnly()));
   }
 
+  /** Removes a file; rejects for a folder (getFileHandle checks it is a file). */
   async removeFile(names: string[]): Promise<void> {
     if (!this.writable) throw readOnly();
     const parent = await this.dir(names.slice(0, -1));
@@ -216,6 +269,7 @@ export class DirMount implements MountFs {
     await parent.removeEntry(name);
   }
 
+  /** Removes a folder (with all, what is in it too); the mount's own root cannot be removed. */
   async removeDir(names: string[], all: boolean): Promise<void> {
     if (!this.writable || !names.length) throw readOnly();
     const parent = await this.dir(names.slice(0, -1));
@@ -225,7 +279,9 @@ export class DirMount implements MountFs {
     this.forget(names);
   }
 
-  /** Moves a file or folder, replacing a file there (or an empty folder), as std::fs::rename does. */
+  /**
+   * Moves a file or folder, replacing a file there (or an empty folder), as std::fs::rename does.
+   */
   async rename(from: string[], to: string[]): Promise<void> {
     if (!this.writable || !from.length || !to.length) throw readOnly();
     const entry = await this.entry(from);
@@ -266,12 +322,17 @@ export class DirMount implements MountFs {
   }
 }
 
-/** A folder chosen as files (a folder input, where the browser has no folder picker): read-only, this visit only. */
+/**
+ * A folder chosen as files (a folder input, where the browser has no folder picker): read-only,
+ * this visit only.
+ */
 export class FilesMount implements MountFs {
+  /** The chosen files are never written. */
   readonly writable = false;
   /** Each folder's entries by name: a file, or null for a folder. */
   private readonly tree = new Map<string, Map<string, File | null>>();
 
+  /** Builds the folder tree from the files' paths. */
   constructor(files: readonly ChosenFile[]) {
     this.tree.set('', new Map());
     for (const { path, file } of files) {
@@ -285,6 +346,7 @@ export class FilesMount implements MountFs {
     }
   }
 
+  /** The file at the path, null for a folder (the root too); throws when nothing is there. */
   private at(names: string[]): File | null {
     if (!names.length) return null;
     const entries = this.tree.get(names.slice(0, -1).join('/'));
@@ -293,12 +355,14 @@ export class FilesMount implements MountFs {
     return found;
   }
 
+  /** The chosen file at the path; rejects for a folder. */
   async file(names: string[]): Promise<File> {
     const file = this.at(names);
     if (!file) throw new FsError(OTHER, `${names.join('/')}: a folder`);
     return file;
   }
 
+  /** A file's size and time, or a folder's zeros. */
   async stat(names: string[]): Promise<FsStat> {
     const file = this.at(names);
     return file
@@ -306,6 +370,7 @@ export class FilesMount implements MountFs {
       : { dir: true, len: 0, modified: 0 };
   }
 
+  /** A folder's entries, each file with its size and time. */
   async list(names: string[], limit: number): Promise<DirEntry[]> {
     const entries = this.tree.get(names.join('/'));
     if (!entries) throw notFound(names.join('/'));
@@ -315,42 +380,60 @@ export class FilesMount implements MountFs {
     return limit ? out.slice(0, limit) : out;
   }
 
+  /** Always rejects: read-only. */
   write(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Rejects unless the folder is among the chosen files' folders. */
   async mkdirs(names: string[]): Promise<void> {
     if (!this.tree.has(names.join('/'))) throw readOnly();
   }
 
+  /** Always rejects: read-only. */
   removeFile(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Always rejects: read-only. */
   removeDir(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Always rejects: read-only. */
   rename(): Promise<void> {
     return Promise.reject(readOnly());
   }
 }
 
-/** A file kept in a pack: the pack's number, where the file starts in it, its length, and its time (ms since 1970). */
+/**
+ * A file kept in a pack: the pack's number, where the file starts in it, its length, and its time
+ * (ms since 1970).
+ */
 type PackedFile = [pack: number, at: number, len: number, modified: number];
 
-/** The packs' index (index.json): each file by its path below the mount, and the next pack's number. */
+/**
+ * The packs' index (index.json): each file by its path below the mount, and the next pack's
+ * number.
+ */
 interface PackIndex {
+  /** The number the next pack gets (its file is <next>.pack). */
   next: number;
+  /** Each kept file's place, by its path below the mount. */
   files: Record<string, PackedFile>;
 }
 
-/** A pack holds at most this many bytes, or PACK_FILES files. */
+/** A pack holds at most this many bytes (32 MiB), or PACK_FILES files. */
 const PACK_BYTES = 32 << 20;
+/** A pack holds at most this many files. */
 const PACK_FILES = 4000;
+/** The packs' index file's name. */
 const PACK_INDEX = 'index.json';
 
-/** Bytes written into a file of a folder, replacing it (the worker's sync access handle: one open, one flush). */
+/**
+ * Bytes written into a file of a folder, replacing it (the worker's sync access handle: one open,
+ * one flush).
+ */
 async function writeWhole(
   dir: FileSystemDirectoryHandle,
   name: string,
@@ -368,18 +451,23 @@ async function writeWhole(
 }
 
 /**
- * Copies kept in a few large files (packs) and an index (index.json), read-only to the service: thousands of small
- * files are written far faster this way than one file each (a file each took 100 ms or more on a busy machine). A file
- * copied again goes into a new pack; its old copy stays in its pack, unread.
+ * Copies kept in a few large files (packs) and an index (index.json), read-only to the service:
+ * thousands of small files are written far faster this way than one file each (a file each took
+ * 100 ms or more on a busy machine). A file copied again goes into a new pack; its old copy stays
+ * in its pack, unread.
  */
 export class PackStore {
+  /** The index, once read (empty when there is none yet). */
   private index: Promise<PackIndex> | null = null;
   /** Each folder's entries by name: a file's place, or null for a folder. */
   private tree = new Map<string, Map<string, PackedFile | null>>();
+  /** Each pack's file, by number, opened once. */
   private readonly packs = new Map<number, Promise<File>>();
 
+  /** Packs kept in the folder root (the private file system's kovaak-packs). */
   constructor(private readonly root: Promise<FileSystemDirectoryHandle>) {}
 
+  /** The index, read the first time and its tree built; empty when it cannot be read. */
   private read(): Promise<PackIndex> {
     this.index ??= this.root
       .then((dir) => dir.getFileHandle(PACK_INDEX))
@@ -401,6 +489,7 @@ export class PackStore {
     return this.tree.get(names.slice(0, -1).join('/'))?.get(names[names.length - 1]);
   }
 
+  /** The kept file at the path, sliced from its pack, with its time; rejects when none is kept. */
   async file(names: string[]): Promise<File> {
     const place = await this.at(names);
     if (!place) throw notFound(names.join('/'));
@@ -417,6 +506,7 @@ export class PackStore {
     });
   }
 
+  /** A folder's kept entries with each file's size and time; null when the folder has none. */
   async list(names: string[]): Promise<DirEntry[] | null> {
     await this.read();
     const entries = this.tree.get(names.join('/'));
@@ -430,8 +520,9 @@ export class PackStore {
   }
 
   /**
-   * Copies the files new or changed (size or time) since the last copy into new packs; each pack's files are read
-   * first, then the pack and the index are written in one turn of the worker's queue. Resolves to how many it copied.
+   * Copies the files new or changed (size or time) since the last copy into new packs; each pack's
+   * files are read first, then the pack and the index are written in one turn of the worker's
+   * queue. Resolves to how many it copied.
    */
   async copy(
     files: readonly ChosenFile[],
@@ -494,14 +585,18 @@ function treeOf(files: Record<string, PackedFile>): Map<string, Map<string, Pack
 }
 
 /**
- * KovaaK's files (/kovaak), read-only to the service: the files the user chose this visit, read where they are at
- * once; under them the copies this browser keeps for later visits, in packs; under those the copies an earlier
- * version kept one file each. A file is read from the first of them that has it, and a folder lists them all.
+ * KovaaK's files (/kovaak), read-only to the service: the files the user chose this visit, read
+ * where they are at once; under them the copies this browser keeps for later visits, in packs;
+ * under those the copies an earlier version kept one file each. A file is read from the first of
+ * them that has it, and a folder lists them all.
  */
 export class KovaakMount implements MountFs {
+  /** The service never writes KovaaK's files. */
   readonly writable = false;
+  /** The files chosen this visit; null until the user chooses some. */
   private chosen: FilesMount | null = null;
 
+  /** The packs the copies go into, over the copies an earlier version kept a file each. */
   constructor(
     readonly packs: PackStore,
     private readonly older: DirMount,
@@ -512,7 +607,10 @@ export class KovaakMount implements MountFs {
     this.chosen = new FilesMount(files);
   }
 
-  /** The first answer of the layers that has the path. */
+  /**
+   * The first answer of the layers that has the path; an error other than not found stops the
+   * search.
+   */
   private async first<T>(
     names: string[],
     get: (fs: MountFs | PackStore) => Promise<T>,
@@ -528,10 +626,12 @@ export class KovaakMount implements MountFs {
     throw notFound(names.join('/'));
   }
 
+  /** The file from the first layer that has it. */
   file(names: string[]): Promise<File> {
     return this.first(names, (fs) => fs.file(names));
   }
 
+  /** What is at the path in the first layer that has it. */
   stat(names: string[]): Promise<FsStat> {
     return this.first(names, async (fs) => {
       if (fs instanceof PackStore) {
@@ -545,12 +645,17 @@ export class KovaakMount implements MountFs {
     });
   }
 
+  /**
+   * The folder's entries in every layer, a name listed once (the upper layer's); rejects when no
+   * layer has the folder.
+   */
   async list(names: string[], limit: number): Promise<DirEntry[]> {
     const all = new Map<string, DirEntry>();
     let found = false;
     for (const fs of [this.chosen, this.packs, this.older]) {
       if (!fs) continue;
-      // the older copies' times would cost a file read each (70,000 stats files): asked for when needed
+      // the older copies' times would cost a file read each (70,000 stats files): asked for when
+      // needed
       const entries =
         fs instanceof PackStore
           ? await fs.list(names)
@@ -567,35 +672,48 @@ export class KovaakMount implements MountFs {
     return limit ? out.slice(0, limit) : out;
   }
 
+  /** Always rejects: read-only. */
   write(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Rejects unless the folder is there in some layer. */
   async mkdirs(names: string[]): Promise<void> {
     await this.stat(names).catch(() => Promise.reject(readOnly()));
   }
 
+  /** Always rejects: read-only. */
   removeFile(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Always rejects: read-only. */
   removeDir(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Always rejects: read-only. */
   rename(): Promise<void> {
     return Promise.reject(readOnly());
   }
 }
 
-/** The models shipped beside the app, read over HTTP (read-only): models.json and each model's two files. */
+/**
+ * The models shipped beside the app, read over HTTP (read-only): models.json and each model's two
+ * files.
+ */
 export class HttpMount implements MountFs {
+  /** The models are never written. */
   readonly writable = false;
+  /** Each file's metadata, asked for once (a HEAD request). */
   private readonly stats = new Map<string, Promise<FsStat>>();
+  /** The model names models.json lists, read once. */
   private models: Promise<string[]> | null = null;
 
+  /** Reads the files below base, the models folder's address. */
   constructor(private readonly base: string) {}
 
+  /** A file's address below base. */
   private url(name: string): string {
     return new URL(encodeURIComponent(name), this.base).href;
   }
@@ -610,6 +728,7 @@ export class HttpMount implements MountFs {
     return response;
   }
 
+  /** A file of the folder (no subfolders), with its Last-Modified time. */
   async file(names: string[]): Promise<File> {
     if (names.length !== 1) throw notFound(names.join('/'));
     const response = await this.get(names[0], 'GET');
@@ -617,6 +736,7 @@ export class HttpMount implements MountFs {
     return new File([await response.blob()], names[0], { lastModified: modified });
   }
 
+  /** A file's size and time from a HEAD request, asked once; the root is a folder. */
   stat(names: string[]): Promise<FsStat> {
     if (!names.length) return Promise.resolve({ dir: true, len: 0, modified: 0 });
     if (names.length !== 1) return Promise.reject(notFound(names.join('/')));
@@ -647,22 +767,27 @@ export class HttpMount implements MountFs {
     return limit ? out.slice(0, limit) : out;
   }
 
+  /** Always rejects: read-only. */
   write(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Rejects for any folder but the root (the models folder has none). */
   async mkdirs(names: string[]): Promise<void> {
     if (names.length) throw readOnly();
   }
 
+  /** Always rejects: read-only. */
   removeFile(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Always rejects: read-only. */
   removeDir(): Promise<void> {
     return Promise.reject(readOnly());
   }
 
+  /** Always rejects: read-only. */
   rename(): Promise<void> {
     return Promise.reject(readOnly());
   }
@@ -670,24 +795,31 @@ export class HttpMount implements MountFs {
 
 /** models.json, as far as the folder's listing reads it: the models it names. */
 interface ModelsFile {
+  /** The models by name; only the names are read here. */
   models?: Record<string, unknown>;
 }
 
 /** A path's place: its mount and the names below it. */
 interface Place {
+  /** The mount's file system. */
   fs: MountFs;
+  /** The path's names below the mount. */
   names: string[];
+  /** The whole path, for errors. */
   path: string;
 }
 
+/** A call that worked, with the bytes it gives (none by default). */
 const ok = (bytes = new Uint8Array()): FsResult => ({ code: OK, bytes });
 
 /**
- * The service's file system in the browser (the contract's mounts): /data and /kovaak in the browser's private file
- * system, /vods the VODs folder the user opened (missing until then), /models the models over HTTP. It answers the
- * service's host_fs calls and the page's own reads and writes.
+ * The service's file system in the browser (the contract's mounts): /data and /kovaak in the
+ * browser's private file system, /vods the VODs folder the user opened (missing until then),
+ * /models the models over HTTP. It answers the service's host_fs calls and the page's own reads
+ * and writes.
  */
 export class Mounts {
+  /** Each mount's file system, by its name. */
   private readonly table = new Map<MountName, MountFs>();
 
   /** Mounts a file system at /name (null: nothing there). */
@@ -701,7 +833,10 @@ export class Mounts {
     return this.table.has(name);
   }
 
-  /** Where a path is: its mount and the names below it. Throws for a path outside the mounts, or with . or ..  */
+  /**
+   * Where a path is: its mount and the names below it. Throws for a path outside the mounts, or
+   * with . or ..
+   */
   private place(path: string): Place {
     const names = path.split('/').filter(Boolean);
     if (!path.startsWith('/') || names.some((name) => name === '.' || name === '..'))
@@ -711,7 +846,10 @@ export class Mounts {
     return { fs, names: names.slice(1), path };
   }
 
-  /** The service's file system call (the contract's host_fs ops), answered as a result block's code and bytes. */
+  /**
+   * The service's file system call (the contract's host_fs ops), answered as a result block's code
+   * and bytes. It never rejects: a failure is its code and message.
+   */
   async host(op: number, path: string, arg: Uint8Array): Promise<FsResult> {
     try {
       if (op === OP_METADATA && !path.split('/').some(Boolean))
@@ -800,9 +938,10 @@ export class Mounts {
   }
 
   /**
-   * Copies files into a folder, below it at their paths: only those new or changed (size or time) since the last copy,
-   * by its index (copied.json in the folder). `turn` runs each step in the worker's queue, so the service's requests
-   * are answered between them. Resolves to how many it copied.
+   * Copies files into a folder, below it at their paths: only those new or changed (size or time)
+   * since the last copy, by its index (copied.json in the folder; /kovaak itself goes into packs).
+   * `turn` runs each step in the worker's queue, so the service's requests are answered between
+   * them. Resolves to how many it copied.
    */
   async copyIn(
     dir: string,

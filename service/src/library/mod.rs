@@ -1,11 +1,13 @@
 //! The library: the user's recordings (the VODs folder and the uploads), KovaaK's stats files and scenarios, the
 //! models, and each recording's reviews, kept in the data folder (config.rs: `Layout`). It answers what the review
-//! server (python/server.py) answers (api.rs); the review itself runs natively (review.rs).
+//! server (python/retired/server.py) answered (api.rs); the review itself runs natively (review.rs), or in the browser
+//! build in the page (browser.rs).
 //!
 //! settings.rs: what the user set, the models and the model pick. recordings.rs: the recordings list, a recording's
 //! video and folder, uploads, the scenarios' facts. stats.rs: KovaaK's stats files and each recording's pairing with
 //! one. reviews.rs: the review jobs, the review on show, the run window and the report. names.rs: file names and time
-//! stamps. links.rs: recordings added from a link (yt-dlp). The areas (areas.rs), the faint-target cut-off
+//! stamps. links.rs: recordings added from a link (yt-dlp). browser.rs: what the browser build's page does for the
+//! library (the review, the area finder, the VODs folder, mouse logs). The areas (areas.rs), the faint-target cut-off
 //! (faint.rs), labelling (labels.rs) and the mouse logs' measures (mouse.rs) are kept beside it.
 //!
 //! In: the library's `Config` and the API's requests (api.rs). Out: the answers, and what the library keeps
@@ -40,33 +42,41 @@ use stats::StatsIndex;
 /// An error for the page: its message, and the HTTP status the API answers with.
 #[derive(Debug)]
 pub struct Failure {
+    /// The HTTP status: 404, 400, 409 or 500.
     pub status: u16,
+    /// What went wrong, in words the page shows.
     pub message: String,
 }
 
 /// The status of an answer that needs the page's area finder first (the browser build's /api/find_areas).
 pub const FOUND_NEEDED: u16 = 409;
-/// The statuses of a failure: something not found, a request that cannot be answered as it is, and any other error.
+/// The status of a failure for something not found.
 const NOT_FOUND: u16 = 404;
+/// The status of a failure for a request that cannot be answered as it is.
 const BAD_REQUEST: u16 = 400;
+/// The status of any other failure.
 const SERVER_ERROR: u16 = 500;
 
 impl Failure {
+    /// Something not found (404).
     pub fn missing(what: impl Into<String>) -> Failure {
         Failure { status: NOT_FOUND, message: what.into() }
     }
+    /// A request that cannot be answered as it is (400).
     pub fn bad(what: impl Into<String>) -> Failure {
         Failure { status: BAD_REQUEST, message: what.into() }
     }
 }
 
 impl From<String> for Failure {
+    /// Any other error (500).
     fn from(message: String) -> Failure {
         Failure { status: SERVER_ERROR, message }
     }
 }
 
 impl fmt::Display for Failure {
+    /// The message alone.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.message)
     }
@@ -74,16 +84,24 @@ impl fmt::Display for Failure {
 
 impl std::error::Error for Failure {}
 
+/// A library answer: the value, or the failure the API answers with.
 pub type Answer<T> = Result<T, Failure>;
 
+/// The user's recordings and everything kept for them; one per process, shared by every request's thread.
 pub struct Library {
+    /// What the library was opened with.
     config: Config,
+    /// The layout's folders in the data folder.
     folders: Folders,
     /// Where the library keeps what it keeps.
     store: Arc<dyn Store>,
+    /// What the user set (settings.json): read at the start, and each change written to the file too.
     settings: Mutex<Settings>,
+    /// KovaaK's stats files by scenario, listed when first needed (stats.rs).
     stats: Mutex<StatsIndex>,
+    /// Each scenario's facts by lower-case name, read once from the scenario folders (recordings.rs `facts`).
     facts: Mutex<Option<Arc<HashMap<String, Facts>>>>,
+    /// Each recording's last job (a review, or a link's download), by its id.
     jobs: Mutex<HashMap<String, Arc<Mutex<Job>>>>,
     /// What links' qualities were read (links.rs), by link, kept for their download.
     #[cfg(feature = "native")]
@@ -113,8 +131,8 @@ pub(crate) fn keep_json(store: &dyn Store, item: Item<'_>, value: &impl Serializ
 
 impl Library {
     /// The library `config` describes, with ffmpeg taken from where it says (for the whole process). Area examples kept
-    /// before area kinds had ids are given ids (python/server.py does it at its start); when they cannot be read the
-    /// library still opens, and says why. Upload bodies another process left in the uploads folder (a crash
+    /// before area kinds had ids are given ids (python/retired/server.py did it at its start); when they cannot be read
+    /// the library still opens, and says why. Upload bodies another process left in the uploads folder (a crash
     /// mid-upload) are removed. Fails when the data folder cannot be made.
     pub fn open(config: Config) -> Result<Arc<Library>, String> {
         let folders = config.folders();
@@ -141,10 +159,12 @@ impl Library {
         Ok(library)
     }
 
+    /// What the library was opened with.
     pub fn config(&self) -> &Config {
         &self.config
     }
 
+    /// The layout's folders in the data folder.
     pub fn folders(&self) -> &Folders {
         &self.folders
     }

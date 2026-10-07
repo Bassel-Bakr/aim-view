@@ -1,3 +1,10 @@
+/**
+ * The Crops page's state (`CropDraft`): which check folder and set are open, the crop on show,
+ * the scene being fixed, and saving answers. In: the CropSets contract (the check folders
+ * make_page.py writes, their crops and answers) and the core's WebAssembly, which works out what
+ * each target shows. Out: the Crops page and its parts (crops/), and the answers it saves.
+ */
+
 import { computed, effect, inject, resource, Service, signal, untracked } from '@angular/core';
 import {
   CropAnswer,
@@ -25,7 +32,9 @@ export type CropMode = 'view' | 'fix';
 
 /** What the page last said: a status, or something that failed. */
 export interface CropNote {
+  /** The words to show. */
   text: string;
+  /** Whether something failed, so the note shows as an error. */
   failed: boolean;
 }
 
@@ -36,26 +45,40 @@ export interface CropNote {
  */
 @Service()
 export class CropDraft {
+  /** The mode's check folders, crops and answers. */
   private readonly sets = inject(CropSets);
+  /** The core's WebAssembly, which works out what each target of a scene shows. */
   private readonly core = inject(CoreModule);
+  /** The check folder open (?folder=); undefined before one opens. */
   readonly folder = signal<string | undefined>(queryValue('folder') ?? undefined);
+  /** The set open in the check folder (?set=). */
   readonly set = signal<string | undefined>(queryValue('set') ?? undefined);
   /** The crop a link asked for (?crop=<id>), shown when its set's crops arrive, instead of the first unchecked. */
   private wanted = queryValue('crop');
+  /** Every check folder and its sets, with how many crops each has and how many are answered. */
   readonly pages = this.sets.pages();
+  /** The open set's crops. */
   readonly crops = this.sets.crops(this.folder, this.set);
+  /** The open set's answers as the mode kept them. */
   private readonly loaded = this.sets.answers(this.folder, this.set);
+  /** The answers saved since the set opened, laid over the loaded ones. */
   private readonly saved = signal<CropAnswerMap>({});
+  /** Every answer of the open set, by crop id: the loaded ones, this visit's saves over them. */
   readonly answers = computed<CropAnswerMap>(() => ({
     ...(this.loaded.hasValue() ? this.loaded.value() : {}),
     ...this.saved(),
   }));
+  /** The crop on show, as its place in the list; the list's length when every crop is checked. */
   readonly index = signal(0);
+  /** Whether the page shows the crop's marks or edits them. */
   readonly mode = signal<CropMode>('view');
+  /** The scene being fixed; null outside a fix. */
   readonly draft = signal<DraftScene | null>(null);
+  /** The ids of the shapes selected in the fix. */
   readonly selection = signal<string[]>([]);
-  /** The kind of shape a drag on the wall draws, and whether a 3D one (with a third face). */
+  /** The kind of shape a drag on the wall draws. */
   readonly kind = signal<ShapeKind>('pill');
+  /** Whether a drag on the wall draws a 3D shape (with a third face). */
   readonly deep = signal(false);
   /** In a fix, a drag moves the view instead of drawing or moving shapes (the tools' Pan); taps still select. */
   readonly panning = signal(false);
@@ -63,26 +86,38 @@ export class CropDraft {
   readonly mirroring = signal(false);
   /** After an answer, the next crop not checked shows; off (?order=all), the next crop in order, checked or not. */
   readonly skipChecked = signal(queryValue('order') !== 'all');
+  /** What the page last said; null when there is nothing to say. */
   readonly note = signal<CropNote | null>(null);
+  /** Whether an answer is being saved. */
   readonly busy = signal(false);
+  /** The open set's crops; empty until they arrive. */
   readonly list = computed<CropEntry[]>(() =>
     this.crops.hasValue() ? (this.crops.value() ?? []) : [],
   );
+  /** The crop on show; null past the last crop or before the crops arrive. */
   readonly crop = computed<CropEntry | null>(() => this.list()[this.index()] ?? null);
+  /** The open set's entry: its title, its counts, and whether its answers teach suggestions. */
   readonly setInfo = computed<CropSet | null>(() => {
     const page = (this.pages.hasValue() ? this.pages.value() : [])?.find(
       (one) => one.page === this.folder(),
     );
     return page?.sets.find((one) => one.set === this.set()) ?? null;
   });
+  /** How many of the open set's crops have an answer. */
   readonly answered = computed(
     () => this.list().filter((crop) => crop.id in this.answers()).length,
   );
+  /** The answer of the crop on show; null when it has none. */
   readonly answer = computed<CropAnswer | null>(() => {
     const crop = this.crop();
     return crop ? (this.answers()[crop.id] ?? null) : null;
   });
+  /** What the answers so far teach, by the recording folder of their crops (crop-lessons.ts). */
   private readonly lessons = computed(() => learn(this.list(), this.answers()));
+  /**
+   * The fix offered for the crop on show, from what the answers in its recording's folder did;
+   * null when the crop is answered or there is nothing to offer.
+   */
   readonly suggestion = computed<Suggestion | null>(() => {
     const crop = this.crop();
     if (!crop || this.answer()) return null;
@@ -107,6 +142,7 @@ export class CropDraft {
     loader: ({ params }) => this.core.shapesVisible(params),
   });
 
+  /** Keeps the URL in step with what is open, and opens a crop once a set's answers arrive. */
   constructor() {
     effect(() =>
       setQuery({
@@ -268,6 +304,7 @@ export class CropDraft {
 
 /** Something with an error in it: an HttpErrorResponse, or the service's answer to a refused request. */
 interface WithError {
+  /** The error's body, or the service's message. */
   error: unknown;
 }
 

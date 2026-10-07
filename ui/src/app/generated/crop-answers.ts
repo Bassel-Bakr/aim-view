@@ -6,6 +6,12 @@ import type { CropAnswer } from './crop-answer';
  * imports it.
  */
 export interface CropAnswers {
+  /**
+   * The check folder's name.
+   */
   page: string;
+  /**
+   * The newest answer of each crop, by crop id.
+   */
   answers: Record<string, CropAnswer>;
 }

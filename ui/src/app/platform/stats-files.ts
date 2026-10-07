@@ -1,3 +1,9 @@
+/**
+ * The StatsFiles contract: a recording's stats file, the files to pair it with, and choosing
+ * KovaaK's stats folder. In: each mode's implementation (modes/mode.*.ts). Out: the run page's
+ * stats file panel and progress chart, and the upload panel.
+ */
+
 import { ResourceRef, Signal } from '@angular/core';
 import { StatsChange, StatsChoice, StatsPairing } from '../api';
 

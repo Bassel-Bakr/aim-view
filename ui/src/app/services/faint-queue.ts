@@ -1,3 +1,9 @@
+/**
+ * The cut-off queue (`FaintQueue`): going through the recordings one by one to set each one's
+ * faint-target cut-off. In: the FaintCutoffs contract's queue, the open recording and its review.
+ * Out: the recording it opens, and the top bar's Cut-off menu (cutoff-menu/).
+ */
+
 import { computed, effect, inject, Service, signal, untracked } from '@angular/core';
 import { errorMessage } from '../api';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
@@ -13,21 +19,35 @@ import { Review } from './review';
  */
 @Service()
 export class FaintQueue {
+  /** The mode's cut-offs, its queue and skips. */
   private readonly cutoffs = inject(FaintCutoffs);
+  /** The open recording's cut-off, which the queue submits. */
   private readonly faint = inject(FaintCutoff);
+  /** Which recording is open, which the queue sets. */
   private readonly library = inject(Library);
+  /** The open recording's review, which the queue starts when there is none. */
   private readonly review = inject(Review);
+  /** The queue's recordings in order; null when not going through it. */
   private readonly ids = signal<readonly string[] | null>(null);
+  /** The place of the open recording in the queue, from 0. */
   readonly position = signal(0);
+  /** Whether the user is going through the queue. */
   readonly active = computed(() => this.ids() !== null);
+  /** How many recordings the queue holds. */
   readonly length = computed(() => this.ids()?.length ?? 0);
   /** The recording the queue has open; null when not going through it. */
   readonly current = computed(() => this.ids()?.[this.position()] ?? null);
+  /** Whether the queue is being read. */
   readonly loading = signal(false);
+  /** What the queue last said; null when there is nothing to say. */
   readonly note = signal<FaintNote | null>(null);
   /** The recordings reviewed again for their scores, so each is reviewed again once. */
   private readonly reviewedAgain = new Set<string>();
 
+  /**
+   * Ends the queue when the user opens another recording, tells the cut-off panel the open one is
+   * the queue's, and reviews again a recording whose review lacks the detector's scores.
+   */
   constructor() {
     effect(() => {
       const open = this.library.selectedId();
@@ -121,6 +141,7 @@ export class FaintQueue {
     if (recording && !recording.analysed) void this.review.analyse(false);
   }
 
+  /** Shows a note; `failed` shows it as an error. */
   private say(text: string, failed = false): void {
     this.note.set({ text, failed });
   }

@@ -1,9 +1,9 @@
 //! What the library keeps, through one interface (`Store`), so where it is kept can change (docs/storage-design.md):
 //! today the files in the data folder (`Files`, laid out as config.rs's layout says), later one SQLite database. The
-//! library formats each thing (JSON as python/server.py writes it, .npz as NumPy does); a store keeps the bytes it is
-//! given and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and
-//! the crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same bytes, and
-//! what is kept for each recording.
+//! library formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes
+//! it is given and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes
+//! them) and the crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same
+//! bytes, and what is kept for each recording.
 
 use std::collections::{BTreeSet, HashSet};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -34,8 +34,9 @@ pub enum Mark {
     Cutoff,
     /// The areas the user saved for it (areas.rs).
     SavedAreas,
-    /// What the area finder found in it, and the finder's maps (finder.rs).
+    /// What the area finder found in it (finder.rs).
     FoundAreas,
+    /// The area finder's stand-out and change maps of it (.npz), which learning from saved areas reads (finder.rs).
     FoundMaps,
 }
 
@@ -43,16 +44,24 @@ pub enum Mark {
 /// check of the kills the video alone gives.
 #[derive(Clone, Copy, Debug)]
 pub enum Part {
+    /// Each frame's kept boxes and ids, and the view shift (tracks.json; the core's track.rs).
     Tracks,
+    /// The camera's turn per frame and KovaaK's countdown bar (readings.json; the core's camera.rs).
     Readings,
+    /// What the HUD read (hud.json; the core's hud.rs).
     Hud,
+    /// The check of the kills the video alone gives, made only without a stats file (kills.json; the core's
+    /// kill_check.rs).
     Kills,
 }
 
-/// Which of a recording's reviews: a model's, or the one python/server.py kept before reviews were kept per model.
+/// Which of a recording's reviews: a model's, or the one python/retired/server.py kept before reviews were kept per
+/// model.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReviewBy {
+    /// The review a model made, by the model's name (its folder in the recording's models folder).
     Model(String),
+    /// The review kept in the recording's own folder, from before reviews were kept per model.
     Old,
 }
 
@@ -61,19 +70,21 @@ pub enum ReviewBy {
 pub enum Item<'a> {
     /// What the user set (library/settings.rs).
     Settings,
-    /// The area types, and the area finder's examples (one JSON line each; areas.rs).
+    /// The area types (areas.rs).
     AreaKinds,
+    /// The area finder's examples, one JSON line each (areas.rs).
     AreaExamples,
     /// The areas last saved for an added recording (areas.rs).
     UploadAreas,
+    /// A list of recording ids the user marked (labels.rs, faint.rs).
     Ids(IdList),
     /// A recording's mark, by its id.
     Mark(&'a str, Mark),
     /// A part of one of a recording's reviews, by its id.
     ReviewPart(&'a str, &'a ReviewBy, Part),
-    /// The detector labels of submitted cut-offs (faint.rs): their rows (one JSON line each), and a crop by its row's
-    /// file (train/<name>.npz).
+    /// The detector labels of submitted cut-offs (faint.rs): their rows, one JSON line each.
     CutoffRows,
+    /// One crop of those labels, by its row's file (train/<name>.npz).
     CutoffCrop(&'a str),
 }
 
@@ -152,8 +163,8 @@ pub trait Store: Send + Sync {
     fn labelled(&self, skip: &BTreeSet<String>) -> Vec<(String, Vec<u8>, Vec<u8>)>;
 }
 
-/// The bytes at the end of an old tracks.json (python/server.py's, kept in the recording's own folder) read for the
-/// detector's name.
+/// The bytes at the end of an old tracks.json (python/retired/server.py's, kept in the recording's own folder) read for
+/// the detector's name.
 const OLD_TRACKS_TAIL_BYTES: u64 = 200;
 /// The key an old tracks.json ends with when a model made it (the hand-written detector's has none).
 const DETECTOR_KEY: &[u8] = b"\"detector\"";
@@ -174,14 +185,18 @@ pub fn folder_parts(dir: &Path) -> impl Fn(Part) -> Option<Vec<u8>> + '_ {
 /// The store as the files in the data folder (disk.rs), laid out as the layout's folders say: today's files, byte for
 /// byte.
 pub struct Files {
+    /// The layout's folders: the library's own files, each recording's folder and the cut-off labels.
     folders: Folders,
 }
 
 impl Files {
+    /// The store in `folders`; nothing is read or made until an item is.
     pub fn new(folders: Folders) -> Files {
         Files { folders }
     }
 
+    /// The folder that holds a review's parts: the model's folder in the recording's models folder, or the
+    /// recording's own folder for the old review.
     fn review_folder(&self, id: &str, by: &ReviewBy) -> PathBuf {
         match by {
             ReviewBy::Model(model) => recording_folder(&self.folders, id).join(MODELS).join(model),
@@ -228,6 +243,7 @@ fn make_parent(path: &Path) -> io::Result<()> {
 }
 
 impl Store for Files {
+    /// The item's file; a missing file is None, any other error an error.
     fn read(&self, item: Item<'_>) -> io::Result<Option<Vec<u8>>> {
         match crate::disk::read(self.path(item)) {
             Ok(bytes) => Ok(Some(bytes)),
@@ -236,14 +252,17 @@ impl Store for Files {
         }
     }
 
+    /// Whether the item's file is there.
     fn has(&self, item: Item<'_>) -> bool {
         crate::disk::is_file(self.path(item))
     }
 
+    /// The item's file's time of change.
     fn changed(&self, item: Item<'_>) -> Option<f64> {
         crate::disk::metadata(self.path(item)).ok().and_then(|metadata| metadata.modified())
     }
 
+    /// Writes the item's file, its folder made when missing; a file Python keeps as text gets Windows' line ends.
     fn write(&self, item: Item<'_>, bytes: &[u8]) -> io::Result<()> {
         let path = self.path(item);
         make_parent(&path)?;
@@ -254,6 +273,7 @@ impl Store for Files {
         }
     }
 
+    /// Adds to the end of the item's file, as `write` writes it.
     fn append(&self, item: Item<'_>, bytes: &[u8]) -> io::Result<()> {
         let path = self.path(item);
         make_parent(&path)?;
@@ -264,23 +284,28 @@ impl Store for Files {
         }
     }
 
+    /// Deletes the item's file; a missing file is an error.
     fn remove(&self, item: Item<'_>) -> io::Result<()> {
         crate::disk::remove_file(self.path(item))
     }
 
+    /// The item's file's path.
     fn name(&self, item: Item<'_>) -> String {
         self.path(item).display().to_string()
     }
 
+    /// Whether the recording's folder holds an old tracks.json, or a model folder with one.
     fn reviewed(&self, id: &str) -> bool {
         self.has(Item::ReviewPart(id, &ReviewBy::Old, Part::Tracks)) || self.model_folders(id).next().is_some()
     }
 
+    /// The names of the recording's model folders that hold a tracks.json, in the order the folder lists them.
     fn models(&self, id: &str) -> Vec<String> {
         let name = |folder: PathBuf| folder.file_name().map(|name| name.to_string_lossy().into_owned());
         self.model_folders(id).map(|folder| name(folder).unwrap_or_default()).collect()
     }
 
+    /// Reads the last bytes of the old tracks.json: without a "detector" key the hand-written detector made it.
     fn old_review(&self, id: &str) -> Option<Option<String>> {
         let tracks = self.path(Item::ReviewPart(id, &ReviewBy::Old, Part::Tracks));
         if !crate::disk::is_file(&tracks) {
@@ -296,11 +321,13 @@ impl Store for Files {
         Some((!named).then(|| "hand".to_string()))
     }
 
+    /// The names of the entries in the recordings folder.
     fn kept(&self) -> HashSet<String> {
         let entries = crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten();
         entries.map(|entry| entry.file_name().to_string_lossy().into_owned()).collect()
     }
 
+    /// Reads areas.json and exclude.json from each recording folder that has both.
     fn labelled(&self, skip: &BTreeSet<String>) -> Vec<(String, Vec<u8>, Vec<u8>)> {
         let mut out = Vec::new();
         for entry in crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten() {

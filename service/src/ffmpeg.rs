@@ -34,12 +34,14 @@ pub fn set_source(source: Ffmpeg) {
     *SOURCE.write().unwrap_or_else(PoisonError::into_inner) = source;
 }
 
+/// Where this process's ffmpeg comes from now.
 fn source() -> Ffmpeg {
     SOURCE.read().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
 /// Whether the PATH has an ffmpeg and an ffprobe that run: asked once a process.
 fn on_path() -> bool {
+    /// The answer, once asked.
     static FOUND: OnceLock<bool> = OnceLock::new();
     *FOUND.get_or_init(|| {
         let runs = |name: &str| {
@@ -51,7 +53,8 @@ fn on_path() -> bool {
     })
 }
 
-/// One of ffmpeg's programs ("ffmpeg", "ffprobe").
+/// One of ffmpeg's programs ("ffmpeg", "ffprobe"): its bare name, which the PATH finds, or its path in the folder.
+/// A download source with the PATH's ffmpeg running uses the PATH's.
 pub fn program(name: &str) -> PathBuf {
     match source() {
         Ffmpeg::Download(_) if on_path() => PathBuf::from(name),
@@ -62,7 +65,7 @@ pub fn program(name: &str) -> PathBuf {
     }
 }
 
-/// The build the app downloads.
+/// The build the app downloads: BtbN's on 64-bit Windows, else ffmpeg-sidecar's choice for this system.
 fn download_url() -> Result<&'static str, String> {
     if cfg!(all(windows, target_arch = "x86_64")) {
         Ok(WINDOWS_BUILD_URL)
@@ -76,6 +79,7 @@ fn without_player(folder: &Path) {
     let _ = std::fs::remove_file(folder.join(format!("{PLAYER}{}", std::env::consts::EXE_SUFFIX)));
 }
 
+/// Whether the folder holds the build from `url` (its source.txt names it) with both ffmpeg and ffprobe.
 fn installed(folder: &Path, url: &str) -> bool {
     let source = std::fs::read_to_string(folder.join(SOURCE_FILE)).unwrap_or_default();
     source.trim() == url && program("ffmpeg").is_file() && program("ffprobe").is_file()

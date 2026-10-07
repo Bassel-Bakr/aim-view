@@ -1,9 +1,10 @@
-"""Pick crops of a dataset for a check by eye (label_check.py --data): spread over the recordings and the scenario kinds,
-three in four of them uncertain ones: a box scored near the threshold, a frame whose box count is not the scenario's
-target count, a very small or very large box (under the 5th or over the 95th percentile of the dataset's boxes), or no
-box at all. The picked crops are copied into --out, in their split folders, with picks.jsonl (where each one comes
-from and why it was picked). The dataset is left as it is.
-Usage: python python/model/pick_checks.py --data test_out/vod_model/data_moving_themes --out test_out/vod_model/check_moving_themes [--n 150]
+"""Pick crops of a dataset for a check by eye (label_check.py --data): spread over the recordings and the scenario
+kinds, three in four of them uncertain ones: a box scored near the threshold, a frame whose box count is not the
+scenario's target count, a very small or very large box (under the 5th or over the 95th percentile of the dataset's
+boxes), or no box at all. The picked crops are copied into --out, in their split folders, with picks.jsonl (where each
+one comes from and why it was picked). The dataset is left as it is.
+Usage: python python/model/pick_checks.py --data test_out/vod_model/data_moving_themes
+       --out test_out/vod_model/check_moving_themes [--n 150]
 """
 import argparse
 import collections
@@ -45,7 +46,8 @@ def read_crops(data, recordings, kinds):
 
 
 def add_reasons(crops, threshold, near, small, large):
-    """Each crop's reasons to check it ("why") and their weight."""
+    """Sets each crop's reasons to check it ("why") and their summed weight. A score under `threshold` + `near` is
+    near the threshold; a box side under `small` or over `large` px is very small or very large."""
     for crop in crops:
         why = []
         if len(crop["score"]) and crop["score"].min() < threshold + near:
@@ -64,6 +66,7 @@ def add_reasons(crops, threshold, near, small, large):
 def quotas(by_kind, wanted, crop_count):
     """Each kind's share: by its recordings, at least a sixth of the picks where it has that many crops."""
     def crops_of(kind):
+        """The kind's crop count, over all its recordings."""
         return sum(map(len, by_kind[kind].values()))
     total = sum(len(recordings) for recordings in by_kind.values())
     quota = {kind: max(min(wanted // KIND_SHARE, crops_of(kind)), round(wanted * len(recordings) / total))
@@ -119,10 +122,13 @@ def write_picks(picked, out, recordings):
 
 
 def reason_name(why):
+    """A reason without its numbers, to count the picks by reason."""
     return why.split(" (")[0] if "boxes in" not in why else "box count is not the target count"
 
 
 def main():
+    """Picks the crops of the dataset's kept recordings, copies them into --out (which must be empty), and prints the
+    count per kind and per reason."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", required=True, help="a dataset build_data.py wrote (manifest.jsonl, train, val, test)")
     parser.add_argument("--out", required=True)

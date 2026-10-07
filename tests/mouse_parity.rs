@@ -109,6 +109,7 @@ fn check_case(dir: &Path, name: &str, want: &Value) {
     assert!(wrong.is_empty(), "{name}: {} differences", wrong.len());
 }
 
+/// Every case's log reads as Python reads it: the same summary, and with a stats file the same run or error.
 #[test]
 fn reader_matches_python() {
     let root = parity_root().join("mouse");

@@ -13,14 +13,46 @@ import type { Solid } from './solid';
  * role, and the model box it started from (an index into the crop's boxes), if any.
  */
 export interface Shape {
+  /**
+   * The shape's id in the scene, which `Scene::targets` and `Scene::occluders` name it by.
+   */
   id: string;
+  /**
+   * Pill or box.
+   */
   kind: ShapeKind;
+  /**
+   * Its frame before turning: [center x, center y, width, height], crop pixels ("box" in the JSON).
+   */
   box: CropBox;
+  /**
+   * Its turn about its center, in degrees clockwise on screen.
+   */
   angle: number;
+  /**
+   * The offset of its far end from its near one, crop pixels [x, y]; None for a flat shape.
+   */
   face: FaceOffset | null;
+  /**
+   * Its thickness and turn out of the screen's plane, for a solid shape; when given it decides the outline
+   * instead of `face`.
+   */
   solid: Solid | null;
+  /**
+   * A box's vertices placed by hand, crop pixels (4 for a flat box, 8 for a 3D one); when there are 3 or more they
+   * decide its outline.
+   */
   points: CropVertex[] | null;
+  /**
+   * Its place front to back: greater is nearer, and a nearer shape hides the parts of those behind it.
+   */
   depth: number;
+  /**
+   * The part of a bot it stands for, if it is one.
+   */
   role: ShapeRole | null;
+  /**
+   * The model box it started from, an index into the crop's boxes; None for one drawn from nothing.
+   */
   model: number | null;
 }

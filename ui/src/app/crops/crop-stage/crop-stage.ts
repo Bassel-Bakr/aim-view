@@ -1,3 +1,10 @@
+/**
+ * The Crops page's canvas (`CropStage`): the crop's picture with its shapes, and every pointer,
+ * wheel and key gesture that zooms, pans, peeks and edits them. In: the CropDraft state and the
+ * crop's picture from the CropSets contract. Out: edits to the draft's scene and selection; the
+ * drawing itself is crop-paint.ts, what a press holds is crop-grip.ts.
+ */
+
 import {
   afterNextRender,
   afterRenderEffect,
@@ -41,8 +48,11 @@ type ScreenPoint = [x: number, y: number];
 
 /** The zoom and pan: how many times the crop is enlarged, and where its top left is (CSS pixels). */
 interface StageZoom {
+  /** How many times the crop is enlarged (1 to MAX_ZOOM). */
   zoom: number;
+  /** Where the crop's left edge is, in CSS pixels from the stage's (0 or less). */
   left: number;
+  /** Where the crop's top edge is, in CSS pixels from the stage's (0 or less). */
   top: number;
 }
 
@@ -51,41 +61,59 @@ interface StageZoom {
  * it began, and the scene and zoom then.
  */
 interface StagePress {
+  /** What the press holds; null outside a fix, or for the mouse's pan buttons. */
   grip: CropGrip | null;
+  /** Whether a drag pans the view instead of editing. */
   pans: boolean;
+  /** Where the press began on the stage. */
   screen: ScreenPoint;
+  /** Where the press began on the crop, in crop pixels. */
   start: CropPoint;
+  /** The scene when the press began, which a drag edits from; null outside a fix. */
   from: DraftScene | null;
+  /** The zoom when the press began, which a pan moves from. */
   zoom: StageZoom;
+  /** Whether the finger has moved far enough to drag (DRAG_PX); a press that has not is a tap. */
   moved: boolean;
 }
 
-/** Two fingers: how far apart and where their middle was when the second came down, and the zoom then. */
 /** The keys held while dragging: Shift keeps sides equal; Alt (or Mirror) moves a side's opposite side too. */
 interface DragKeys {
+  /** Shift is held: the shape's two sides stay equal. */
   even: boolean;
+  /** Alt is held or Mirror is on: a side's opposite side moves too. */
   mirror: boolean;
 }
 
+/** Two fingers: how far apart and where their middle was as the second came down, and the zoom. */
 interface StagePinch {
+  /** How far apart the fingers were, in CSS pixels. */
   distance: number;
+  /** Where their middle was on the stage. */
   middle: ScreenPoint;
+  /** The zoom then. */
   zoom: StageZoom;
 }
 
 /** Which crop's picture to load. */
 interface CropImageKey {
+  /** The check folder. */
   folder: string;
+  /** The crop's id. */
   id: string;
 }
 
 /** The tinted mask made for a scene view. */
 interface StageMask {
+  /** The core's view the mask was made from. */
   view: SceneView;
+  /** The mask, tinted, ready to draw over the crop. */
   picture: HTMLCanvasElement;
 }
 
+/** The crop at its own size, filling the stage. */
 const NO_ZOOM: StageZoom = { zoom: 1, left: 0, top: 0 };
+/** The most the crop can be enlarged. */
 const MAX_ZOOM = 8;
 /** One wheel step zooms by this much. */
 const WHEEL_STEP = 1.25;
@@ -103,7 +131,8 @@ const PEEK_MS = 180;
  * pans a zoomed crop. In a fix: a drag on the wall draws a shape of the chosen kind, a drag on a shape moves it (with
  * the selection), and a shape selected alone shows handles: its corners resize it, its handle above turns it and its
  * square handle pulls out its third face (a 3D box's or pill's far end). A tap selects or unselects a shape, brings a
- * crossed-out box back, and on the wall clears the selection or, with none, marks a tiny target. Two fingers (or the wheel) zoom and pan; the
+ * crossed-out box back, and on the wall clears the selection or, with none, marks a tiny target.
+ * Two fingers (or the wheel) zoom and pan; the
  * tools' Pan, Space, or the mouse's middle or right button make a drag pan; the wheel over the selected shapes resizes
  * them. Shift while drawing or resizing keeps a shape's two sides equal (a perfect circle or square). Delete removes the
  * selected shapes, Ctrl+D duplicates them.
@@ -118,24 +147,39 @@ const PEEK_MS = 180;
   },
 })
 export class CropStage {
+  /** The page's state: the crop on show, its scene, the selection and the tools' choices. */
   private readonly draft = inject(CropDraft);
+  /** Where the crop's picture comes from. */
   private readonly sets = inject(CropSets);
+  /** Ends the canvas's listeners and resize watch with the component. */
   private readonly destroyRef = inject(DestroyRef);
+  /** The stage's canvas. */
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('stage');
+  /** The zoom and pan; back to none when another crop shows. */
   private readonly zoom = signal<StageZoom>(NO_ZOOM);
+  /** The shape a drag on the wall is drawing, before it is added; null when none is. */
   private readonly sketch = signal<Shape | null>(null);
+  /** A held finger shows the crop without its marks. */
   private readonly peeking = signal(false);
   /** Space is held: a drag pans. */
   private readonly spaceHeld = signal(false);
   /** Whether a drag pans now, for the cursor. */
   protected readonly pans = computed(() => this.draft.panning() || this.spaceHeld());
+  /** Every finger or button down on the stage, by pointer id: where it is now. */
   private readonly pointers = new Map<number, ScreenPoint>();
+  /** The one finger's press; null when none is down, or two are. */
   private press: StagePress | null = null;
+  /** The two fingers' pinch; null when fewer than two are down. */
   private pinch: StagePinch | null = null;
+  /** Starts the peek once a finger has been held PEEK_MS without moving. */
   private peekTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The colors and sizes the drawing uses, read from the CSS once. */
   private style: CropStyle | null = null;
+  /** The core's last view of the scene, drawn while the next one is worked out. */
   private lastView: SceneView | null = null;
+  /** The tinted mask of the last view, made again only when the view changes. */
   private mask: StageMask | null = null;
+  /** The crop's picture. */
   private readonly image = resource<ImageBitmap, CropImageKey | undefined>({
     params: () => {
       const [folder, crop] = [this.draft.folder(), this.draft.crop()];
@@ -145,6 +189,11 @@ export class CropStage {
       createImageBitmap(await this.sets.image(params.folder, params.id)),
   });
 
+  /**
+   * Draws again whenever the stage's size or anything it shows changes, listens for pointer moves
+   * and the wheel (the wheel not passive: it zooms instead of scrolling), and resets the zoom when
+   * another crop shows.
+   */
   constructor() {
     afterNextRender(() => {
       const canvas = this.canvas().nativeElement;
@@ -173,6 +222,7 @@ export class CropStage {
     });
   }
 
+  /** Draws the stage at the screen's pixel ratio: the crop, the mask, the shapes and handles. */
   private draw(): void {
     const canvas = this.canvas().nativeElement;
     const side = canvas.clientWidth || 1;
@@ -207,17 +257,20 @@ export class CropStage {
     };
   }
 
+  /** Where the crop sits on the stage: CSS pixels per crop pixel, and its top left. */
   private place(): StagePlace {
     const side = this.canvas().nativeElement.clientWidth || 1;
     const { zoom, left, top } = this.zoom();
     return { scale: (side / CROP_SIDE) * zoom, left, top };
   }
 
+  /** Where an event happened on the stage. */
   private at(event: MouseEvent): ScreenPoint {
     const bounds = this.canvas().nativeElement.getBoundingClientRect();
     return [event.clientX - bounds.left, event.clientY - bounds.top];
   }
 
+  /** A stage point in crop pixels, kept within the crop. */
   private toCrop([x, y]: ScreenPoint): CropPoint {
     const { scale, left, top } = this.place();
     const keep = (value: number) => Math.min(Math.max(value, 0), CROP_SIDE);
@@ -231,6 +284,10 @@ export class CropStage {
     return { zoom, left: keep(left), top: keep(top) };
   }
 
+  /**
+   * A finger or button goes down: a second finger starts a pinch; one finger takes hold of what
+   * lies under it (in a fix), or pans, and outside a fix starts the peek timer.
+   */
   protected pressStage(event: PointerEvent): void {
     const panButton = event.pointerType === 'mouse' && PAN_BUTTONS.includes(event.button);
     if (event.pointerType === 'mouse' && event.button !== 0 && !panButton) return;
@@ -280,6 +337,7 @@ export class CropStage {
     };
   }
 
+  /** Drops the press: no peek, no sketch, and a drag's edit undone. */
   private cancelPress(): void {
     clearTimeout(this.peekTimer);
     this.peeking.set(false);
@@ -290,6 +348,7 @@ export class CropStage {
     if (from && press.moved) this.draft.edit(() => from);
   }
 
+  /** A finger moves: the pinch follows, or past DRAG_PX the press drags. */
   private movePointer(event: PointerEvent): void {
     if (!this.pointers.has(event.pointerId)) return;
     const screen = this.at(event);
@@ -316,6 +375,7 @@ export class CropStage {
     });
   }
 
+  /** Zooms by how far the two fingers spread, about their middle, which pans with them. */
   private movePinch(pinch: StagePinch): void {
     if (this.pointers.size < 2) return;
     const [a, b] = [...this.pointers.values()];
@@ -333,6 +393,10 @@ export class CropStage {
     );
   }
 
+  /**
+   * A drag to a stage point: it pans, sketches the shape being drawn, or changes the scene from
+   * how it was at the press (moved, resized, turned).
+   */
   private dragTo(press: StagePress, screen: ScreenPoint, { even, mirror }: DragKeys): void {
     const grip = press.grip;
     if (!grip || press.pans) {
@@ -367,6 +431,10 @@ export class CropStage {
     if (from) this.draft.edit(() => dragged(from, grip, this.draft.selection(), drag));
   }
 
+  /**
+   * A finger lifts or is cancelled: a press that never moved is a tap, a drag on the wall adds
+   * its shape, and a cancelled press is undone.
+   */
   protected releasePointer(event: PointerEvent): void {
     if (!this.pointers.delete(event.pointerId)) return;
     if (this.pinch) {
@@ -475,12 +543,14 @@ export class CropStage {
     }
   }
 
+  /** Space let go: a drag no longer pans. */
   protected handleKeyup(event: KeyboardEvent): void {
     if (event.key !== ' ' || !this.spaceHeld()) return;
     event.preventDefault();
     this.spaceHeld.set(false);
   }
 
+  /** Delete or Backspace removes the selected shapes; Escape unselects them. */
   private editByKey(event: KeyboardEvent): void {
     const selection = this.draft.selection();
     if ((event.key === 'Delete' || event.key === 'Backspace') && selection.length) {

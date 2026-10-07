@@ -14,26 +14,35 @@ use serde_json::Value;
 const FRAME_NUMBERS: [u32; 2] = [0, 200];
 /// ffmpeg's output file suffix and whether it used its x86 kernels.
 const KERNELS: [(&str, bool); 2] = [("", true), ("_c", false)];
+/// The pixel formats ffmpeg's outputs are in, as their file names give them.
 const OUTPUT_FORMATS: [&str; 2] = ["rgb24", "yuv420p"];
+/// The bytes of a 1280 x 720 RGB24 frame.
 const RGB_BYTES: usize = DST_W * DST_H * 3;
 /// The Y plane, then U and V at a quarter of its size each.
 const YUV_BYTES: usize = DST_W * DST_H * 3 / 2;
 
 /// One source frame: its recording's size and range, and where ffmpeg's outputs for it are.
 struct Source<'a> {
+    /// The folder of the frames and ffmpeg's outputs (test_out/parity/convert/).
     dir: &'a Path,
     /// `<key>_<n>`: the recording and the frame number.
     name: String,
+    /// The frame as decoded, YUV 4:2:0 at the recording's size.
     frame: Vec<u8>,
+    /// The recording's width, in pixels.
     width: usize,
+    /// The recording's height, in pixels.
     height: usize,
+    /// Whether its Y spans 0..255 (color_range "pc").
     full_range: bool,
 }
 
 /// The conversions checked, and each one that differs.
 #[derive(Default)]
 struct Outcome {
+    /// The conversions compared with an output of ffmpeg's.
     checked: usize,
+    /// Each conversion that differs, with how many bytes.
     wrong: Vec<String>,
 }
 
@@ -68,6 +77,7 @@ fn check_conversions(source: &Source, (suffix, x86): (&str, bool), shortcut: boo
     }
 }
 
+/// Every kept frame, in both formats, with both kernels, with the shortcut and without, is ffmpeg's to the byte.
 #[test]
 fn convert_matches_ffmpeg() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/parity/convert");

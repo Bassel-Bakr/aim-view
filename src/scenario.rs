@@ -13,9 +13,13 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
+    /// Clicking on targets that stand still (tagged Clicking and Static, or untagged with every bot's MaxSpeed 0).
     Static,
+    /// Clicking on targets that move (tagged Clicking and Dynamic); an untagged file that fits no other kind too.
     Dynamic,
+    /// Keeping the crosshair on a moving bot (tagged Tracking, or untagged with a fully automatic first weapon).
     Tracking,
+    /// Moving from one bot to the next as each dies (tagged Target Switching).
     Switching,
 }
 
@@ -25,10 +29,16 @@ pub enum Kind {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Facts {
+    /// The kind of run, from the file's tags or, untagged, its weapon and bots.
     pub kind: Kind,
+    /// The run's time limit in seconds (Timelimit); None when the file has none.
     pub limit: Option<f64>,
+    /// The targets alive at once: the bots AddedBots names; None when the line is missing.
     pub targets: Option<usize>,
+    /// The ammo rules of the weapon the player starts with; None when its magazine never runs out.
     pub reload: Option<AmmoRules>,
+    /// The hitbox every bot shares; None when they differ, it is hidden under a model or has a head, or the file lacks
+    /// it.
     pub hitbox: Option<Hitbox>,
 }
 
@@ -38,8 +48,11 @@ pub struct Facts {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum HitboxKind {
+    /// An ellipsoid: a sphere when its height is its width.
     Spheroid,
+    /// An upright capsule: a cylinder with round ends.
     Cylindrical,
+    /// A box.
     Cuboid,
 }
 
@@ -49,7 +62,9 @@ pub enum HitboxKind {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Hitbox {
+    /// The hitbox's shape (MainBBType).
     pub kind: HitboxKind,
+    /// Its width over its height: 2 x MainBBRadius over MainBBHeight.
     pub width_to_height: f64,
 }
 
@@ -61,11 +76,17 @@ pub struct Hitbox {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AmmoRules {
+    /// The ammo a full magazine holds (MagazineMax).
     pub magazine: i64,
+    /// The ammo a shot uses (AmmoPerShot).
     pub per_shot: i64,
+    /// The ammo a kill puts back, up to a full magazine (AmmoReloadedOnKill; 0 when the file has none).
     pub on_kill: i64,
+    /// A reload's time from an empty magazine, in seconds (ReloadTimeFromEmpty).
     pub from_empty: f64,
+    /// A reload's time with some ammo left, in seconds (ReloadTimeFromPartial; `from_empty` when the file has none).
     pub from_partial: f64,
+    /// The points a reload takes off (the scenario's ScoreLossPerReload; 0 when it has none).
     pub score_loss: f64,
 }
 
@@ -243,6 +264,7 @@ fn characters(head: &str) -> impl Iterator<Item = &str> {
     })
 }
 
+/// Checks the facts read from short scenario files and excerpts of real ones.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,6 +290,7 @@ Timelimit=60.0
         assert_eq!(text_of(text.as_bytes()), text);
     }
 
+    /// A tagged file gives its kind, its time limit and its bots' count, and nothing after "[Map Data]" counts.
     #[test]
     fn reads_the_tags_the_limit_and_the_bots() {
         let text = "Name=x\r\nAimTypeTag=Clicking\r\nAimSubTypeTag=Dynamic\r\nTimelimit=60.0\r\nAddedBots=a;b;c;\r\n\
@@ -293,6 +316,8 @@ Timelimit=60.0
         UseIncReload=false\r\n\r\n\
         [Map Data]\r\nMagazineMax=9\r\n";
 
+    /// The player's first weapon gives the ammo rules; none for a magazine that never runs out, a round-at-a-time
+    /// reload or a missing weapon.
     #[test]
     fn reads_the_player_weapons_ammo_rules() {
         let rules =
@@ -312,6 +337,8 @@ Timelimit=60.0
         MainBBType=Cylindrical\r\nMainBBHeight=320.0\r\nMainBBRadius=10.0\r\nMainBBHasHead=false\r\nMainBBHide=false\r\n\
         [Map Data]\r\n";
 
+    /// A bot's shown hitbox gives its shape and ratio; none when it is hidden, has a head, has an unknown shape or
+    /// differs between bots.
     #[test]
     fn reads_the_bots_hitbox() {
         let capsule = Hitbox { kind: HitboxKind::Cylindrical, width_to_height: 20.0 / 320.0 };
@@ -328,6 +355,8 @@ Timelimit=60.0
         assert_eq!(facts(&two).hitbox, None);
     }
 
+    /// An untagged file is static when no bot but the player moves, tracking with a fully automatic weapon, and else
+    /// dynamic.
     #[test]
     fn untagged_files_go_by_the_weapon_and_the_bots() {
         let still = "[Character Profile]\nName=Player\nMaxSpeed=600\n[Character Profile]\nName=Bot\nMaxSpeed=0\n";

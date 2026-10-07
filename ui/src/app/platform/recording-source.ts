@@ -1,23 +1,37 @@
+/**
+ * The RecordingSource contract: the recordings list, adding files and links, and each recording's
+ * video. In: each mode's implementation (modes/mode.*.ts picks one). Out: the recordings list,
+ * the upload panel and the run page's player, which inject only this contract.
+ */
+
 import { Signal, WritableSignal } from '@angular/core';
 import { LinkInfo, Recording } from '../api';
 
 /** A video being remuxed into MP4 so the browser can play it; progress is the share done, 0 to 1. */
 export interface VideoRemuxing {
+  /** Which state the video is in. */
   state: 'remuxing';
+  /** The share of the remux done, 0 to 1. */
   progress: number;
 }
 
 /** A video ready to play from url; remuxed when it was remuxed into MP4 in the browser. */
 export interface VideoReady {
+  /** Which state the video is in. */
   state: 'ready';
+  /** The address the player plays it from. */
   url: string;
+  /** Whether it was remuxed into MP4 in the browser. */
   remuxed: boolean;
 }
 
 /** A video the remux failed on: it plays from the file as it is, if the browser can play it. */
 export interface VideoFailed {
+  /** Which state the video is in. */
   state: 'failed';
+  /** The address of the file as it is. */
   url: string;
+  /** Why the remux failed. */
   error: string;
 }
 
@@ -26,30 +40,41 @@ export interface VideoFailed {
  * megabytes done of total (total 0 while it is not known).
  */
 export interface VideoDownloading {
+  /** Which state the video is in. */
   state: 'downloading';
+  /** What is being done, in words. */
   label: string;
+  /** Megabytes done. */
   done: number;
+  /** Megabytes in all; 0 while not known. */
   total: number;
 }
 
 /** A video added from a link that could not be downloaded: why, in plain words. */
 export interface VideoNotDownloaded {
+  /** Which state the video is in. */
   state: 'not-downloaded';
+  /** Why it could not be downloaded ("Cancelled" when the user stopped it). */
   error: string;
 }
 
+/** Where a recording's video stands: remuxing, ready, failed, downloading or not downloaded. */
 export type VideoState =
   VideoRemuxing | VideoReady | VideoFailed | VideoDownloading | VideoNotDownloaded;
 
 /** What adding files did: the recordings added, and the .csv files that are not KovaaK's stats files. */
 export interface AddResult {
+  /** The ids of the recordings added. */
   ids: string[];
+  /** The names of the .csv files that are not KovaaK's stats files. */
   notStats: string[];
 }
 
 /** Files being prepared or sent, for the top bar: what, and the share done (null while it is not known). */
 export interface Transfer {
+  /** What is being done, in words. */
   label: string;
+  /** The share done, 0 to 1; null while not known. */
   share: number | null;
   /** How many items are done, of how many, where it goes item by item (files read, recordings paired). */
   count?: ItemCount;
@@ -57,7 +82,9 @@ export interface Transfer {
 
 /** How many items are done, of how many. */
 export interface ItemCount {
+  /** Items done. */
   done: number;
+  /** Items in all. */
   total: number;
 }
 
@@ -66,10 +93,15 @@ export interface ItemCount {
  * in the click), and files: the folder chosen as files instead (a folder input), where the browser cannot open it.
  */
 export interface FolderAction {
+  /** The button's words. */
   label: string;
+  /** Why to press it, on the button's hover. */
   detail: string;
+  /** Whether the folder is being read. */
   busy: boolean;
+  /** Opens the folder, on the button's click. */
   run: () => Promise<void>;
+  /** Takes the folder chosen as files (a folder input) where the browser cannot open it. */
   files: ((files: File[]) => Promise<void>) | null;
 }
 

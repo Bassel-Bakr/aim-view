@@ -1,3 +1,9 @@
+/**
+ * The run page's title line. In: the open recording (scenario, score, time, size, whether it has a
+ * stats file) and its report's kill source. Out: the scenario's name with a badge for where the
+ * kills came from, and a line with the score, time and size.
+ */
+
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { Recording, Report, Source } from '../../api';
@@ -13,6 +19,7 @@ const SOURCES: Record<Source, string> = {
   video: 'Kills from the video alone (no score, shots or accuracy)',
 };
 
+/** Each kill source in more words, for the badge's tooltip: what the review got from it. */
 const SOURCE_DETAILS: Record<Source, string> = {
   stats: "Kills, shots and score from KovaaK's stats file",
   hud: "Kills and shots read from KovaaK's session HUD in the video",
@@ -28,16 +35,23 @@ const SOURCE_DETAILS: Record<Source, string> = {
   styleUrl: './run-header.scss',
 })
 export class RunHeader {
+  /** The open recording. */
   readonly recording = input.required<Recording>();
+  /** The recording's report, or null before a review. */
   readonly report = input<Report | null>(null);
+  /** The video file's size in whole megabytes ("1234 MB"). */
   protected readonly size = computed(() => formatSize(this.recording().size));
 
-  /** Where the review's kills came from, once there is a review; before that, whether a stats file was found. */
+  /**
+   * Where the review's kills came from, once there is a review; before that, whether a stats file
+   * was found.
+   */
   protected readonly source = computed(() => {
     const source = this.report()?.summary.info.source;
     if (source) return SOURCES[source];
     return this.recording().stats ? 'Stats file' : 'No stats file';
   });
+  /** The badge's tooltip: what the review got from its kill source; null before a review. */
   protected readonly sourceDetail = computed(() => {
     const source = this.report()?.summary.info.source;
     return source ? SOURCE_DETAILS[source] : null;

@@ -1,3 +1,12 @@
+/**
+ * The shapes of the four charts in "The run at a glance" for a tracking run.
+ *
+ * In: the tracking report's summary (its time on target, and the motion's `around` points and
+ * `turns_back`), the review's tracks, and the run moment by moment (track.ts `timeline`).
+ * Out: bars, cells, dots and ticks in the run charts' SVG box (run-charts-model.ts `BOX`), which
+ * track-charts.html draws.
+ */
+
 import { AroundPoint, TrackReport, Tracks } from '../../api';
 import { formatDegrees, formatMs, formatPercent, formatSeconds } from '../../format';
 import { median } from '../median';
@@ -15,21 +24,34 @@ import {
 } from '../run-charts/run-charts-model';
 import { boxes, nearest, Timeline, TrackState } from '../track';
 
-/** A stretch of the run as a bar: where it starts in the video, its place, and what it says on hover. */
+/**
+ * A stretch of the run as a bar: where it starts in the video, its place, and what it says on
+ * hover.
+ */
 export interface WindowBar {
+  /** Where the stretch starts in the video, in seconds: a click goes there. */
   seconds: number;
+  /** The bar's left edge, in the chart's units. */
   x: number;
+  /** The bar's width, in the chart's units. */
   width: number;
+  /** The bar's top, in the chart's units. */
   y: number;
+  /** The bar's height, in the chart's units. */
   height: number;
+  /** The stretch's seconds into the run and its share on the bot, on hover. */
   title: string;
 }
 
 /** The time on the bot in each stretch of the run, against the whole run's. */
 export interface OnTargetModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One bar for each stretch with enough tracking. */
   bars: WindowBar[];
+  /** The seconds into the run. */
   xTicks: AxisTick[];
+  /** The share on the bot, 0% to 100%. */
   yTicks: AxisTick[];
   /** The whole run's time on the bot, as a line. */
   overall: AxisTick | null;
@@ -37,71 +59,111 @@ export interface OnTargetModel {
 
 /** One band of distances, as a bar. */
 export interface SpreadBar {
+  /** The bar's left edge, in the chart's units. */
   x: number;
+  /** The bar's width, in the chart's units. */
   width: number;
+  /** The bar's top, in the chart's units. */
   y: number;
+  /** The bar's height, in the chart's units. */
   height: number;
-  title: string;
-}
-
-/** How the distance from the bot's center line was spread, with the bot's edge and the median marked. */
-export interface SpreadModel {
-  box: ChartBox;
-  bars: SpreadBar[];
-  xTicks: AxisTick[];
-  yTicks: AxisTick[];
-  edge: AxisTick | null;
-  median: AxisTick | null;
-}
-
-/** A cell of the map: its place and size, its shade (0 to 1, by the time spent there), and what it says on hover. */
-export interface MapCell {
-  x: number;
-  y: number;
-  size: number;
-  shade: number;
+  /** The band's distances and its share of the time, on hover. */
   title: string;
 }
 
 /**
- * Where the crosshair sat around the bot while it moved, the bot turned to move to the right: right of its center is
- * ahead of it, left behind, up and down to its sides. reason: why there is no map.
+ * How the distance from the bot's center line was spread, with the bot's edge and the median
+ * marked.
+ */
+export interface SpreadModel {
+  /** The chart's box. */
+  box: ChartBox;
+  /** One bar for each band of distance, nearest first. */
+  bars: SpreadBar[];
+  /** The distances, in degrees. */
+  xTicks: AxisTick[];
+  /** The share of the frames. */
+  yTicks: AxisTick[];
+  /** The bot's usual edge (its median radius); null when unknown or past the scale. */
+  edge: AxisTick | null;
+  /** The median distance; null with no frames near the bot. */
+  median: AxisTick | null;
+}
+
+/**
+ * A cell of the map: its place and size, its shade (0 to 1, by the time spent there), and what it
+ * says on hover.
+ */
+export interface MapCell {
+  /** The cell's left edge, in the chart's units. */
+  x: number;
+  /** The cell's top, in the chart's units. */
+  y: number;
+  /** The cell's side, in the chart's units. */
+  size: number;
+  /** 0 to 1: the square root of its frames against the fullest cell's. */
+  shade: number;
+  /** Where the cell is from the bot's center and its share of the time, on hover. */
+  title: string;
+}
+
+/**
+ * Where the crosshair sat around the bot while it moved, the bot turned to move to the right: right
+ * of its center is ahead of it, left behind, up and down to its sides. reason: why there is no map.
  */
 export interface AroundModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** The cells the crosshair sat in. */
   cells: MapCell[];
+  /** The bot's center, in the middle of the plot. */
   center: ChartPoint;
   /** The bot's usual edge. */
   radius: number;
   /** The crosshair's usual place along the motion (the median). */
   usual: ChartPoint | null;
+  /** The degrees behind and ahead of the bot. */
   xTicks: AxisTick[];
+  /** Why there is no map (an older review, or the motion was not measured); null with a map. */
   reason: string | null;
 }
 
 /**
- * A turn of the bot as a dot: where it starts in the video, its place, whether the crosshair was not back on the bot
- * before the next turn or the run's end (drawn at the top), and what it says on hover.
+ * A turn of the bot as a dot: where it starts in the video, its place, whether the crosshair was
+ * not back on the bot before the next turn or the run's end (drawn at the top), and what it says on
+ * hover.
  */
 export interface TurnDot {
+  /** Where the turn is in the video, in seconds: a click goes there. */
   seconds: number;
+  /** The dot's place across: its time in the run. */
   x: number;
+  /** The dot's place down: how long the crosshair took to get back on the bot. */
   y: number;
+  /** The crosshair was not back on the bot before the next turn or the run's end. */
   lost: boolean;
+  /** The turn's time and how long the crosshair took, on hover. */
   title: string;
 }
 
 /**
- * How long the crosshair took to get back on the bot after each of its turns, over the run, with the median and a
- * line that sums it up. reason: why there is no chart.
+ * How long the crosshair took to get back on the bot after each of its turns, over the run, with
+ * the median and a line that sums it up. reason: why there is no chart.
  */
 export interface TurnsBackModel {
+  /** The chart's box. */
   box: ChartBox;
+  /** One dot for each turn. */
   dots: TurnDot[];
+  /** The seconds into the run. */
   xTicks: AxisTick[];
+  /** The time back on the bot. */
   yTicks: AxisTick[];
+  /** The median time back on the bot, over the turns it came back from; null with none. */
   median: AxisTick | null;
+  /** The line under the chart: the median, the share of quick turns and those lost. */
   note: string;
+  /** Why there is no chart (an older review, not measured, or no turns); null with a chart. */
   reason: string | null;
 }
 
@@ -112,20 +174,25 @@ const TURNS_TOP_MIN = 0.5;
 
 /** The map's cells across its height. */
 const MAP_ROWS = 24;
+/** The around map's note when the report has no `around` points: a review before they existed. */
 const OLD_REVIEW = 'The review of this run is older than this map: review it again to see it.';
+/** The turns chart's note when the report has no `turns_back`: a review before they existed. */
 const OLD_REVIEW_CHART =
   'The review of this run is older than this chart: review it again to see it.';
 
-/** The length of a stretch, in seconds; a last, shorter one is shown when it holds this much of the run. */
+/** The length of a stretch, in seconds. */
 export const WINDOW = 10;
+/** A last, shorter stretch is shown when it holds this many seconds of the run. */
 const LAST_WINDOW_MIN = 3;
 /** A stretch with less tracking than this, in seconds, has no bar. */
 const TRACKED_MIN = 2;
+/** The most bands of distance the spread chart has. */
 const SPREAD_BANDS = 30;
 
 /**
- * The share of the time on the bot in each 10 s of the run, of the time tracking (the timeline's on and off frames:
- * no bot on screen and switching after a death are left out), as the "On target" card counts it.
+ * The share of the time on the bot in each 10 s of the run, of the time tracking (the timeline's on
+ * and off frames: no bot on screen and switching after a death are left out), as the "On target"
+ * card counts it.
  */
 export function onTargetWindows(report: TrackReport, run: Timeline): OnTargetModel {
   const box = BOX;
@@ -171,9 +238,10 @@ export function onTargetWindows(report: TrackReport, run: Timeline): OnTargetMod
 }
 
 /**
- * How far the crosshair was from the bot's center line (a capsule's long axis, a sphere's center), in the frames on
- * or near it (within three of its radii, as "Distance from the center" counts them): the share of those frames in
- * each band of distance, with the bot's usual edge and the median distance.
+ * How far the crosshair was from the bot's center line (a capsule's long axis, a sphere's center),
+ * in the frames on or near it (within three of its radii, as "Distance from the center" counts
+ * them): the share of those frames in each band of distance, with the bot's usual edge and the
+ * median distance.
  */
 export function distanceSpread(tracks: Tracks, run: Timeline): SpreadModel {
   const box = BOX;
@@ -229,16 +297,27 @@ export function distanceSpread(tracks: Tracks, run: Timeline): SpreadModel {
   };
 }
 
-/** The around map's grid: how far it reaches to each side (degrees), its scale (pixels a degree), and its cells. */
+/**
+ * The around map's grid: how far it reaches to each side (degrees), its scale (pixels a degree),
+ * and its cells.
+ */
 interface AroundGrid {
+  /** How far the map reaches up and down from the bot's center, in degrees. */
   reach: number;
+  /** The chart's units a degree. */
   scale: number;
+  /** How far the plot reaches behind and ahead of the bot's center, in degrees. */
   halfWidth: number;
+  /** A cell's side, in degrees. */
   cell: number;
+  /** How many whole cells fit across the plot. */
   columns: number;
 }
 
-/** The map reaches nearly every frame to the side, and past the bot's edge; its cells are square. */
+/**
+ * The map's grid: it reaches nearly every frame to the side (the 98th percentile), and past the
+ * bot's edge; its cells are square. `radius` is the bot's usual radius, in degrees.
+ */
 function aroundGrid(points: AroundPoint[], radius: number, box: ChartBox): AroundGrid {
   const across = points.map((point) => Math.abs(point[1])).sort((a, b) => a - b);
   const reach = Math.max(1.5 * radius, across[Math.floor(0.98 * (across.length - 1))]);
@@ -263,7 +342,9 @@ function cellCounts(points: AroundPoint[], grid: AroundGrid): Map<number, number
   return counts;
 }
 
-/** The cells the crosshair sat in, shaded by how often (the square root, so rare places still show). */
+/**
+ * The cells the crosshair sat in, shaded by how often (the square root, so rare places still show).
+ */
 function mapCells(
   points: AroundPoint[],
   grid: AroundGrid,
@@ -310,7 +391,10 @@ function aroundTicks(grid: AroundGrid, center: ChartPoint): AxisTick[] {
   return xTicks;
 }
 
-/** Where the crosshair sat around the moving bot (the motion's frames, review.track_motion's "around"). */
+/**
+ * Where the crosshair sat around the moving bot (the motion's frames, review.track_motion's
+ * "around"); with no map and the reason when the motion was not measured or the review is older.
+ */
 export function aroundMap(report: TrackReport): AroundModel {
   const box = BOX;
   const motion = report.summary.motion;
@@ -343,8 +427,9 @@ export function aroundMap(report: TrackReport): AroundModel {
 }
 
 /**
- * How long the crosshair took to get back on the bot after each of its direction changes (the motion's turns_back),
- * at its time in the run: 0 when it stayed on, at the top when it was not back before the next turn or the run's end.
+ * How long the crosshair took to get back on the bot after each of its direction changes (the
+ * motion's turns_back), at its time in the run: 0 when it stayed on, at the top when it was not
+ * back before the next turn or the run's end.
  */
 export function turnsBack(report: TrackReport, run: Timeline): TurnsBackModel {
   const box = BOX;

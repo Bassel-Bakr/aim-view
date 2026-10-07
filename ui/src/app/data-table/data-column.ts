@@ -19,6 +19,7 @@ export type SortValue = number | string | undefined;
 export interface DataColumn<Row> {
   /** Unique in the table; a template for its cells (appCell) names it. */
   id: string;
+  /** The header's words. */
   header: string;
   /** What the column means, on the header's hover. */
   title?: string;
@@ -30,6 +31,7 @@ export interface DataColumn<Row> {
   sortable?: boolean;
   /** A cell's tip, on hover. */
   tip?: (row: Row) => string;
+  /** How a cell's text stands out; null or none: plain. */
   tone?: (row: Row) => CellTone | null;
   /** Without it: to the end when every cell is a number (or a dash), else to the start. */
   align?: CellAlign;
@@ -47,6 +49,7 @@ export interface DataColumn<Row> {
 export interface TableGrouping<Row> {
   /** The name a grouping goes by in the table's Group by menu. */
   label: string;
+  /** A row's group; rows with the same key go under one group row. */
   key: (row: Row) => string;
   /** The word for a row in a group's count: "kill" gives "1 kill", "2 kills"; none: no count. */
   noun?: string;
@@ -63,9 +66,11 @@ export function fieldColumn<Row, Key extends keyof Row & string>(
   return { id, header, text: (row) => String(row[id]), ...more };
 }
 
+/** The texts that mean "not measured": empty, or a dash of any length. They sort last. */
 const DASHES = new Set(['', '–', '—', '-']);
 /** A leading number, signed (a minus or a plus), with thousands commas and a fraction. */
 const LEADING_NUMBER = /^([+\-−]?)(\d[\d,]*(?:\.\d+)?)/;
+/** Orders words as a reader does: numbers in them by size, case and accents ignored. */
 const words = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 /** What a cell's text sorts by: its leading number ("12.3° ↑": 12.3), else its words; a dash: nothing. */
@@ -78,6 +83,7 @@ export function textSortValue(text: string): SortValue {
   return match[1] === '' || match[1] === '+' ? value : -value;
 }
 
+/** What a row's cell in a column sorts by: the column's own value, else its text's. */
 export function sortValueOf<Row>(column: DataColumn<Row>, row: Row): SortValue {
   return column.sortBy ? column.sortBy(row) : textSortValue(column.text(row));
 }

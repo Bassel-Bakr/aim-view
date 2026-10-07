@@ -1,3 +1,9 @@
+/**
+ * Adding a recording from a link (`LinkForm`, the Upload panel's From a link dialog). In: the
+ * user's link and the RecordingSource's linkInfo (title and qualities). Out: the recording
+ * RecordingSource.addLink lists, which opens while it downloads.
+ */
+
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { form, FormField, pattern, required } from '@angular/forms/signals';
 import { errorMessage, LinkFormat, LinkInfo } from '../../api';
@@ -7,22 +13,29 @@ import { Library } from '../../services/library';
 
 /** The link and the quality chosen, as the form edits them. */
 export interface LinkFields {
+  /** The link as typed or pasted. */
   url: string;
+  /** The chosen format's id; empty for none. */
   format: string;
 }
 
 /** What a link offers, and the link it was read for. */
 export interface ReadLink {
+  /** The link that was read. */
   url: string;
+  /** Its title and qualities. */
   info: LinkInfo;
 }
 
 /** A quality to pick: the format's id, and how the picker names it. */
 export interface QualityChoice {
+  /** The format's id. */
   id: string;
+  /** How the picker names it. */
   label: string;
 }
 
+/** A web address: http or https, with no spaces. */
 const WEB_LINK = /^https?:\/\/\S+$/i;
 
 /** A quality as "2560x1440 · 60 fps · AV1 · 412 MB", with what is known of it. */
@@ -50,16 +63,22 @@ export function qualityLabel(format: LinkFormat): string {
   styleUrl: './link-form.scss',
 })
 export class LinkForm {
+  /** The recordings; the one added opens. */
   private readonly library = inject(Library);
+  /** Where links are read and added. */
   protected readonly source = this.library.source;
+  /** The From a link dialog. */
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  /** The form's values. */
   protected readonly model = signal<LinkFields>({ url: '', format: '' });
+  /** The form: the link is needed and must be a web address. */
   protected readonly fields = form(this.model, (path) => {
     required(path.url);
     pattern(path.url, WEB_LINK);
   });
   /** The server that downloads links for this browser, where the mode has one. */
   protected readonly server = this.source.linkServer && form(this.source.linkServer);
+  /** The last link read and what it offers; null before one is read. */
   private readonly read = signal<ReadLink | null>(null);
   /** What the link in the field offers, once it is read. */
   protected readonly info = computed(() => {
@@ -78,12 +97,15 @@ export class LinkForm {
   });
   /** What is being done ("Reading the link"), or null. */
   protected readonly busy = signal<string | null>(null);
+  /** Why the link could not be read or added; null when nothing failed. */
   protected readonly problem = signal<string | null>(null);
 
+  /** Opens the dialog. */
   protected open(): void {
     this.dialog().nativeElement.showModal();
   }
 
+  /** Closes the dialog. */
   protected close(): void {
     this.dialog().nativeElement.close();
   }

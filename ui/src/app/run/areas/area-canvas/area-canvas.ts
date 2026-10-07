@@ -1,3 +1,9 @@
+/**
+ * The excluded areas editor's canvas over the video. In: the editor's areas, selection and kinds
+ * (AreaDraft) and the pointer and keys. Out: the areas drawn on the canvas, and the edits to
+ * AreaDraft: add, place, select, remove, close.
+ */
+
 import {
   afterNextRender,
   afterRenderEffect,
@@ -27,26 +33,37 @@ import {
   SharePoint,
 } from '../area-geometry';
 
-/** An area held by the pointer: which, its edges (null: moved whole), where the press was, and the area then. */
+/**
+ * An area held by the pointer: which, its edges (null: moved whole), where the press was, and the
+ * area then.
+ */
 interface AreaGrip {
+  /** The held area's index. */
   index: number;
+  /** The edges held, or null when the area moves whole. */
   edges: HeldEdges | null;
+  /** Where the press was, as shares of the video. */
   start: SharePoint;
+  /** The area's place at the press, as shares of the frame. */
   from: AreaRect;
+  /** The area was already selected at the press, so a click selects the one under it. */
   wasSelected: boolean;
+  /** The pointer went DRAG_PX or more, so the press is a drag, not a click. */
   moved: boolean;
 }
 
 /** A new area being drawn: where the drag started and where it is. */
 interface AreaSketch {
+  /** Where the drag started, as shares of the video. */
   start: SharePoint;
+  /** Where the pointer is now, as shares of the video. */
   end: SharePoint;
 }
 
 /**
- * The excluded areas over the video, to edit with the pointer: a drag on the empty video draws an area, a drag on an
- * area's inside moves it, on its edge or corner resizes it; a click selects one (again: the one under it). Delete
- * removes the selected area, Escape closes the editor.
+ * The excluded areas over the video, to edit with the pointer: a drag on the empty video draws an
+ * area, a drag on an area's inside moves it, on its edge or corner resizes it; a click selects one
+ * (again: the one under it). Delete removes the selected area, Escape closes the editor.
  */
 @Component({
   selector: 'app-area-canvas',
@@ -55,13 +72,23 @@ interface AreaSketch {
   host: { '(document:keydown)': 'handleKeydown($event)' },
 })
 export class AreaCanvas {
+  /** The editor's state, which the canvas draws and changes. */
   protected readonly draft = inject(AreaDraft);
+  /** Ends the resize observer and the pointer listener with the view. */
   private readonly destroyRef = inject(DestroyRef);
+  /** The canvas the areas are drawn on, over the video. */
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('areas');
+  /** The area the pointer holds, or null. */
   private readonly grip = signal<AreaGrip | null>(null);
+  /** The area being drawn, or null. */
   private readonly sketch = signal<AreaSketch | null>(null);
+  /** The areas' drawing style, read from the tokens on the first draw. */
   private style: AreaStyle | null = null;
 
+  /**
+   * Draws again when the canvas is resized or the areas, selection, kinds or pointer change, and
+   * follows the pointer outside the template (it moves many times a second).
+   */
   constructor() {
     afterNextRender(() => {
       const canvas = this.canvas().nativeElement;
@@ -80,11 +107,15 @@ export class AreaCanvas {
     });
   }
 
+  /**
+   * The canvas's size on screen in CSS pixels (at least 1 each way, so shares never divide by 0).
+   */
   private size(): ScreenSize {
     const canvas = this.canvas().nativeElement;
     return { width: canvas.clientWidth || 1, height: canvas.clientHeight || 1 };
   }
 
+  /** The pointer's place as shares of the canvas's width and height. */
   private at(event: PointerEvent): SharePoint {
     const bounds = this.canvas().nativeElement.getBoundingClientRect();
     return [
@@ -93,6 +124,10 @@ export class AreaCanvas {
     ];
   }
 
+  /**
+   * Draws the areas and the one being drawn, at the screen's pixel ratio; sizes the canvas's pixels
+   * to its size on screen first.
+   */
   private draw(): void {
     const canvas = this.canvas().nativeElement;
     const size = this.size();
@@ -129,7 +164,11 @@ export class AreaCanvas {
     );
   }
 
-  /** The selected area is taken first, then the topmost under the pointer; on the empty video, a new area starts. */
+  /**
+   * A press with the main button: the selected area is taken first, then the topmost under the
+   * pointer, and selected; on the empty video, a new area starts. Nothing before the areas are
+   * read.
+   */
   protected pressArea(event: PointerEvent): void {
     if (event.button !== 0 || !this.draft.ready()) return;
     this.canvas().nativeElement.setPointerCapture(event.pointerId);
@@ -153,6 +192,10 @@ export class AreaCanvas {
     });
   }
 
+  /**
+   * The pointer moved: a held area moves or resizes once the pointer has gone DRAG_PX, a drawn area
+   * follows it, and otherwise the cursor shows what a press would do.
+   */
   private movePointer(event: PointerEvent): void {
     const point = this.at(event);
     const size = this.size();
@@ -178,8 +221,8 @@ export class AreaCanvas {
   }
 
   /**
-   * A click on the selected area selects the next one under it (areas can overlap); a drawn area is added and
-   * selected, so the user can say what it is; a click on the empty video selects nothing.
+   * A click on the selected area selects the next one under it (areas can overlap); a drawn area is
+   * added and selected, so the user can say what it is; a click on the empty video selects nothing.
    */
   protected releasePointer(): void {
     const grip = this.grip();
@@ -200,8 +243,9 @@ export class AreaCanvas {
   }
 
   /**
-   * Escape closes the editor; Delete or Backspace removes the selected area. Keys typed into a field are its own, and
-   * a key the player already used (Escape leaving full screen) is the player's.
+   * Escape closes the editor; Delete or Backspace removes the selected area. Keys typed into a
+   * field are its own, and a key the player already used (Escape leaving full screen) is the
+   * player's.
    */
   protected handleKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;

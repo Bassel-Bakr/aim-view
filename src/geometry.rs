@@ -7,14 +7,16 @@
 
 use crate::python::hypot;
 
-/// The frame the review works in, in pixels: its width and its height.
+/// The width in pixels of the frame the review works in.
 #[expect(clippy::min_ident_chars, reason = "review.py's name, which the core's modules and tests import")]
 pub const W: usize = 1280;
+/// The height in pixels of the frame the review works in.
 #[expect(clippy::min_ident_chars, reason = "review.py's name, which the core's modules and tests import")]
 pub const H: usize = 720;
 
-/// The crosshair's center at this size (the red dot, measured).
+/// The x of the crosshair's center at this size, in pixels (the red dot, measured).
 pub const CX: f64 = 640.03;
+/// The y of the crosshair's center at this size, in pixels (the red dot, measured).
 pub const CY: f64 = 359.75;
 
 /// The focal length in pixels for a 103 degree horizontal FOV (Overwatch scale): `(W / 2) / tan(51.5 deg)`, as
@@ -36,7 +38,8 @@ pub const OVERLAY: [[u32; 4]; 8] = [
     [0, 700, 60, 720],
 ];
 
-/// The KovOBS overlay as shares of the frame, as `OVERLAY_SHARES` holds them (each pixel bound divided once).
+/// The KovOBS overlay as shares of the frame (x0, y0, x1, y1), as python/retired/review.py's `OVERLAY_SHARES` holds
+/// them (each pixel bound divided once, so the floats are the same bits).
 pub fn overlay_shares() -> [[f64; 4]; OVERLAY.len()] {
     OVERLAY.map(|[x0, y0, x1, y1]| {
         [x0 as f64 / W as f64, y0 as f64 / H as f64, x1 as f64 / W as f64, y1 as f64 / H as f64]
@@ -73,15 +76,18 @@ pub fn to_px(x_deg: f64, y_deg: f64) -> (f64, f64) {
     (x, CY - radians(y_deg).tan() * hypot(K, x - CX))
 }
 
+/// Checks the mapping between pixels and degrees.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The crosshair's own pixel is 0 degrees both ways.
     #[test]
     fn the_crosshair_is_at_no_angle() {
         assert_eq!(to_deg(CX, CY), (0.0, 0.0));
     }
 
+    /// A pixel taken to degrees and back lands within 1e-9 pixels of where it started.
     #[test]
     fn to_px_undoes_to_deg() {
         let (x_deg, y_deg) = to_deg(100.0, 600.0);

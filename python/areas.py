@@ -1,20 +1,25 @@
-"""Find a recording's overlay areas (HUD boxes, clocks, a webcam) for the review app's "Exclude areas", and say what each
-one is.
+"""Find a recording's overlay areas (HUD boxes, clocks, a webcam) for the run page's excluded areas, and say what
+each one is. The core's area finder (src/areas.rs) is a port of this, checked equal to it; the app runs the port.
 
 Finding: anything that stays put on screen while the view moves stands out from the wall behind it in nearly every
-frame (old_review.contrast), the way the crosshair and HUD do in old_review.fixed_map. The run's key frames are used (or 90
-frames spread over it, when it has few); pixels that stand out in 80% of them or more are fixed, and fixed pixels a few pixels apart are grouped into
-one area. A webcam is found by its border: its content changes, but its edge against the game stays. The crosshair,
-the fixed spot at the centre, is never an area.
+frame (old_review.contrast), the way the crosshair and HUD do in old_review.fixed_map. The run's key frames are used
+(or 90 frames spread over it, when it has few); pixels that stand out in 80% of them or more are fixed, and fixed
+pixels a few pixels apart are grouped into one area. A webcam is found by its border: its content changes, but its
+edge against the game stays. The crosshair, the fixed spot at the center, is never an area.
 
 Naming, in two steps (the user's plan, 2026-10-02):
 1. Rules: KovaaK's session box where hud.layout finds it; Aim Lab's POINTS, TIME and ACCURACY boxes where their
-   values are; a big area whose content changes is a webcam; the top centre is the timer; a top corner is the clock;
-   the bottom centre is the scenario name; a bottom corner with many rows is the settings box; a tiny text in a bottom
+   values are; a big area whose content changes is a webcam; the top center is the timer; a top corner is the clock;
+   the bottom center is the scenario name; a bottom corner with many rows is the settings box; a tiny text in a bottom
    corner is the version; anything else is Other.
-2. Learning: every area the user saves in the editor becomes an example (examples.jsonl: the area's features and the
-   kind the user gave it; a found area the user removed is an example of "not an area"). Once there are examples,
+2. Learning: every area the user saves in the editor becomes an example (area_examples.jsonl: the area's features and
+   the kind the user gave it; a found area the user removed is an example of "not an area"). Once there are examples,
    each found area takes the kind most of its 5 nearest examples have, when they agree (3 or more) and are near.
+
+In: the recording (ffmpeg decodes it) and the saved examples. Out: the areas, cached per recording as areas.json and
+areas_maps.npz, and the examples file.
+Usage: python python/areas.py bootstrap [--n 30]   (learns KovOBS's layout from N recordings, one a scenario, then
+       checks) or python python/areas.py check   (the leave-one-recording-out accuracy of the saved examples)
 """
 import json
 import math
@@ -35,7 +40,7 @@ N_SAMPLES = 90                       # frames sampled over the run when it has f
 FIXED = 0.8                          # a pixel standing out in this share of them is fixed
 GAP = 5                              # fixed pixels this close (px at 1280 x 720) join one area
 NONE = "none"                        # an area the user removed: not an area
-_lock = threading.Lock()
+_lock = threading.Lock()             # one writer of the examples file at a time
 
 
 def sample(video, n=N_SAMPLES, min_keys=24):
@@ -167,8 +172,9 @@ def analyse(video, with_maps=False):
 
 
 def zoomed(box, ys, size=16):
-    """A magnified copy of the screen round the crosshair (a crosshair zoom): over the sampled frames, the area's
-    picture follows the centre's, scaled down by some zoom. True when one zoom correlates 0.8 or more."""
+    """Whether the area is a magnified copy of the screen round the crosshair (a crosshair zoom): over the sampled
+    frames, the area's picture follows the center's, scaled down by some zoom. True when one zoom correlates 0.8 or
+    more."""
     x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (old_review.W, old_review.H, old_review.W, old_review.H)))
     w, h = x1 - x0, y1 - y0
     if w < 24 or h < 24 or len(ys) < 10:
@@ -190,6 +196,7 @@ def zoomed(box, ys, size=16):
 
 
 def _area(b):
+    """A box's area (x0, y0, x1, y1), in the units its sides are in squared."""
     return (b[2] - b[0]) * (b[3] - b[1])
 
 
@@ -199,8 +206,9 @@ def _inside(b, o):
     return inter / max(1e-9, _area(b))
 
 
-# ---- step 2: learning from the user's saved areas ---------------------------------------------------------------------
+# ---- step 2: learning from the user's saved areas ---------------------------------------------------------------
 def load_examples(path):
+    """The examples file's rows (dict(rec, feat, kind)), or [] when there is no file."""
     if not Path(path).exists():
         return []
     return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -266,7 +274,8 @@ def predict(found, examples, k=5):
 
 
 def iou(a, b):
-    inter = max(0.0, min(a[2], b[2]) - max(a[0], b[0])) * max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    """Two boxes' (x0, y0, x1, y1) intersection over their union, 0 to 1."""
+    inter =max(0.0, min(a[2], b[2]) - max(a[0], b[0])) * max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
     return inter / max(1e-9, _area(a) + _area(b) - inter)
 
 
@@ -303,7 +312,7 @@ def find(video, cache, examples_path, labelled=()):
 
 
 def maps(video, cache):
-    """The recording's stand-out and change maps (cache/areas_maps.npz), made by analysing it when missing."""
+    """The recording's stand-out and change maps (cache/areas_maps.npz), made by analyse() when missing."""
     p = Path(cache) / "areas_maps.npz"
     if not p.exists():
         found, stand, change = analyse(video, with_maps=True)

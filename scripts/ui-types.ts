@@ -1,19 +1,27 @@
-// Makes the TypeScript types of the JSON the UI reads from the Rust structs that write it (ts-rs: the `ts` feature of
-// the core and the service), into ui/src/app/generated/ (in git, so the UI builds without Rust). ui/src/app/api.ts
-// re-exports them under the UI's names. Run it after changing a Rust struct the UI reads.
-//
-// Each type with #[ts(export)] has a test that writes its file (only those tests run). ts-rs names a file for its type
-// (AmmoRules.ts); the files are then named as Angular's style guide names files (ammo-rules.ts), their imports of each
-// other too, and ESLint and Prettier make them follow the UI's rules.
+/**
+ * Makes the TypeScript types of the JSON the UI reads from the Rust structs that write it (ts-rs:
+ * the `ts` feature of the core and the service), into ui/src/app/generated/ (in git, so the UI
+ * builds without Rust). ui/src/app/api.ts re-exports them under the UI's names. Run it after
+ * changing a Rust struct the UI reads.
+ *
+ * Each type with #[ts(export)] has a test that writes its file (only those tests run). ts-rs names
+ * a file for its type (AmmoRules.ts); the files are then named as Angular's style guide names
+ * files (ammo-rules.ts), their imports of each other too, and ESLint and Prettier make them follow
+ * the UI's rules.
+ * Usage: bun scripts/ui-types.ts (`bun run types`)
+ */
 import { $ } from 'bun';
 import { readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+/** The repo's root folder. */
 const root = join(import.meta.dir, '..');
+/** Where the types go: ui/src/app/generated/, emptied first. */
 const out = join(root, 'ui', 'src', 'app', 'generated');
 
 // the folder holds only what the export writes, so a type that is gone from Rust is gone here too
 rmSync(out, { recursive: true, force: true });
+/** The export tests' run; its output is shown when it fails. */
 // i64 is a number in the JSON (counts and frames), not ts-rs's default bigint
 const exported = await $`cargo test --profile quick --lib -p aimview -p aimview-service --features aimview-service/ts export_bindings_`
   .cwd(root)

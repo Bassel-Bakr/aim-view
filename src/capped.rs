@@ -10,22 +10,27 @@ use serde::{Serialize, Serializer};
 /// derefs to a slice of the items, and serializes as one.
 #[derive(Clone, Debug)]
 pub struct Capped<T, const N: usize> {
+    /// Every slot: the items first, then `T::default()` in the slots not in use.
     items: [T; N],
+    /// How many slots, from the first, hold items.
     len: usize,
 }
 
 impl<T: Default, const N: usize> Capped<T, N> {
+    /// An empty list, every slot filled with `T::default()`.
     pub fn new() -> Capped<T, N> {
         Capped { items: std::array::from_fn(|_| T::default()), len: 0 }
     }
 
+    /// Adds `item` at the end. Panics when the list already holds N items.
     pub fn push(&mut self, item: T) {
         assert!(self.len < N, "more than {N} items");
         self.items[self.len] = item;
         self.len += 1;
     }
 
-    /// Takes out the item at `index`, moving the ones after it down.
+    /// Takes out the item at `index` and gives it back, moving the ones after it down. Panics when `index` is past
+    /// the last item.
     pub fn remove(&mut self, index: usize) -> T {
         self.items[index..self.len].rotate_left(1);
         self.len -= 1;
@@ -34,6 +39,7 @@ impl<T: Default, const N: usize> Capped<T, N> {
 }
 
 impl<T: Default, const N: usize> Default for Capped<T, N> {
+    /// An empty list, as `Capped::new`.
     fn default() -> Capped<T, N> {
         Capped::new()
     }
@@ -42,24 +48,28 @@ impl<T: Default, const N: usize> Default for Capped<T, N> {
 impl<T, const N: usize> Deref for Capped<T, N> {
     type Target = [T];
 
+    /// The items in use, without the default slots after them.
     fn deref(&self) -> &[T] {
         &self.items[..self.len]
     }
 }
 
 impl<T, const N: usize> DerefMut for Capped<T, N> {
+    /// The items in use, to change in place; the length stays.
     fn deref_mut(&mut self) -> &mut [T] {
         &mut self.items[..self.len]
     }
 }
 
 impl<T: PartialEq, const N: usize> PartialEq for Capped<T, N> {
+    /// Equal when the items in use are, whatever the slots past them hold.
     fn eq(&self, other: &Capped<T, N>) -> bool {
         **self == **other
     }
 }
 
 impl<T: Default, const N: usize> FromIterator<T> for Capped<T, N> {
+    /// Pushes each item in turn; panics past N items.
     fn from_iter<I: IntoIterator<Item = T>>(items: I) -> Capped<T, N> {
         let mut out = Capped::new();
         items.into_iter().for_each(|item| out.push(item));
@@ -71,6 +81,7 @@ impl<T, const N: usize> IntoIterator for Capped<T, N> {
     type Item = T;
     type IntoIter = std::iter::Take<std::array::IntoIter<T, N>>;
 
+    /// The items in use, by value, in order.
     fn into_iter(self) -> Self::IntoIter {
         self.items.into_iter().take(self.len)
     }
@@ -80,21 +91,25 @@ impl<'a, T, const N: usize> IntoIterator for &'a Capped<T, N> {
     type Item = &'a T;
     type IntoIter = std::slice::Iter<'a, T>;
 
+    /// The items in use, by reference, in order.
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
 impl<T: Serialize, const N: usize> Serialize for Capped<T, N> {
+    /// A JSON array of the items in use.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         (**self).serialize(serializer)
     }
 }
 
+/// Checks the limit, the order, `remove` and the JSON.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Pushes, removes, iterates and serializes in the order pushed.
     #[test]
     fn holds_up_to_its_limit_in_order() {
         let mut list: Capped<u32, 3> = [1, 2].into_iter().collect();
@@ -106,6 +121,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&Capped::<u32, 4>::from_iter([5, 6])).unwrap(), "[5,6]");
     }
 
+    /// A third item in a list of two panics.
     #[test]
     #[should_panic(expected = "more than 2 items")]
     fn pushing_past_the_limit_panics() {

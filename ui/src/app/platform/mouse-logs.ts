@@ -1,3 +1,9 @@
+/**
+ * The MouseLogs contract: each recording's run measured from a raw mouse log, and the desktop
+ * app's logger switch. In: each mode's implementation (modes/mode.*.ts). Out: the run page's
+ * mouse panel and the top bar's logger switch (mouse-switch/).
+ */
+
 import { ResourceRef } from '@angular/core';
 import { MouseLoggerState, MouseMeasures } from '../mouse-api';
 

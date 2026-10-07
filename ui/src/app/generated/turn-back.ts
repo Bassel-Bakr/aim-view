@@ -5,6 +5,13 @@
  * (0 when it stayed on; None when it was not back before the next change or the run's end).
  */
 export interface TurnBack {
+  /**
+   * The direction change's frame.
+   */
   frame: number;
+  /**
+   * Seconds from the change until the crosshair was back on the bot: 0 when it stayed on; None when it was not back
+   * before the next change, a bot's death or the run's end.
+   */
   back: number | null;
 }

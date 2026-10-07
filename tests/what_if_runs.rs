@@ -9,6 +9,7 @@ use aimview::local_config::LocalConfig;
 use aimview::review::{KillTimes, Report, review_clicks};
 use aimview::track::Tracks;
 
+/// The runs' folders under test_out/: two parity runs and three of the video-alone benchmark's.
 const RUNS: [&str; 5] = [
     "parity/av1/review",
     "parity/pokeball134/review",
@@ -34,6 +35,7 @@ fn check_lines(run: &str, report: &Report) {
     assert!(summary.what_if.windows(2).all(|pair| pair[0].kills >= pair[1].kills), "{run}: not biggest first");
 }
 
+/// Each kept run, reviewed with its stats file, gives plausible what-if lines; a run without its files is skipped.
 #[test]
 fn what_if_lines_are_plausible_on_real_runs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out");

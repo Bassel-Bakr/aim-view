@@ -1,3 +1,11 @@
+/**
+ * Drawing the Crops page's stage on its canvas: the crop's picture, the pixels the core says the
+ * targets show, the crossed-out model boxes, each shape's outline in the color of what it is, the
+ * joined targets' boxes, and the selected shapes' handles. Colors and widths come from
+ * themes/crops.scss.
+ * In: what crop-stage.ts gives (the picture, the scene, the core's view). Out: the canvas.
+ */
+
 import { CropEntry, SceneView, Shape, Solid } from '../../api';
 import { CropPoint, tracePath } from '../../shapes/shape-geometry';
 import { freeEdges, freeFaces, freePoints } from '../../shapes/free-geometry';
@@ -16,46 +24,65 @@ import { CROP_SIDE } from '../crop-draft';
 import { DraftScene } from '../crop-scene';
 import { handled, handlesOf } from './crop-grip';
 
-/**
- * Drawing the Crops page's stage on its canvas: the crop's picture, the pixels the core says the targets show, the
- * crossed-out model boxes, each shape's outline in the color of what it is, the joined targets' boxes, and the selected
- * shapes' handles. Colors and widths come from themes/crops.scss.
- */
-
 /** Where the crop sits on the stage: CSS pixels per crop pixel, and its top left corner in CSS pixels. */
 export interface StagePlace {
+  /** CSS pixels per crop pixel. */
   scale: number;
+  /** The crop's left edge, in CSS pixels from the stage's. */
   left: number;
+  /** The crop's top edge, in CSS pixels from the stage's. */
   top: number;
 }
 
 /** The stage's colors and widths (CSS pixels), read from the page's tokens. */
 export interface CropStyle {
+  /** A model box's outline. */
   model: string;
+  /** A drawn shape's outline. */
   drawn: string;
+  /** A head's outline. */
   head: string;
+  /** A body's outline. */
   body: string;
+  /** An occluder's outline. */
   occluder: string;
+  /** A crossed-out model box. */
   crossed: string;
+  /** The box round a target joined from several shapes. */
   target: string;
+  /** The darker line under every outline, so it shows on any wall. */
   under: string;
+  /** The tint over the pixels the targets show. */
   visible: string;
+  /** The handles. */
   handle: string;
+  /** A solid's lit faces. */
   faceLight: string;
+  /** A solid's shaded faces. */
   faceShade: string;
+  /** An outline's width, in CSS pixels. */
   lineWidth: number;
+  /** A selected shape's outline width, in CSS pixels. */
   lineWidthSelected: number;
+  /** A handle's radius, in CSS pixels. */
   handleRadius: number;
 }
 
 /** What the stage shows. The scene is null while the user peeks under the marks. */
 export interface StagePicture {
+  /** The crop's picture; null until it loads. */
   image: ImageBitmap | null;
+  /** The crop on show. */
   crop: CropEntry;
+  /** The shapes to draw; null while the user peeks. */
   scene: DraftScene | null;
+  /** What the core says the scene's targets show; null until it has said. */
   view: SceneView | null;
+  /** The view's mask, tinted; null without a view. */
   mask: HTMLCanvasElement | null;
+  /** The ids of the selected shapes, drawn with a wider line. */
   selection: readonly string[];
+  /** Whether the page is in a fix, so the selected shape's handles show. */
   editing: boolean;
   /** The shape a drag on the wall is drawing. */
   sketch: Shape | null;
@@ -194,10 +221,13 @@ function paintShapes(
   }
 }
 
-/** How a solid's lines are drawn: its color, its width and the stage's scale (screen pixels a crop pixel). */
+/** How a solid's lines are drawn: their color, their width and the stage's scale. */
 interface SolidLine {
+  /** The line's color. */
   color: string;
+  /** The line's width, in CSS pixels. */
   width: number;
+  /** The stage's scale: CSS pixels per crop pixel. */
   scale: number;
 }
 
@@ -258,6 +288,10 @@ function paintFaces(
   }
 }
 
+/**
+ * A 3D capsule: its outline shaded across its axis like a cylinder, then its end rings, the near
+ * one solid and the far one dashed.
+ */
 function paintCapsule(
   context: CanvasRenderingContext2D,
   shape: Shape,

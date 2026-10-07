@@ -29,7 +29,8 @@ fn extended(line: &[f32], i: isize, edge: Edge) -> f64 {
 }
 
 /// `uniform_filter1d` along one line: the line extended at its ends, a running sum in float64, each mean stored as
-/// float32 (scipy/ndimage/src/ni_filters.c: `NI_UniformFilter1D`).
+/// float32 (scipy/ndimage/src/ni_filters.c: `NI_UniformFilter1D`). Each value's mean over the `size` values around it
+/// goes into `out` at the same index; `out` is as long as the line.
 pub fn uniform_line(line: &[f32], size: usize, edge: Edge, out: &mut [f32]) {
     let len = line.len();
     let before = (size / 2) as isize;
@@ -112,10 +113,12 @@ pub fn runs(line: &[bool]) -> Vec<(usize, usize)> {
     out
 }
 
+/// Checks the filters on short lines worked out by hand.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// A mean over 3 with `Reflect` repeats each end value once past the end.
     #[test]
     fn reflect_mirrors_the_end_value() {
         let line = [1.0, 2.0, 3.0];
@@ -125,6 +128,8 @@ mod tests {
         assert_eq!(out, [(4.0f64 / 3.0) as f32, 2.0, (8.0f64 / 3.0) as f32]);
     }
 
+    /// `count_runs` counts the runs of true, dilation widens a true by one each side, and erosion counts the outside
+    /// as false.
     #[test]
     fn closing_fills_short_gaps_and_counts_runs() {
         let a = [true, false, false, true, false, false, false, false, false, true];

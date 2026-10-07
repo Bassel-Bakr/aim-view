@@ -9,13 +9,40 @@ import type { Scene } from './scene';
  * scene the Crops page drew (src/shapes.rs), when it drew one.
  */
 export interface CropAnswer {
+  /**
+   * Right, wrong or can't tell.
+   */
   verdict: CropVerdict;
+  /**
+   * The crop's set; it must be the crop's.
+   */
   set: string;
+  /**
+   * The crop's file in the training data (as train/a.npz); it must be the crop's.
+   */
   file: string;
+  /**
+   * When it was answered, in ms since 1970: of two answers to a crop the later wins.
+   */
   at: number;
+  /**
+   * The model's boxes crossed out, by their index in the crop's `boxes`.
+   */
   remove: number[];
+  /**
+   * The model's boxes moved or resized, by their index: [cx, cy, w, h] in crop pixels.
+   */
   edit: Record<string, CropBox>;
+  /**
+   * The boxes drawn ([cx, cy, w, h]) and the points tapped ([x, y]), in crop pixels.
+   */
   add: number[][];
+  /**
+   * Whether the page's suggestion was taken as offered.
+   */
   suggested?: boolean;
+  /**
+   * The scene the Crops page drew (src/shapes.rs), when it drew one.
+   */
   scene?: Scene;
 }

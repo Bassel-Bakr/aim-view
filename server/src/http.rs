@@ -36,9 +36,13 @@ const UPLOAD_BUFFER_BYTES: usize = 1 << 20;
 
 /// One request to the review API.
 pub struct Call {
+    /// "GET" or "POST" (a HEAD comes as GET).
     pub method: String,
+    /// The path with its query, as "/api/report?id=...".
     pub path_and_query: String,
+    /// The Range header, for /video.
     pub range: Option<String>,
+    /// The body, read into memory (empty for an upload).
     pub body: Bytes,
     /// An upload's body, written to this file as it arrived (`body` is then empty). The API moves it into place; what
     /// it leaves is removed after it answers.
@@ -55,22 +59,29 @@ impl Call {
 
 /// The review API's answer. `headers` hold its Content-Type.
 pub struct Reply {
+    /// The HTTP status.
     pub status: u16,
+    /// The headers, as (name, value).
     pub headers: Vec<(String, String)>,
+    /// The body's bytes.
     pub body: Vec<u8>,
 }
 
 /// The review API (aimview_service::api, or a stand-in in the tests).
 pub trait Api: Send + Sync + 'static {
+    /// The answer to one call; it may block (it reads files, and starts reviews).
     fn handle(&self, call: &Call) -> Reply;
     /// A new file for an upload's body (POST /api/upload), on the disk the API keeps the uploads on.
     fn spool(&self) -> Result<PathBuf, String>;
 }
 
+/// What every request is answered with: the API, who gets in, and the UI's build.
 pub struct App {
+    /// The review API.
     pub api: Arc<dyn Api>,
+    /// Who gets in (access.rs).
     pub access: Access,
-    /// The UI's build (index.html and its files)
+    /// The UI's build (index.html and its files).
     pub ui: PathBuf,
 }
 
@@ -99,6 +110,8 @@ async fn answer(State(app): State<Arc<App>>, req: Request) -> Response {
     response
 }
 
+/// A request's answer: refused or let in (access.rs), then the API's answer (with a page on this machine allowed to
+/// read it) or a UI file.
 async fn route(app: &App, req: Request) -> Response {
     match app.access.check(req.method(), req.uri(), req.headers()) {
         Verdict::Pass => {}
@@ -139,6 +152,7 @@ fn preflight(caller: Option<HeaderValue>) -> Response {
     response
 }
 
+/// The API's answer to a request, asked on a blocking thread; an upload's file is removed after the answer.
 async fn call_api(app: &App, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let (body, upload) = match read_body(app, &parts, body).await {
@@ -264,6 +278,7 @@ async fn ui_file(app: &App, path: &str) -> Response {
     response
 }
 
+/// The HTTP side on a stand-in API.
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -279,10 +294,12 @@ mod tests {
     /// The API's stand-in: answers every call with what it was asked, and keeps the calls.
     #[derive(Default)]
     struct Echo {
+        /// Every call it got, in order.
         calls: Mutex<Vec<Seen>>,
     }
 
     impl Api for Echo {
+        /// Keeps the call and answers 206 for /video, else 200, with headers the server must filter.
         fn handle(&self, call: &Call) -> Reply {
             // an upload's body is read back from its file
             let body = call.upload.as_ref().map_or_else(|| call.body.to_vec(), |file| std::fs::read(file).unwrap());
@@ -299,11 +316,13 @@ mod tests {
             }
         }
 
+        /// One file in the temporary folder.
         fn spool(&self) -> Result<PathBuf, String> {
             Ok(std::env::temp_dir().join(format!("aimview-server-upload-{}.part", std::process::id())))
         }
     }
 
+    /// A small UI build: index.html and main.js.
     fn ui() -> PathBuf {
         let root = std::env::temp_dir().join(format!("aimview-server-http-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
@@ -312,6 +331,7 @@ mod tests {
         root
     }
 
+    /// A server on 127.0.0.1 with the stand-in API, with `token` or none, and its router.
     fn app(token: Option<&str>) -> (Arc<Echo>, Router) {
         let echo = Arc::new(Echo::default());
         let addrs = ["127.0.0.1:8770".parse().unwrap()];
@@ -319,16 +339,20 @@ mod tests {
         (echo.clone(), router(Arc::new(App { api: echo, access, ui: ui() })))
     }
 
+    /// The router's response to a request to 127.0.0.1:8770 with `body`, and its status.
     async fn send(router: &Router, req: axum::http::request::Builder, body: &'static [u8]) -> (StatusCode, Response) {
         let req = req.header(HOST, "127.0.0.1:8770").body(Body::from(body)).unwrap();
         let response = router.clone().oneshot(req).await.unwrap();
         (response.status(), response)
     }
 
+    /// A response's body as text.
     async fn body(response: Response) -> String {
         String::from_utf8(axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap()
     }
 
+    /// The app's pages get index.html (never kept, cross-origin isolated), its files get theirs, none reaches the API,
+    /// and a POST to the UI is refused.
     #[tokio::test]
     async fn the_apps_pages_get_index_html() {
         let (echo, router) = app(None);
@@ -349,6 +373,8 @@ mod tests {
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
     }
 
+    /// The API gets each call's method, query, range and body; its own CORS headers are dropped, and only a page on
+    /// this machine may read the answers (a preflight never reaches the API).
     #[tokio::test]
     async fn the_api_gets_the_method_query_range_and_body() {
         let (echo, router) = app(None);
@@ -382,6 +408,7 @@ mod tests {
         assert_eq!(calls.len(), 4, "a preflight never reaches the API");
     }
 
+    /// An upload's body (3 MB) reaches the API whole as a file, which is removed after the answer.
     #[tokio::test]
     async fn an_upload_reaches_the_api_as_a_file() {
         let (echo, router) = app(None);
@@ -396,6 +423,8 @@ mod tests {
         assert!(!echo.spool().unwrap().exists(), "the file the API left is removed");
     }
 
+    /// With a token, the API and the UI are refused (401) until the token comes in the query (which sets the cookie
+    /// and redirects), the cookie or a Bearer header.
     #[tokio::test]
     async fn a_token_guards_the_api_and_the_ui() {
         let (echo, router) = app(Some("tok"));

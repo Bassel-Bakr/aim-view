@@ -70,7 +70,7 @@ module.exports = defineConfig([
             'PropertyDefinition',
             'TSAbstractPropertyDefinition',
             'Program > VariableDeclaration',
-            'ExportNamedDeclaration > VariableDeclaration',
+            'ExportNamedDeclaration:has(> VariableDeclaration)',
           ],
         },
       ],

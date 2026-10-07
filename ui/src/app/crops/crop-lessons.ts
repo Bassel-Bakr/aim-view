@@ -1,48 +1,67 @@
-import { CropAnswer, CropBox, CropEntry } from '../api';
-
 /**
  * What the user's fixes on a recording so far teach about its other crops, as the claude.ai check page learnt them
  * (python/model/crop_check/index.html, `learn` and `suggestion`): the typical correction of the model's boxes, the
  * score below which every box was crossed out, and one box per target over a target the model sees in pieces.
+ * In: a set's crops and answers. Out: the suggestion crop-draft.ts offers for an unanswered crop.
  */
+
+import { CropAnswer, CropBox, CropEntry } from '../api';
 
 /** A crop's boxes as a suggestion changes them: crossed out, moved or resized, and drawn. */
 export interface CropFix {
+  /** The model boxes crossed out, by index. */
   remove: number[];
+  /** The model boxes moved or resized, by index: their new box ([cx, cy, w, h], crop pixels). */
   edit: Record<string, CropBox>;
+  /** The boxes drawn ([cx, cy, w, h], crop pixels). */
   add: CropBox[];
 }
 
 /** A correction of the model's boxes: their width and height scaled, their middle moved (in their sizes). */
 interface BoxCorrection {
+  /** The factor the width is scaled by. */
   scaleW: number;
+  /** The factor the height is scaled by. */
   scaleH: number;
+  /** How far the middle moves right, in box widths. */
   shiftX: number;
+  /** How far the middle moves down, in box heights. */
   shiftY: number;
+  /** How many fixed boxes taught it. */
   fixes: number;
 }
 
 /** One box per target over the model's pieces: its size, and where its middle sits from the pieces' (its sizes). */
 interface WholeBox {
+  /** The box's width, in crop pixels. */
   width: number;
+  /** The box's height, in crop pixels. */
   height: number;
+  /** How far its middle sits right of the pieces' middle, in its widths. */
   offsetX: number;
+  /** How far its middle sits below the pieces' middle, in its heights. */
   offsetY: number;
+  /** How many answers taught it. */
   fixes: number;
 }
 
 /** What a recording's fixes teach. */
 export interface Lesson {
+  /** How the model's boxes are typically fixed, when the fixes agree. */
   correction?: BoxCorrection;
   /** The score below which every box was crossed out and above which every one was kept. */
   cut?: number;
+  /** One box per target over the model's pieces, when the user drew such boxes often enough. */
   whole?: WholeBox;
 }
 
 /** A suggestion for a crop not yet answered, and why: a preset (a mined false box) or a lesson. */
 export interface Suggestion {
+  /** The changes it offers. */
   fix: CropFix;
+  /** Where it comes from: the crop's preset, the boxes' correction and cut, or the whole boxes. */
   why: 'preset' | 'lesson' | 'whole';
+  /** The lesson it applies; null for a preset. */
   lesson: Lesson | null;
 }
 
@@ -54,14 +73,19 @@ type BoxSides = [left: number, top: number, right: number, bottom: number];
 
 /** What one recording's answers hold: box pairs (the model's and the fixed one), scores crossed out and kept. */
 interface Evidence {
+  /** Each model box the user fixed, with the box it became. */
   pairs: BoxPair[];
+  /** The scores of the model boxes crossed out. */
   removed: number[];
+  /** The scores of the model boxes kept. */
   kept: number[];
+  /** The whole boxes drawn over every model box of a crop. */
   wholes: WholeBox[];
 }
 
-/** A correction needs this many fixes or more, their sizes within this ratio of each other. */
+/** A correction needs this many fixes or more, and so does a whole-target box. */
 const MIN_FIXES = 3;
+/** A correction's fixes must agree: their largest scale at most this many times their smallest. */
 const AGREE_RATIO = 1.35;
 /** A correction smaller than this (a share of the box) is no correction. */
 const NO_CHANGE = 0.05;
@@ -72,11 +96,13 @@ const SAME_TARGET = 0.75;
 /** A crop's side, in pixels. */
 const CROP_SIDE = 256;
 
+/** The median of values (the mean of the middle two for an even count). */
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = sorted.length >> 1;
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
+/** A value rounded to a tenth (of a pixel), as answers keep boxes. */
 const tenth = (value: number) => Math.round(value * 10) / 10;
 
 /** The box round boxes: [x0, y0, x1, y1]. */

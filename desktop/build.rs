@@ -13,6 +13,7 @@ const VC_RUNTIME: [&str; 4] = ["msvcp140.dll", "msvcp140_1.dll", "vcruntime140.d
 /// OUT_DIR is target/<profile>/build/aimview-desktop-<hash>/out: target/<profile>/ is this many folders up.
 const PROFILE_FOLDER_UP: usize = 3;
 
+/// Stages the VC++ runtime on an MSVC target, then runs Tauri's build.
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         stage_vc_runtime();

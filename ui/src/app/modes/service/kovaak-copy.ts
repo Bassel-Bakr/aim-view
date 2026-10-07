@@ -1,3 +1,10 @@
+/**
+ * KovaaK's folders in browser mode. In: the files of a folder the user chooses (FPSAimTrainer, the
+ * workshop's 824270, or each folder). Out: the stats and scenario files shown to the service at
+ * /kovaak at once, then copied into this browser (the service's /kovaak) for later visits, and
+ * which folders the copy holds.
+ */
+
 import { HttpClient } from '@angular/common/http';
 import { inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
@@ -5,19 +12,24 @@ import { Transfer } from '../../platform/recording-source';
 import { MountedFiles } from './mounted-files';
 import { ChosenFile } from './service-messages';
 
-/** The folders of KovaaK's the review reads: its stats files, the user's scenarios, the workshop's scenarios. */
+/**
+ * The folders of KovaaK's the review reads: its stats files, the user's scenarios, the workshop's
+ * scenarios.
+ */
 export type FolderRole = 'stats' | 'scenarios' | 'workshop';
 
+/** Every folder role, in the order the page names them. */
 export const FOLDER_ROLES: readonly FolderRole[] = ['stats', 'scenarios', 'workshop'];
 
 /** Where KovaaK's files are copied (the contract's /kovaak). */
 const KOVAAK = '/kovaak';
 
 /**
- * Where each of KovaaK's files chosen as a folder goes in /kovaak, by what its path makes it: a .csv in a folder named
- * stats is a stats file (stats/), a .sce in a folder named Scenarios one of the user's scenarios (scenarios/), and one
- * in an item's folder inside 824270 the workshop's (workshop/<item>/). So the user can choose steamapps,
- * FPSAimTrainer, or each folder. Other files are left out.
+ * Where each of KovaaK's files chosen as a folder goes in /kovaak, by what its path makes it: a
+ * .csv in a folder named stats is a stats file (stats/), a .sce in a folder named Scenarios one of
+ * the user's scenarios (scenarios/), and one in an item's folder inside 824270 the workshop's
+ * (workshop/<item>/). So the user can choose steamapps, FPSAimTrainer, or each folder. Other files
+ * are left out.
  */
 function kovaakFiles(files: readonly File[]): ChosenFile[] {
   const out: ChosenFile[] = [];
@@ -36,26 +48,30 @@ function kovaakFiles(files: readonly File[]): ChosenFile[] {
 }
 
 /**
- * KovaaK's folders, chosen by the user as files (a folder input: Chrome's folder picker refuses folders under Program
- * Files, where KovaaK's is). The review service reads them where they are at once, for this visit (/kovaak shows them
- * over the copies kept), and reads them again (POST /api/kovaak?changed=1): each run finds its stats file, each
- * scenario its kind, time limit and target count. Then, in the background, the files new or changed since the last
- * copy are copied into this browser for later visits, a few large packs rather than a file each.
+ * KovaaK's folders, chosen by the user as files (a folder input: Chrome's folder picker refuses
+ * folders under Program Files, where KovaaK's is). The review service reads them where they are at
+ * once, for this visit (/kovaak shows them over the copies kept), and reads them again (POST
+ * /api/kovaak?changed=1): each run finds its stats file, each scenario its kind, time limit and
+ * target count. Then, in the background, the page copies the files new or changed since the last
+ * copy into this browser for later visits, a few large packs rather than a file each.
  */
 @Service()
 export class KovaakCopy {
+  /** Shows the chosen files to the service, copies them in, and lists what is kept. */
   private readonly files = inject(MountedFiles);
+  /** Tells the service to read KovaaK's folders again. */
   private readonly http = inject(HttpClient);
-  /** The folders copied into this browser (any of their files); null until they have been looked at. */
+  /** The folders copied into this browser (any of their files); null until they are looked at. */
   readonly found = signal<ReadonlySet<FolderRole> | null>(null);
   /** The copy under way, for the top bar. */
   readonly transfer = signal<Transfer | null>(null);
 
+  /** Looks at once for the folders a visit before copied in. */
   constructor() {
     void this.look();
   }
 
-  /** Which folders have files in this browser. */
+  /** Sets `found`: the folders with files in this browser (one that cannot be listed has none). */
   private async look(): Promise<void> {
     const has = await Promise.all(
       FOLDER_ROLES.map((role) =>
@@ -69,8 +85,9 @@ export class KovaakCopy {
   }
 
   /**
-   * Has the service read the folders chosen as files at once, then copies them into this browser in the background
-   * (the top bar follows the copy; nothing waits for it).
+   * Has the service read the folders chosen as files at once, then copies them into this browser
+   * in the background (the top bar follows the copy; nothing waits for it). Rejects when the files
+   * hold no stats or scenario file of KovaaK's.
    */
   async copy(files: readonly File[]): Promise<void> {
     const chosen = kovaakFiles(files);
@@ -82,7 +99,10 @@ export class KovaakCopy {
     void this.keep(chosen);
   }
 
-  /** Copies the files chosen into this browser for later visits (only those new or changed since the last copy). */
+  /**
+   * Copies the files chosen into this browser for later visits (only those new or changed since the
+   * last copy). A failed copy is only logged: this visit already reads the files where they are.
+   */
   private async keep(chosen: ChosenFile[]): Promise<void> {
     const label = "Keeping KovaaK's files in this browser for later visits";
     this.transfer.set({ label, share: null });

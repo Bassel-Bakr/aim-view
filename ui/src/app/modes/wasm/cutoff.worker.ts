@@ -1,9 +1,13 @@
 /// <reference lib="webworker" />
-// The pixels of a submitted cut-off's labels, in a worker (python/model/hand_crops.py: cutoff_crops): the fixed map
-// from the key frames, as the review makes it, then each label's frame at 1280 x 720 RGB, cropped. The frames are
-// decoded as the review worker decodes them (the browser's decoder, the frames before time 0 dropped) and converted by
-// the core's converter, so they are ffmpeg's pixels. Python seeks to each frame with ffmpeg's -ss, which can land a
-// frame off in OBS's files; here each crop is from its own frame.
+/**
+ * The pixels of a submitted cut-off's labels, in a worker (python/model/hand_crops.py:
+ * cutoff_crops): the fixed map from the key frames, as the review makes it, then each label's
+ * frame at 1280 x 720 RGB, cropped. The frames are decoded as the review worker decodes them (the
+ * browser's decoder, the frames before time 0 dropped) and converted by the core's converter, so
+ * they are ffmpeg's pixels. Python seeks to each frame with ffmpeg's -ss, which can land a frame
+ * off in OBS's files; here each crop is from its own frame. In: a `CutoffWork` from
+ * browser-faint-cutoffs.ts. Out: one `CutoffReply`, every crop's RGB and fixed map.
+ */
 import { VideoSample } from 'mediabunny';
 import {
   Core,
@@ -24,6 +28,7 @@ const CROP = 256;
 /** The fixed map's bytes a pixel. */
 const FIXED_CHANNELS = 1;
 
+/** Sends the answer to the page. */
 const say = (reply: CutoffReply) => postMessage(reply);
 
 addEventListener('message', (event: MessageEvent<CutoffWork>) => {
@@ -32,7 +37,10 @@ addEventListener('message', (event: MessageEvent<CutoffWork>) => {
   );
 });
 
-/** A frame's planes as packed YUV 4:2:0 (Y, U, V), from the decoder's I420 or NV12. */
+/**
+ * A frame's planes as packed YUV 4:2:0 (Y, U, V), from the decoder's I420 or NV12. Throws for any
+ * other format.
+ */
 async function packedI420(sample: VideoSample): Promise<Uint8Array<ArrayBuffer>> {
   const { width, height } = sample.visibleRect;
   const chromaBytes = (width >> 1) * (height >> 1);
@@ -48,7 +56,10 @@ async function packedI420(sample: VideoSample): Promise<Uint8Array<ArrayBuffer>>
   return out;
 }
 
-/** A square of `size` pixels with `channels` bytes each from a 1280-wide image, at (x0, y0). */
+/**
+ * A square of `CROP` pixels with `channels` bytes each from a 1280-wide image, its top left corner
+ * at (x0, y0) in pixels.
+ */
 function cropOf(
   image: Uint8Array,
   channels: number,
@@ -64,14 +75,16 @@ function cropOf(
 }
 
 /**
- * The labels' frames in the core: its converter, made for the first frame's size and colors, and the block each
- * frame's planes are written into.
+ * The labels' frames in the core: its converter, made for the first frame's size and colors, and
+ * the block each frame's planes are written into.
  */
 class PackedFrames {
   /** The converter; 0 until the first frame. */
   converter = 0;
+  /** The core memory each frame's planes are written into, sized for the first frame. */
   private block: CoreBlock | null = null;
 
+  /** Writes into the given core's memory, with its converter. */
   constructor(private readonly core: Core) {}
 
   /** The sample's planes in the core's memory, the sample closed. */
@@ -90,7 +103,7 @@ class PackedFrames {
     return block;
   }
 
-  /** The converter is done. */
+  /** Frees the converter. */
   free(): void {
     if (this.converter) this.core.exports.converter_free(this.converter);
   }
@@ -116,6 +129,10 @@ async function fixedMap(
   return fixed;
 }
 
+/**
+ * Reads every crop the page asked for and says them, in its order. Rejects when the video lacks a
+ * frame asked for.
+ */
 async function readCrops(work: CutoffWork): Promise<void> {
   const video = await VideoFrames.open(work.file, 'any');
   const core = await Core.load(work.coreUrl);

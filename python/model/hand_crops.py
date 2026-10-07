@@ -4,11 +4,12 @@ seams pass for targets). Each crop is saved in the training format (rgb, fixed, 
 model's finds that the review would keep (the scenario's target count, the crosshair's neighbors always), so the
 label page starts from what the review sees and shows every other find for reference.
 Usage: python python/model/hand_crops.py <mp4> [<mp4> ...] --out test_out/vod_model/hand/<name> [--per-vod 50]
+       [--centre find|crosshair|mixed]
 
-Then, once checked: python python/model/hand_crops.py --labels <checked.jsonl> --out <dataset> [--test <text>] writes the
-checked crops as a training set, with the hand boxes as labels ("skip" meant no target there, the user's way,
-2026-10-02). Crop files are named hand_<...> so train.py --repeat can weight them (prefix "hand_crop_"). Crops whose
-name contains --test (or any of its comma-separated parts) go to test/, the rest to train/.
+Then, once checked: python python/model/hand_crops.py --labels <checked.jsonl> --out <dataset> [--test <text>]
+[--prefix hand_crop_] writes the checked crops as a training set, with the hand boxes as labels ("skip" meant no target
+there, the user's way, 2026-10-02). Crop files are named <prefix><...> so train.py --repeat can weight them. Crops
+whose name contains --test (or any of its comma-separated parts) go to test/, the rest to train/.
 """
 import argparse
 import collections
@@ -34,7 +35,7 @@ STEM_CHARS = 40                 # a crop name keeps this much of the video's nam
 HASH_CHARS = 6                  # and this much of its name's md5
 CLICK_SIDE_PX = 3               # to_dataset: a box side this small was a click without a drag
 CLICK_MATCH_PX = 3              # the model's find under a click, within this
-MIN_SIDE_PX = 4.0
+MIN_SIDE_PX = 4.0               # to_dataset: a hand box's smallest side
 MIN_RADIUS_PX = 1.5             # the target mask's smallest disc
 NEAR_DEG = 2.0                  # the review keeps every box this close to the crosshair
 EXTRA_SCORE = 0.5               # one box past the target count needs this score (the review's rule)
@@ -42,7 +43,8 @@ EDGE_S = 2.0                    # main: seconds left out at each end of a VOD
 
 
 def crop_name(video):
-    """A video's crop-name stem: the start of its name and the start of its name's md5, without spaces."""
+    """A video's crop-name stem: the start of its name and the start of its name's md5. Its spaces stay; the callers
+    change them to "_"."""
     return f"{Path(video).stem[:STEM_CHARS]}_{hashlib.md5(Path(video).name.encode()).hexdigest()[:HASH_CHARS]}"
 
 
@@ -95,6 +97,8 @@ def cutoff_crops(video, frames, fps, start, end, exclude, offset, out, per=20, n
     rows = []
 
     def in_focus(track, x, y, kind):
+        """Whether a track at (x, y) degrees is one this pass crops round: scored, on the `kind` side of the cut,
+        and not near the crosshair."""
         return track in scores and (scores[track] < cut) == (kind == "left out") and math.hypot(x, y) >= near
 
     for kind in ("left out", "kept"):
@@ -224,6 +228,8 @@ def vod_crops(video, detector, args, rnd, out):
 
 
 def main():
+    """With --labels, writes the checked crops as a dataset; else writes each VOD's crops for labelling into
+    <out>/train and prints the counts."""
     parser = argparse.ArgumentParser()
     parser.add_argument("vods", nargs="*")
     parser.add_argument("--out", required=True)

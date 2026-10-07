@@ -20,6 +20,7 @@ const FOLDERS: [&str; 10] = [
     "desktop/examples",
     "benches",
 ];
+/// The map's file, at the repository's root.
 const MAP_FILE: &str = "CODEMAP.md";
 /// Set to write CODEMAP.md instead of comparing with it.
 const WRITE_VAR: &str = "CODE_MAP_WRITE";
@@ -27,6 +28,7 @@ const WRITE_VAR: &str = "CODE_MAP_WRITE";
 const WIDTH: usize = 120;
 /// Words before a function's `fn`.
 const QUALIFIERS: [&str; 3] = ["const ", "async ", "unsafe "];
+/// The map's first paragraph, under its title.
 const INTRO: &str = "Where each thing lives in the Rust code: each file's header comment, then its public types \
 (with the first sentence of their doc and their methods), functions and constants. tests/code_map.rs builds it from \
 the sources and fails when this file is out of date; `CODE_MAP_WRITE=1 cargo test --profile quick --test code_map` \
@@ -35,32 +37,46 @@ writes it again. Who calls what is rust-analyzer's call hierarchy.";
 /// One public type: what kind it is (struct, enum, trait, type), its name, the first sentence of its doc and its
 /// public methods.
 struct PublicType {
+    /// The keyword that declares it: struct, enum, trait or type.
     kind: String,
+    /// The type's name, without its generics.
     name: String,
+    /// The first sentence of its `///` doc; empty when it has none.
     doc: String,
+    /// The names of its public methods in this file's inherent `impl` blocks, in the order they appear.
     methods: Vec<String>,
 }
 
 /// The public methods of a type another file declares.
 struct ForeignMethods {
+    /// The type's name, as the `impl` line writes it (its last path segment).
     owner: String,
+    /// The methods' names, in the order they appear.
     names: Vec<String>,
 }
 
 /// A public method found in an `impl` block: its type and its name.
 struct Method {
+    /// The type the `impl` block is for.
     owner: String,
+    /// The method's name.
     name: String,
 }
 
 /// What the map says about one file.
 #[derive(Default)]
 struct FileMap {
+    /// The file's path from the repository's root, with "/" between names.
     path: String,
+    /// The first paragraph of the file's `//!` header, joined into one line.
     summary: String,
+    /// The public types the file declares, in order.
     types: Vec<PublicType>,
+    /// Public methods the file adds to types declared elsewhere.
     foreign: Vec<ForeignMethods>,
+    /// The names of the file's top-level public functions.
     functions: Vec<String>,
+    /// The names of the file's top-level public constants and statics.
     constants: Vec<String>,
 }
 
@@ -99,6 +115,7 @@ impl FileMap {
     }
 }
 
+/// Adds `name` to `names` unless it is there already (a method in two `impl` blocks is named once).
 fn push_new(names: &mut Vec<String>, name: String) {
     if !names.contains(&name) {
         names.push(name);
@@ -171,6 +188,7 @@ fn function_name(rest: &str) -> Option<String> {
     text.strip_prefix("fn ").map(identifier)
 }
 
+/// The identifier the text starts with: its letters, digits and underscores up to the first other character.
 fn identifier(text: &str) -> String {
     text.chars().take_while(|ch| ch.is_alphanumeric() || *ch == '_').collect()
 }
@@ -187,6 +205,7 @@ fn doc_above(above: &[&str]) -> String {
     first_paragraph(doc.into_iter())
 }
 
+/// The lines up to the first empty one, trimmed and joined with spaces.
 fn first_paragraph<'a>(lines: impl Iterator<Item = &'a str>) -> String {
     let words: Vec<&str> = lines.map(str::trim).take_while(|line| !line.is_empty()).collect();
     words.join(" ")
@@ -233,10 +252,12 @@ fn wrap(text: &str, first: &str, rest: &str) -> String {
     out
 }
 
+/// The names in backticks, joined with commas.
 fn code_names(names: &[String]) -> String {
     names.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
 }
 
+/// A type's line in the map: its name and kind, its doc's first sentence with a full stop, then its methods.
 fn type_line(item: &PublicType) -> String {
     let mut line = format!("`{}` ({})", item.name, item.kind);
     if !item.doc.is_empty() {
@@ -252,6 +273,8 @@ fn type_line(item: &PublicType) -> String {
     line
 }
 
+/// One file's section of the map: its path as a heading, its summary, then a list of its types, other files' types'
+/// methods, functions and constants, each wrapped at WIDTH.
 fn render_file(map: &FileMap) -> String {
     let mut out = format!("\n## {}\n", map.path);
     if !map.summary.is_empty() {
@@ -319,6 +342,7 @@ fn code_map(root: &Path) -> String {
     out
 }
 
+/// CODEMAP.md equals the map built from the sources now (or, with CODE_MAP_WRITE set, is written again).
 #[test]
 fn the_code_map_is_current() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -335,6 +359,8 @@ fn the_code_map_is_current() {
     );
 }
 
+/// A small file's header, public type, methods (its own and a foreign type's), function and constant reach the map,
+/// and its private items and trait methods do not.
 #[test]
 fn a_file_reads_into_its_map() {
     let text = "//! What it does.\n//! Where from.\n//!\n//! More.\n\n/// A thing (it has parts). And more.\n\

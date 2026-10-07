@@ -8,8 +8,9 @@ no review, so no review is made again.
 Folders come from aimview.defaults.json and aimview.json (python/local_config.py); the desktop app's data folder is
 its identifier (desktop/tauri.conf.json) in the roaming app data. The runs go in test_out/storage_check/<name>/.
 
-Usage: python scripts/storage_check.py <name> <api exe>    (cargo build --profile quick -p aimview-service --example api,
-                                                            then copy target/quick/examples/api.exe aside per build)
+Usage: python scripts/storage_check.py <name> <api exe>
+           (the exe: cargo build --profile quick -p aimview-service --example api, then copy
+           target/quick/examples/api.exe aside per build)
        python scripts/storage_check.py compare <name a> <name b>
 """
 import glob
@@ -47,6 +48,7 @@ UPLOAD = "uploads/1902 1wall 6targets small ｜ #2.mp4"
 UPLOAD_PLAIN = "uploads/ww3t 141vodh264.mp4"
 NO_REVIEW = "1 wall 6 targets Micro++/1 wall 6 targets Micro++ - 9801 - 2026.05.03-02.04.28.mp4"
 DESKTOP_ONE = "1wall 2targets xsmall - valorant/1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04.mp4"
+# the GET routes asked about each recording
 QUESTIONS = ("job", "report", "run", "stats", "exclude", "faint", "mouse", "tracks", "find_areas")
 # how long the cut-off's labels take to be written in the background
 LABELS_WAIT_S = 40
@@ -55,6 +57,7 @@ NAME_PARTS = 3
 
 
 def q(text):
+    """`text` escaped whole for a URL's query (a slash too)."""
     return quote(text, safe="")
 
 
@@ -107,6 +110,8 @@ def tree(root):
 
 
 def run(name, exe):
+    """One run of the build `exe` into test_out/storage_check/<name>/: copies both data folders there afresh, asks
+    the questions on each, and keeps per layout the answers, the error output and every file's hash left after."""
     out = CHECKS / name
     if out.exists():
         shutil.rmtree(out)
@@ -138,6 +143,7 @@ def steady(line, days):
         return None
 
     def clean(value):
+        """The JSON value without list items that name one of the days, and with each "submitted" time replaced."""
         if isinstance(value, list):
             return [clean(item) for item in value if not any(day in json.dumps(item) for day in days)]
         if isinstance(value, dict):
@@ -147,6 +153,8 @@ def steady(line, days):
 
 
 def compare(a, b):
+    """Whether runs `a` and `b` agree: prints, per layout, whether their answers, files and error output are the
+    same (less what changes from run to run, and the cut-off's faint.json, which keeps its submit's time)."""
     days = {(CHECKS / name / "day.txt").read_text(encoding="utf-8") for name in (a, b)}
     # the cut-off keeps its submit's time
     timed = Path("vod_app") / cutoff_slug() / "faint.json"

@@ -1,3 +1,9 @@
+/**
+ * Server mode: the review server (server/, aimview-server) does the work. In: nothing at load. Out:
+ * `MODE`, which picks the http/ services for each platform/ contract (mode.ts is swapped for this
+ * file by the `server` build configuration).
+ */
+
 import { withXhr } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
 import { CropSets } from '../platform/crop-sets';
@@ -22,8 +28,9 @@ import { ServerScoreHistory } from './http/server-score-history';
 import { ServerStatsFiles } from './http/server-stats-files';
 
 /**
- * With the review server (python/server.py): its recordings, stats files, models and reviews, and what the user
- * sets, kept there. HttpClient sends with XMLHttpRequest here, since fetch cannot report an upload's progress.
+ * With the review server (server/, aimview-server): its recordings, stats files, models and
+ * reviews, and what the user sets, kept there. HttpClient sends with XMLHttpRequest here, since
+ * fetch cannot report an upload's progress.
  */
 export const MODE: Mode = {
   name: 'server',

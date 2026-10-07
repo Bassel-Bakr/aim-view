@@ -4,12 +4,36 @@
  * Flicks of one distance range (degrees).
  */
 export interface DistanceGroup {
+  /**
+   * The group's low end: flicks that started this far from the target or more, degrees.
+   */
   lo: number;
+  /**
+   * The group's high end: flicks that started less than this far, degrees.
+   */
   hi: number;
+  /**
+   * How many flicks are in the group.
+   */
   n: number;
+  /**
+   * Their median TTK, seconds.
+   */
   interval: number | null;
+  /**
+   * Their median reaction, seconds.
+   */
   react: number | null;
+  /**
+   * The share of them that underflicked (the main flick ended short of the target).
+   */
   short: number;
+  /**
+   * The share of them that overflicked (the main flick ended past the target's far edge).
+   */
   past: number;
+  /**
+   * Their median confirmation, seconds.
+   */
   still: number | null;
 }

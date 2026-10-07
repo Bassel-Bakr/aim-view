@@ -28,12 +28,19 @@ const FLOOR_MARGIN: f64 = 1e-9;
 /// nothing. Every score the review keeps (the tracks' `s`, which the faint cut-off reads) is the mapped one.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelSettings {
+    /// The file's format; `from_json` refuses any but `FORMAT`.
     pub format: u32,
+    /// The model's name, such as "full_v3"; empty for a model with no settings file.
     pub name: String,
+    /// The score a cell must pass to be a target, on the reference model's scale, from 0 to 1 (read as float32, as the
+    /// scores are).
     pub threshold: f32,
+    /// The [raw, mapped] points that put the model's raw scores on the reference model's scale; None maps nothing.
     #[serde(default)]
     pub score_map: Option<Vec<[f64; 2]>>,
+    /// The model whose scale the mapped scores and the thresholds are on (`REFERENCE`).
     pub reference: String,
+    /// The weaker threshold for cells at the crosshair; None when the model has no such rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at_crosshair: Option<AtCrosshair>,
 }
@@ -47,8 +54,12 @@ pub struct ModelSettings {
 /// tracking (MODEL_FILE.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AtCrosshair {
+    /// The weaker score a cell at the crosshair must pass, on the reference model's scale, from 0 to the model's own
+    /// threshold.
     pub threshold: f32,
+    /// How near the crosshair a box's center must be for the weaker threshold, in pixels of the 1280 x 720 frame.
     pub reach_px: f64,
+    /// The scenario kinds the rule is for; None for every kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kinds: Option<Vec<Kind>>,
 }
@@ -68,8 +79,9 @@ impl Default for ModelSettings {
 }
 
 impl ModelSettings {
-    /// A settings file's text, checked: its format, a threshold from 0 to 1, and a map of 2 or more points from 0 to 1
-    /// that rise in both values.
+    /// A settings file's text, checked: its format, a threshold from 0 to 1, an at-crosshair threshold from 0 to the
+    /// model's with a reach of 0 px or more, and a map of 2 or more points from 0 to 1 that rise in both values. The
+    /// error says which check failed.
     pub fn from_json(text: &str) -> Result<ModelSettings, String> {
         let settings: ModelSettings =
             serde_json::from_str(text).map_err(|error| format!("not a model settings file: {error}"))?;
@@ -122,7 +134,7 @@ impl ModelSettings {
         (slope * (x - points[j][0]) + points[j][1]) as f32
     }
 
-    /// A cell's score on the reference model's scale, when it passes the threshold.
+    /// A cell's score on the reference model's scale, when it passes the model's own threshold; None when it does not.
     pub fn passes(&self, raw: f32) -> Option<f32> {
         let score = self.mapped(raw);
         (score > self.threshold).then_some(score)
@@ -164,10 +176,12 @@ pub fn settings_file(export: &str) -> Option<String> {
     Some(format!("{name}.json"))
 }
 
+/// Checks reading, mapping and the at-crosshair rule.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Default settings with `threshold` and a score map of `points`.
     fn with_map(threshold: f32, points: &[[f64; 2]]) -> ModelSettings {
         ModelSettings { threshold, score_map: Some(points.to_vec()), ..ModelSettings::default() }
     }
@@ -182,6 +196,8 @@ mod tests {
         assert_eq!(settings.mapped(0.123_456_79), 0.123_456_79);
     }
 
+    /// Another format, no threshold, a threshold over 1, a one-point map and a falling map are refused; an unknown key
+    /// is not.
     #[test]
     fn bad_files_are_refused() {
         let file = |rest: &str| format!(r#"{{"name": "x", "reference": "full_v3", {rest}}}"#);
@@ -247,6 +263,7 @@ mod tests {
         assert!(every.for_kind(None).at_crosshair.is_some());
     }
 
+    /// Every export's suffix comes off to give the settings file's name; a file that is not ONNX has none.
     #[test]
     fn the_settings_file_sits_beside_every_export() {
         assert_eq!(settings_file("detector_full_v3_u8in.onnx").as_deref(), Some("detector_full_v3.json"));

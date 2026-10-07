@@ -1,3 +1,9 @@
+/**
+ * The crosshair's speed through a flick. In: a flick's path (the target's place from the crosshair
+ * each frame, in degrees, from the clicking review's `Flick`) and the recording's fps. Out: the
+ * speed chart and the run charts' flick speeds.
+ */
+
 import { PathPoint } from '../api';
 
 /** The crosshair's speed at a frame: [frame, degrees per second]. */
@@ -9,9 +15,10 @@ const SMOOTH_SIGMA = 0.025;
 const SIGMA_REACH = 3;
 
 /**
- * The crosshair's speed through a flick, from the target's path relative to the crosshair. Positions are averaged
- * over 3 frames first (the capture moves in uneven steps), then the speed is taken between neighbors. The first point
- * has no neighbor before it and is 0.
+ * The crosshair's speed through a flick, from the target's path relative to the crosshair, in
+ * degrees a second at each frame. Positions are averaged over 3 frames first (the capture moves in
+ * uneven steps), then the speed is taken between neighbors. The first point has no neighbor before
+ * it and is 0. `smooth` runs the result through `smoothed` with a sigma of 25 ms.
  */
 export function speeds(path: PathPoint[], fps: number, smooth: boolean): SpeedPoint[] {
   const averaged = path.map((point, i): PathPoint => {
@@ -34,7 +41,10 @@ export function speeds(path: PathPoint[], fps: number, smooth: boolean): SpeedPo
   return smooth ? smoothed(raw, SMOOTH_SIGMA * fps) : raw;
 }
 
-/** A Gaussian over the speeds, sigma in frames, weighted by frame distance; the first point (a placeholder) is left out. */
+/**
+ * The speeds smoothed by a Gaussian over frame distance, sigma in frames; each point keeps its
+ * frame. The first point (the 0 placeholder `speeds` gives) is left out of every sum.
+ */
 export function smoothed(data: SpeedPoint[], sigma: number): SpeedPoint[] {
   return data.map(([frame]): SpeedPoint => {
     let sum = 0;

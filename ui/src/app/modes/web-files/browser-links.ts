@@ -1,3 +1,9 @@
+/**
+ * Brings a video from a link into browser mode. In: a link the user pastes, and the Aim View
+ * server on this computer where the browser cannot read the link itself. Out: the link's title and
+ * qualities, and its video as a File with its progress, for browser-recordings.ts to add.
+ */
+
 import { HttpClient, HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { effect, inject, Service, signal } from '@angular/core';
 import { filter, firstValueFrom, fromEvent, lastValueFrom, takeUntil, tap } from 'rxjs';
@@ -7,11 +13,16 @@ import { CANCELLED, Job, JobStage, LinkAdded, LinkInfo } from '../../api';
 const SERVER_KEY = 'link-server';
 /** The Aim View server on this computer, as `bun run server` starts it. */
 export const DEFAULT_LINK_SERVER = 'http://127.0.0.1:8770';
+/** The error when the link server does not answer at all, saying how to start it. */
 export const NO_LINK_SERVER =
   'Start the Aim View server (bun run server) to add from a link in this browser.';
+/** A link path that names a video file, by its extension. */
 const VIDEO_PATH = /\.(mp4|webm|mkv|mov)$/i;
+/** How often the server's download is asked after, in milliseconds. */
 const POLL_MS = 500;
+/** The progress label while a video downloads, by the browser or the server. */
 const DOWNLOADING = 'Downloading the video';
+/** The progress label while the server's finished file is copied into the browser. */
 const COPYING = 'Copying the video into this browser';
 /** What the server is doing for a link, by its job's stage. */
 const SERVER_STAGES: Partial<Record<JobStage, string>> = {
@@ -20,19 +31,26 @@ const SERVER_STAGES: Partial<Record<JobStage, string>> = {
   downloading: DOWNLOADING,
 };
 
-/** Hears how far a link's video has come: what is being done, and the megabytes done of total (0: not known). */
+/**
+ * Hears how far a link's video has come: what is being done, and the megabytes done of total (0:
+ * not known).
+ */
 export type LinkProgress = (label: string, done: number, total: number) => void;
 
 /**
- * A link's video on its way into this browser: its file name, the file once all of it is here, and what stops it (the
- * file then fails with CANCELLED).
+ * A link's video on its way into this browser: its file name, the file once all of it is here, and
+ * what stops it (the file then fails with CANCELLED).
  */
 export interface LinkFetch {
+  /** The file name the video gets: the link path's last part, or the name the server saved. */
   name: string;
+  /** The whole video, once it is here; rejects with CANCELLED after cancel. */
   file: Promise<File>;
+  /** Stops the download (and the server's, where it downloads). */
   cancel: () => void;
 }
 
+/** Whole megabytes (2^20 bytes) in a byte count, rounded down. */
 const megabytes = (bytes: number) => Math.floor(bytes / 2 ** 20);
 
 /** The last part of a link's path, as a file name. */
@@ -45,6 +63,7 @@ function fileName(url: string): string {
   }
 }
 
+/** The link server's address the browser kept, else the default (also where storage is blocked). */
 function readServer(): string {
   try {
     return localStorage.getItem(SERVER_KEY) ?? DEFAULT_LINK_SERVER;
@@ -54,19 +73,21 @@ function readServer(): string {
 }
 
 /**
- * Links in browser mode. A video file's address whose host lets other sites read it is downloaded by the browser
- * itself. Any other link (YouTube, Twitch, Medal...) the browser cannot read: the Aim View server on this computer
- * downloads it with yt-dlp (/api/link, followed with /api/job), and the finished file is copied from it (/video) into
- * the browser.
+ * Links in browser mode. The browser downloads a video file's address itself when its host lets
+ * other sites read it. Any other link (YouTube, Twitch, Medal...) the browser cannot read: the Aim
+ * View server on this computer downloads it with yt-dlp (/api/link, followed with /api/job), and
+ * the page copies the finished file from it (/video) into the browser.
  */
 @Service()
 export class BrowserLinks {
+  /** Sends the HEAD checks, the downloads and the link server's requests. */
   private readonly http = inject(HttpClient);
   /** The server's address, which the user can change; the browser keeps it. */
   readonly server = signal(readServer());
   /** The links the browser reads itself. */
   private readonly direct = new Set<string>();
 
+  /** Keeps the server's address in localStorage each time the user changes it. */
   constructor() {
     effect(() => {
       const address = this.server();
@@ -78,13 +99,19 @@ export class BrowserLinks {
     });
   }
 
-  /** What the link offers: a video file the browser reads has nothing to choose; else the server reads it. */
+  /**
+   * What the link offers: a video file the browser reads has nothing to choose; else the server
+   * reads it.
+   */
   async info(url: string): Promise<LinkInfo> {
     if (await this.readsItself(url)) return { title: fileName(url), duration: null, formats: [] };
     return this.ask<LinkInfo>('/api/link/formats', { url });
   }
 
-  /** Starts bringing the link's video into the browser, in the chosen quality where the server downloads it. */
+  /**
+   * Starts bringing the link's video into the browser, in the chosen quality where the server
+   * downloads it (format null: the best). Resolves once it has started.
+   */
   async start(url: string, format: string | null, progress: LinkProgress): Promise<LinkFetch> {
     const stop = new AbortController();
     const cancel = () => stop.abort();
@@ -97,8 +124,9 @@ export class BrowserLinks {
   }
 
   /**
-   * Whether the browser reads the link itself: its host lets other sites read it (a HEAD request gets an answer),
-   * and it is a video file (its path's extension, or the answer's type).
+   * Whether the browser reads the link itself: its host lets other sites read it (a HEAD request
+   * gets an answer, even an error status), and it is a video file (its path's extension, or the
+   * answer's type). A link found readable is remembered for this visit.
    */
   private async readsItself(url: string): Promise<boolean> {
     if (this.direct.has(url)) return true;
@@ -112,7 +140,7 @@ export class BrowserLinks {
     return reads;
   }
 
-  /** Downloads a video file in the browser, until `stop` is aborted. */
+  /** Downloads a video file in the browser; rejects with CANCELLED when `stop` is aborted. */
   private async download(
     url: string,
     name: string,
@@ -136,8 +164,8 @@ export class BrowserLinks {
   }
 
   /**
-   * Follows the server's download until the video is in, then copies it into the browser a range at a time; stopped
-   * (and the server's download cancelled) when `stop` is aborted.
+   * Follows the server's download until the video is in, then copies it into the browser a range
+   * at a time; stopped (and the server's download cancelled) when `stop` is aborted.
    */
   private async copy(added: LinkAdded, progress: LinkProgress, stop: AbortSignal): Promise<File> {
     await this.downloaded(added, progress, stop);
@@ -156,7 +184,10 @@ export class BrowserLinks {
     return new File(parts, added.saved, { type: 'video/mp4' });
   }
 
-  /** Waits for the server's download of a link, showing how far it is; cancels it there when `stop` is aborted. */
+  /**
+   * Waits for the server's download of a link, showing how far it is; cancels it there when `stop`
+   * is aborted, and rejects when the server's download failed.
+   */
   private async downloaded(
     added: LinkAdded,
     progress: LinkProgress,
@@ -210,6 +241,7 @@ export class BrowserLinks {
       : error;
   }
 
+  /** The server's address as the user typed it, without spaces or a trailing slash. */
   private base(): string {
     return this.server().trim().replace(/\/+$/, '');
   }

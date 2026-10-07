@@ -20,20 +20,26 @@ use crate::config::Device;
 
 /// The detector's maps are this many times smaller than the frame each way.
 const MAP_SCALE: usize = 4;
-/// A map's width and height (`gw` and `gh` in the core's session.rs).
+/// A map's width in cells (`gw` in the core's session.rs).
 pub const MAP_WIDTH: usize = DST_W / MAP_SCALE;
+/// A map's height in cells (`gh` in the core's session.rs).
 pub const MAP_HEIGHT: usize = DST_H / MAP_SCALE;
 /// The reg maps (the boxes' regression) each frame has.
 const REG_MAPS: usize = 4;
 /// The bytes of an RGB pixel.
 const RGB_CHANNELS: usize = 3;
-/// The CPU's threads when the system cannot say how many it has, and the most the detector takes.
+/// The CPU's threads when the system cannot say how many it has.
 const DEFAULT_CPU_THREADS: usize = 4;
+/// The most CPU threads the detector takes.
 const MAX_CPU_THREADS: usize = 8;
 
+/// The detector model loaded in ONNX Runtime, with the fixed map ready for every call.
 pub struct Detector {
+    /// ONNX Runtime's session, its sizes fixed to `batch` frames of 720p.
     session: Session,
+    /// The fixed map repeated for each frame of a batch (batch x DST_H x DST_W).
     fixed: Tensor<u8>,
+    /// The frames each call takes.
     batch: usize,
     /// Where it runs, for the tracks' `detector` ("DirectML", "CUDA" or "CPU").
     pub device: &'static str,
@@ -42,7 +48,9 @@ pub struct Detector {
 /// One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x MAP_WIDTH),
 /// where ONNX Runtime left them.
 pub struct Maps<'a> {
+    /// Each cell's score, every frame's map one after another.
     pub score: &'a [f32],
+    /// Each cell's box regression, `REG_MAPS` maps a frame, every frame's one after another.
     pub reg: &'a [f32],
 }
 
@@ -87,7 +95,8 @@ fn on_cpu(model: &Path, batch: usize) -> ort::Result<Session> {
 
 impl Detector {
     /// The model at `model`, taking `batch` frames a call, with the fixed map (DST_W x DST_H) for each of them, on
-    /// `device`.
+    /// `device`. `Auto` tries DirectML on Windows, else CUDA, then the CPU; an error when the device asked for (or the
+    /// CPU, last) cannot load it.
     pub fn new(model: &Path, batch: usize, fixed: &[u8], device: Device) -> Result<Detector, String> {
         let directml = || on_gpu(model, batch, DirectMLExecutionProvider::default().build());
         let cuda = || on_gpu(model, batch, CUDAExecutionProvider::default().build());
@@ -139,6 +148,7 @@ pub fn model_settings(model: &Path) -> Result<ModelSettings, String> {
         Ok(text) => ModelSettings::from_json(&text)
             .map_err(|error| format!("the model's settings file {}: {error}", path.display())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            /// The missing settings files already said, so each is said once a process.
             static SAID: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
             if let Ok(mut said) = SAID.lock()
                 && !said.contains(&path)

@@ -1,8 +1,13 @@
+/**
+ * Sends the page's API requests to the desktop app. In: each HttpClient request. Out: the /api ones
+ * readdressed to the app's own protocol (desktop/src/protocol.rs); mode.desktop.ts installs it.
+ */
+
 import { HttpInterceptorFn } from '@angular/common/http';
 
 /**
- * Where the desktop app answers the review server's API (service/, through desktop/src/protocol.rs): its own protocol, in the app itself,
- * with no network port.
+ * Where the desktop app answers the review server's API (service/, through
+ * desktop/src/protocol.rs): its own protocol, in the app itself, with no network port.
  */
 export const DESKTOP_API = 'http://api.localhost';
 

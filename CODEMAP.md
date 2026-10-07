@@ -31,13 +31,16 @@ rust-analyzer's call hierarchy.
 - `src/kill_check.rs`: The kills the video alone gives (matching.rs `match_video`), checked in the frames round them: a
   target that dies leaves wall where it was, while a target the tracking only lost, or a crosshair the detector boxed,
   still shows there.
-- `src/lib.rs`: Aim View's review core.
+- `src/lib.rs`: Aim View's review core: it finds the targets in a recording's frames, follows them, and measures the
+  aim.
 - `src/local_config.rs`: Aim View's settings for a checkout of the repo and this computer: aimview.defaults.json (in
   git, built in here: the project's own layout and where KovaaK keeps its folders under Steam's) under aimview.json
   (beside it at the repo's root, out of git, optional: this computer's own, such as the recordings' folder).
-- `src/matching.rs`: Each kill matched to the target it killed, and the flick to it (review.py: `match_times`,
-  `_attach_kills`, `appearances`, `crosshair_spots`).
-- `src/measure.rs`: Each flick measured (review.py: `target_radius`, `measure`, `choices`).
+- `src/matching.rs`: Each kill matched to the target it killed, and the flick to it (python/retired/review.py:
+  `match_times`, `_attach_kills`, `appearances`, `crosshair_spots`, `ghosts`).
+- `src/measure.rs`: Each flick of a clicking run measured (the old review, python/retired/review.py: `target_radius`,
+  `measure`, `choices`): how long each kill step took, how fast the crosshair moved, where it ended and where it
+  clicked.
 - `src/model.rs`: The detector model's settings file (python/model/MODEL_FILE.md): `detector_<name>.json` beside the
   model's exports, so a retrained model needs no change to the code.
 - `src/mouse.rs`: The raw mouse log and what is measured from it (a port of python/mouse_read.py): each flick of a
@@ -80,10 +83,10 @@ rust-analyzer's call hierarchy.
 - `src/wasm.rs`: The core's interface to the browser (WebAssembly builds only): plain exports over the module's memory,
   so no binding generator is needed.
 - `src/what_if.rs`: What would raise a clicking run's score.
-- `service/src/api.rs`: The review server's API (python/server.py), free of any web framework: a request's method, path
-  and query, Range header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`).
-- `service/src/areas.rs`: The areas a review leaves out (python/server.py: exclude, set_exclude, kinds, save_kind,
-  find_areas, labelled): a webcam, another player's overlay.
+- `service/src/api.rs`: The review server's API (python/retired/server.py's), free of any web framework: a request's
+  method, path and query, Range header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`).
+- `service/src/areas.rs`: The areas a review leaves out (python/retired/server.py: exclude, set_exclude, kinds,
+  save_kind, find_areas, labelled): a webcam, another player's overlay.
 - `service/src/bin/aimview-tool.rs`: aimview-tool: the review service's library and its native review from the command
   line, for the Python scripts (python/aimview_tools.py runs it).
 - `service/src/config.rs`: What a library needs to know (`Config`): where it keeps its files, the user's folders (the
@@ -98,8 +101,8 @@ rust-analyzer's call hierarchy.
   CPU; `Auto` tries the GPU first and falls back to the CPU.
 - `service/src/disk.rs`: The file system and the clock, for the whole service: every file the library reads or writes
   goes through here.
-- `service/src/faint.rs`: The faint-target cut-off (python/server.py: faint, set_faint, submit_faint, skip_faint,
-  faint_queue).
+- `service/src/faint.rs`: The faint-target cut-off (python/retired/server.py: faint, set_faint, submit_faint,
+  skip_faint, faint_queue).
 - `service/src/ffmpeg.rs`: ffmpeg for the review, from where the configuration says (config.rs: `Ffmpeg`): the PATH, a
   folder, or found the way KovOBS finds it: the PATH's ffmpeg and ffprobe when both run, else (ffmpeg-sidecar)
   downloaded into a folder the first time a review needs it, and unpacked there (the desktop app does not ship it).
@@ -110,32 +113,32 @@ rust-analyzer's call hierarchy.
   D3D11 textures, and a compute shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1
   integer arithmetic, the 720p luma the camera reads (the same means), and the Y plane's top rows the HUD reads (only
   those: the whole plane, 3.7 MB a frame, was most of what the CPU copied back).
-- `service/src/labels.rs`: Labelling (python/server.py): the recordings the user marked as another game, the queue of
-  recordings to label areas in and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists
-  of recording ids, not_aim_trainer.json and label_skipped.json in its data folder).
-- `service/src/lib.rs`: Aim View's review service: the review server's API (python/server.py) over a library of
-  recordings, with the review run natively (ffmpeg's frames, the core, and the detector on the GPU).
-- `service/src/library/browser.rs`: The browser build's own routes (api.rs): the page runs the review, the area finder
-  and the cut-off's labels itself and sends what they give, which is kept as the native review keeps it; it adds raw
-  mouse logs, chooses the VODs folder (a folder it mounted) and says when it copied new KovaaK files.
+- `service/src/labels.rs`: Labelling (python/retired/server.py): the recordings the user marked as another game, the
+  queue of recordings to label areas in and the ones skipped there, kept as the review server keeps them (store.rs:
+  sorted lists of recording ids, not_aim_trainer.json and label_skipped.json in its data folder).
+- `service/src/lib.rs`: Aim View's review service: the review server's API (python/retired/server.py's) over a library
+  of recordings, with the review run natively (ffmpeg's frames, the core, and the detector on the GPU).
+- `service/src/library/browser.rs`: The browser build's own routes (api.rs): the page runs the review and the area
+  finder itself and sends what they give, which is kept as the native review keeps it; it adds raw mouse logs, chooses
+  the VODs folder (a folder it mounted) and says when it copied new KovaaK files.
 - `service/src/library/links.rs`: Recordings added from a link: a video's page on a site yt-dlp reads (YouTube, Twitch,
   Medal, Streamable...) or a video file's address.
 - `service/src/library/mod.rs`: The library: the user's recordings (the VODs folder and the uploads), KovaaK's stats
   files and scenarios, the models, and each recording's reviews, kept in the data folder (config.rs: `Layout`).
 - `service/src/library/names.rs`: File names and time stamps: a recording's name as KovOBS writes it, a stats file's as
-  KovaaK writes it, their time stamps, and a recording's folder name (python/server.py: NAME, STATS_NAME, stamp_seconds,
-  cache_dir).
-- `service/src/library/recordings.rs`: The recordings: the list (python/server.py: Library.list), a recording's video
-  from its id and its folder, videos and stats files added from the user's computer, and each scenario's facts from its
-  scenario file.
+  KovaaK writes it, their time stamps, and a recording's folder name (python/retired/server.py: NAME, STATS_NAME,
+  stamp_seconds, cache_dir).
+- `service/src/library/recordings.rs`: The recordings: the list (python/retired/server.py: Library.list), a recording's
+  video from its id and its folder, videos and stats files added from the user's computer, and each scenario's facts
+  from its scenario file.
 - `service/src/library/reviews.rs`: A recording's reviews (each model's kept apart, store.rs: tracks, readings, what the
   HUD read, the kills' check): the review on show, the review jobs (each runs in a thread of its own; in the browser
   build the page runs it, browser.rs), the user's run window and the report, worked out when it is shown
-  (python/server.py: shown, analyse, run, set_run, /api/report).
+  (python/retired/server.py: shown, analyse, run, set_run, /api/report).
 - `service/src/library/settings.rs`: What the user set, kept in settings.json: the VODs folder they chose in the app
   (`vods`), the model new reviews use (`model`), the device the detector runs on (`device`) and the frames it takes at
   once on each device (`batch`, by device name).
-- `service/src/library/stats.rs`: KovaaK's stats files and each recording's pairing with one (python/server.py:
+- `service/src/library/stats.rs`: KovaaK's stats files and each recording's pairing with one (python/retired/server.py:
   stats_index, stats_for, stats_of, stats_info, set_stats): the user's choice (stats.json in the recording's folder),
   else one uploaded beside it, else the stats file of the same scenario whose time is nearest the recording's.
 - `service/src/mouse.rs`: A recording's measures from the raw mouse logs (python/mouse_log.py's, or the desktop app's
@@ -144,23 +147,24 @@ rust-analyzer's call hierarchy.
 - `service/src/npz.rs`: NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays,
   deflated): the cut-off's detector labels (faint.rs) and the area finder's maps (finder.rs), so Python's tools read
   what the app writes and the app reads what Python wrote.
-- `service/src/pyjson.rs`: JSON as python/server.py reads and writes it, so the files the app keeps are the review
+- `service/src/pyjson.rs`: JSON as python/retired/server.py read and wrote it, so the files the app keeps are the review
   server's, byte for byte.
 - `service/src/report.rs`: A review's report, worked out by the core as the browser does (src/review.rs: `review_json`),
   from what the review keeps (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the
   HUD was read has none).
-- `service/src/review.rs`: A recording's review on this computer: ffmpeg decodes the frames, the core converts them to
-  ffmpeg's 720p RGB byte for byte, the detector runs on the GPU (detector.rs), and the core's review session
-  (aimview::session, which the browser's workers feed the same way) does the rest: it plans the runs, reads the key
-  frames, tracks each run's frames, watches the camera's turn and the HUD, and joins the runs.
+- `service/src/review.rs`: A recording's review on this computer: ffmpeg decodes the frames and the core converts them
+  to ffmpeg's 720p RGB byte for byte (or, for the videos gpu_frames.rs takes, the GPU does both), the detector runs on
+  the GPU or the CPU (detector.rs), and the core's review session (aimview::session, which the browser's workers feed
+  the same way) does the rest: it plans the runs, reads the key frames, tracks each run's frames, watches the camera's
+  turn and the HUD, and joins the runs.
 - `service/src/run_window.rs`: The user's run window for a recording: where the run starts and ends, kept with the
-  recording (store.rs; as python/server.py keeps it, run.json in its folder).
+  recording (store.rs; as python/retired/server.py kept it, run.json in its folder).
 - `service/src/store.rs`: What the library keeps, through one interface (`Store`), so where it is kept can change
   (docs/storage-design.md): today the files in the data folder (`Files`, laid out as config.rs's layout says), later one
   SQLite database.
-- `service/src/video.rs`: A recording's frames from ffmpeg (ffmpeg.rs: the app's own copy), as Python's review decodes
-  them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core
-  converts them to the same bytes.
+- `service/src/video.rs`: A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as
+  Python's review decoded them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a
+  pipe, so the core converts them to the same bytes.
 - `service/src/ytdlp.rs`: yt-dlp, for recordings added from a link (library/links.rs): found as ffmpeg is (ffmpeg.rs),
   the PATH's when it runs, else the official release from GitHub, downloaded once into the tools folder beside ffmpeg's.
 - `server/src/access.rs`: Who may use the server.
@@ -171,9 +175,9 @@ rust-analyzer's call hierarchy.
 - `server/src/http.rs`: The HTTP side: each request is checked (access.rs), then goes to the review API or to the UI's
   files.
 - `server/src/main.rs`: Aim View's review server: the UI's server-mode build and the review server's API
-  (python/server.py's, served by the aimview-service crate as the desktop app serves it) over plain HTTP.
+  (python/retired/server.py's, served by the aimview-service crate as the desktop app serves it) over plain HTTP.
 - `desktop/src/lib.rs`: Aim View's desktop app: the Angular app (ui/, its desktop build) in a Tauri 2 window.
-- `desktop/src/main.rs`: Aim View's desktop app (lib.rs).
+- `desktop/src/main.rs`: Aim View's desktop app: the executable, which starts the app (lib.rs `run`).
 - `desktop/src/mouse.rs`: The raw mouse logger (python/mouse_log.py, ported) and the app's side of it: an on/off switch
   that logs in the background while the user plays.
 - `desktop/src/protocol.rs`: The review server's API inside the app, over a custom protocol (`api`, at
@@ -213,8 +217,8 @@ rust-analyzer's call hierarchy.
   tests/mouse_fixtures.py writes test_out/parity/mouse/<case>/ (the log, its stats file, and want.json with what Python
   prints and writes).
 - `tests/popup_parity.rs`: `popup::AreaWatch` against Python's `AreaWatch` on real recordings with a pop-up area: every
-  frame decoded by ffmpeg as review.rgb_frames does (scale=1280:720:flags=area, rgb24), and the per-frame decisions
-  compared with Python's (meta.json's `showing`).
+  frame decoded by ffmpeg as python/retired/review.py's `rgb_frames` does (scale=1280:720:flags=area, rgb24), and the
+  per-frame decisions compared with Python's (meta.json's `showing`).
 - `tests/python_parity.rs`: `python::hypot` against CPython's `math.hypot` on 20,000 random pairs and a few edge cases,
   to the bit (test_out/parity/hypot.json: [x, y, math.hypot(x, y)] rows, made by python/retired/tests/fixtures.py's
   hypot cases), and the KovOBS overlay's boxes against Python's (test_out/parity/overlay.json).
@@ -247,7 +251,7 @@ rust-analyzer's call hierarchy.
   tracking (matching, measures, the report) moved nothing it should not.
 - `service/examples/api.rs`: The API without a window or a server: requests answered by `api::handle` on a library in a
   data folder, each answer printed as a line of JSON ({"status": ..., "body": ...}), to check the answers against
-  python/server.py's on copies of its data.
+  python/retired/server.py's on copies of its data.
 - `service/examples/detector_speed.rs`: The detector alone, as the native review runs it (service/src/detector.rs): a
   model's _u8in export on frames of noise, `batch` a call, in one session or several at once (a review runs one a part),
   with the time a frame.
@@ -357,10 +361,7 @@ whose score map already holds only the peaks).
 
 The faint-target cut-off (python/retired/review.py: `faint_scores`, `without_faint`; python/model/hand_crops.py:
 `cutoff_crops`): each track's score, the recording's level, the tracks the user's cut-off leaves out, and the detector
-labels a submitted cut-off gives. The scores come from the tracks (tracks.json: each target's detector score per frame)
-and the setting from faint.json. src/review.rs measures a tracking run without the tracks the cut leaves out; a
-submitted cut-off's crops go to the service (service/src/faint.rs), or in the browser to the page (`cutoff_json`), which
-write the crops and their labels for training the detector.
+labels a submitted cut-off gives.
 
 - `FaintSetting` (struct): The user's faint-target cut-off for a recording (faint.json): whether it is on, and how far
   below the recording's level a track may score before the cut leaves it out.
@@ -445,8 +446,11 @@ set that took 1wall 6targets extra small from 45 to 57 of its 98 kills, the held
 
 ## src/lib.rs
 
-Aim View's review core. It is built natively for the desktop app and as WebAssembly for the browser. The Python code in
-`python/` stays the reference: each part ported here must give the same reports on every recording.
+Aim View's review core: it finds the targets in a recording's frames, follows them, and measures the aim. It is built
+natively for the service (service/: the desktop app and the review server) and as WebAssembly for the browser
+(src/wasm.rs). It began as a port of the old Python review (python/retired/review.py, retired on 2026-10-04); the parity
+tests (tests/) still compare it with that review's stored outputs (test_out/parity/), and KovaaK's stats files are the
+ground truth for new work.
 
 ## src/local_config.rs
 
@@ -462,8 +466,8 @@ In: the two files. Out: folders, and the server's address.
 
 ## src/matching.rs
 
-Each kill matched to the target it killed, and the flick to it (review.py: `match_times`, `_attach_kills`,
-`appearances`, `crosshair_spots`).
+Each kill matched to the target it killed, and the flick to it (python/retired/review.py: `match_times`,
+`_attach_kills`, `appearances`, `crosshair_spots`, `ghosts`).
 
 - `PathPoint` (type): A point of a target's path: frame, x and y (degrees from the crosshair).
 - `Flick` (struct): A kill and the flick to it: its number, the frame its target was last seen on and the frame the kill
@@ -481,10 +485,11 @@ Each kill matched to the target it killed, and the flick to it (review.py: `matc
 
 ## src/measure.rs
 
-Each flick measured (review.py: `target_radius`, `measure`, `choices`).
+Each flick of a clicking run measured (the old review, python/retired/review.py: `target_radius`, `measure`, `choices`):
+how long each kill step took, how fast the crosshair moved, where it ended and where it clicked.
 
-- `Measure` (struct): One flick's measures (seconds, degrees and degrees a second): the keys measure.py has always
-  written, plus settle, still and the time parts.
+- `Measure` (struct): One flick's measures (seconds, degrees and degrees a second): the keys the old review's `measure`
+  wrote, plus settle, still and the time parts.
 - `SpeedCurve` (struct): The camera's speed through a main flick, in degrees a second, one value a frame from the
   flick's start (the moves into the frame before, that frame and the next, averaged), and on past its end for a quarter
   of its length (at least 2 frames) to show the braking.
@@ -555,7 +560,7 @@ A part of a struct whose fields are written into it all or none (`#[serde(flatte
 
 Excluded areas that only sometimes show (a "Last kill" pop-up) are excluded only while they show
 (python/retired/review.py: `AreaWatch`). Every other frame, each area's stand-out pattern is kept, small: the pixels
-that differ from their neighbours, as text and boxes do and a plain wall does not. After the run, an area is a pop-up
+that differ from their neighbors, as text and boxes do and a plain wall does not. After the run, an area is a pop-up
 when it is off for 30% of the run or more, comes and goes 3 times or more (the results screen covering it once at the
 end is not), and looks the same whenever it is on; it is then excluded in its on frames and 4 frames either side. Any
 other area (the session box, a webcam) is excluded all the time. An area the user named the challenge's end screen
@@ -597,8 +602,9 @@ The reloads a clicking run's magazine forced (src/scenario.rs: `AmmoRules`), wor
 
 The review of a run (python/retired/review.py: `review`): a clicking run's flicks, or a tracking run's time on the
 target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without a
-readable HUD, from the video alone. The page, the desktop app and the review server send a request (`review_json`: the
-run's tracks, its stats file and what the video read); the report goes back as report.json, which the run page shows.
+readable HUD, from the video alone. In: a request (`review_json`: the run's tracks, its stats file, what the video read
+and the user's run marks), which the service builds in every mode (service/src/report.rs). Out: the report as JSON
+(report.json), which the run page shows.
 
 - `Geometry` (struct): The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees
   come from.
@@ -613,11 +619,11 @@ run's tracks, its stats file and what the video read); the report goes back as r
   and whether KovaaK's countdown bar shows.
 - `TrackScenario` (struct): What a tracking review takes from the scenario: its time limit (seconds), which the stats
   file's own length overrides, and its bots' hitbox (None: the crosshair is on a target within a margin of its box).
-- `ReviewRequest` (struct): What the page asks the core to review: the tracks, the video's name, the stats file's name
-  and text (empty without one), what the HUD read, the user's run marks; for a clicking run the ammo rules of the
-  scenario's weapon (null or missing: its magazine never runs out, or the scenario is not known); for a tracking run
-  also the scenario's time limit, the video's readings and the user's faint-target cut-off ({on, offset}; null or
-  missing: none).
+- `ReviewRequest` (struct): What the service asks the core to review (service/src/report.rs): the tracks, the video's
+  name, the stats file's name and text (empty without one), what the HUD read, the user's run marks; for a clicking run
+  the ammo rules of the scenario's weapon (null or missing: its magazine never runs out, or the scenario is not known);
+  for a tracking run also the scenario's time limit, the video's readings and the user's faint-target cut-off ({on,
+  offset}; null or missing: none).
 - `AnyReport` (enum): A clicking run's report or a tracking run's.
 - `Outcome` (enum): The report, or why there is none: {"report": ...} or {"error": "..."}.
 - Functions: `review_clicks`, `review_tracking`, `run_window`, `review_json`.
@@ -653,8 +659,9 @@ What the review uses from SciPy's `ndimage`, done the way SciPy does it, so resu
 
 A review session: everything a review does between the decoder and the detector, the same for the browser and the
 desktop. The hosts (the browser's review and camera workers in ui/src/app/modes/wasm/, the native review in
-service/src/review.rs) decode the frames, run the detector and feed this. A recording is split into runs at key frames,
-reviewed at once (one decoder is the limit, in the browser and natively alike), then joined:
+service/src/review.rs) decode the frames, run the detector and feed this. A recording is split into run parts at key
+frames (`Run`; "runs" in this file, not runs of a scenario), reviewed at once (one decoder is the limit, in the browser
+and natively alike), then joined:
 
 - `TimeWindow` (struct): A part of a video, in seconds.
 - `FrameRange` (struct): The frames to review: from `first` up to `end` (not included), as indexes in the recording.
@@ -662,7 +669,7 @@ reviewed at once (one decoder is the limit, in the browser and natively alike), 
   the next run's (`to`, None for the last), its first frame's index in the recording and how many frames it has.
   Methods: `reads`.
 - `AreaBox` (type): An area the review leaves out: [x0, y0, x1, y1] as shares of the frame, and its kind's id.
-- `FrameFormat` (struct): The recording's frames as the decoder gives them: their size, their colour matrix
+- `FrameFormat` (struct): The recording's frames as the decoder gives them: their size, their color matrix
   (`Matrix::from_code`) and whether they are full range.
 - `Setup` (struct): What a review is set up from: the video's frame rate, every frame's time and the key frames' (from 0
   on, in order) and the frames' format; the scenario's target count (0: not known), the areas the review leaves out, the
@@ -744,7 +751,7 @@ A clicking run's summary and its checks (the old review, python/retired/review.p
 - `Summary` (struct): A clicking run's summary: the stats file's facts, then the medians and shares of the measures.
 - `Direction` (enum): The names in DIRECTIONS, for the TypeScript types only (the core keeps them as strings).
 - `Flag` (enum): A check's verdict.
-- `Issue` (struct): One check: the issue's number (as in docs/issues.md), the number it reads, a plain verdict and why.
+- `Issue` (struct): One check: the issue's number, the number it reads, a plain verdict and why.
 - Functions: `in_distance_group`, `direction_sector`, `whole_ms`, `summarize`, `judge`.
 - Constants: `DIRECTIONS`, `DISTANCES`.
 
@@ -854,11 +861,11 @@ limit stays the same. Each line is a ceiling and they overlap, so they do not ad
 
 ## service/src/api.rs
 
-The review server's API (python/server.py), free of any web framework: a request's method, path and query, Range header
-and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`). The desktop app answers its window with it
-(over a custom protocol), and the HTTP server answers the browser. Routes that need the desktop (the folder dialog,
-/api/folder; the mouse logger's switch, /api/mouse/logger) are answered by the desktop app before it asks here: here
-they are not found (404). Each route asks the library (library/) for its answer.
+The review server's API (python/retired/server.py's), free of any web framework: a request's method, path and query,
+Range header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`). The desktop app answers its
+window with it (over a custom protocol), and the HTTP server answers the browser. Routes that need the desktop (the
+folder dialog, /api/folder; the mouse logger's switch, /api/mouse/logger) are answered by the desktop app before it asks
+here: here they are not found (404). Each route asks the library (library/) for its answer.
 
 - `ApiRequest` (struct): A request: its method ("GET", "POST"), its path with its query ("/api/report?id=..."), its
   Range header if any, and its body (in memory, or for an upload a file).
@@ -868,8 +875,8 @@ they are not found (404). Each route asks the library (library/) for its answer.
 
 ## service/src/areas.rs
 
-The areas a review leaves out (python/server.py: exclude, set_exclude, kinds, save_kind, find_areas, labelled): a
-webcam, another player's overlay.
+The areas a review leaves out (python/retired/server.py: exclude, set_exclude, kinds, save_kind, find_areas, labelled):
+a webcam, another player's overlay.
 
 - `Kind` (struct): A kind of area: its id never changes; its name and what it is can.
 - `Library` methods: `kinds`, `save_kind`, `exclude`, `exclude_boxes`, `exclude_areas`, `tracked_with_areas`,
@@ -887,7 +894,7 @@ exits with 1 (status: 404 for something missing, 400 for a bad value, else 500).
 
 What a library needs to know (`Config`): where it keeps its files, the user's folders (the recordings, KovaaK's stats
 files and scenarios), the models, the device the detector runs on and where ffmpeg comes from. The desktop app fills it
-from its own folders; a server from its command line.
+from its own folders; the review server from its settings (server/src/config.rs); aimview-tool from its options.
 
 - `Config` (struct): A library's settings. Methods: `new`, `folders`.
 - `Layout` (enum): Where a library keeps its files in the data folder. Methods: `folders`.
@@ -929,7 +936,8 @@ and falls back to the CPU. It takes the _u8in export (python/model/export.py): a
 map, as bytes. The model's settings come from its settings file beside it (`model_settings`). In: the review's frames
 (review.rs). Out: each frame's score and reg maps, which the core's tracking takes.
 
-- `Detector` (struct) Methods: `new`, `run`.
+- `Detector` (struct): The detector model loaded in ONNX Runtime, with the fixed map ready for every call. Methods:
+  `new`, `run`.
 - `Maps` (struct): One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x
   MAP_WIDTH), where ONNX Runtime left them. Methods: `of_frame`.
 - Functions: `model_settings`.
@@ -945,7 +953,7 @@ library's paths and bytes. Out: the files' bytes, listings and metadata, the tim
 
 ## service/src/faint.rs
 
-The faint-target cut-off (python/server.py: faint, set_faint, submit_faint, skip_faint, faint_queue).
+The faint-target cut-off (python/retired/server.py: faint, set_faint, submit_faint, skip_faint, faint_queue).
 
 - `Library` methods: `faint`, `set_faint`, `submit_faint`, `skip_faint`, `faint_queue`.
 
@@ -981,9 +989,9 @@ so the GPU never waits for the CPU. The CPU does no decoding and no conversion: 
 of CPU a 1440p frame. prototypes/gpu_decode checked the decoded frames against ffmpeg's and the RGB against
 convert.rs's, byte for byte. Media Foundation counts its times from the file's earliest frame, the pre-roll an MP4 edit
 list hides included (OBS's AV1 files have about 100 such frames; its H.264 files none), where ffmpeg's and the browser's
-start at the first frame shown: a frame's time here is its time there less `VideoInfo::earliest`. Only 2560 x 1440 MP4s
-(`usable`); other videos keep ffmpeg (video.rs). In: the video, its `VideoInfo`, where a run starts, the Y plane's rows
-wanted. Out: each frame's RGB, 720p luma and those rows.
+start at the first frame shown: a frame's time here is its time there less `VideoInfo::earliest`. Only 2560 x 1440 AV1
+or H.264 MP4s (`usable`); other videos keep ffmpeg (video.rs). In: the video, its `VideoInfo`, where a run starts, the Y
+plane's rows wanted. Out: each frame's RGB, 720p luma and those rows.
 
 - `GpuFrames` (struct): A run's frames from the GPU, in order: `next_into` gives each one's RGB, 720p luma and Y plane's
   top rows. Methods: `open`, `next_into`.
@@ -991,8 +999,8 @@ wanted. Out: each frame's RGB, 720p luma and those rows.
 
 ## service/src/labels.rs
 
-Labelling (python/server.py): the recordings the user marked as another game, the queue of recordings to label areas in
-and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists of recording ids,
+Labelling (python/retired/server.py): the recordings the user marked as another game, the queue of recordings to label
+areas in and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists of recording ids,
 not_aim_trainer.json and label_skipped.json in its data folder). In: the page's marks and skips (/api/not_aim,
 /api/label_skip) and the recordings list. Out: those lists, and the queues the page labels from (/api/label_queue;
 faint.rs's).
@@ -1001,16 +1009,17 @@ faint.rs's).
 
 ## service/src/lib.rs
 
-Aim View's review service: the review server's API (python/server.py) over a library of recordings, with the review run
-natively (ffmpeg's frames, the core, and the detector on the GPU). The desktop app (desktop/) and the HTTP server
-(server/) serve it: each opens a `Library` from a `Config` and answers requests with `api::handle`. Python's scripts use
-the library and the native review through aimview-tool (src/bin/aimview-tool.rs).
+Aim View's review service: the review server's API (python/retired/server.py's) over a library of recordings, with the
+review run natively (ffmpeg's frames, the core, and the detector on the GPU). The desktop app (desktop/) and the HTTP
+server (server/) serve it: each opens a `Library` from a `Config` and answers requests with `api::handle`. Python's
+scripts use the library and the native review through aimview-tool (src/bin/aimview-tool.rs).
 
 ## service/src/library/browser.rs
 
-The browser build's own routes (api.rs): the page runs the review, the area finder and the cut-off's labels itself and
-sends what they give, which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a
-folder it mounted) and says when it copied new KovaaK files.
+The browser build's own routes (api.rs): the page runs the review and the area finder itself and sends what they give,
+which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it mounted) and
+says when it copied new KovaaK files. In: /api/job (POST), /api/reviewed, /api/found, /api/mouse_log, /api/folder and
+/api/kovaak. Out: the reviews, found areas, mouse logs and settings kept, and the jobs' state.
 
 - `Library` methods: `choose_vods`, `page_progress`, `review_done`, `keep_found`, `keep_mouse_log`, `kovaak_changed`.
 
@@ -1029,26 +1038,28 @@ the new recording's row.
 
 The library: the user's recordings (the VODs folder and the uploads), KovaaK's stats files and scenarios, the models,
 and each recording's reviews, kept in the data folder (config.rs: `Layout`). It answers what the review server
-(python/server.py) answers (api.rs); the review itself runs natively (review.rs).
+(python/retired/server.py) answered (api.rs); the review itself runs natively (review.rs), or in the browser build in
+the page (browser.rs).
 
 - `Failure` (struct): An error for the page: its message, and the HTTP status the API answers with. Methods: `missing`,
   `bad`.
-- `Answer` (type)
-- `Library` (struct) Methods: `open`, `config`, `folders`.
+- `Answer` (type): A library answer: the value, or the failure the API answers with.
+- `Library` (struct): The user's recordings and everything kept for them; one per process, shared by every request's
+  thread. Methods: `open`, `config`, `folders`.
 - Constants: `FOUND_NEEDED`.
 
 ## service/src/library/names.rs
 
 File names and time stamps: a recording's name as KovOBS writes it, a stats file's as KovaaK writes it, their time
-stamps, and a recording's folder name (python/server.py: NAME, STATS_NAME, stamp_seconds, cache_dir). In: file names and
-times. Out: their parts and stamps, for the recordings list, the stats files' pairing, uploads and links.
+stamps, and a recording's folder name (python/retired/server.py: NAME, STATS_NAME, stamp_seconds, cache_dir). In: file
+names and times. Out: their parts and stamps, for the recordings list, the stats files' pairing, uploads and links.
 
 - Functions: `parse_name`, `parse_stats_name`, `stamp_seconds`, `slug`, `local_stamp`.
 
 ## service/src/library/recordings.rs
 
-The recordings: the list (python/server.py: Library.list), a recording's video from its id and its folder, videos and
-stats files added from the user's computer, and each scenario's facts from its scenario file.
+The recordings: the list (python/retired/server.py: Library.list), a recording's video from its id and its folder,
+videos and stats files added from the user's computer, and each scenario's facts from its scenario file.
 
 - `Library` methods: `resolve`, `review_dir`, `scenarios`, `recordings`, `upload`, `upload_file`, `spool`.
 
@@ -1056,9 +1067,9 @@ stats files added from the user's computer, and each scenario's facts from its s
 
 A recording's reviews (each model's kept apart, store.rs: tracks, readings, what the HUD read, the kills' check): the
 review on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it, browser.rs),
-the user's run window and the report, worked out when it is shown (python/server.py: shown, analyse, run, set_run,
-/api/report). In: /api/analyse, /api/job, /api/run, /api/tracks and /api/report. Out: the kept reviews (review.rs's
-results), the run window (run_window.rs) and the answers.
+the user's run window and the report, worked out when it is shown (python/retired/server.py: shown, analyse, run,
+set_run, /api/report). In: /api/analyse, /api/job, /api/cancel, /api/run, /api/tracks and /api/report. Out: the kept
+reviews (review.rs's results), the run window (run_window.rs) and the answers.
 
 - `Job` (struct): A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded
   ("DirectML", "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error.
@@ -1069,9 +1080,9 @@ results), the run window (run_window.rs) and the answers.
 What the user set, kept in settings.json: the VODs folder they chose in the app (`vods`), the model new reviews use
 (`model`), the device the detector runs on (`device`) and the frames it takes at once on each device (`batch`, by device
 name). Other keys in the file are kept as they are (the desktop app also kept KovaaK's folder as `kovaak`;
-python/server.py keeps only `model`). And the models to pick from (models.json and the exports in the models folder).
-In: /api/model, /api/device, /api/batch and the app's folder dialog. Out: settings.json, /api/models' answer, and the
-model, device and frames at once new reviews use (reviews.rs).
+python/retired/server.py kept only `model`). And the models to pick from (models.json and the exports in the models
+folder). In: /api/model, /api/device, /api/batch and the app's folder dialog. Out: settings.json, /api/models' answer,
+and the model, device and frames at once new reviews use (reviews.rs).
 
 - `Library` methods: `vods`, `set_vods`, `model`, `device`, `batch`, `use_device`, `use_batch`, `default_model`,
   `model_file`, `models`, `pick`.
@@ -1079,7 +1090,7 @@ model, device and frames at once new reviews use (reviews.rs).
 
 ## service/src/library/stats.rs
 
-KovaaK's stats files and each recording's pairing with one (python/server.py: stats_index, stats_for, stats_of,
+KovaaK's stats files and each recording's pairing with one (python/retired/server.py: stats_index, stats_for, stats_of,
 stats_info, set_stats): the user's choice (stats.json in the recording's folder), else one uploaded beside it, else the
 stats file of the same scenario whose time is nearest the recording's.
 
@@ -1109,7 +1120,7 @@ array.
 
 ## service/src/pyjson.rs
 
-JSON as python/server.py reads and writes it, so the files the app keeps are the review server's, byte for byte.
+JSON as python/retired/server.py read and wrote it, so the files the app keeps are the review server's, byte for byte.
 
 - Functions: `parse`, `to_vec`, `write_text`, `append_text`, `dump`, `load`, `float_repr`.
 
@@ -1117,31 +1128,27 @@ JSON as python/server.py reads and writes it, so the files the app keeps are the
 
 A review's report, worked out by the core as the browser does (src/review.rs: `review_json`), from what the review keeps
 (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the HUD was read has none). With a
-stats file the core reviews from it; without one, from the HUD's reading, else from the video alone (python/server.py
-does the same). In: the review's parts and the recording's stats file, run marks, facts and cut-off (library/reviews.rs;
-aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which /api/report answers.
+stats file the core reviews from it; without one, from the HUD's reading, else from the video alone
+(python/retired/server.py did the same). In: the review's parts and the recording's stats file, run marks, facts and
+cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which
+/api/report answers.
 
 - Functions: `work_out`.
 
 ## service/src/review.rs
 
-A recording's review on this computer: ffmpeg decodes the frames, the core converts them to ffmpeg's 720p RGB byte for
-byte, the detector runs on the GPU (detector.rs), and the core's review session (aimview::session, which the browser's
-workers feed the same way) does the rest: it plans the runs, reads the key frames, tracks each run's frames, watches the
-camera's turn and the HUD, and joins the runs. The runs are reviewed at once: one ffmpeg decoder is the limit, as one
-browser decoder was. The browser build has only what a review is (`Request`): the page runs it (library/browser.rs). In:
-a `Request` (library/reviews.rs, aimview-tool, the track example). Out: the review's tracks, readings, HUD reading and
-found areas (`Reviewed`), which library/reviews.rs keeps.
+A recording's review on this computer: ffmpeg decodes the frames and the core converts them to ffmpeg's 720p RGB byte
+for byte (or, for the videos gpu_frames.rs takes, the GPU does both), the detector runs on the GPU or the CPU
+(detector.rs), and the core's review session (aimview::session, which the browser's workers feed the same way) does the
+rest: it plans the runs, reads the key frames, tracks each run's frames, watches the camera's turn and the HUD, and
+joins the runs. The runs are reviewed at once: one ffmpeg decoder is the limit, as one browser decoder was. Without a
+stats file the kills the video alone gives are then checked in the frames round them (`check_kills`). The browser build
+has only what a review is (`Request`): the page runs it (library/browser.rs). In: a `Request` (library/reviews.rs,
+aimview-tool, the track example). Out: the review's tracks, readings, HUD reading, found areas and kill check
+(`Reviewed`), which library/reviews.rs keeps.
 
-- `Request` (struct): What to review: the video, the detector model (its _u8in export) and the device it runs on, the
-  frames it takes at once, the scenario's target count (0: not known), the runs to split the recording into, the part of
-  the video to track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's,
-  areas.rs), a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of
-  the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), whether the kills
-  the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
-  without a stats file, whose report takes its kills from the video), the scenario's kind (None: not known; the model's
-  at-crosshair rule may name the kinds it is for), and a flag that stops it (`cancel`: the user cancelled the review; it
-  stops at its next frame with the error CANCELLED; None: it runs to its end).
+- `Request` (struct): What to review: the video, the model and its device, how the work is split, and what the review
+  leaves out, keeps and checks.
 - `Reviewed` (struct): A review's tracks, the video's readings, what the HUD read (None: no HUD was read), the areas the
   area finder found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames
   then), and the check of the kills the video alone gives (None: not asked for).
@@ -1155,9 +1162,9 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
 ## service/src/run_window.rs
 
 The user's run window for a recording: where the run starts and ends, kept with the recording (store.rs; as
-python/server.py keeps it, run.json in its folder). In: the marks the page sends (/api/run). Out: the kept marks, the
-part of the video a review tracks (with a margin, library/reviews.rs) and the marks the report measures within
-(report.rs).
+python/retired/server.py kept it, run.json in its folder). In: the marks the page sends (/api/run). Out: the kept marks,
+the part of the video a review tracks (with a margin: `RunMarks::tracked`, for library/reviews.rs) and the marks the
+report measures within (report.rs).
 
 - `RunMarks` (struct): The marks in seconds, any of them None. Methods: `read`, `is_set`, `parse`, `save`, `tracked`.
 - Functions: `covers`.
@@ -1166,8 +1173,8 @@ part of the video a review tracks (with a margin, library/reviews.rs) and the ma
 
 What the library keeps, through one interface (`Store`), so where it is kept can change (docs/storage-design.md): today
 the files in the data folder (`Files`, laid out as config.rs's layout says), later one SQLite database. The library
-formats each thing (JSON as python/server.py writes it, .npz as NumPy does); a store keeps the bytes it is given and
-gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and the
+formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes it is given
+and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and the
 crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same bytes, and what is kept
 for each recording.
 
@@ -1175,8 +1182,8 @@ for each recording.
 - `Mark` (enum): What is kept for a recording beside its reviews. Methods: `file_name`.
 - `Part` (enum): A part of a review: its tracks, the video's readings (the camera's turn, the countdown), what the HUD
   read, and the check of the kills the video alone gives. Methods: `file_name`.
-- `ReviewBy` (enum): Which of a recording's reviews: a model's, or the one python/server.py kept before reviews were
-  kept per model.
+- `ReviewBy` (enum): Which of a recording's reviews: a model's, or the one python/retired/server.py kept before reviews
+  were kept per model.
 - `Item` (enum): One thing the library keeps. Methods: `file_name`.
 - `Store` (trait): Where the library keeps what it keeps (see the module's comment).
 - `Files` (struct): The store as the files in the data folder (disk.rs), laid out as the layout's folders say: today's
@@ -1185,15 +1192,15 @@ for each recording.
 
 ## service/src/video.rs
 
-A recording's frames from ffmpeg (ffmpeg.rs: the app's own copy), as Python's review decodes them
-(python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts them
-to the same bytes. ffprobe gives the frames' times, the key frames and the colours. In: a video's path. Out: what the
-video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder (finder.rs).
+A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as Python's review decoded
+them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts
+them to the same bytes. ffprobe gives the frames' times, the key frames and the colors. In: a video's path. Out: what
+the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder (finder.rs).
 
-- `VideoInfo` (struct): What a recording is: its frames' size, rate and colours, every frame's time (from 0 on, in
-  order: the edit list's pre-roll before 0 is not shown), the key frames' times, its duration as ffprobe gives it, and
-  its earliest frame's time, the pre-roll's included (Media Foundation counts its times from that frame: gpu_frames.rs),
-  in seconds.
+- `VideoInfo` (struct): What a recording is: its frames' size, rate and colors, every frame's time (from 0 on, in order:
+  the edit list's pre-roll before 0 is not shown), the key frames' times, its duration as ffprobe gives it, and its
+  earliest frame's time, the pre-roll's included (Media Foundation counts its times from that frame: gpu_frames.rs), in
+  seconds.
 - `Frames` (struct): A recording's frames from an ffmpeg process, one at a time; the process ends when this is dropped.
   Methods: `open`, `next_into`.
 - Functions: `probe`.
@@ -1220,7 +1227,8 @@ sites' requests do not carry it). In dev mode no token is used: on a network add
 gets in, by an address or a machine's name (still no rebinding, and no other site's page).
 
 - `Verdict` (enum): What to do with a request.
-- `Access` (struct) Methods: `new`, `has_token`, `is_open_network`, `check`.
+- `Access` (struct): Who may use this server: its token, if any, and whether dev mode opens it to the local network.
+  Methods: `new`, `has_token`, `is_open_network`, `check`.
 - Functions: `loopback_caller`, `all_loopback`.
 - Constants: `COOKIE_NAME`.
 
@@ -1228,8 +1236,8 @@ gets in, by an address or a machine's name (still no rebinding, and no other sit
 
 The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults are the repo's
 settings (aimview.defaults.json under this computer's aimview.json: aimview::local_config): the repo's test_out/ as the
-data folder (python/server.py's layout), the recordings' folder this computer names, KovaaK's folders under Steam's, and
-the models in python/model/.
+data folder (Python's layout, python/retired/server.py's), the recordings' folder this computer names, KovaaK's folders
+under Steam's, and the models in python/model/.
 
 - `Switch` (enum): A setting turned on or off on the command line.
 - `Device` (enum): Where the detector runs. Methods: `flag`.
@@ -1263,26 +1271,29 @@ itself runs in the background, polled with /api/job).
 - `Call` (struct): One request to the review API. Methods: `get`.
 - `Reply` (struct): The review API's answer.
 - `Api` (trait): The review API (aimview_service::api, or a stand-in in the tests).
-- `App` (struct)
+- `App` (struct): What every request is answered with: the API, who gets in, and the UI's build.
 - Functions: `router`.
 
 ## server/src/main.rs
 
-Aim View's review server: the UI's server-mode build and the review server's API (python/server.py's, served by the
-aimview-service crate as the desktop app serves it) over plain HTTP.
+Aim View's review server: the UI's server-mode build and the review server's API (python/retired/server.py's, served by
+the aimview-service crate as the desktop app serves it) over plain HTTP.
 
 ## desktop/src/lib.rs
 
 Aim View's desktop app: the Angular app (ui/, its desktop build) in a Tauri 2 window. The window's server-mode services
 talk to the app itself (protocol.rs: the review server's API over the `api` protocol), which the review service answers
 (service/: the library in the app's data folder, and the review run natively). The app adds the folder dialog and the
-raw mouse logger (mouse.rs).
+raw mouse logger (mouse.rs). In: Tauri's folders for the app (its data, local data and resource folders) and the
+window's requests. Out: the window, the library's files in the data folder, ffmpeg in the local data folder, and the
+mouse logs.
 
 - Functions: `run`.
 
 ## desktop/src/main.rs
 
-Aim View's desktop app (lib.rs).
+Aim View's desktop app: the executable, which starts the app (lib.rs `run`). In: nothing. Out: the app's window, or the
+mouse logger's process (lib.rs, mouse.rs).
 
 ## desktop/src/mouse.rs
 
@@ -1396,9 +1407,9 @@ text must be the same, and every number equal to the bit.
 ## tests/popup_parity.rs
 
 `popup::AreaWatch` against Python's `AreaWatch` on real recordings with a pop-up area: every frame decoded by ffmpeg as
-review.rgb_frames does (scale=1280:720:flags=area, rgb24), and the per-frame decisions compared with Python's
-(meta.json's `showing`). Fixtures from python/retired/tests/fixtures.py (with --areas). Decodes whole recordings, so it
-runs on request: cargo test --release --test popup_parity -- --ignored
+python/retired/review.py's `rgb_frames` does (scale=1280:720:flags=area, rgb24), and the per-frame decisions compared
+with Python's (meta.json's `showing`). Fixtures from python/retired/tests/fixtures.py (with --areas). Decodes whole
+recordings, so it runs on request: cargo test --release --test popup_parity -- --ignored
 
 ## tests/python_parity.rs
 
@@ -1485,10 +1496,10 @@ scripts/same-json.ts <before> <after> [path=name ...]` (BENCH.md, Correctness).
 ## service/examples/api.rs
 
 The API without a window or a server: requests answered by `api::handle` on a library in a data folder, each answer
-printed as a line of JSON ({"status": ..., "body": ...}), to check the answers against python/server.py's on copies of
-its data. cargo run -p aimview-service --example api -- <data folder> <models folder> <requests file> [--layout
-app|python] [--vods <folder>] [--stats <KovaaK's stats folder>] The app's layout (the default) reads the VODs folder
-from the data folder's settings.json; python/server.py's takes test_out/ as the data folder and the VODs folder from
+printed as a line of JSON ({"status": ..., "body": ...}), to check the answers against python/retired/server.py's on
+copies of its data. cargo run -p aimview-service --example api -- <data folder> <models folder> <requests file>
+[--layout app|python] [--vods <folder>] [--stats <KovaaK's stats folder>] The app's layout (the default) reads the VODs
+folder from the data folder's settings.json; Python's layout takes test_out/ as the data folder and the VODs folder from
 --vods. Each line of the requests file: METHOD PATH (with its query), then a tab and the body when there is one; or POLL
 PATH KEYS: the GET asked again (for up to 10 minutes) until one of its answer's KEYS (a|b) is not null; or SLEEP
 SECONDS: a wait, for work the library does in the background (the area finder learning).
@@ -1505,7 +1516,8 @@ detector_speed -- <model _u8in.onnx> [batch] [frames] [sessions] [device: auto, 
 A video's frames from the GPU (gpu_frames.rs) against ffmpeg's, converted by the core (video.rs, convert.rs), byte for
 byte: each frame's RGB, 720p luma and Y plane (all its rows), from the start or from a time on. Reports the frames that
 differ and, for the first, which of ffmpeg's frames near it the GPU's equals (a frame lost or doubled shows as a shift).
-cargo run -p aimview-service --release --example frames_check -- <video> [frames] [from (seconds)]
+Windows only, for the videos gpu_frames.rs takes. cargo run -p aimview-service --release --example frames_check --
+<video> [frames] [from (seconds)]
 
 ## service/examples/mouse_read.rs
 

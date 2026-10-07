@@ -1,3 +1,10 @@
+/**
+ * The area labelling queue (`LabelQueue`): going through the recordings one by one to save each
+ * one's excluded areas. In: the Labelling contract's queue, skips and marks, and the open
+ * recording. Out: the recording it opens (at a frame from the run), the top bar's Label menu
+ * (labelling/) and the run page's areas editor, which calls next().
+ */
+
 import { computed, effect, inject, Service, signal, untracked } from '@angular/core';
 import { errorMessage } from '../api';
 import { Labelling } from '../platform/labelling';
@@ -9,7 +16,9 @@ const RUN_FRAME = 20;
 
 /** What the queue last said: it was empty or went through, or a step failed. */
 export interface QueueNote {
+  /** The words to show. */
   text: string;
+  /** Whether a step failed, so the note shows as an error. */
   failed: boolean;
 }
 
@@ -20,10 +29,15 @@ export interface QueueNote {
  */
 @Service()
 export class LabelQueue {
+  /** The mode's queue, skips and marks. */
   private readonly labelling = inject(Labelling);
+  /** Which recording is open, which the queue sets. */
   private readonly library = inject(Library);
+  /** The player, which opens the recording at a frame from the run. */
   private readonly playback = inject(Playback);
+  /** The queue's recordings in order; null when not going through it. */
   private readonly ids = signal<readonly string[] | null>(null);
+  /** The place of the open recording in the queue, from 0. */
   readonly position = signal(0);
   /** Going through the queue. */
   readonly active = computed(() => this.ids() !== null);
@@ -35,10 +49,12 @@ export class LabelQueue {
   readonly upcoming = computed(() => this.ids()?.[this.position() + 1] ?? null);
   /** The queue is being read. */
   readonly loading = signal(false);
+  /** What the queue last said; null when there is nothing to say. */
   readonly note = signal<QueueNote | null>(null);
   /** The area finder's training data kept here, to download and load; null where the review server keeps it. */
   readonly examples = this.labelling.examples;
 
+  /** Ends the queue when the user opens another recording. */
   constructor() {
     effect(() => {
       const open = this.library.selectedId();
@@ -130,6 +146,7 @@ export class LabelQueue {
     else this.library.selectedId.set(id);
   }
 
+  /** Shows a note; `failed` shows it as an error. */
   private say(text: string, failed = false): void {
     this.note.set({ text, failed });
   }

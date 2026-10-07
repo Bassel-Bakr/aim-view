@@ -24,10 +24,12 @@ import statistics
 import sys
 from pathlib import Path
 
+# a tapped point's box width and height when there is no box to take the median of
 DEFAULT_SIZE_PX = 16.0
 # an added box is [cx, cy, w, h]; a tapped point is [x, y]
 BOX_VALUES, POINT_VALUES = 4, 2
-ANSWER_FIELDS = ("verdict", "remove", "add", "edit", "suggested", "scene")
+# the answer's fields each line keeps under "phone"
+ANSWER_FIELDS =("verdict", "remove", "add", "edit", "suggested", "scene")
 PYTHON = Path(__file__).resolve().parents[2]   # python/, where aimview_tools.py is
 
 
@@ -77,12 +79,15 @@ def applied(crop, answer, label):
 
 
 def median_size(boxes):
+    """The median width and height of [cx, cy, w, h] boxes in px, or DEFAULT_SIZE_PX for both without any."""
     if not boxes:
         return DEFAULT_SIZE_PX, DEFAULT_SIZE_PX
     return statistics.median(box[2] for box in boxes), statistics.median(box[3] for box in boxes)
 
 
 def main():
+    """Writes a line per answered crop of the sets to the out jsonl (its boxes, verdict, source and the answer; the
+    core's covered boxes and mask for a scene) and prints the counts by verdict and by source."""
     parser = argparse.ArgumentParser(description="The labels from a crop-check page's answers (README.md).")
     parser.add_argument("page", type=Path)
     parser.add_argument("answers", type=Path)

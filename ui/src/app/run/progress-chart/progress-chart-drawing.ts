@@ -1,23 +1,51 @@
+/**
+ * The progress chart, drawn on its canvas.
+ *
+ * In: the chart's layout (progress-chart-model.ts `progressChart`) and its tokens
+ * (themes/progress-chart.scss).
+ * Out: the grid, dates, runs, median line, best and this run, drawn on the canvas's 2D context
+ * (progress-chart.ts calls it).
+ */
+
 import { HistoryModel } from './progress-chart-model';
 
-/** The chart's drawing: its colors, font and sizes, from the tokens (themes/progress-chart.scss). */
+/**
+ * The chart's drawing: its colors, font and sizes, from the tokens (themes/progress-chart.scss).
+ */
 export interface HistoryStyle {
+  /** A run's dot. */
   run: string;
+  /** The median line. */
   median: string;
+  /** The personal best's ring and its dashed level. */
   best: string;
+  /** This run's dot. */
   current: string;
+  /** The grid lines. */
   grid: string;
+  /** The scores' and the dates' text. */
   label: string;
+  /**
+   * This run's dot's outline: the chart's background, so it stands apart from the dots under it.
+   */
   surface: string;
+  /** The labels' font. */
   font: string;
+  /** A run dot's radius, in CSS pixels. */
   dot: number;
+  /** This run's dot's radius, in CSS pixels. */
   currentDot: number;
+  /** The personal best's ring's radius, in CSS pixels. */
   ring: number;
+  /** How near a dot the pointer must be to pick it, in CSS pixels. */
   reach: number;
+  /** The median line's width, in CSS pixels. */
   line: number;
+  /** The best level's dash and gap, in CSS pixels. */
   dash: number;
 }
 
+/** Reads the chart's tokens from the CSS variables in force on `element` (the canvas). */
 export function readStyle(element: Element): HistoryStyle {
   const css = getComputedStyle(element);
   const token = (name: string) => css.getPropertyValue(name).trim();
@@ -41,9 +69,11 @@ export function readStyle(element: Element): HistoryStyle {
 
 /** Lines on the canvas sit on a pixel's center, so they stay sharp. */
 const HALF_PIXEL = 0.5;
-/** The scores' gap from the chart's left edge, and the dates' gap from its bottom, in pixels. */
+/** The scores' gap from the plot's left edge, in pixels. */
 const SCORE_GAP = 6;
+/** The dates' gap from the chart's bottom, in pixels. */
 const DATE_GAP = 2;
+/** A whole turn, in radians, for the dots and the ring. */
 const FULL_CIRCLE = 2 * Math.PI;
 
 /** The grid lines with their scores at the left, and the dates along the bottom. */
@@ -128,7 +158,10 @@ function drawMarks(
   context.stroke();
 }
 
-/** The chart on its canvas: the grid and dates, the best's level, the runs and their median, the best and this run. */
+/**
+ * The chart on its canvas: the grid and dates, the best's level, the runs and their median, the
+ * best and this run.
+ */
 export function drawProgressChart(
   context: CanvasRenderingContext2D,
   model: HistoryModel,

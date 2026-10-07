@@ -7,9 +7,25 @@ import type { CropBox } from './crop-box';
  * it, and its visible pixels as run lengths (`runs`).
  */
 export interface TargetView {
+  /**
+   * The ids of the target's shapes.
+   */
   shapes: string[];
+  /**
+   * The box round its visible pixels, [center x, center y, width, height] in crop pixels ("box" in the JSON); None
+   * when none shows.
+   */
   box: CropBox | null;
+  /**
+   * The box round all its shapes, hidden parts too, in the same form.
+   */
   whole: CropBox;
+  /**
+   * Whether nearer shapes hide all of it.
+   */
   hidden: boolean;
+  /**
+   * Its visible pixels as run lengths over the crop (`runs`).
+   */
   runs: number[];
 }

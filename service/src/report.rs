@@ -1,9 +1,9 @@
 //! A review's report, worked out by the core as the browser does (src/review.rs: `review_json`), from what the review
 //! keeps (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the HUD was read has
 //! none). With a stats file the core reviews from it; without one, from the HUD's reading, else from the video alone
-//! (python/server.py does the same). In: the review's parts and the recording's stats file, run marks, facts and
-//! cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which
-//! /api/report answers.
+//! (python/retired/server.py did the same). In: the review's parts and the recording's stats file, run marks, facts
+//! and cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON,
+//! which /api/report answers.
 
 use std::path::Path;
 

@@ -13,14 +13,18 @@ use std::path::{Path, PathBuf};
 /// A file's or a folder's size, time of change (seconds since 1970) and kind.
 #[derive(Clone, Copy, Debug)]
 pub struct Metadata {
+    /// The size in bytes.
     len: u64,
+    /// The time of change in seconds since 1970, when the file system gives one.
     modified: Option<f64>,
+    /// Whether it is a folder.
     dir: bool,
 }
 
 // a file's length, as std's Metadata has it
 #[allow(clippy::len_without_is_empty)]
 impl Metadata {
+    /// The size in bytes.
     pub fn len(&self) -> u64 {
         self.len
     }
@@ -30,10 +34,12 @@ impl Metadata {
         self.modified
     }
 
+    /// Whether it is a folder.
     pub fn is_dir(&self) -> bool {
         self.dir
     }
 
+    /// Whether it is a file: anything that is not a folder.
     pub fn is_file(&self) -> bool {
         !self.dir
     }
@@ -41,6 +47,7 @@ impl Metadata {
 
 pub use imp::*;
 
+/// The calls for the native build: std's own.
 #[cfg(feature = "native")]
 mod imp {
     use super::*;
@@ -50,6 +57,7 @@ mod imp {
     pub use std::time::Instant;
 
     impl From<std::fs::Metadata> for Metadata {
+        /// std's metadata: a time of change before 1970, or none, is None.
         fn from(metadata: std::fs::Metadata) -> Metadata {
             let since_epoch = metadata.modified().ok().and_then(|time| time.duration_since(UNIX_EPOCH).ok());
             let modified = since_epoch.map(|since| since.as_secs_f64());
@@ -57,14 +65,16 @@ mod imp {
         }
     }
 
-    /// An entry of a folder.
+    /// An entry of a folder: std's.
     pub struct Entry(std::fs::DirEntry);
 
     impl Entry {
+        /// The entry's name, without its folder.
         pub fn file_name(&self) -> OsString {
             self.0.file_name()
         }
 
+        /// The folder's path joined with the entry's name.
         pub fn path(&self) -> PathBuf {
             self.0.path()
         }
@@ -84,33 +94,41 @@ mod imp {
     pub struct ReadDir(std::fs::ReadDir);
 
     impl Iterator for ReadDir {
+        /// An entry, or the error reading it.
         type Item = io::Result<Entry>;
 
+        /// The next entry, read from the folder now.
         fn next(&mut self) -> Option<io::Result<Entry>> {
             self.0.next().map(|entry| entry.map(Entry))
         }
     }
 
+    /// The whole file's bytes.
     pub fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
         std::fs::read(path)
     }
 
+    /// The whole file as text; an error when it is not UTF-8.
     pub fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
         std::fs::read_to_string(path)
     }
 
+    /// Whether the path is a file; false when it cannot be read.
     pub fn is_file(path: impl AsRef<Path>) -> bool {
         path.as_ref().is_file()
     }
 
+    /// Whether the path is a folder; false when it cannot be read.
     pub fn is_dir(path: impl AsRef<Path>) -> bool {
         path.as_ref().is_dir()
     }
 
+    /// Whether anything is at the path.
     pub fn exists(path: impl AsRef<Path>) -> bool {
         path.as_ref().exists()
     }
 
+    /// Writes the file whole, in place of what it held.
     pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
         std::fs::write(path, bytes)
     }
@@ -121,38 +139,47 @@ mod imp {
         std::fs::OpenOptions::new().create(true).append(true).open(path)?.write_all(bytes)
     }
 
+    /// Makes the folder and any missing folders above it.
     pub fn create_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
         std::fs::create_dir_all(path)
     }
 
+    /// Deletes a file.
     pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
         std::fs::remove_file(path)
     }
 
+    /// Deletes an empty folder.
     pub fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
         std::fs::remove_dir(path)
     }
 
+    /// Deletes a folder and everything in it.
     pub fn remove_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
         std::fs::remove_dir_all(path)
     }
 
+    /// Moves a file or a folder to a new path.
     pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
         std::fs::rename(from, to)
     }
 
+    /// Copies a file; gives the bytes copied.
     pub fn copy(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<u64> {
         std::fs::copy(from, to)
     }
 
+    /// The folder's entries.
     pub fn read_dir(path: impl AsRef<Path>) -> io::Result<ReadDir> {
         std::fs::read_dir(path).map(ReadDir)
     }
 
+    /// The path's size, time of change and kind, a link followed.
     pub fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
         std::fs::metadata(path).map(Metadata::from)
     }
 
+    /// The absolute path, with links and ".." resolved; an error when nothing is there.
     pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
         std::fs::canonicalize(path)
     }
@@ -162,6 +189,7 @@ mod imp {
         SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |since| since.as_secs_f64())
     }
 
+    /// This process's id.
     pub fn process_id() -> u32 {
         std::process::id()
     }
@@ -172,6 +200,7 @@ mod imp {
     }
 }
 
+/// The calls for the browser build: each a call to the page.
 #[cfg(not(feature = "native"))]
 mod imp {
     use super::*;
@@ -194,14 +223,23 @@ mod imp {
     /// The host's file system calls.
     #[derive(Clone, Copy)]
     enum Op {
+        /// The file's bytes.
         Read = 0,
+        /// Writes the file whole from `arg`.
         Write = 1,
+        /// Makes the folder and any missing folders above it.
         CreateDirAll = 2,
+        /// Deletes a file.
         RemoveFile = 3,
+        /// Deletes an empty folder.
         RemoveDir = 4,
+        /// Deletes a folder and everything in it.
         RemoveDirAll = 5,
+        /// Moves the path to `arg`'s path.
         Rename = 6,
+        /// The folder's entries as JSON (`Listed`).
         ReadDir = 7,
+        /// The path's size, time of change and kind as JSON.
         Metadata = 8,
     }
 
@@ -209,10 +247,12 @@ mod imp {
     const BLOCK_HEAD_BYTES: usize = 8;
     /// The alignment of the blocks the host reserves with the module's `alloc` (browser-service/src/lib.rs).
     const BLOCK_ALIGN: usize = 8;
-    /// A result block's codes: the call worked, the path is not there, the path is there already (or a folder to remove
-    /// is not empty). Any other code is another error, with its message as the block's bytes.
+    /// A result block's code: the call worked. Any code but this one, `NOT_FOUND` and `THERE_ALREADY` is another
+    /// error, with its message as the block's bytes.
     const DONE: u32 = 0;
+    /// A result block's code: the path is not there.
     const NOT_FOUND: u32 = 1;
+    /// A result block's code: the path is there already, or a folder to remove is not empty.
     const THERE_ALREADY: u32 = 2;
 
     /// A call to the host: its bytes, or its error (see `DONE` and the codes after it).
@@ -247,40 +287,47 @@ mod imp {
     /// A file read whole when it is opened, then read and sought in memory (the stats files' and the mouse logs' ends,
     /// a review's last bytes).
     pub struct File {
+        /// The file's bytes, and the place the next read starts from.
         bytes: Cursor<Vec<u8>>,
     }
 
     impl File {
+        /// Reads the whole file from the page.
         pub fn open(path: impl AsRef<Path>) -> io::Result<File> {
             Ok(File { bytes: Cursor::new(read(path)?) })
         }
 
+        /// Its size; no time of change, which the bytes in memory do not carry.
         pub fn metadata(&self) -> io::Result<Metadata> {
             Ok(Metadata { len: self.bytes.get_ref().len() as u64, modified: None, dir: false })
         }
     }
 
     impl Read for File {
+        /// Reads from the bytes in memory.
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             self.bytes.read(buf)
         }
     }
 
     impl Seek for File {
+        /// Moves within the bytes in memory.
         fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
             self.bytes.seek(pos)
         }
     }
 
-    /// A moment, from the page's clock.
+    /// A moment, from the page's clock: seconds since 1970.
     #[derive(Clone, Copy, Debug)]
     pub struct Instant(f64);
 
     impl Instant {
+        /// This moment.
         pub fn now() -> Instant {
             Instant(now())
         }
 
+        /// The time since this moment; zero when the page's clock went back.
         pub fn elapsed(&self) -> Duration {
             Duration::from_secs_f64((now() - self.0).max(0.0))
         }
@@ -288,21 +335,28 @@ mod imp {
 
     /// An entry of a folder, as the host lists it: with its metadata when the listing gave it.
     pub struct Entry {
+        /// The entry's name, without its folder.
         name: String,
+        /// The folder's path joined with the name.
         path: PathBuf,
+        /// Whether it is a folder.
         dir: bool,
+        /// Its metadata, when the listing gave both its size and its time.
         meta: Option<Metadata>,
     }
 
     impl Entry {
+        /// The entry's name, without its folder.
         pub fn file_name(&self) -> OsString {
             OsString::from(&self.name)
         }
 
+        /// The folder's path joined with the entry's name.
         pub fn path(&self) -> PathBuf {
             self.path.clone()
         }
 
+        /// Whether it is a folder.
         pub fn is_dir(&self) -> bool {
             self.dir
         }
@@ -317,39 +371,48 @@ mod imp {
     pub struct ReadDir(std::vec::IntoIter<Entry>);
 
     impl Iterator for ReadDir {
+        /// An entry; the listing was read whole, so never an error.
         type Item = io::Result<Entry>;
 
+        /// The next entry of the listing.
         fn next(&mut self) -> Option<io::Result<Entry>> {
             self.0.next().map(Ok)
         }
     }
 
+    /// The error for an answer of the page's that is not the JSON it should be; `what` names the answer.
     fn bad_answer(what: &str, error: impl std::fmt::Display) -> io::Error {
         io::Error::new(io::ErrorKind::InvalidData, format!("the page's {what}: {error}"))
     }
 
+    /// The whole file's bytes.
     pub fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
         call(Op::Read, path.as_ref(), &[])
     }
 
+    /// The whole file as text; an error when it is not UTF-8.
     pub fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
         // std's own words for a file that is not UTF-8
         let not_utf8 = || io::Error::new(io::ErrorKind::InvalidData, "stream did not contain valid UTF-8");
         String::from_utf8(read(path)?).map_err(|_| not_utf8())
     }
 
+    /// Whether the path is a file; false when the page cannot read it.
     pub fn is_file(path: impl AsRef<Path>) -> bool {
         metadata(path).is_ok_and(|found| found.is_file())
     }
 
+    /// Whether the path is a folder; false when the page cannot read it.
     pub fn is_dir(path: impl AsRef<Path>) -> bool {
         metadata(path).is_ok_and(|found| found.is_dir())
     }
 
+    /// Whether anything is at the path.
     pub fn exists(path: impl AsRef<Path>) -> bool {
         metadata(path).is_ok()
     }
 
+    /// Writes the file whole, in place of what it held.
     pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
         call(Op::Write, path.as_ref(), bytes.as_ref()).map(drop)
     }
@@ -365,22 +428,27 @@ mod imp {
         write(path, all)
     }
 
+    /// Makes the folder and any missing folders above it.
     pub fn create_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
         call(Op::CreateDirAll, path.as_ref(), &[]).map(drop)
     }
 
+    /// Deletes a file.
     pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
         call(Op::RemoveFile, path.as_ref(), &[]).map(drop)
     }
 
+    /// Deletes an empty folder.
     pub fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
         call(Op::RemoveDir, path.as_ref(), &[]).map(drop)
     }
 
+    /// Deletes a folder and everything in it.
     pub fn remove_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
         call(Op::RemoveDirAll, path.as_ref(), &[]).map(drop)
     }
 
+    /// Moves a file or a folder to a new path.
     pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
         call(Op::Rename, from.as_ref(), to.as_ref().to_string_lossy().as_bytes()).map(drop)
     }
@@ -395,6 +463,7 @@ mod imp {
     /// An entry as the host lists it: [name, dir, size, time], the size and time null when the page has none at hand.
     type Listed = (String, bool, Option<f64>, Option<f64>);
 
+    /// The folder's entries, from one listing by the page.
     pub fn read_dir(path: impl AsRef<Path>) -> io::Result<ReadDir> {
         let path = path.as_ref();
         let listed: Vec<Listed> =
@@ -410,12 +479,16 @@ mod imp {
         Ok(ReadDir(listed.into_iter().map(entry).collect::<Vec<_>>().into_iter()))
     }
 
+    /// The path's size, time of change and kind, from the page.
     pub fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
         /// The host's answer: the length in bytes as a JavaScript number.
         #[derive(serde::Deserialize)]
         struct HostMetadata {
+            /// Whether it is a folder.
             dir: bool,
+            /// The size in bytes.
             len: f64,
+            /// The time of change in seconds since 1970, when the page knows one.
             modified: Option<f64>,
         }
         let answer = call(Op::Metadata, path.as_ref(), &[])?;

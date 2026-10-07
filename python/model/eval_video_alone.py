@@ -1,11 +1,12 @@
 """The video-alone kill finder against the stats files (REPRODUCE.md step 3).
 
 Without a stats file and without a HUD it can read, the review finds a clicking run's kills from the video alone
-(src/matching.rs: `match_video`). This check scores that finder on the runs in video_alone_runs.json: 48 KovOBS
-recordings of clicking scenarios (22 static, 18 dynamic, 8 switching), one run per scenario, each with its stats file
+(src/matching.rs: `match_video`). This check scores that finder on the runs in video_alone_runs.json: 46 KovOBS
+recordings of clicking scenarios (20 static, 18 dynamic, 8 switching), one run per scenario, each with its stats file
 (by its name in KovaaK's stats folder). The runs are recordings from June 2026 on, with 10 kills or more, a time limit
 of 2 minutes or less and (static and dynamic) a median of 3 shots a kill or fewer. Within each kind, 40% of the
-scenarios are held out ("held", 19 runs); the finder's rules were tuned on the others ("dev", 29 runs).
+scenarios are held out ("held", 18 runs); the finder's rules were tuned on the others ("dev", 28 runs). There were 48
+until the two Flow Fix runs left on 2026-10-06 (unfinished work: python/model/retired/).
 
 For each run:
 1. The model tracks the run in the app's native review (the review service's aimview-tool, through
@@ -57,7 +58,7 @@ KINDS = ("static", "dynamic", "switching")
 # KovOBS's areas as the review service gives them (service/src/areas.rs: kovobs_areas): each kind by its id
 AREAS = [[x0, y0, x1, y1, re.sub(r"[^a-z0-9]+", "_", kind.lower()).strip("_")]
          for x0, y0, x1, y1, kind in old_review.OVERLAY_SHARES]
-TRACKED = ("tracks.json", "readings.json", "hud.json", "kills.json")
+TRACKED = ("tracks.json", "readings.json", "hud.json", "kills.json")   # a run is tracked when its folder has these
 HITS_COLUMN = 6                     # a stats file's kill row: the bot's hits, "0" when it died without one
 MICROS = 1_000_000
 HOUR_S, DAY_S = 3600, 86400
@@ -77,6 +78,8 @@ def model_of(arg):
 
 
 def slug(run_id):
+    """A run's folder name: its video's name without .mp4, each character other than a letter, digit, "." or "-"
+    made "_"."""
     return re.sub(r"[^\w.-]", "_", Path(run_id).stem)
 
 
@@ -163,6 +166,7 @@ def match(truth, got, tolerance):
 
 
 def file_hash(path):
+    """A file's SHA-256, in hex."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
@@ -180,7 +184,9 @@ def track_all(runs, name, model, retrack):
     digest = file_hash(model)
 
     def tracked(folder):
-        stamp = folder / "model.json"
+        """Whether the run's folder has every tracked file, made by this model file, with a kill check that has
+        trails."""
+        stamp =folder / "model.json"
         return (all((folder / file).exists() for file in TRACKED) and stamp.exists()
                 and json.loads(stamp.read_text())["sha256"] == digest and with_trails(folder / "kills.json"))
 
@@ -236,6 +242,7 @@ def totals(per_run):
 
 
 def new_path(name):
+    """The result's file: video_alone_<name>.json, or the first video_alone_<name>_<n>.json from 2 on not taken."""
     path, number = EVAL / f"video_alone_{name}.json", 2
     while path.exists():
         path, number = EVAL / f"video_alone_{name}_{number}.json", number + 1
@@ -243,6 +250,7 @@ def new_path(name):
 
 
 def print_results(per_run, left_out, groups, quiet):
+    """Prints each run's counts (unless quiet), the runs left out and why, and the totals by group."""
     if not quiet:
         for run_id, result in per_run.items():
             print(f'{result["set"]:4s} {result["kind"][:6]:6s} {Path(run_id).stem[:STEM_CHARS]:58s} truth '
@@ -256,6 +264,8 @@ def print_results(per_run, left_out, groups, quiet):
 
 
 def main():
+    """Tracks the runs that need it, scores every run, prints the results and writes them. Stops when a run's stats
+    file is missing."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("model", nargs="?", default=infer.BEST)
     parser.add_argument("--retrack", action="store_true", help="track every run again")

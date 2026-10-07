@@ -31,11 +31,14 @@ use crate::statistics::median;
 /// Where KovaaK's box can be, as shares of the frame (x0, y0, x1, y1): it grows to fit its widest number. The region
 /// is scaled to BW x BH pixels (a 2560 x 1440 frame's).
 pub(crate) const BOX: [f64; 4] = [0.0, 0.0, 900.0 / 2560.0, 330.0 / 1440.0];
+/// The scaled region's width in pixels (the box region's width in a 2560 x 1440 frame).
 pub(crate) const BW: usize = 900;
+/// The scaled region's height in pixels.
 pub(crate) const BH: usize = 330;
 /// The most key frames kept for the box's layout: past it every other one is dropped (a median needs no more). The
 /// layout needs at least MIN_KEY_FRAMES (python/hud.py's layout).
 const MAX_KEY_FRAMES: usize = 64;
+/// The fewest key frames the box's layout is worked out from; with fewer there is no box.
 const MIN_KEY_FRAMES: usize = 3;
 /// The first patch tried for the box's level, its top left corner (x, y) in the region: inside the box's left edge,
 /// between the header and Kill Count.
@@ -43,42 +46,56 @@ const FIRST_PATCH: (usize, usize) = (49, 100);
 /// Other players' boxes are smaller or placed elsewhere: then the patches on a grid are tried, their corners
 /// PATCH_STEP_PX apart over these columns and rows of the region.
 const PATCH_COLUMNS: Range<usize> = 20..320;
+/// The rows of the region the grid's patch corners cover.
 const PATCH_ROWS: Range<usize> = 40..240;
+/// The grid's step between patch corners, pixels.
 const PATCH_STEP_PX: usize = 12;
 /// A patch is PATCH_SIDE_PX pixels square.
 const PATCH_SIDE_PX: usize = 8;
+/// The pixels in a patch.
 const PATCH_PIXELS: usize = PATCH_SIDE_PX * PATCH_SIDE_PX;
 /// A pixel is at a patch's level when it is less than SAME_LEVEL grey levels from it; a patch has a level when at least
 /// MIN_PATCH_SHARE of its pixels are at it.
 const SAME_LEVEL: f64 = 15.0;
+/// The share of a patch's pixels at its level for the patch to have one (to lie on a flat area such as the box).
 const MIN_PATCH_SHARE: f64 = 0.9;
 /// The box is at least these shares of the region high and wide, ends more than REGION_MARGIN_PX before the region's
 /// bottom and right edges (else it is the open scene running off the region), and fills at least MIN_BOX_FILL of its
 /// bounds (a filled rectangle with text holes).
 const MIN_BOX_HEIGHT_SHARE: f64 = 0.3;
+/// The least width of the box, as a share of the region's.
 const MIN_BOX_WIDTH_SHARE: f64 = 0.2;
+/// How far before the region's bottom and right edges the box must end, pixels.
 const REGION_MARGIN_PX: usize = 2;
+/// The least share of its bounds the box's pixels fill.
 const MIN_BOX_FILL: f64 = 0.6;
 /// The box's text is read this far inside its edges, off its rounded corners.
 const BOX_INSET_PX: usize = 4;
 /// A text row is at least MIN_TEXT_ROW_PX rows of pixels, each with more than TEXT_ROW_INK_PX ink pixels.
 const MIN_TEXT_ROW_PX: usize = 6;
+/// The ink pixels a row of pixels needs, more than this, to be part of a text row.
 const TEXT_ROW_INK_PX: usize = 2;
 /// The box has a header and at least three rows under it; the compact HUD has a header and four.
 const MIN_TEXT_ROWS: usize = 4;
+/// The text rows of the compact HUD: a header and four rows in two columns.
 const COMPACT_TEXT_ROWS: usize = 5;
 /// The box's rows read above and below each value row.
 const ROW_PAD_PX: usize = 3;
 /// The colon after a label is at most COLON_MAX_WIDTH_PX wide, or COLON_MAX_WIDTH_SHARE of the row's height when that
 /// is more, and each of its dots is at most DOT_MAX_HEIGHT_SHARE of the row's height.
 const COLON_MAX_WIDTH_PX: f64 = 3.0;
+/// The colon's widest, as a share of the row's height (for large text).
 const COLON_MAX_WIDTH_SHARE: f64 = 0.3;
+/// The tallest a colon's dot is, as a share of the row's height.
 const DOT_MAX_HEIGHT_SHARE: f64 = 0.35;
 
 /// Ink (text) is farther from the background (its median level) than MIN_INK_LEVELS grey levels, or than
 /// INK_SHARE_OF_TOP of the TOP_PERCENTILE-th percentile distance when that is more.
 const MIN_INK_LEVELS: f64 = 25.0;
+/// The share of the top distance from the background past which a pixel is ink.
 const INK_SHARE_OF_TOP: f64 = 0.5;
+/// The percentile of the distances from the background taken as the text's full strength (near the top, so a few
+/// stray pixels do not set it).
 const TOP_PERCENTILE: f64 = 99.5;
 /// Distances between grey levels are counted doubled, so the median of an even count stays a whole number; this is the
 /// largest.
@@ -90,6 +107,7 @@ const SCENE_COLUMN_INK_SHARE: f64 = 0.85;
 /// The scene seen past the box's edge is at least MIN_SCENE_COLUMNS wide, and text keeps more than
 /// TEXT_MARGIN_COLUMNS inside the edge: ink closer to it is the edge's blended border.
 const MIN_SCENE_COLUMNS: usize = 2;
+/// The columns inside the box's edge that text keeps clear of: ink this close to the edge is its blended border.
 const TEXT_MARGIN_COLUMNS: usize = 2;
 /// A gap wider than this share of the band parts the value from its label (or from the next label).
 const LABEL_GAP_SHARE: f64 = 0.07;
@@ -97,27 +115,37 @@ const LABEL_GAP_SHARE: f64 = 0.07;
 /// least SPLIT_MIN_ASPECT times as wide as it is tall is split, one piece per DIGIT_ASPECT of its height, each cut at
 /// the thinnest column within CUT_SEARCH_SHARE of a piece of the even cut.
 const SPLIT_MIN_ASPECT: f64 = 1.0;
+/// A digit's width as a share of its height, for counting the digits in a joined glyph.
 const DIGIT_ASPECT: f64 = 0.6;
+/// How far from an even cut the thinnest column is looked for, as a share of a piece's width.
 const CUT_SEARCH_SHARE: f64 = 0.25;
 /// Glyphs are compared at GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX.
 const GLYPH_WIDTH_PX: usize = 16;
+/// The height glyphs are scaled to for comparing, pixels.
 const GLYPH_HEIGHT_PX: usize = 24;
+/// The pixels in a scaled glyph image.
 const GLYPH_PIXELS: usize = GLYPH_WIDTH_PX * GLYPH_HEIGHT_PX;
 /// Pillow's bilinear and bicubic filters reach this many source pixels either side.
 const BILINEAR_SUPPORT: f64 = 1.0;
+/// Pillow's bicubic filter's reach either side, source pixels.
 const BICUBIC_SUPPORT: f64 = 2.0;
 /// Pillow's bicubic filter's `a`.
 const BICUBIC_A: f64 = -0.5;
 /// A limited-range recording's Y levels: black at LIMITED_BLACK, white LIMITED_SPAN above it.
 const LIMITED_BLACK: f64 = 16.0;
+/// The levels from black to white in a limited-range recording (16 to 235).
 const LIMITED_SPAN: f64 = 219.0;
 
 /// Aim Lab's POINTS and TIME value line, as shares of a 16:9 frame, scaled to AW x AH pixels (twice 720p), and the two
 /// values' columns in it.
 pub(crate) const AIM_BAND: [f64; 4] = [0.30, 40.0 / 720.0, 0.565, 63.0 / 720.0];
+/// The scaled value line's width in pixels.
 pub(crate) const AW: usize = 678;
+/// The scaled value line's height in pixels.
 const AH: usize = 46;
+/// The POINTS value's columns in the scaled line (from, to).
 pub(crate) const AIM_POINTS: (usize, usize) = (26, 356);
+/// The TIME value's columns in the scaled line (from, to).
 pub(crate) const AIM_TIME: (usize, usize) = (368, 656);
 /// A box shows a value when its TOP_PERCENTILE-th percentile level is at least this many grey levels above its
 /// background (the value is white).
@@ -128,14 +156,19 @@ const COLON_MAX_ASPECT: f64 = 0.5;
 /// A row's glyphs are the ones before while every glyph has the same ink size and differs from the kept image by at
 /// most NEAR_MAX at any pixel and NEAR_SUM in all (the box is see-through: the scene behind it moves the grey levels).
 const NEAR_MAX: u8 = 24;
+/// The most two images of the same glyph differ by over all their pixels (3 levels a pixel on average).
 const NEAR_SUM: u32 = 3 * GLYPH_PIXELS as u32;
 /// The glyphs a row keeps for new lines to reuse.
 const RECENT_GLYPHS: usize = 32;
-/// The rows each frame keeps: KovaaK's Kill Count and Accuracy, Aim Lab's POINTS and TIME.
+/// The rows each frame keeps: KovaaK's Kill Count and Accuracy, Aim Lab's POINTS and TIME. This one: Kill Count.
 const KILL_COUNT_ROW: usize = 0;
+/// KovaaK's Accuracy row: hits/shots (percent).
 const ACCURACY_ROW: usize = 1;
+/// Aim Lab's POINTS row.
 const POINTS_ROW: usize = 2;
+/// Aim Lab's TIME row.
 const TIME_ROW: usize = 3;
+/// How many rows each frame keeps.
 const ROWS: usize = 4;
 
 /// Glyphs this alike (cosine of their grey images) are the same shape.
@@ -168,6 +201,7 @@ const MAX_SHOT_STEP: i64 = 50;
 /// The Accuracy line's marks ("/" and "(") are the mean of their first MARK_MEAN_LINES lines that read as digits, and
 /// need MIN_MARK_LINES of them.
 const MARK_MEAN_LINES: u32 = 50;
+/// The fewest lines read as digits that the marks are learned from; with fewer, the Kill Count's likeness reads them.
 const MIN_MARK_LINES: u32 = 3;
 /// "--/-- ( %)" (no shot yet) has at most this many tall glyphs.
 const NO_SHOT_TALL_GLYPHS: usize = 4;
@@ -177,6 +211,7 @@ const TIME_TRIES: [f64; 3] = [SAME_SHAPE, 0.96, 0.95];
 const TIME_GLYPHS: usize = 4;
 /// The TIME box counts down one second at a time on at least TIME_STEP_SHARE of at least MIN_TIME_STEPS steps.
 const MIN_TIME_STEPS: usize = 10;
+/// The least share of the TIME box's steps that must be one second down.
 const TIME_STEP_SHARE: f64 = 0.95;
 /// A POINTS glyph more than this many times as wide as it is tall, before any digit, is a minus sign.
 const MINUS_MIN_ASPECT: f64 = 1.2;
@@ -185,9 +220,11 @@ const MAX_STEP_EVENTS: i64 = 3;
 /// A POINTS step is its hits and misses when it is within STEP_TOLERANCE_POINTS of them, or STEP_TOLERANCE_SHARE of a
 /// hit's points when that is more.
 const STEP_TOLERANCE_POINTS: f64 = 1.0;
+/// A POINTS step's tolerance as a share of a hit's points, when that is more than STEP_TOLERANCE_POINTS.
 const STEP_TOLERANCE_SHARE: f64 = 0.15;
 /// Aim Lab's HUD is read when it gives at least MIN_AIM_HITS hits and explains at least MIN_AIM_CHECKED of the steps.
 const MIN_AIM_HITS: usize = 10;
+/// The least share of the POINTS steps that must be some hits and misses for Aim Lab's HUD to count.
 const MIN_AIM_CHECKED: f64 = 0.85;
 
 /// Which game's HUD was read.
@@ -195,7 +232,9 @@ const MIN_AIM_CHECKED: f64 = 0.85;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum HudGame {
+    /// KovaaK's session box: Kill Count and Accuracy.
     Kovaak,
+    /// Aim Lab's POINTS and TIME boxes.
     Aimlab,
 }
 
@@ -204,8 +243,12 @@ pub enum HudGame {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct HudFinal {
+    /// The kills counted.
     pub kills: i64,
+    /// The hits (in KovaaK's, with the hits of the kills the Accuracy line had not shown yet); None where the Accuracy
+    /// line was not read.
     pub hits: Option<i64>,
+    /// The shots, those kills' shots added likewise; None where the Accuracy line was not read.
     pub shots: Option<i64>,
 }
 
@@ -214,12 +257,15 @@ pub struct HudFinal {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct HudReading {
+    /// Which game's HUD this is.
     pub game: HudGame,
     /// One entry per kill: the frame its count went up.
     pub kills: Vec<i64>,
-    /// One entry per shot, and per hit: the frame its count went up.
+    /// One entry per shot: the frame its count went up.
     pub shots: Vec<i64>,
+    /// One entry per hit: the frame its count went up.
     pub hits: Vec<i64>,
+    /// The run's totals at the end ("final" in the JSON).
     #[serde(rename = "final")]
     pub totals: HudFinal,
     /// The share of the count's steps that were a plausible step (+1 kill, a hit or a miss).
@@ -230,6 +276,8 @@ pub struct HudReading {
 
 // ---- scaling --------------------------------------------------------------------------------------------------------
 
+/// How a crop of the frame is scaled, as python/hud.py had ffmpeg scale it: `area` for KovaaK's box, bicubic for Aim
+/// Lab's line.
 #[derive(Clone, Copy)]
 enum Filter {
     /// ffmpeg's `area`: the mean of the pixels covered when scaling down, bilinear when scaling up.
@@ -238,11 +286,13 @@ enum Filter {
     Cubic,
 }
 
+/// Pillow's bilinear (triangle) filter: the weight of a source pixel `x` pixels from the output pixel's center.
 pub(crate) fn bilinear(x: f64) -> f64 {
     let x = x.abs();
     if x < 1.0 { 1.0 - x } else { 0.0 }
 }
 
+/// Pillow's bicubic filter (`a` = BICUBIC_A): the weight of a source pixel `x` pixels from the output pixel's center.
 fn bicubic(x: f64) -> f64 {
     let x = x.abs();
     if x < 1.0 {
@@ -278,7 +328,9 @@ pub(crate) fn taps(len: usize, out: usize, support: f64, filter: fn(f64) -> f64)
 
 /// One axis of a crop of the frame scaled to a size: each output pixel's first source pixel and weights.
 struct Axis {
+    /// Each output pixel's first source pixel (in the frame) and its weights.
     taps: Box<[(usize, Box<[f32]>)]>,
+    /// Whether the crop is already the output's size, so each output pixel is one source pixel.
     identity: bool,
 }
 
@@ -328,12 +380,17 @@ fn area_tap(i: usize, len: usize, out: usize, step: f64) -> (usize, Vec<f64>) {
 
 /// A crop of the frame scaled to a size.
 struct Scale {
+    /// The columns' taps.
     x: Axis,
+    /// The rows' taps.
     y: Axis,
+    /// The bytes in a row of the frame's plane (its width).
     stride: usize,
 }
 
 impl Scale {
+    /// The crop of a `width` x `height` frame between the shares `share` (x0, y0, x1, y1), scaled to `out` (width,
+    /// height) with `filter`.
     fn new(width: usize, height: usize, share: [f64; 4], out: (usize, usize), filter: Filter) -> Scale {
         Scale {
             x: Axis::new(width, share[0], share[2], out.0, filter),
@@ -509,11 +566,14 @@ fn spans(mask: impl IntoIterator<Item = bool>, min_len: usize) -> Vec<(usize, us
 /// A band's ink pixels, row by row.
 #[derive(Clone, Copy)]
 struct Ink<'a> {
+    /// Whether each pixel is ink, row by row.
     pixels: &'a [bool],
+    /// The band's width in pixels.
     width: usize,
 }
 
 impl<'a> Ink<'a> {
+    /// The band's height in pixels.
     fn height(self) -> usize {
         self.pixels.len() / self.width
     }
@@ -547,17 +607,24 @@ impl<'a> Ink<'a> {
 /// group).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 struct Row {
+    /// The band's first row in the scaled region.
     y0: usize,
+    /// The row after the band's last.
     y1: usize,
+    /// The column the value can start at, from the box's x0; None: the rightmost group of ink.
     start: Option<usize>,
 }
 
 /// Where KovaaK's box has its values: the columns x0..x1 of the scaled region, and the Kill Count and Accuracy rows.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 struct Layout {
+    /// The first column read, inside the box's left edge.
     x0: usize,
+    /// The column after the last one read, inside the box's right edge.
     x1: usize,
+    /// The Kill Count row.
     kills: Row,
+    /// The Accuracy row.
     accuracy: Row,
 }
 
@@ -566,9 +633,13 @@ struct Layout {
 /// 2560 x 1440 frame, from its top left corner).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRows {
+    /// The text rows' first column, inside the box's left edge.
     pub x0: usize,
+    /// The first text row's top.
     pub y0: usize,
+    /// The column after the text rows' last, inside the box's right edge.
     pub x1: usize,
+    /// The row after the last text row's bottom.
     pub y1: usize,
 }
 
@@ -589,20 +660,29 @@ fn label_end(ink: Ink) -> Option<usize> {
 /// them.
 #[derive(Clone, Copy)]
 struct Component {
+    /// The first of its pixels in raster order (an index into the region), for ndimage's order among equals.
     first_pixel: usize,
+    /// How many pixels it has.
     pixels: usize,
+    /// Its first row.
     top: usize,
+    /// The row after its last.
     bottom: usize,
+    /// Its first column.
     left: usize,
+    /// The column after its last.
     right: usize,
+    /// How many of the patch's pixels it holds.
     in_patch: usize,
 }
 
 impl Component {
+    /// Its bounds' height in pixels.
     fn height(&self) -> usize {
         self.bottom - self.top
     }
 
+    /// Its bounds' width in pixels.
     fn width(&self) -> usize {
         self.right - self.left
     }
@@ -623,7 +703,9 @@ impl Component {
 
 /// Labels the region's pixels by component; its buffers are kept from patch to patch.
 struct FloodFill {
+    /// Each region pixel's component, from 1; 0 for none.
     labels: Vec<u32>,
+    /// The pixels the fill has still to visit.
     stack: Vec<usize>,
 }
 
@@ -785,8 +867,11 @@ fn padded((top, bottom): (usize, usize)) -> (usize, usize) {
 /// A glyph cut from a frame: its strength image, and its ink's height and width in pixels.
 #[derive(Clone, Debug, PartialEq)]
 struct Cut {
+    /// The ink's strength scaled to GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX (0 to 255).
     image: [u8; GLYPH_PIXELS],
+    /// The ink's height in the band, pixels.
     height: u16,
+    /// The glyph's width in the band, pixels.
     width: u16,
 }
 
@@ -803,12 +888,17 @@ fn cut(strength: &[f32], ink: Ink, (a, b): (usize, usize)) -> Option<Cut> {
 /// A band's grey levels against its background (its median): the ink threshold and the distance of full strength. The
 /// background is kept doubled, so an even count's median stays a whole number.
 struct BoxLevels {
+    /// Twice the band's median grey level.
     twice_background: i32,
+    /// A pixel farther than this from the background is ink, grey levels.
     threshold: f64,
+    /// The distance from the background at which ink has full strength (1), grey levels.
     full_strength: f64,
 }
 
 impl BoxLevels {
+    /// A band's levels from its bytes: the ink threshold is INK_SHARE_OF_TOP of the TOP_PERCENTILE-th distance from
+    /// the background, full strength that distance, both at least MIN_INK_LEVELS.
     fn of(band: &[u8]) -> BoxLevels {
         let counts = histogram(band);
         let twice_background = twice_median(&counts, band.len());
@@ -980,8 +1070,11 @@ fn is_colon(ink: Ink, (a, b): (usize, usize)) -> bool {
 /// A stored glyph: its image's index, and its ink's height and width.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Glyph {
+    /// The image's index in the store's images.
     image: u32,
+    /// The ink's height in the band, pixels.
     height: u16,
+    /// The glyph's width in the band, pixels.
     width: u16,
 }
 
@@ -997,6 +1090,7 @@ struct Store {
 }
 
 impl Default for Store {
+    /// A store with only the empty line 0 and no frames.
     fn default() -> Store {
         Store { images: Vec::new(), lines: vec![Box::default()], rows: Default::default() }
     }
@@ -1016,6 +1110,7 @@ fn near(a: &[u8], b: &[u8]) -> bool {
 }
 
 impl Store {
+    /// The glyph image at `index`, GLYPH_PIXELS bytes.
     fn image(&self, index: u32) -> &[u8] {
         &self.images[index as usize * GLYPH_PIXELS..(index as usize + 1) * GLYPH_PIXELS]
     }
@@ -1030,6 +1125,7 @@ impl Store {
         self.lines[line as usize].iter().filter(move |glyph| tall(glyph, band))
     }
 
+    /// Adds `frames` frames of `line` to a row: the last run grows when it is the same line; no frames add nothing.
     fn add_run(&mut self, row: usize, line: u32, frames: u32) {
         match self.rows[row].last_mut() {
             Some(last) if last.0 == line => last.1 += frames,
@@ -1106,11 +1202,13 @@ impl Store {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "PartText", into = "PartText")]
 pub struct HudPart {
+    /// The frames the part's watch read, skipped ones included.
     frames: usize,
     /// KovaaK's box, None without one (each run part's watch works it out from the same key frames).
     layout: Option<Layout>,
     /// The box's text rows, None without a box.
     session: Option<SessionRows>,
+    /// The glyphs the part's frames read.
     store: Store,
 }
 
@@ -1118,7 +1216,9 @@ pub struct HudPart {
 /// run's watch starts from it (`HudWatch::from_keys`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HudKeys {
+    /// KovaaK's box's value rows; None without a box, or a compact box whose colons were not found.
     layout: Option<Layout>,
+    /// The box's text rows; None without a box.
     session: Option<SessionRows>,
 }
 
@@ -1132,8 +1232,11 @@ impl HudKeys {
 /// A part as JSON: the glyph images as hex.
 #[derive(Serialize, Deserialize)]
 struct PartText {
+    /// The part's frames (`HudPart::frames`).
     frames: usize,
+    /// KovaaK's box (`HudPart::layout`).
     layout: Option<Layout>,
+    /// The box's text rows, left out without a box.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     session: Option<SessionRows>,
     /// The glyph images, GLYPH_PIXELS bytes each, as hex.
@@ -1145,6 +1248,7 @@ struct PartText {
 }
 
 impl From<HudPart> for PartText {
+    /// The part as JSON's fields: its images as hex, its lines without the empty line 0.
     fn from(part: HudPart) -> PartText {
         PartText {
             frames: part.frames,
@@ -1161,8 +1265,11 @@ impl From<HudPart> for PartText {
 }
 
 impl TryFrom<PartText> for HudPart {
+    /// Why the text is no part.
     type Error = String;
 
+    /// The part back from JSON; an error when its images are not whole glyphs in hex, a line names an image it does
+    /// not have, or a row's runs do not name its lines or add up to its frames.
     fn try_from(text: PartText) -> Result<HudPart, String> {
         let images = from_hex(&text.images)
             .filter(|bytes| bytes.len() % GLYPH_PIXELS == 0)
@@ -1207,21 +1314,29 @@ fn from_hex(text: &str) -> Option<Vec<u8>> {
 /// frame and then only its part's frames (and the next part's first, as the camera watch does); `part` and `join` put
 /// them together.
 pub struct HudWatch {
+    /// The frames' width in pixels.
     width: usize,
+    /// The frames' height in pixels.
     height: usize,
     /// The Y levels as read: a limited-range recording's stretched to 0..255.
     levels: [u8; 256],
+    /// KovaaK's box region (BOX) scaled to BW x BH.
     region: Scale,
+    /// Aim Lab's value line (AIM_BAND) scaled to AW x AH.
     aim: Scale,
     /// The key frames' box regions (BW x BH), every `key_step`-th of the `keys_seen`.
     keys: Capped<Box<[u8]>, { MAX_KEY_FRAMES + 1 }>,
+    /// The key frames added so far.
     keys_seen: usize,
+    /// One key frame in this many is kept; it doubles each time `keys` passes MAX_KEY_FRAMES.
     key_step: usize,
     /// KovaaK's box: None until worked out (at the first frame), then Some(None) when there is none.
     layout: Option<Option<Layout>>,
     /// The box's text rows, worked out with `layout`.
     session: Option<SessionRows>,
+    /// The frames read so far, skipped ones included.
     frames: usize,
+    /// The glyphs read so far.
     store: Store,
     /// Each row's latest new glyphs, whose images a new line can reuse.
     recent: [Capped<Glyph, RECENT_GLYPHS>; ROWS],
@@ -1248,12 +1363,13 @@ impl HudWatch {
     }
 
     /// The rows of a frame's Y plane `add` reads, from the top (KovaaK's box and Aim Lab's value line): the rows below
-    /// them can be left out of the plane it is given.
+    /// them need not hold the frame's levels, though the plane it is given must still be `width` x `height` bytes.
     pub fn rows_read(&self) -> usize {
         let last = |scale: &Scale| scale.y.taps.iter().map(|(first, weights)| first + weights.len()).max().unwrap_or(0);
         last(&self.region).max(last(&self.aim)).min(self.height)
     }
 
+    /// Whether a Y plane can be read: the watch has a size and the plane is at least `width` x `height` bytes.
     fn readable(&self, luma: &[u8]) -> bool {
         self.width > 0 && self.height > 0 && luma.len() >= self.width * self.height
     }
@@ -1369,19 +1485,25 @@ impl HudWatch {
 // ---- reading the counts ---------------------------------------------------------------------------------------------
 
 /// Glyph shapes seen so far; a glyph joins the most alike shape, or starts a new one (python/hud.py: _Shapes). A
-/// shape is the mean of its first 50 glyphs.
+/// shape is the mean of its first SHAPE_MEAN_GLYPHS glyphs.
 struct Shapes<'a> {
+    /// The glyph images the shapes are learned from.
     store: &'a Store,
+    /// The least likeness (cosine) for a glyph to join a shape.
     same: f64,
+    /// Each shape's mean image (0 to 1 a pixel).
     shapes: Vec<[f32; GLYPH_PIXELS]>,
+    /// Each shape's image's length, for the cosine.
     norms: Vec<f64>,
     /// How many glyphs each shape has taken.
     glyph_counts: Vec<u32>,
     /// Bumped whenever a shape changes; each image's most alike shape is kept with the version it was found at.
     version: u32,
+    /// Per store image: the version and the most alike shape found then (None: like none).
     alike_cache: Vec<Option<(u32, Option<usize>)>>,
 }
 
+/// A vector's length (the square root of its squares' sum).
 fn norm(values: impl Iterator<Item = f32>) -> f64 {
     (values.map(|x| x * x).sum::<f32>() as f64).sqrt()
 }
@@ -1392,11 +1514,13 @@ fn to_unit(image: [f32; GLYPH_PIXELS]) -> [f32; GLYPH_PIXELS] {
     image.map(|x| x / length)
 }
 
+/// The dot product of two images; of two unit images, their likeness (cosine).
 fn dot(a: &[f32], b: &[f32]) -> f64 {
     a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>() as f64
 }
 
 impl<'a> Shapes<'a> {
+    /// No shapes yet, for the glyphs of `store`, joining at likeness `same`.
     fn new(store: &'a Store, same: f64) -> Shapes<'a> {
         Shapes {
             store,
@@ -1409,11 +1533,13 @@ impl<'a> Shapes<'a> {
         }
     }
 
+    /// A store image as strengths from 0 to 1.
     fn glyph(&self, image: u32) -> [f32; GLYPH_PIXELS] {
         let image = self.store.image(image);
         std::array::from_fn(|i| image[i] as f32 / 255.0)
     }
 
+    /// A store image as a unit image (length 1).
     fn unit_glyph(&self, image: u32) -> [f32; GLYPH_PIXELS] {
         to_unit(self.glyph(image))
     }
@@ -1477,6 +1603,7 @@ impl<'a> Shapes<'a> {
         (!ids.is_empty()).then_some(ids)
     }
 
+    /// A shape's mean image as a unit image (length 1).
     fn unit(&self, shape: usize) -> [f32; GLYPH_PIXELS] {
         let length = self.norms[shape].max(MIN_NORM) as f32;
         self.shapes[shape].map(|x| x / length)
@@ -1485,8 +1612,11 @@ impl<'a> Shapes<'a> {
 
 /// A reading that stays the same over the frames first..=last.
 struct Stretch<T> {
+    /// What the frames read.
     reading: T,
+    /// The stretch's first frame.
     first: usize,
+    /// Its last frame.
     last: usize,
 }
 
@@ -1510,10 +1640,12 @@ fn stable_stretches<T: Clone + PartialEq>(readings: &[Option<T>]) -> Vec<Stretch
 struct Counter<K>(Vec<(K, usize)>);
 
 impl<K: PartialEq + Copy> Counter<K> {
+    /// An empty counter.
     fn new() -> Counter<K> {
         Counter(Vec::new())
     }
 
+    /// Counts `key` once more.
     fn add(&mut self, key: K) {
         match self.0.iter_mut().find(|entry| entry.0 == key) {
             Some(entry) => entry.1 += 1,
@@ -1521,12 +1653,14 @@ impl<K: PartialEq + Copy> Counter<K> {
         }
     }
 
+    /// The keys and their counts, most first; equal counts in the order first seen (the sort is stable).
     fn most_common(&self) -> Vec<(K, usize)> {
         let mut sorted = self.0.clone();
         sorted.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         sorted
     }
 
+    /// The most counted key, the first seen among equals; None when nothing was counted.
     fn top(&self) -> Option<K> {
         self.0
             .iter()
@@ -1604,15 +1738,20 @@ fn tall(glyph: &Glyph, band: usize) -> bool {
     glyph.height as f64 / band as f64 >= TALL_SHARE
 }
 
+/// The value rounded to 3 decimals (halves away from 0).
 fn round_to_thousandths(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
 }
 
 /// The Kill Count read: the shapes, the digits, the stable values and the share of steps that were +1.
 struct KillCount<'a> {
+    /// The shapes learned from the Kill Count, which the Accuracy line is read with too.
     shapes: Shapes<'a>,
+    /// By shape, its digit; None for a shape that is no digit.
     digits: Vec<Option<u8>>,
+    /// The stable values, in order.
     values: Vec<Stretch<i64>>,
+    /// The share of the steps between them that were +1.
     checked: f64,
 }
 
@@ -1738,8 +1877,11 @@ fn kill_frames(values: &[Stretch<i64>]) -> Vec<i64> {
 
 /// Reads the Accuracy line, hits/shots (percent), with the Kill Count's shapes and digits (`band`: the line's height).
 struct AccuracyReader<'a> {
+    /// The Kill Count's shapes; no new ones are learned here.
     shapes: Shapes<'a>,
+    /// By shape, its digit.
     digits: Vec<Option<u8>>,
+    /// The Accuracy band's height in pixels, which says which glyphs are tall.
     band: usize,
     /// The "/" and the "(" as unit images, once they are learned.
     marks: Option<[[f32; GLYPH_PIXELS]; 2]>,
@@ -1877,7 +2019,9 @@ fn accuracy_stretches(mut reader: AccuracyReader, since: usize, until: usize) ->
 
 /// Each shot's and each hit's frame.
 struct ShotFrames {
+    /// One frame per shot, in order.
     shots: Vec<i64>,
+    /// One frame per hit, in order.
     hits: Vec<i64>,
 }
 
@@ -2055,6 +2199,8 @@ fn step_events(change: i64, hit: i64, miss: Option<i64>) -> Option<(i64, i64)> {
     (error as f64 <= STEP_TOLERANCE_POINTS.max(STEP_TOLERANCE_SHARE * hit as f64)).then_some((hits, misses))
 }
 
+/// Tests of the glyph cutting, the digit learning, the counts' reading and the joining of run parts, on synthetic
+/// glyphs and bands.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2066,10 +2212,12 @@ mod tests {
         Cut { image, height, width: 10 }
     }
 
+    /// The glyphs of a number's digits, each its digit's pattern, `height` pixels high.
     fn line(value: i64, height: u16) -> Vec<Cut> {
         value.to_string().bytes().map(|b| glyph((b - b'0') as usize, height)).collect()
     }
 
+    /// Two digits joined by a bridge are cut in two at the bridge, and the label left of a wide gap is left out.
     #[test]
     fn a_wide_glyph_is_split_and_the_label_left_out() {
         let (width, height) = (200, 30);
@@ -2092,10 +2240,12 @@ mod tests {
     /// Shape ids for the digits 0 to 9, in an order of their own.
     const SHAPE_OF_DIGIT: [i32; 10] = [7, 3, 9, 0, 5, 1, 8, 2, 6, 4];
 
+    /// The shape ids of a number's digits (SHAPE_OF_DIGIT).
     fn shapes_of(value: u32) -> Vec<i32> {
         value.to_string().bytes().map(|b| SHAPE_OF_DIGIT[(b - b'0') as usize]).collect()
     }
 
+    /// A count from 0 to 25 teaches every digit's shape; one that never changes its tens place teaches none.
     #[test]
     fn digits_are_learned_from_a_count() {
         let readings: Vec<Vec<i32>> = (0..=25).map(shapes_of).collect();
@@ -2157,6 +2307,7 @@ mod tests {
         (store, layout)
     }
 
+    /// A Kill Count counting to 40 gives a kill every 10 frames, and the Accuracy line the hits, shots and misses.
     #[test]
     fn a_counting_hud_reads_its_kills_and_shots() {
         let (store, layout) = counting(0..430);
@@ -2169,6 +2320,7 @@ mod tests {
         assert!(aimlab(&store).is_none());
     }
 
+    /// The run before's reading at the start is dropped, and a last kill the Accuracy line never showed adds its hit.
     #[test]
     fn a_restart_and_an_early_end_still_count_every_hit() {
         // the Accuracy line is redrawn every 7 frames: first it shows the run before's 8/9, and the run ends before it
@@ -2184,6 +2336,8 @@ mod tests {
         assert_eq!((reading.hits[0], reading.hits[39]), (15, 400)); // the run's first reading, and the last kill
     }
 
+    /// An Accuracy line with a digit less than DIGIT_LIKENESS alike to every digit is not read, so no shot is
+    /// miscounted.
     #[test]
     fn a_digit_like_no_digit_spoils_its_accuracy_line() {
         // the left 4 of "44" drawn closer to its neighbor: most like an 8 (0.83), but less than DIGIT_LIKENESS
@@ -2206,6 +2360,7 @@ mod tests {
         assert_eq!((reading.hits.len(), reading.shots.len()), (40, 48));
     }
 
+    /// A glyph that shows for a moment after the number is no step of the count and gets no digit.
     #[test]
     fn a_glyph_after_the_number_teaches_no_digit() {
         let mut readings: Vec<Vec<i32>> = Vec::new();
@@ -2224,6 +2379,7 @@ mod tests {
         assert!(SHAPE_OF_DIGIT.iter().enumerate().all(|(digit, &shape)| digits[shape as usize] == Some(digit as u8)));
     }
 
+    /// Three run parts, each through JSON and back, join into the same glyphs and reading as one watch.
     #[test]
     fn parts_join_as_one_watch() {
         let (whole, layout) = counting(0..430);
@@ -2256,6 +2412,7 @@ mod tests {
         assert_eq!(watch.finish(), kovaak(&whole, &layout));
     }
 
+    /// A part whose rows' frames do not add up to its frames is refused when read from JSON.
     #[test]
     fn a_part_that_does_not_add_up_is_refused() {
         let (store, layout) = counting(0..50);
@@ -2265,6 +2422,7 @@ mod tests {
         assert!(serde_json::from_value::<HudPart>(text).is_err());
     }
 
+    /// Skipped frames count as frames with the empty line in every row, and give no reading.
     #[test]
     fn skipped_frames_read_nothing() {
         let mut watch = HudWatch::new(64, 36, true);

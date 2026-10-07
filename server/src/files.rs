@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// Whether a path is the review API's (python/server.py's /api/... and /video), not the UI's.
+/// Whether a path is the review API's (python/retired/server.py's /api/... and /video), not the UI's.
 pub fn is_api(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/") || path == "/video"
 }
@@ -14,9 +14,9 @@ pub fn is_api(path: &str) -> bool {
 /// What a UI path is.
 #[derive(Debug, PartialEq)]
 pub enum Found {
-    /// A file of the build
+    /// A file of the build.
     File(PathBuf),
-    /// One of the app's pages: index.html
+    /// One of the app's pages: index.html.
     Index,
 }
 
@@ -63,6 +63,7 @@ pub fn content_type(file: &Path) -> &'static str {
     }
 }
 
+/// The UI's paths and files.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,6 +78,7 @@ mod tests {
         root
     }
 
+    /// /api, /api/... and /video are the API's; paths that only look like them are the UI's.
     #[test]
     fn the_api_and_the_videos_are_not_the_uis() {
         for path in ["/api", "/api/vods", "/api/job", "/video"] {
@@ -87,6 +89,8 @@ mod tests {
         }
     }
 
+    /// The build's files are found (percent-decoded); any other path, and any that tries to leave the build, is the
+    /// app's index.html.
     #[test]
     fn files_of_the_build_and_the_single_page_fallback() {
         let root = build();
@@ -104,6 +108,7 @@ mod tests {
         }
     }
 
+    /// Content types by extension, in any case; a model is plain bytes.
     #[test]
     fn content_types() {
         assert_eq!(content_type(Path::new("a/index.html")), "text/html; charset=utf-8");

@@ -4,8 +4,13 @@ Data: the crops from build_data.py (real frames, automatic labels). Augmentation
 the library hardly has (synthetic, recorded as such in MODEL_STATUS.md): any wall color, any target color, wall
 texture, blur and noise, outlines round the targets, and synthetic crosshairs (marked in the fixed map), sometimes drawn
 over a target.
-Writes runs/<name>/: config.json, metrics.jsonl (one line an epoch), best.pt (by validation F1), last.pt.
+Writes runs/<name>/: config.json, metrics.jsonl (one line an epoch), best.pt (by validation F1), last.pt, and the
+whole state to resume or fork from (state.pt, snapshots/; main says how).
 Usage: python python/model/train.py python/model/configs/small.json [--epochs N] [--out test_out/vod_model/runs]
+       [--data <dataset>] [--extra <dataset> ...] [--repeat <file> --times N] [--init <checkpoint>]
+       [--gpu-share 0.5] [--save-every 200]
+       python python/model/train.py --resume <run folder>
+       python python/model/train.py <config> --fork <snapshot or run folder>
 """
 import argparse
 import json
@@ -29,7 +34,7 @@ import net  # noqa: E402
 from crop_pack import PackedCrops, PackLoader, read_crop  # noqa: E402
 HALF = 0.5                      # a coin toss; and a mask's 0/1 split
 
-# recolour: the wall moved to a random color, the targets painted one that stands out
+# recolour (the recolor step): the wall moved to a random color, the targets painted one that stands out
 WALL_GROW, LOCAL_WINDOW = 5, 9  # the wall: 5 px from a target; the local background: averaged 9 px round
 LOCAL_SHARE = 0.05              # where less of the window is wall, the wall's mean color stands in
 MIN_CONTRAST = 0.05             # the luminance gap between wall and target taken as this at least
@@ -41,40 +46,43 @@ SHADING = 0.15                  # a little of the original shading kept on a pai
 
 # texture, outlines, crosshairs, decoder, blur and noise
 TEXTURE_CELLS = 16              # the coarse texture: one random value per 16 px
-TEXTURE_LOW, TEXTURE_HIGH = 0.06, 0.03
-OUTLINE_MIN_PX, OUTLINE_MAX_PX = 1, 3
+TEXTURE_LOW, TEXTURE_HIGH = 0.06, 0.03   # the coarse and the fine texture's largest strength
+OUTLINE_MIN_PX, OUTLINE_MAX_PX = 1, 3    # a bot outline's width
 GLOW_SHARE = 0.3                # a glow: a little wider, with soft edges
 LOUD_SHARE = 0.6                # outlines are often loud: one or two channels full
-LOUD_HIGH, LOUD_LOW = 0.9, 0.1
-OUTLINE_ALPHA_MIN, OUTLINE_ALPHA_RANGE = 0.7, 0.3
+LOUD_HIGH, LOUD_LOW = 0.9, 0.1  # a loud color: a channel over half becomes 0.9 plus a tenth of it, the others a tenth
+OUTLINE_ALPHA_MIN, OUTLINE_ALPHA_RANGE = 0.7, 0.3   # an outline's opacity: 0.7 to 1
 REAL_VISIBLE = 0.3              # a real crosshair's pixel shows in the fixed map from this alpha up
 CROSSHAIR_EDGE_PX = 8           # a crosshair off the targets keeps this far from the crop's edge
-REAL_MIN_PX, REAL_MAX_PX = 5, 40
-TINT_FLOOR = 1e-3
-DOT_RADIUS_PX = (0.8, 3.0)
+REAL_MIN_PX, REAL_MAX_PX = 5, 40    # a KovaaK's crosshair image's larger side once scaled
+TINT_FLOOR = 1e-3               # the smallest channel a tint is divided by
+DOT_RADIUS_PX = (0.8, 3.0)      # a drawn crosshair's sizes, each from the first to the second
 PLUS_ARM_PX, PLUS_THICKNESS_PX, PLUS_GAP_PX = (3, 9), (0.6, 1.6), (0, 3)
 RING_RADIUS_PX, RING_THICKNESS_PX = (3, 8), 0.8
-OUTLINE_SIZES = (3, 5)
-DARK_OUTLINE_SHARE, DARK_OUTLINE = 0.7, 0.2
-DECODER_GAIN, DECODER_OFFSET = 0.04, 0.02
+OUTLINE_SIZES = (3, 5)          # a drawn crosshair's outline: the max-pool window that grows it
+DARK_OUTLINE_SHARE, DARK_OUTLINE = 0.7, 0.2   # most outlines are dark: their color scaled to a fifth
+DECODER_GAIN, DECODER_OFFSET = 0.04, 0.02     # the width of a channel's random gain (round 1) and offset (round 0)
 BLUR_SIGMA_PX = (0.3, 1.0)
-NOISE = 0.02
+NOISE = 0.02                    # the noise's largest strength
 
 # targets and loss
 SIGMA_SIZE, MIN_SIGMA = 0.15, 0.6   # a center's Gaussian: 0.15 of its larger side (cells), 0.6 cells at least
-SCORE_CLAMP = 1e-4
-FOCAL_POWER_HIT, FOCAL_POWER_NEAR = 2, 4
-WARM_UP_STEPS = 300
-CLIP_NORM = 5.0
+SCORE_CLAMP = 1e-4              # scores kept this far from 0 and 1, so the log stays finite
+FOCAL_POWER_HIT, FOCAL_POWER_NEAR = 2, 4   # the focal loss's powers (CenterNet's alpha and beta)
+WARM_UP_STEPS = 300             # the learning rate's linear warm-up
+CLIP_NORM = 5.0                 # the gradient's norm is clipped to this
 MATCH_MIN_PX = 2.0              # a prediction is a hit within max(2 px, half the target's smaller side)
-FAR = 1e9
-TINY = 1e-9
-RECOLOR_SEEDS = 10 ** 6
+FAR = 1e9                       # a distance no match takes
+TINY = 1e-9                     # the smallest denominator
+RECOLOR_SEEDS = 10 ** 6         # each batch's recoloring seed is drawn below this
 SEED_STRIDE = 100003            # an epoch's order is seeded by seed * this + epoch
 VAL_BATCH = 64
 
 
 class Crops(Dataset):
+    """The crop files of one or more folders, each read as crop_pack.read_crop reads it (eval.py; training reads the
+    packs, crop_pack.PackedCrops, in the same order)."""
+
     def __init__(self, folders, repeat=(), times=1):
         """folders: one folder of crops or several; repeat: crop name prefixes (a VOD's 10-character hash, or
         "hand_crop_" for hand-checked crops) whose crops appear `times` times, or a dict of prefix: times."""
@@ -84,14 +92,17 @@ class Crops(Dataset):
         self.files += [file for file in self.files for _ in range(repeats.get(file.name[:10], 1) - 1)]
 
     def __len__(self):
+        """The crop count, repeats included."""
         return len(self.files)
 
     def __getitem__(self, i):
+        """Crop i's arrays (crop_pack.read_crop)."""
         return read_crop(self.files[i])
 
 
 # ---- augmentation (batched, on the GPU) -----------------------------------------------------------------------------
 def lum(image):
+    """The luminance (B, 1, H, W) of RGB images (B, 3, H, W) with values 0 to 1 (BT.601 weights)."""
     return 0.299 * image[:, 0:1] + 0.587 * image[:, 1:2] + 0.114 * image[:, 2:3]
 
 
@@ -103,7 +114,8 @@ def flip_rot(image, fixed, target_mask, boxes, counts):
     if random.random() < HALF:
         image, fixed, target_mask = image.flip(-1), fixed.flip(-1), target_mask.flip(-1)
         boxes[..., 0] = size - 1 - boxes[..., 0]
-    for _ in range(turns):                                   # rotate 90 deg counter-clockwise: (x, y) -> (y, S - 1 - x)
+    # rotate 90 deg counter-clockwise: (x, y) goes to (y, S - 1 - x)
+    for _ in range(turns):
         image, fixed = image.rot90(1, (-2, -1)), fixed.rot90(1, (-2, -1))
         target_mask = target_mask.rot90(1, (-2, -1))
         x, y, width, height = boxes.unbind(-1)
@@ -151,6 +163,8 @@ def recolour(image, target_mask, theme_share=0.7, target_share=0.8):
 
 
 def texture(image, target_mask, share=0.3):
+    """A share of the crops get a random texture on the wall (off the targets): coarse noise per TEXTURE_CELLS and
+    fine noise per pixel, each of a random strength."""
     batch, _, size, _ = image.shape
     device = image.device
     on = (torch.rand(batch, 1, 1, 1, device=device) < share).float()
@@ -196,8 +210,8 @@ def outline_ring(image, target_mask, fixed, share, width, soft):
     return image * (1 - alpha) + color * alpha
 
 
-KOVAAKS_CROSSHAIRS = local_config.kovaak("crosshairs")
-_REAL = {}
+KOVAAKS_CROSSHAIRS = local_config.kovaak("crosshairs")   # KovaaK's crosshair images, or None without Steam's folder
+_REAL = {}                                              # real_crosshairs' images, by folder and device
 
 
 def real_crosshairs(folder, device="cpu"):
@@ -214,7 +228,7 @@ def real_crosshairs(folder, device="cpu"):
 
 
 DOT, PLUS, RING = 0, 1, 2       # a drawn crosshair's kinds
-_SCALED = {}
+_SCALED = {}                    # scaled_picture's images, by picture list, index and size
 
 
 def scaled_picture(pictures, index, height, width):
@@ -375,6 +389,8 @@ def decoder_colors(image, share, mode):
 
 
 def blur_noise(image, share=0.5):
+    """A Gaussian blur on the whole batch a share of the time (one sigma for it), then noise on every crop, of a
+    random strength per crop."""
     batch = image.shape[0]
     device = image.device
     if random.random() < share:
@@ -398,8 +414,8 @@ def fast(augmentation):
 def compile_fused(device):
     """torch.compile for what a step does to the whole batch in long chains of small operations (the augmentations
     and the target heatmap), where it can run (CUDA and Triton: triton-windows on Windows, with its own C compiler
-    when no other is set). Each chain becomes a few fused kernels: recolouring takes 2.5 ms a batch on the GPU
-    instead of 8.1. The model gains nothing (cuDNN's convolutions set its pace). Whether it could."""
+    when no other is set). Each chain becomes a few fused kernels: recoloring takes 2.5 ms a batch on the GPU
+    instead of 8.1. The model gains nothing (cuDNN's convolutions set its pace). Returns whether it could."""
     if device.type != "cuda":
         return False
     try:
@@ -503,7 +519,9 @@ def kept_cells(ignore, cells):
 
 
 def loss_fn(out, heatmap, peak, reg, config, keep=None):
-    """keep (kept_cells): the cells outside it add nothing, to the heatmap's loss or the regression."""
+    """The loss of a batch's output against its targets: the focal loss on the heatmap plus the config's weights times
+    the offset's and size's L1 loss at the center cells; and the three parts, detached. keep (kept_cells): the cells
+    outside it add nothing, to the heatmap's loss or the regression."""
     score = torch.sigmoid(out[:, 0:1].float()).clamp(SCORE_CLAMP, 1 - SCORE_CLAMP)
     positive = peak
     negative = 1 - positive
@@ -569,7 +587,9 @@ def match(predictions, truth, counts):
 
 
 def summarize(true_pos, false_pos, false_neg, errors):
-    precision = true_pos / max(1, true_pos + false_pos)
+    """Precision, recall, F1, the hits' center error (median and 90th percentile, px) and the counts, from match's
+    tally."""
+    precision =true_pos / max(1, true_pos + false_pos)
     recall = true_pos / max(1, true_pos + false_neg)
     return dict(precision=round(precision, 4), recall=round(recall, 4),
                 f1=round(2 * precision * recall / max(TINY, precision + recall), 4),
@@ -608,16 +628,20 @@ class EpochOrder(torch.utils.data.Sampler):
     run goes on exactly where it stopped."""
 
     def __init__(self, n, seed, batch):
+        """n: the crop count; seed: the run's; batch: the batch size."""
         self.n, self.seed, self.batch, self.epoch, self.start = n, seed, batch, 0, 0
 
     def set_epoch(self, epoch, start_batch=0):
+        """The epoch to draw the order of, and the batch to start at."""
         self.epoch, self.start = epoch, start_batch
 
     def __iter__(self):
+        """The epoch's crop indices from the start batch on."""
         order = torch.Generator().manual_seed(self.seed * SEED_STRIDE + self.epoch)
         return iter(torch.randperm(self.n, generator=order)[self.start * self.batch:].tolist())
 
     def __len__(self):
+        """The crops left in the epoch from the start batch on."""
         return self.n - self.start * self.batch
 
 
@@ -626,6 +650,7 @@ MIN_GPU_SHARE = 0.05
 
 
 def parse_args():
+    """The parser (for its errors) and the command line's options."""
     parser = argparse.ArgumentParser()
     parser.add_argument("config", nargs="?")
     parser.add_argument("--epochs", type=int)
@@ -686,9 +711,11 @@ def schedule(step, steps):
 class Trainer:
     """Training that can be paused, resumed and forked at any point (see main)."""
 
-    gpu_share = 1.0
+    gpu_share = 1.0                 # --gpu-share: the share of the time the GPU trains
 
     def __init__(self, config, args, run, device):
+        """Opens the train and val packs of the dataset and its --extra ones, and builds the model; start() then loads
+        weights and makes the optimizer. run: the run's folder."""
         self.config, self.args, self.run, self.device = config, args, run, device
         train = config["train"]
         sets = [Path(args["data"])] + [Path(extra) for extra in args.get("extra", [])]

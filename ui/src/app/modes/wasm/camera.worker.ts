@@ -1,18 +1,29 @@
 /// <reference lib="webworker" />
-// A run's watches (the core's review session: src/session.rs, `RunWatching`) in a worker of their own, beside the
-// review worker: each frame's turn of the camera, whether KovaaK's countdown bar shows, and what the HUD reads (the
-// kills, shots and hits of a run without a stats file, and a check on one with it). The review worker sends it, over a
-// port between the two, the review's setup and what the key frames gave, then every frame the run reads: its decoded Y
-// plane and the rows of its RGB the countdown test reads. This worker feeds them to its own copy of the core (the same
-// converter makes the 720p luma, so the same bytes) and sends each buffer back. In the review worker the watches held
-// up the detector (av1: 76 frames a second with them there, 99 to 119 without them).
+/**
+ * A run's watches (the core's review session: src/session.rs, `RunWatching`) in a worker of their
+ * own, beside the review worker: each frame's turn of the camera, whether KovaaK's countdown bar
+ * shows, and what the HUD reads (the kills, shots and hits of a run without a stats file, and a
+ * check on one with it). The review worker sends it, over a port between the two, the review's
+ * setup and what the key frames gave, then every frame the run reads: its decoded Y plane and the
+ * rows of its RGB the countdown test reads. This worker feeds them to its own copy of the core (the
+ * same converter makes the 720p luma, so the same bytes) and sends each buffer back. In the review
+ * worker the watches held up the detector (av1: 76 frames a second with them there, 99 to 119
+ * without them). In: the port (the first message), then `CameraTask`s on it. Out: `CameraReply`s
+ * on the port; at the end, the watches' part of the run as JSON.
+ */
 import { Core, CoreBlock, FRAME_PIXELS } from './core';
 import { CameraReply, CameraTask, WatchStart } from './review-messages';
 
-/** The run's watches, once started: the core, the session's watches, and the block each frame is read into. */
+/**
+ * The run's watches, once started: the core, the session's watches, and the block each frame is
+ * read into.
+ */
 interface Watch {
+  /** This worker's copy of the core. */
   core: Core;
+  /** The core's handle of the run's watches (`review_watching`). */
   watching: number;
+  /** The core memory each frame is copied into, made for the first frame; null until then. */
   frame: CoreBlock | null;
 }
 
@@ -55,7 +66,10 @@ function serve(port: MessagePort): void {
   };
 }
 
-/** The run's watches, from the review's setup and what the key frames gave. */
+/**
+ * The run's watches, from the review's setup and what the key frames gave (the fixed map and the
+ * HUD's boxes). Throws when the core cannot read the HUD's boxes.
+ */
 function start(core: Core, task: WatchStart): Watch {
   const review = core.review(task.setup);
   const fixed = core.reserve(FRAME_PIXELS);

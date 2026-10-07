@@ -5,7 +5,16 @@
  * takes none for a reload).
  */
 export interface Reloads {
+  /**
+   * The forced reloads in the run.
+   */
   count: number;
+  /**
+   * Their time added up, in seconds.
+   */
   seconds: number;
+  /**
+   * The points they took off: the count times the scenario's loss a reload; None when it takes none.
+   */
   score_lost: number | null;
 }

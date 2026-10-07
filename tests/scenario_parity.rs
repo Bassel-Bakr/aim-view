@@ -15,6 +15,7 @@ use common::parity_root;
 /// How many differing scenarios the test prints before it fails.
 const SHOWN_SCENARIOS: usize = 5;
 
+/// Every scenario file's facts equal Python's, on the facts Python reads.
 #[test]
 fn scenario_facts_match_python() {
     let path = parity_root().join("scenarios.json");

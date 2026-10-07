@@ -1,3 +1,9 @@
+/**
+ * `listenQuietly`: an event listener that does not run change detection on every event. Out: the
+ * canvases that listen to pointer moves and the wheel (the crop stage, the area canvas, the
+ * player, the speed chart).
+ */
+
 import { DestroyRef } from '@angular/core';
 
 /**

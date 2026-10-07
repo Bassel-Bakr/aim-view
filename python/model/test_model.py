@@ -46,7 +46,10 @@ def by_place(detections):
 
 
 class Augment(unittest.TestCase):
+    """train.py's augmentations."""
+
     def test_flips_and_turns_move_boxes_with_pixels(self):
+        """A flip or turn of the crop moves its box to where the pixel it marked went."""
         for seed in range(32):
             random.seed(seed)
             x, y = 37, 101
@@ -59,6 +62,7 @@ class Augment(unittest.TestCase):
             self.assertEqual((lit_x, lit_y), (int(boxes[0, 0, 0]), int(boxes[0, 0, 1])), f"seed {seed}")
 
     def test_crosshairs_keep_targets_and_mark_the_fixed_map(self):
+        """A drawn crosshair leaves the boxes as they are and marks its pixels in the fixed map, near the target."""
         random.seed(0)
         image, fixed = torch.full((4, 3, 64, 64), 0.5), torch.zeros(4, 1, 64, 64)
         boxes = torch.tensor([[[30.0, 30.0, 8.0, 8.0]]] * 4)
@@ -74,6 +78,8 @@ class Augment(unittest.TestCase):
 
 
     def test_outlines_ring_the_target_and_spare_the_crosshair(self):
+        """A drawn outline stays within a few pixels round the target and changes neither the target nor the
+        crosshair."""
         random.seed(1)
         image = torch.full((1, 3, 64, 64), 0.5)
         target_mask, fixed = torch.zeros(1, 1, 64, 64), torch.zeros(1, 1, 64, 64)
@@ -91,7 +97,10 @@ class Augment(unittest.TestCase):
 
 
 class Decoding(unittest.TestCase):
+    """The two decodings of the network's output."""
+
     def test_exported_decoding_matches_pytorch_decoding(self):
+        """The export's outputs decoded with NumPy give net.decode's detections on a random input."""
         torch.manual_seed(0)
         model = net.build(json.loads((HERE / "configs" / "tiny.json").read_text())).eval()
         frames = torch.rand(1, 4, 64, 96)
@@ -105,7 +114,10 @@ class Decoding(unittest.TestCase):
 
 
 class Splits(unittest.TestCase):
+    """The dataset's train, val and test splits."""
+
     def test_no_scenario_in_two_splits(self):
+        """No scenario folder has recordings in two splits of the built dataset."""
         manifest = DATA / "manifest.jsonl"
         if not manifest.exists():
             self.skipTest("no dataset built")
@@ -116,6 +128,7 @@ class Splits(unittest.TestCase):
         self.assertEqual([folder for folder, splits in seen.items() if len(splits) > 1], [])
 
     def test_end_to_end_vods_are_in_test(self):
+        """The folders of the end-to-end recordings (build_data.TEST_FOLDERS) fall in the test split."""
         import build_data
         for folder in build_data.TEST_FOLDERS:
             self.assertEqual(build_data.split_of(folder), "test", folder)
@@ -124,20 +137,25 @@ class Splits(unittest.TestCase):
 @unittest.skipUnless((EXPORTS / "detector_small_fp32.onnx").exists() and FRAME.exists() and EXPECTED.exists(),
                      "needs the exports and the benchmark frame")
 class Exports(unittest.TestCase):
+    """The ONNX exports on the benchmark frame, against the detections kept in bench_expected.json."""
+
     @classmethod
     def setUpClass(cls):
+        """Loads the benchmark frame, its fixed map and the expected detections once for every test."""
         sample = np.load(FRAME)
         cls.rgb, cls.fixed = sample["rgb"], sample["fixed"]
         cls.expected = np.array(json.loads(EXPECTED.read_text())["detections"], np.float32)
 
     def test_fp32_and_fp16_give_the_expected_detections(self):
+        """The small model's fp32 and fp16 exports find the expected targets, within 0.05 px."""
         for name in ("detector_small_fp32", "detector_small_fp16"):
             found = by_x(infer.OnnxDetector(EXPORTS / f"{name}.onnx")(self.rgb, self.fixed, 0.3))
             self.assertEqual(len(found), len(self.expected), name)
             np.testing.assert_allclose(found[:, :2], self.expected[:, :2], atol=0.05, err_msg=name)
 
     def test_uint8_input_graph_equals_the_float_graph(self):
-        f32 = EXPORTS / f"detector_{infer.BEST}_fp32.onnx"
+        """The default model's _u8in export gives its fp32 export's detections, within 1e-5."""
+        f32 =EXPORTS / f"detector_{infer.BEST}_fp32.onnx"
         u8 = EXPORTS / f"detector_{infer.BEST}_u8in.onnx"
         if not u8.exists():
             self.skipTest("no _u8in export")
@@ -146,7 +164,8 @@ class Exports(unittest.TestCase):
         np.testing.assert_allclose(a, b, atol=1e-5)
 
     def test_embed_graph_gives_the_same_boxes(self):
-        embed = EXPORTS / f"detector_{infer.BEST}_embed.onnx"
+        """The default model's _embed export gives its fp32 export's boxes, on the whole frame and on a crop of it."""
+        embed =EXPORTS / f"detector_{infer.BEST}_embed.onnx"
         if not embed.exists():
             self.skipTest("no _embed export")
         a = infer.OnnxDetector(EXPORTS / f"detector_{infer.BEST}_fp32.onnx")
@@ -157,16 +176,19 @@ class Exports(unittest.TestCase):
             np.testing.assert_allclose(by_x(found_a), by_x(found_b), atol=1e-4)
 
     def test_int8_finds_the_same_targets(self):
-        found = by_x(infer.OnnxDetector(EXPORTS / "detector_small_int8.onnx")(self.rgb, self.fixed, 0.3))
+        """The small model's int8 export finds the expected targets, within 1 px."""
+        found =by_x(infer.OnnxDetector(EXPORTS / "detector_small_int8.onnx")(self.rgb, self.fixed, 0.3))
         self.assertEqual(len(found), len(self.expected))
         np.testing.assert_allclose(found[:, :2], self.expected[:, :2], atol=1.0)
 
     @staticmethod
     def get(request):
+        """The JSON answer to a URL or a urllib Request; raises HTTPError for an error status."""
         with urllib.request.urlopen(request) as answer:
             return json.load(answer)
 
     def test_http_api(self):
+        """serve.py answers /health, finds the expected targets through /detect, and answers 400 to a short body."""
         import serve
         serve.Handler.detector = infer.OnnxDetector(EXPORTS / "detector_small_fp32.onnx", 2)
         serve.Handler.model = "detector_small_fp32.onnx"

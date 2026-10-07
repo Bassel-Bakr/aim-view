@@ -1,3 +1,10 @@
+/**
+ * The edits a fix makes to a crop's scene, as pure functions: a scene from a crop and its answer
+ * or a suggestion, each edit (draw, copy, scale, join, hide, cross out), and the answer a scene
+ * gives back. In: the crop's model boxes and its answer (api.ts). Out: crop-draft.ts, which holds
+ * the scene, and the crop stage and tools that edit it.
+ */
+
 import {
   CropAnswer,
   CropBox,
@@ -19,8 +26,11 @@ import { CropFix } from './crop-lessons';
  * crop and its answer or suggestion, and turned back into an answer. Pure: crop-draft.ts holds the state.
  */
 export interface DraftScene {
+  /** Every shape, the model's boxes (ids m0, m1...) and the ones drawn. */
   shapes: Shape[];
+  /** Shapes joined into one target, as lists of shape ids; a shape in none is a target alone. */
   targets: string[][];
+  /** The ids of the shapes that hide what is behind them instead of being targets. */
   occluders: string[];
   /** The model boxes crossed out: no target there. */
   crossed: number[];
@@ -191,7 +201,9 @@ export function withDrawn(
 
 /** A scene with shapes copied, and the copies' ids. */
 export interface SceneCopy {
+  /** The scene with the copies added. */
   scene: DraftScene;
+  /** The copies' ids, in the order of the shapes they copy. */
   copies: string[];
 }
 

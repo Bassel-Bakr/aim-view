@@ -7,11 +7,13 @@ use std::fs;
 mod common;
 use common::{Diff, TrackingInputs, compare, parity_root, read};
 
-/// flower_crosshair (python/retired/tests/fixtures.py --crosshair): flower's tracks with the valorant run's crosshair
+/// The parity cases of tracking runs with Python's reports. flower_crosshair (python/retired/tests/fixtures.py
+/// --crosshair): flower's tracks with the valorant run's crosshair
 /// boxes (av1's, from its fast turns) put into its run, so the tracking review leaves out a detector's boxes on the
 /// crosshair.
 const CASES: [&str; 6] = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol", "flower_crosshair"];
 
+/// Each case's tracking report equals Python's.
 #[test]
 fn tracking_review_matches_python() {
     let root = parity_root();

@@ -1,7 +1,7 @@
 //! The user's run window for a recording: where the run starts and ends, kept with the recording (store.rs; as
-//! python/server.py keeps it, run.json in its folder). In: the marks the page sends (/api/run). Out: the kept marks,
-//! the part of the video a review tracks (with a margin, library/reviews.rs) and the marks the report measures within
-//! (report.rs).
+//! python/retired/server.py kept it, run.json in its folder). In: the marks the page sends (/api/run). Out: the kept
+//! marks, the part of the video a review tracks (with a margin: `RunMarks::tracked`, for library/reviews.rs) and the
+//! marks the report measures within (report.rs).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,15 +11,18 @@ use crate::store::{Item, Mark, Store};
 
 /// Seconds tracked either side of the window, so its first and last kills are whole (as the browser does).
 const MARGIN_S: f64 = 1.0;
-/// The latest a mark can be, in seconds (python/server.py: set_run).
+/// The latest a mark can be, in seconds (python/retired/server.py: set_run).
 const LONGEST_S: f64 = 36000.0;
 
 /// The marks in seconds, any of them None.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct RunMarks {
+    /// Where the run starts in the video, in seconds.
     pub start: Option<f64>,
+    /// Where the run ends in the video, in seconds.
     pub end: Option<f64>,
+    /// The run's length in seconds, for a window marked by one end only.
     pub length: Option<f64>,
 }
 
@@ -30,11 +33,13 @@ impl RunMarks {
         bytes.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
     }
 
+    /// Whether any mark is set.
     pub fn is_set(&self) -> bool {
         self.start.is_some() || self.end.is_some() || self.length.is_some()
     }
 
-    /// Marks sent by the page ({start, end, length}, each a number or null), checked as python/server.py checks them.
+    /// Marks sent by the page ({start, end, length}, each a number or null; an empty string is null), checked as
+    /// python/retired/server.py checked them: an error for a mark outside 0 to 10 hours, or an end before the start.
     pub fn parse(body: &Value) -> Result<RunMarks, String> {
         let mark = |key: &str| -> Result<Option<f64>, String> {
             match &body[key] {
@@ -89,11 +94,14 @@ pub fn covers(tracked: Option<TimeWindow>, wanted: Option<TimeWindow>) -> bool {
     }
 }
 
+/// The run window's marks and the part of the video they track.
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
+    /// Marks parse and give the tracked window with its margin as the server and the browser read them, bad marks are
+    /// refused, and `covers` holds only for a wider window.
     #[test]
     fn marks_as_the_server_and_the_browser_read_them() {
         let marks = RunMarks::parse(&json!({"start": 2.0, "end": 30.0, "length": null})).unwrap();

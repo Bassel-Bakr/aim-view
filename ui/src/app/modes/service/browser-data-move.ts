@@ -1,22 +1,31 @@
 /// <reference lib="webworker" />
-// The one-time move of what the old browser mode kept in IndexedDB (its own store, "aimview" / "kv") into the
-// service's data folder, through the service's own routes, so the service writes every file as it always does. It
-// runs in the service worker once the service is open, before the page's first request. The old store keeps its copy:
-// only a mark that the move is done is added to it. Saved data is keyed by each file's fingerprint (name, size and
-// date), so it is matched to the recordings in the remembered VODs folder; it waits for a visit when that folder can
-// be read. KovaaK's stats files and scenarios are not moved: the old store holds no scenario files, so the user
-// chooses KovaaK's folder again, which copies both.
+/**
+ * The one-time move of what the old browser mode kept in IndexedDB (its own store, "aimview" /
+ * "kv") into the service's data folder, through the service's own routes, so the service writes
+ * every file as it always does. It runs in the service worker once the service is open, before the
+ * page's first request. The old store keeps its copy: only a mark that the move is done is added to
+ * it. Saved data is keyed by each file's fingerprint (name, size and date), so it is matched to the
+ * recordings in the remembered VODs folder; it waits for a visit when that folder can be read.
+ * KovaaK's stats files and scenarios are not moved: the old store holds no scenario files, so the
+ * user chooses KovaaK's folder again, which copies both. In: the old store. Out: the service's
+ * routes called with its data (service.worker.ts runs `moveBrowserData`).
+ */
 import { AreaBox, AreaExample, AreaKind, FaintSetting, RunMarks, Tracks } from '../../api';
 import { HudReading, VideoReadings } from '../wasm/review-messages';
 import { ServiceAnswer, ServiceCall } from './service-messages';
 
+/** The old store's IndexedDB database. */
 const DB = 'aimview';
+/** The old store's object store in it. */
 const STORE = 'kv';
 /** Added to the old store once the move is done, so it runs once. */
 const MOVED_KEY = 'moved-to-service';
 /** The video types the service lists (service/src/library/recordings.rs: VIDEO_TYPES). */
 const VIDEO_TYPES = ['mp4', 'mkv', 'mov', 'webm'];
-/** How far below the VODs folder the old browser mode looked for videos (recordings-folder.ts: DEPTH). */
+/**
+ * How far below the VODs folder the old browser mode looked for videos (recordings-folder.ts:
+ * DEPTH), in folder levels.
+ */
 const DEPTH = 3;
 
 /** When each model's review of a recording was saved, by model. */
@@ -24,44 +33,67 @@ type SavedModels = Record<string, number>;
 
 /** A review as the old browser mode kept it (saved-reviews.ts: SavedReview). */
 interface OldReview {
+  /** The tracks (tracks.json). */
   tracks: Tracks;
+  /** The camera's readings and the countdown. */
   readings: VideoReadings;
+  /** What the HUD read; missing in reviews from before the HUD was read. */
   hud?: HudReading | null;
+  /** The model that made it. */
   model: string;
+  /** What the area finder found, when it was kept. */
   found?: unknown;
 }
 
 /** A stats file as the old browser mode kept it with a recording (stats-csv.ts: StatsCsv). */
 interface OldStatsCsv {
+  /** The stats file's name. */
   name: string;
+  /** Its whole text. */
   text: string;
 }
 
 /** A recording's stats file in the old browser mode (local-files.ts: KeptStats). */
 interface OldStatsPair {
+  /** The stats file; null when the recording had none. */
   stats: OldStatsCsv | null;
+  /** How it was paired: "picked", "upload" and "beside" are the user's own, which are moved. */
   how: string;
 }
 
 /** What the old store held, by its keys; each missing one is empty. */
 interface OldData {
+  /** The saved reviews, by recording fingerprint (review-index). */
   reviews: Record<string, SavedModels>;
+  /** The run windows, by fingerprint (run-marks). */
   marks: Record<string, RunMarks>;
+  /** The faint cut-offs, by fingerprint (faint-cutoffs). */
   faint: Record<string, FaintSetting>;
+  /** The fingerprints left out of the cut-off queue (faint-skipped). */
   faintSkipped: string[];
+  /** The excluded areas, by fingerprint (exclude-areas). */
   areas: Record<string, AreaBox[]>;
+  /** The raw mouse logs' file names, by fingerprint (mouse-logs). */
   mouseLogs: Record<string, string>;
+  /** The recording ids marked as another game (not-aim). */
   notAim: string[];
+  /** The recording ids left out of the area queue (label-skipped). */
   labelSkipped: string[];
+  /** The area finder's examples it learned (area-examples). */
   examples: AreaExample[];
+  /** The area types (area-kinds). */
   kinds: AreaKind[];
+  /** Each recording's stats file, by "folder:<id>" for the VODs folder's (stats-pairs). */
   statsPairs: Record<string, OldStatsPair>;
+  /** The remembered VODs folder (recordings-folder); null when there is none. */
   folder: FileSystemDirectoryHandle | null;
 }
 
 /** A video below the VODs folder: its path there (the service's recording id) and its file. */
 interface FolderVideo {
+  /** Its path below the folder: the service's recording id. */
   path: string;
+  /** The file, for its fingerprint (name, size and date). */
   file: File;
 }
 
@@ -80,6 +112,7 @@ function openOld(): Promise<IDBDatabase | null> {
   });
 }
 
+/** The old store's value under the key; undefined when there is none or it cannot be read. */
 function get<T>(db: IDBDatabase, key: string): Promise<T | undefined> {
   return new Promise((resolve) => {
     const req = db.transaction(STORE).objectStore(STORE).get(key);
@@ -88,6 +121,7 @@ function get<T>(db: IDBDatabase, key: string): Promise<T | undefined> {
   });
 }
 
+/** Marks the move done in the old store (the time, under `MOVED_KEY`); a failed write is silent. */
 function setMoved(db: IDBDatabase): Promise<void> {
   return new Promise((resolve) => {
     const tx = db.transaction(STORE, 'readwrite');
@@ -97,6 +131,7 @@ function setMoved(db: IDBDatabase): Promise<void> {
   });
 }
 
+/** Everything the old store held, each missing key read as empty. */
 async function readOld(db: IDBDatabase): Promise<OldData> {
   const [reviews, marks, faint, faintSkipped, areas, mouseLogs] = await Promise.all([
     get<Record<string, SavedModels>>(db, 'review-index'),
@@ -141,6 +176,10 @@ function fingerprints(old: OldData): Set<string> {
   ]);
 }
 
+/**
+ * Whether the old store holds anything not keyed by a fingerprint: stats files paired, mouse logs,
+ * labels, examples or area types.
+ */
 function hasGlobal(old: OldData): boolean {
   const pairs = Object.values(old.statsPairs).some((pair) => pair.stats);
   const logs = Object.keys(old.mouseLogs).length > 0;
@@ -199,10 +238,14 @@ async function call(
   }
 }
 
+/** The path with the params as its query. */
 const withQuery = (path: string, params: Record<string, string>) =>
   `${path}?${new URLSearchParams(params).toString()}`;
 
-/** One recording's saved data, under its id in the service. The window goes first: it starts no review then. */
+/**
+ * One recording's saved data, under its id in the service. The window goes first: it starts no
+ * review then.
+ */
 async function moveRecording(
   send: ServiceCall,
   db: IDBDatabase,
@@ -232,7 +275,10 @@ async function moveRecording(
   if (areas) await call(send, 'POST', withQuery('/api/exclude', { id }), areas);
 }
 
-/** The examples: the service's (the shipped ones) with each recording the browser learned replaced by its own. */
+/**
+ * The examples: the service's (the shipped ones) with each recording the browser learned replaced
+ * by its own.
+ */
 async function moveExamples(send: ServiceCall, old: OldData): Promise<void> {
   if (!old.examples.length) return;
   const shipped = await call(send, 'GET', '/api/area_examples', null);
@@ -246,9 +292,9 @@ async function moveExamples(send: ServiceCall, old: OldData): Promise<void> {
 }
 
 /**
- * Moves the old browser mode's data into the service once. `send` answers through the service (the worker's own
- * queue). Without the old store, or once moved, it does nothing; while the VODs folder cannot be read and recordings
- * have saved data, it waits for a later visit.
+ * Moves the old browser mode's data into the service once. `send` answers through the service (the
+ * worker's own queue). Without the old store, or once moved, it does nothing; while the VODs folder
+ * cannot be read and recordings have saved data, it waits for a later visit.
  */
 export async function moveBrowserData(send: ServiceCall): Promise<void> {
   const db = await openOld();
@@ -266,7 +312,10 @@ export async function moveBrowserData(send: ServiceCall): Promise<void> {
   await setMoved(db);
 }
 
-/** What the recordings of the VODs folder kept: each one's data, the stats files paired with them, their labels. */
+/**
+ * What the recordings of the VODs folder kept: each one's data, the stats files paired with them,
+ * their labels.
+ */
 async function moveFolderData(
   send: ServiceCall,
   db: IDBDatabase,

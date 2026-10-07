@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 AREA_EXAMPLES = ROOT / "test_out" / "vod_app" / "area_examples.jsonl"   # the saved areas the area finder learns from
 VODS_DEFAULT = local_config.folder("vods")             # this computer's settings (local_config.py); None: the app's
 STATS_DEFAULT = local_config.kovaak("stats")
+# the built tool, run when cargo is not on the PATH
 TOOL = ROOT / "target" / "release" / ("aimview-tool.exe" if os.name == "nt" else "aimview-tool")
 # The share of the time a review's detector runs (aimview-tool review --gpu-share), when this is set.
 GPU_SHARE_VAR = "AIMVIEW_GPU_SHARE"
@@ -85,6 +86,7 @@ def options(settings):
 
 
 def _path(path):
+    """A path from the tool's JSON as a Path, None kept as None."""
     return None if path is None else Path(path)
 
 
@@ -113,6 +115,8 @@ class Names:
 
     @staticmethod
     def match(name):
+        """A recording's file name read as {scenario, score (a float), stamp}, or None when it is not an .mp4 named
+        "<scenario> - <score> - <stamp>" with a number for the score and a time for the stamp."""
         if not name.endswith(".mp4"):
             return None
         rest, gap, stamp = name.removesuffix(".mp4").rpartition(" - ")
@@ -133,7 +137,7 @@ NAME = Names()
 
 class Library:
     """The review service's library (aimview_service::Library) on this computer's data, as the scripts use it. The
-    recordings and their stats files are read once, when it opens (one run of the tool for every recording)."""
+    recordings and their stats files are read once, when it opens (one run of the tool reads them all)."""
 
     def __init__(self, vods=VODS_DEFAULT, stats=STATS_DEFAULT, **config):
         """config: the library's other settings (data, layout, models, scenarios: a list, device, ffmpeg,

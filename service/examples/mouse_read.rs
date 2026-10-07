@@ -8,6 +8,7 @@ use std::path::Path;
 use aimview::mouse::{self as reader, Options, ReadOutcome, ReadRequest};
 use aimview_service::mouse::utc_offset_at;
 
+/// Nanoseconds in a second: the log's header gives its start in nanoseconds since 1970.
 const NS_PER_S: f64 = 1e9;
 
 /// The reader's options from the command line, the defaults where an option is not given.
@@ -28,6 +29,8 @@ fn read_lossy(path: &str) -> String {
     String::from_utf8_lossy(&std::fs::read(path).unwrap_or_else(|error| panic!("{path}: {error}"))).into_owned()
 }
 
+/// Reads the log with the command line's options and prints the run's measures (and writes its kills) or the log's
+/// summary; exits with 2 without a log, 1 when the reader fails.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let value = |name: &str| args.iter().position(|arg| arg == name).and_then(|i| args.get(i + 1)).cloned();

@@ -1,4 +1,5 @@
-"""Training crops mined from full_v3's own mistakes (REPRODUCE.md step 1). Not checked by eye and not trained on yet.
+"""Training crops mined from full_v3's own mistakes (REPRODUCE.md step 1). First made on 2026-10-04; the crops were
+then checked by eye on the phone and trained on from full_v4 (checked_data.py turns the checks into a training set).
 
 The recordings: those with a KovaaK stats file, of every scenario kind, the newest --per-folder of each scenario folder,
 the stats-file checks' runs left out (build_data.check_runs). Moving kinds come first (dynamic and switching in turn,
@@ -10,8 +11,8 @@ the camera's turn (readings.json: phase correlation over the whole frame; the tr
 fools, only as a second opinion) give four rules, each kept only inside the run (from the stats file's start, else the
 end of KovaaK's countdown, to the run's length; half a second in from each end). A chain is the tracks appearances()
 joins (one target picked up again); a verified chain is a target for sure: one a clicking run's matched kills
-(old_review.match) end, or in a tracking run one held near the crosshair a fifth of the time (a cloud, a name tag or a wall
-seam the model boxes steadily is neither).
+(old_review.match) end, or in a tracking run one held near the crosshair a fifth of the time (a cloud, a name tag or a
+wall seam the model boxes steadily is neither).
 - kill: a kill of a dynamic or switching run, matched as the core matches them (old_review.match: the clock offset voted
   from the kills, the killed target's chain). In the third of a second before the kill (up to 2 frames before it), a
   frame where the killed target has no box (under the crosshair, faint, merged): its place comes from its own track,
@@ -46,12 +47,13 @@ Each mined place gives one 256 x 256 crop round it (shifted up to 48 px at rando
 fixed, tmask, boxes (the review's boxes of that frame, the placed ones added and the false ones taken out), plus
 scores (the model's, -1 for a placed box), mined (the rule), fix (the box placed or taken out, in the crop), frame and
 why. A crop is left out when another box in it is not a verified chain's (seen steadily, not on a crosshair spot), or
-when its frame has more boxes than the scenario has targets. Splits follow build_data.split_of. Incremental: a recording already in the manifest (same file and size) is skipped.
+when its frame has more boxes than the scenario has targets. Splits follow build_data.split_of. Incremental: a
+recording already in the manifest (same file and size) is skipped.
 --pick N --check <folder>: copies N crops spread over the rules and recordings into <folder> (split folders and
 picks.jsonl) for a check by eye with label_check.py; the dataset is left as it is.
 Usage: python python/model/build_mined.py [--out test_out/vod_model/data_mined] [--budget 3600] [--per-folder 1]
-       [--reviewed-only]
-       python python/model/build_mined.py --pick 100 --check test_out/vod_model/check_mined
+       [--reviewed-only] [--workers 2] [--limit N] [--vods <recordings' folder>]
+       python python/model/build_mined.py --pick 100 --check test_out/vod_model/check_mined [--seed 0]
 """
 import argparse
 import collections
@@ -81,9 +83,10 @@ import infer  # noqa: E402
 import old_review  # noqa: E402
 
 WIDTH, HEIGHT, CROP = old_review.W, old_review.H, 256
-MODEL = HERE / "exports" / "detector_full_v3_u8in.onnx"
+MODEL = HERE / "exports" / "detector_full_v3_u8in.onnx"   # the export the reviews ran, run again on the frames used
 THRESHOLD = 0.3                              # full_v3's, in its settings file
 RULES = ("kill", "gap", "false_static", "false_lone")
+# each rule's letter in a crop's file name
 CODE = dict(kill="k", gap="g", false_static="s", false_lone="l")
 PER_KILL = 4                                 # crops per kill at most
 PER_RUN = dict(kill=80, gap=40, false_static=12, false_lone=20)   # crops per recording and rule at most
@@ -119,22 +122,22 @@ SEEN_SHARE = 0.8                             # seen in this share of the frames 
 SIZE_BEFORE, SIZE_AFTER = 5, 3               # sightings the size is the median of
 SPEED_FRAMES, MIN_SPEED_POINTS = 4, 2        # its own speed: over the sightings in the 4 frames before the last
 CLOCK_SLACK_FRAMES = 2                       # the speed leads it onto the crosshair within this many frames of the kill
-ONTO_SLACK_DEG = 0.3
+ONTO_SLACK_DEG = 0.3                         # onto the crosshair: within half its larger side and this
 FREE_MIN_DEG, FREE_SIZE = 0.3, 0.6           # no box of the review within max(0.3 deg, 0.6 sizes) of a placed box
 
 # gap: missed for 1 or 2 frames, seen steadily either side
 GAP_FRAMES = (1, 2)
 SIDE_MIN_FRAMES, SIDE_PER_S = 4, 30          # seen 4 frames in a row either side (1/30 s at higher frame rates)
 KILL_CLEAR_FRAMES = 5                        # not within this many frames of a kill
-GAP_STEADY_SHARE, GAP_STEADY_HALF_S = 0.9, 0.25
+GAP_STEADY_SHARE, GAP_STEADY_HALF_S = 0.9, 0.25   # seen in 9 in 10 frames over a quarter second either side
 SIZE_RATIO_MIN, SIZE_RATIO_MAX = 0.7, 1.43   # its size either side agrees
-TINY_AREA = 1e-6
+TINY_AREA = 1e-6                             # the smallest area a size ratio is divided by
 SPEED_SPAN = 3                               # frames its speed either side is measured over
 AGREE_MIN_DEG, AGREE_SIZE = 0.15, 0.35       # its speed either side leads it to the other side within this
 
 # false_static: a box that stays put on screen while the view turns
 LINK_DEG = 0.08                              # boxes linked frame to frame by their place on screen within this
-STATIC_MIN_FRAMES, STATIC_MIN_S = 8, 0.1
+STATIC_MIN_FRAMES, STATIC_MIN_S = 8, 0.1     # it stays put this many frames and this long at least
 STILL_DEG, STILL_NEAR_DEG, NEAR_CROSSHAIR_DEG = 0.1, 0.03, 1.5   # stays within this (the second near the crosshair)
 MIN_TURN_DEG = 1.0                           # while the view turns this much
 TURNING_DEG = 0.02                           # the camera turning at that frame
@@ -152,24 +155,25 @@ JOIN_FRAMES = 8                              # frames this close are decoded in 
 MAX_WINDOWS = 120                            # ffmpeg's expressions stay short
 LINE_UP_TURN_DEG = 0.03                      # frames where the camera turns, so a frame off shows
 LINE_UP_DEG = 0.15                           # a review box found again within this
+# lined up: 20 boxes looked at or more, 8 in 10 found again, and more than with the frames one off (by 0.05)
 LINE_UP_MIN_BOXES, LINE_UP_SHARE, LINE_UP_MARGIN = 20, 0.8, 0.05
 
 # the image tests and the crops
 OVERSAMPLE = 2                               # the image tests drop some places: sample twice the cap first
-MIN_KEY_FRAMES = 3
+MIN_KEY_FRAMES = 3                           # a recording with fewer key frames gives no fixed map: dropped
 SAME_CENTER, SAME_SLACK_PX, SAME_AREA_MIN, SAME_AREA_MAX = 0.3, 1, 0.6, 1.67   # the export's own box of a placed one
 TOUCH_PX = 2                                 # another box touching a placed one
-STATIC_PATCH_MARGIN_PX = 3
+STATIC_PATCH_MARGIN_PX = 3                   # false_static: the image compared is the box and this round it
 SAME_IMAGE = 10                              # false_static: the image the same (mean difference under this)
 LONE_CLEAR_PX, LONE_CLEAR_SIZES = 24.0, 4    # false_lone: no box of the export within this (or 4 box sizes)
-LONE_PATCH_MIN_PX, LONE_PATCH_MARGIN_PX = 4, 2
+LONE_PATCH_MIN_PX, LONE_PATCH_MARGIN_PX = 4, 2   # false_lone: the patch looked for is the box and 2 px round it
 NEAR_REACH_PX, FAR_REACH_PX = 48, 64         # the patches looked for a match in the frames 1 and 3 away
 LIKE_PATCH = 20                              # a patch matching to this mean difference is like it
 EXPORT_MATCH_PX = 2.0                        # the export's box of a review box
 TAKE_OUT_MIN_PX = 3.0                        # a box taken out removes the review's boxes within this (or half its size)
 JITTER_PX = 48                               # a crop's corner moves up to this far at random
-REASON_CHARS = 160
-FOLDER_CHARS = 38
+REASON_CHARS = 160                           # an error's reason kept in the manifest
+FOLDER_CHARS = 38                            # a folder's name in the progress lines
 
 
 def px_size(x, y, width_deg, height_deg):
@@ -219,7 +223,9 @@ def shows(rgb, fixed, cx, cy, width, height, ref=None):
 
 
 def patch(rgb, cx, cy, half):
-    x, y = int(round(cx)), int(round(cy))
+    """The square of rgb 2 * half + 1 px a side centered on (cx, cy), as floats, or None where it does not fit in the
+    frame."""
+    x, y =int(round(cx)), int(round(cy))
     if x - half < 0 or y - half < 0 or x + half + 1 > WIDTH or y + half + 1 > HEIGHT:
         return None
     return rgb[y - half:y + half + 1, x - half:x + half + 1].astype(np.float32)
@@ -243,7 +249,9 @@ class Run:
     target picked up again), the camera's turn, the run's frames."""
 
     def __init__(self, folder, kind, stats):
-        self.tracks = json.loads((folder / "tracks.json").read_text(encoding="utf-8"))
+        """Reads the review in `folder` (tracks.json, readings.json) for a run of the scenario `kind` with its stats
+        file, lines up the kills, and sets the run's window and its verified chains."""
+        self.tracks =json.loads((folder / "tracks.json").read_text(encoding="utf-8"))
         readings = json.loads((folder / "readings.json").read_text(encoding="utf-8"))
         self.fps, frames = self.tracks["fps"], self.tracks["frames"]
         self.frame_count = len(frames)
@@ -266,6 +274,7 @@ class Run:
         self._verify()
 
     def _read_boxes(self, frames):
+        """Sets each frame's boxes and each track's places (degrees) by frame."""
         self.boxes = []                              # per frame: (track, x, y, wd, hd, score)
         self.places = {}
         for frame in frames:
@@ -277,7 +286,9 @@ class Run:
                 self.places.setdefault(track, {})[frame["i"]] = (x, y)
 
     def _read_camera(self, readings, frames):
-        camera = np.zeros((self.frame_count, 2))
+        """Sets the camera's turn per frame (degrees; 0 where a reading is missing, which camera_ok says), its running
+        sum, and the tracks' own shift."""
+        camera =np.zeros((self.frame_count, 2))
         self.camera_ok = np.zeros(self.frame_count, bool)
         for i, reading in enumerate((readings.get("camera") or [])[:self.frame_count]):
             if reading is not None:
@@ -288,7 +299,8 @@ class Run:
         self.turn_sum = np.cumsum(camera, axis=0)
 
     def _join_chains(self):
-        _, self.follows = old_review.appearances(self.tracks)
+        """Sets each track's chain (its first track, the root), each chain's frames and its first and last frame."""
+        _, self.follows =old_review.appearances(self.tracks)
         before = {after: track for track, after in self.follows.items()}
         self.root, self.chain = {}, collections.defaultdict(set)
         for track, seen in self.places.items():
@@ -322,7 +334,9 @@ class Run:
         return start
 
     def _set_window(self, start):
-        length = old_review.stats_length(self.stats)
+        """Sets the run's window (first, last frame): from `start` (s) to the stats file's length, EDGE_S in from each
+        end; None without a start or a length, or when it would be a second or shorter."""
+        length =old_review.stats_length(self.stats)
         self.window = None
         if start is not None and length:
             low = int(round((start + EDGE_S) * self.fps))
@@ -353,6 +367,7 @@ class Run:
                 self.verified.add(root)
 
     def inside(self, i):
+        """Whether frame i is in the run's window."""
         return self.window is not None and self.window[0] <= i <= self.window[1]
 
     def turned(self, start, end):
@@ -370,9 +385,11 @@ class Run:
         return None
 
     def on_spot(self, x, y):
+        """Whether a place (degrees) is on a spot where the model marks the crosshair."""
         return any(math.hypot(x - spot_x, y - spot_y) < SPOT_DEG for spot_x, spot_y in self.spots)
 
     def near(self, i, x, y, radius):
+        """Whether frame i has a review box within `radius` degrees of (x, y)."""
         return any(math.hypot(box_x - x, box_y - y) < radius for _, box_x, box_y, *_ in self.boxes[i])
 
     def trusted(self, track, i, x, y):
@@ -393,7 +410,8 @@ class Run:
         return sum(k in self.chain[root] for k in range(low, high + 1)) >= share * (high - low + 1)
 
     def placeable(self, x, y):
-        cx, cy = old_review.to_px(x, y)
+        """Whether a box can be placed at (x, y) degrees: EDGE_PX inside the frame and where the review reads."""
+        cx, cy =old_review.to_px(x, y)
         return EDGE_PX <= cx < WIDTH - EDGE_PX and EDGE_PX <= cy < HEIGHT - EDGE_PX and self.mask[int(cy), int(cx)]
 
 
@@ -550,7 +568,8 @@ def gap_places(run):
         end, start = ends
         seen_before, seen_after = run.places[before], run.places[after]
 
-        def world(seen, frame):                           # a place over the world
+        def world(seen, frame):
+            """A place over the world: its place on screen in that frame, less the camera's turn up to it."""
             return np.array(seen[frame]) - run.turn_sum[frame]
         speed_before = (world(seen_before, end) - world(seen_before, end - SPEED_SPAN)) / SPEED_SPAN
         speed_after = (world(seen_after, start + SPEED_SPAN) - world(seen_after, start)) / SPEED_SPAN
@@ -797,10 +816,12 @@ def placed_tests(run, places, decoded, drop):
             # the export run again on the CPU can find the target itself (a score near the threshold): its box,
             # about where and as big as the placed one, confirms the place and is left out of the boxes round it
             def same(box):
+                """Whether an export box is the placed one: its center near and its area within a factor of it."""
                 return math.hypot(box[0] - cx, box[1] - cy) < SAME_CENTER * max(width, height) + SAME_SLACK_PX and \
                     SAME_AREA_MIN < box[2] * box[3] / (width * height) < SAME_AREA_MAX
 
             def touches(other):
+                """Whether a box (cx, cy, w, h in px) overlaps the placed one or comes within TOUCH_PX of it."""
                 return abs(other[0] - cx) < (other[2] + width) / 2 + TOUCH_PX and \
                     abs(other[1] - cy) < (other[3] + height) / 2 + TOUCH_PX
             cpu = [box for box in boxes[i] if same(box)]
@@ -1011,6 +1032,7 @@ class Build:
     reviewed ones (the CPU: decoding, the export)."""
 
     def __init__(self, args, lib, todo, rows, out):
+        """todo: the jobs to review and mine; rows: the manifest's rows so far, each new one added as it is done."""
         self.args, self.lib, self.todo, self.rows, self.out = args, lib, todo, rows, out
         self.manifest = out / "manifest.jsonl"
         self.detector = infer.OnnxDetector(MODEL, threads=4)
@@ -1039,6 +1061,8 @@ class Build:
         return job, folder, seconds
 
     def reviewer(self):
+        """The review thread: reviews the jobs in turn until the budget is spent, hands each to the miners, then tells
+        each miner to stop."""
         for job in self.todo:
             if self.spent >= self.args.budget:
                 break
@@ -1052,6 +1076,8 @@ class Build:
             self.reviewed.put(None)
 
     def miner(self):
+        """A mining thread: mines each reviewed recording it is handed, adds its row, rewrites the manifest and prints
+        a line, until told to stop."""
         while (item := self.reviewed.get()) is not None:
             job, folder, seconds = item
             row = dict(folder=job["folder"], file=job["file"], size=job["size"], split=job["split"], kind=job["kind"],
@@ -1076,6 +1102,7 @@ class Build:
                       f"(review {self.spent:.0f} s, {time.time() - self.started:.0f} s)", flush=True)
 
     def run(self):
+        """Runs the review thread and the miners until every job is done or the budget is spent."""
         self.started = time.time()
         reviewer = threading.Thread(target=self.reviewer)
         reviewer.start()
@@ -1086,6 +1113,8 @@ class Build:
 
 
 def build(args):
+    """Mines the recordings not done before (same file and size), keeps the other rows, and prints each split's
+    counts by rule."""
     out = Path(args.out)
     for split in SPLITS:
         (out / split).mkdir(parents=True, exist_ok=True)
@@ -1141,6 +1170,7 @@ def pick(args):
     quota, left = {}, args.pick
 
     def crops_of(rule):
+        """The rule's crop count, over all its recordings."""
         return sum(map(len, by_rule[rule].values()))
     for k, rule in enumerate(sorted(by_rule, key=crops_of)):
         quota[rule] = min(crops_of(rule), left // (len(by_rule) - k))
@@ -1182,6 +1212,7 @@ def write_picks(picked, out, recordings):
 
 
 def main():
+    """Picks crops for a check with --pick, else builds the dataset."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--vods", default=aimview_tools.VODS_DEFAULT)
     parser.add_argument("--out", default="test_out/vod_model/data_mined")

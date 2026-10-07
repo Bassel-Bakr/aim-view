@@ -8,7 +8,7 @@
 //! front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them
 //! (occluders: the crosshair, a pillar, an overlay).
 //!
-//! In: a scene, as the Crops page saves it (service/src/library/crops.rs). Out: each target's visible pixels and box
+//! In: a scene, as the Crops page saves it (service/src/crops.rs). Out: each target's visible pixels and box
 //! (`visible`), for the page (src/wasm.rs `shapes_visible`) and the training set (aimview-tool crop-labels, read by
 //! python/model/checked_data.py). Coordinates are crop pixels, pixel i at coordinate i (as checked_data.py's
 //! `ellipse_mask` reads a box); an angle is in degrees, clockwise on screen.
@@ -20,7 +20,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ShapeKind {
+    /// Two half circles joined by straight sides; a circle when its sides are equal (a sphere).
     Pill,
+    /// A rectangle (a square or a cube's face), or the solid or hand-placed box its other fields give.
     Box,
 }
 
@@ -29,7 +31,9 @@ pub enum ShapeKind {
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ShapeRole {
+    /// The bot's head.
     Head,
+    /// The bot's body.
     Body,
 }
 
@@ -40,25 +44,37 @@ pub enum ShapeRole {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Shape {
+    /// The shape's id in the scene, which `Scene::targets` and `Scene::occluders` name it by.
     pub id: String,
+    /// Pill or box.
     pub kind: ShapeKind,
+    /// Its frame before turning: [center x, center y, width, height], crop pixels ("box" in the JSON).
     #[serde(rename = "box")]
     #[cfg_attr(feature = "ts", ts(rename = "box", as = "crate::typescript::CropBox"))]
     pub frame: [f64; 4],
+    /// Its turn about its center, in degrees clockwise on screen.
     #[serde(default)]
     pub angle: f64,
+    /// The offset of its far end from its near one, crop pixels [x, y]; None for a flat shape.
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<crate::typescript::FaceOffset>"))]
     pub face: Option<[f64; 2]>,
+    /// Its thickness and turn out of the screen's plane, for a solid shape; when given it decides the outline
+    /// instead of `face`.
     #[serde(default)]
     pub solid: Option<Solid>,
+    /// A box's vertices placed by hand, crop pixels (4 for a flat box, 8 for a 3D one); when there are 3 or more they
+    /// decide its outline.
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::CropVertex>>"))]
     pub points: Option<Vec<[f64; 2]>>,
+    /// Its place front to back: greater is nearer, and a nearer shape hides the parts of those behind it.
     #[serde(default)]
     pub depth: i32,
+    /// The part of a bot it stands for, if it is one.
     #[serde(default)]
     pub role: Option<ShapeRole>,
+    /// The model box it started from, an index into the crop's boxes; None for one drawn from nothing.
     #[serde(default)]
     pub model: Option<usize>,
 }
@@ -83,9 +99,12 @@ pub struct Solid {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Scene {
+    /// Every shape on the crop, targets' and occluders'.
     pub shapes: Vec<Shape>,
+    /// The groups of shapes joined into one target, each by its shapes' ids.
     #[serde(default)]
     pub targets: Vec<Vec<String>>,
+    /// The ids of the shapes that only hide what is behind them.
     #[serde(default)]
     pub occluders: Vec<String>,
 }
@@ -96,13 +115,19 @@ pub struct Scene {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TargetView {
+    /// The ids of the target's shapes.
     pub shapes: Vec<String>,
+    /// The box round its visible pixels, [center x, center y, width, height] in crop pixels ("box" in the JSON); None
+    /// when none shows.
     #[serde(rename = "box")]
     #[cfg_attr(feature = "ts", ts(rename = "box", as = "Option<crate::typescript::CropBox>"))]
     pub frame: Option<[f64; 4]>,
+    /// The box round all its shapes, hidden parts too, in the same form.
     #[cfg_attr(feature = "ts", ts(as = "crate::typescript::CropBox"))]
     pub whole: [f64; 4],
+    /// Whether nearer shapes hide all of it.
     pub hidden: bool,
+    /// Its visible pixels as run lengths over the crop (`runs`).
     pub runs: Vec<u32>,
 }
 
@@ -110,7 +135,9 @@ pub struct TargetView {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SceneView {
+    /// Each target, in the order `targets` gives them.
     pub targets: Vec<TargetView>,
+    /// Every target's visible pixels as run lengths over the crop (`runs`).
     pub mask: Vec<u32>,
 }
 
@@ -143,7 +170,7 @@ fn corners(shape: &Shape) -> [[f64; 2]; 4] {
     ]
 }
 
-/// The convex hull of points, counterclockwise in maths' terms (Andrew's monotone chain).
+/// The convex hull of points, counterclockwise in math's terms (Andrew's monotone chain).
 fn convex_hull(mut points: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
     points.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
     points.dedup();
@@ -332,7 +359,7 @@ fn in_deep_pill(shape: &Shape, [dx, dy]: [f64; 2], x: f64, y: f64) -> bool {
 
 /// Whether a crop point is inside a shape: a pill holds the points within its radius of its middle segment (of the
 /// band it sweeps to its far end, with a third face; of its tipped axis, solid); a box those in its turned rectangle,
-/// or in its outline when it has a third face or is solid.
+/// or in its outline when it has a third face, is solid or has its vertices placed.
 pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
     if free_points(shape).is_some() {
         return in_convex(&outline(shape), x, y);
@@ -543,8 +570,11 @@ fn count(mask: &[u8]) -> usize {
 /// The request of `visible_json`: a scene on a crop of width x height.
 #[derive(Deserialize)]
 struct VisibleRequest {
+    /// The crop's shapes, targets and occluders.
     scene: Scene,
+    /// The crop's width, in pixels.
     width: usize,
+    /// The crop's height, in pixels.
     height: usize,
 }
 
@@ -561,20 +591,25 @@ pub fn visible_json(request: &[u8]) -> Vec<u8> {
     .unwrap_or_default()
 }
 
+/// Checks the shapes' outlines, what hides what, the scene's checks and the run lengths.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The test crops' side, in pixels.
     const SIDE: usize = 128;
 
+    /// A flat, unturned shape with this id, kind, frame and depth, and no role or model box.
     fn shape(id: &str, kind: ShapeKind, frame: [f64; 4], depth: i32) -> Shape {
         Shape { id: id.into(), kind, frame, angle: 0.0, face: None, solid: None, points: None, depth, role: None, model: None }
     }
 
+    /// Whether the pixel (x, y) of a SIDE x SIDE crop is set in these run lengths.
     fn pixel(view: &[u32], x: usize, y: usize) -> bool {
         from_runs(view, SIDE * SIDE)[y * SIDE + x] != 0
     }
 
+    /// A head and a body joined are one target, with one box round both.
     #[test]
     fn joined_shapes_make_one_target_with_one_box() {
         let head = Shape { role: Some(ShapeRole::Head), ..shape("head", ShapeKind::Pill, [50.0, 40.0, 10.0, 10.0], 0) };
@@ -592,6 +627,8 @@ mod tests {
         assert_eq!(view.mask, target.runs);
     }
 
+    /// A pill turned upright, a round pill, a cube with a third face and a turned box hold the points inside their
+    /// outlines and no others.
     #[test]
     fn a_turned_pill_and_a_box_with_a_face_cover_their_outlines() {
         let upright = Shape { angle: 90.0, ..shape("p", ShapeKind::Pill, [64.0, 64.0, 40.0, 10.0], 0) };
@@ -609,6 +646,7 @@ mod tests {
         assert!(contains(&turned, 50.0, 50.0 - 13.0) && !contains(&turned, 41.0, 41.0));
     }
 
+    /// A pill with a third face holds the band it sweeps to its far end, round ends included, and its bounds span it.
     #[test]
     fn a_pill_with_a_third_face_covers_the_band_to_its_far_end() {
         let pill = shape("p", ShapeKind::Pill, [40.0, 64.0, 10.0, 30.0], 0);
@@ -624,6 +662,8 @@ mod tests {
         assert!((y0 - 39.0).abs() < 1e-9 && (y1 - 79.0).abs() < 1e-9, "{y0} {y1}");
     }
 
+    /// A solid box tipped or swung shows its thickness, a capsule end on is a disc, and a solid of no thickness is
+    /// refused.
     #[test]
     fn a_solid_shows_the_camera_what_its_turn_puts_in_front() {
         let solid = |tip: f64, swing: f64| Some(Solid { thickness: 30.0, tip, swing });
@@ -646,6 +686,7 @@ mod tests {
         assert!(check(&Scene { shapes: vec![Shape { solid: Some(Solid { thickness: 0.0, tip: 0.0, swing: 0.0 }), ..shape("z", ShapeKind::Box, [1.0, 1.0, 1.0, 1.0], 0) }], ..Scene::default() }).is_err());
     }
 
+    /// A box's vertices placed by hand decide its outline: 4 moved corners, or a cube's 8 spanning a hexagon.
     #[test]
     fn a_box_with_its_vertices_placed_covers_what_they_span() {
         let flat = shape("b", ShapeKind::Box, [64.0, 64.0, 20.0, 20.0], 0);
@@ -659,6 +700,8 @@ mod tests {
         assert!(contains(&placed, 78.0, 50.0) && !contains(&placed, 55.0, 50.0));
     }
 
+    /// An occluder in front takes its pixels from a target and is no target itself; a nearer target hides a farther
+    /// one and keeps its own box.
     #[test]
     fn what_is_in_front_hides_what_is_behind() {
         let target = shape("t", ShapeKind::Pill, [50.0, 50.0, 20.0, 20.0], 0);
@@ -678,6 +721,7 @@ mod tests {
         assert_eq!(front.frame, Some([58.0, 50.0, 20.0, 20.0]), "nothing hides the near one: its own box");
     }
 
+    /// A target an occluder covers whole is marked hidden, has no visible box, and keeps its shapes' box.
     #[test]
     fn a_target_hidden_entirely_is_flagged() {
         let small = shape("t", ShapeKind::Pill, [50.0, 50.0, 6.0, 6.0], 0);
@@ -689,6 +733,7 @@ mod tests {
         assert!(from_runs(&view.mask, SIDE * SIDE).iter().all(|&set| set == 0));
     }
 
+    /// `check` refuses an id used twice, a shape both joined and hiding, an unknown id, and a shape of no size.
     #[test]
     fn a_scene_with_a_slip_is_refused() {
         let one = shape("a", ShapeKind::Pill, [10.0, 10.0, 4.0, 4.0], 0);
@@ -702,6 +747,7 @@ mod tests {
         assert!(check(&flat).unwrap_err().contains("no size"));
     }
 
+    /// `runs` starts with the unset count (0 when the first pixel is set), and `from_runs` gives the mask back.
     #[test]
     fn run_lengths_give_the_mask_back() {
         let mask = [1u8, 1, 0, 0, 0, 1, 0, 1, 1, 1];
@@ -710,6 +756,7 @@ mod tests {
         assert_eq!(runs(&[0, 0]), [2]);
     }
 
+    /// `visible_json` gives the view for a scene it can read, and an error for one it cannot.
     #[test]
     fn the_page_gets_the_view_or_why_not() {
         let shapes = r#"[{"id": "a", "kind": "pill", "box": [8, 8, 6, 6]}]"#;

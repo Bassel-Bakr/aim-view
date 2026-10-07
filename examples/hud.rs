@@ -20,7 +20,9 @@ const HUD_ROWS: usize = 4;
 /// A recording's size and range, as ffprobe gives them.
 #[derive(Clone, Copy)]
 struct Video {
+    /// Its width, in pixels.
     width: usize,
+    /// Its height, in pixels.
     height: usize,
     /// Whether its Y spans 0..255.
     full_range: bool,
@@ -29,6 +31,7 @@ struct Video {
 }
 
 impl Video {
+    /// The recording's facts from ffprobe. Panics when ffprobe cannot run or gives no size.
     fn probe(path: &str) -> Video {
         let out = Command::new("ffprobe")
             .args(["-v", "error", "-select_streams", "v:0", "-count_packets"])
@@ -45,11 +48,13 @@ impl Video {
         }
     }
 
+    /// A new HUD watch for a recording of this size and range.
     fn watch(self) -> HudWatch {
         HudWatch::new(self.width, self.height, self.full_range)
     }
 }
 
+/// An ffmpeg decoding the video to yuv420p on its standard output: its key frames (`keys`), else every frame.
 fn decode(video: &str, keys: bool) -> Child {
     let mut command = Command::new("ffmpeg");
     command.args(["-v", "error", "-i", video]);
@@ -70,6 +75,7 @@ fn each_frame(child: &mut Child, video: Video, mut each: impl FnMut(&[u8])) {
     child.wait().unwrap();
 }
 
+/// The parts, each sent through JSON, joined into a new watch: its frame count and its reading.
 fn joined(parts: Vec<HudPart>, video: Video) -> (usize, Option<HudReading>) {
     let mut watch = video.watch();
     for part in parts {
@@ -82,17 +88,24 @@ fn joined(parts: Vec<HudPart>, video: Video) -> (usize, Option<HudReading>) {
 /// The watches a recording is read with: `one` whole, `whole` again for its part, and its two halves, each half with
 /// the frame where they meet.
 struct Watches {
+    /// The watch that reads the whole recording and gives the reading.
     one: HudWatch,
+    /// Another watch of the whole recording, whose part is joined into a new watch.
     whole: HudWatch,
+    /// The first half, up to the middle frame and with it.
     first: HudWatch,
+    /// The second half, from the middle frame on.
     second: HudWatch,
 }
 
 /// How a recording's frames were read: their count, and the time the box's layout took (the first frame's add, from
 /// the key frames) and every other frame's add took (seconds).
 struct FramesRead {
+    /// The frames decoded.
     frames: usize,
+    /// The first frame's add, which lays out the boxes, in seconds.
     layout_s: f64,
+    /// Every other frame's add, summed, in seconds.
     adds_s: f64,
 }
 
@@ -171,6 +184,7 @@ fn read_three_ways(path: &str) -> serde_json::Value {
     })
 }
 
+/// Reads each recording named on the command line and prints its line.
 fn main() {
     for path in std::env::args().skip(1) {
         println!("{}", read_three_ways(&path));

@@ -16,8 +16,11 @@ random), saved as compressed .npz:
   tmask  (256, 256)    uint8   1 on the labelled targets' pixels (for recoloring in training)
   boxes  (n, 4)        float32 cx, cy, w, h in px, for the targets whose center is in the crop
   scores (n,)          float32 the model's score of each box (--model only)
-manifest.jsonl lists every VOD with its split, label statistics and whether it was kept.
+manifest.jsonl lists every VOD with its split, label statistics and whether it was kept. A VOD already in it, of the
+same size, keeps its row and its crops. --kinds takes other scenario kinds; --dark labels dark targets on light walls
+by their color instead (dark_labels), --model with a detector model (model_labels).
 Usage: python python/model/build_data.py [--vods <recordings' folder>] [--out test_out/vod_model/data] [--per-folder 4]
+       [--kinds static,dynamic,...] [--dark | --other-themes] [--model <name>] [--skip-checks]
 """
 import argparse
 import glob
@@ -41,7 +44,7 @@ import old_review  # noqa: E402
 
 WIDTH, HEIGHT, FRAME_BYTES = old_review.W, old_review.H, old_review.FRAME
 CROP = 256
-SCEN, WORKSHOP = old_review.SCENARIOS
+SCEN, WORKSHOP = old_review.SCENARIOS         # KovaaK's scenario folders: the player's own, the workshop's
 # the end-to-end evaluation VODs' scenarios: never trained on
 TEST_FOLDERS = {"1w4ts Voltaic", "10 Sphere Hipfire Extra Small", "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD",
                 "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO"}
@@ -53,11 +56,11 @@ SCENE_SAMPLES = 12                  # key frames looked at for dark_scene
 # TALLEST times taller than wide, under MAX_SIDE px a side, and mostly off the fixed map
 MIN_AREA, MAX_SIDE, FILL_PARTS, WIDEST, TALLEST, ON_FIXED = 6, 400, 3, 2.5, 25, 0.6
 LOOK_PX = 2                         # labels: the blob under a found target, within this
-MIN_KEY_FRAMES = 8
+MIN_KEY_FRAMES = 8                  # a VOD with fewer key frames is dropped
 MIN_MEDIAN, MAX_MEDIAN, STEADY_SHARE = 1, 15, 0.7   # a VOD's labels: median count from 1 to 15, steady in 7 of 10
 STEADY_SLACK = 0.25                 # a frame's count is steady within a quarter of the median (or 1)
 SPOT_JITTER_PX = 90                 # the crop round a target moves up to this far
-HASH_CHARS = 10
+HASH_CHARS = 10                     # a crop's name starts with this much of its VOD path's md5 (its "stem")
 SPLITS = ("train", "val", "test")
 
 
@@ -80,6 +83,8 @@ def target_counts():
 
 
 def split_of(folder):
+    """A scenario folder's split ("train", "val" or "test"): fixed by its name's md5, the end-to-end folders always
+    in test."""
     if folder in TEST_FOLDERS:
         return "test"
     bucket = int(hashlib.md5(folder.encode()).hexdigest(), 16) % SPLIT_BUCKETS
@@ -87,7 +92,9 @@ def split_of(folder):
 
 
 def keyframes(video, pixel_format):
-    size = FRAME_BYTES if pixel_format == "yuv420p" else WIDTH * HEIGHT * 3
+    """The video's key frames at 1280 x 720 as raw bytes, one item a frame, in `pixel_format` ("yuv420p" or
+    "rgb24")."""
+    size =FRAME_BYTES if pixel_format == "yuv420p" else WIDTH * HEIGHT * 3
     decoded = subprocess.run(["ffmpeg", "-v", "error", "-skip_frame", "nokey", "-i", video, "-fps_mode", "passthrough",
                               "-vf", f"scale={WIDTH}:{HEIGHT}:flags=area,format={pixel_format}", "-f", "rawvideo", "-"],
                              capture_output=True)
@@ -150,7 +157,7 @@ def dark_labels(rgb, mask, fixed):
     return target_mask, boxes
 
 
-_DETECTOR = {}
+_DETECTOR = {}                      # each model's detector and threshold, loaded once in each process
 
 
 def model_labels(model, rgb, mask, fixed):
@@ -263,6 +270,7 @@ def one(job):
 
 
 def parse_args():
+    """The command line's options (the module's docstring)."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--vods", default=local_config.folder("vods"))
     parser.add_argument("--out", default="test_out/vod_model/data")
@@ -310,6 +318,7 @@ def old_rows(manifest):
 
 
 def main():
+    """Labels the VODs not labelled yet on every core but two, writes the manifest, and prints each split's counts."""
     args = parse_args()
     for split in SPLITS:
         (Path(args.out) / split).mkdir(parents=True, exist_ok=True)

@@ -4,5 +4,8 @@
  * The model boxes a crop starts with crossed out (a mined false box: Right agrees it is no target).
  */
 export interface CropPreset {
+  /**
+   * Their indexes in the crop's `boxes`.
+   */
   remove: number[];
 }

@@ -4,8 +4,21 @@
  * What the off-target time went on, in frames (for the what-if estimates).
  */
 export interface OffFrames {
+  /**
+   * Measured frames off the target with the crosshair ahead of it, past its leading edge.
+   */
   ahead: number;
+  /**
+   * Measured frames off the target with the crosshair behind it, past its trailing edge.
+   */
   behind: number;
+  /**
+   * Frames off the target within TURN_WINDOW_S after one of its direction changes, switches left out.
+   */
   turns: number;
+  /**
+   * The frames off the target that tracking every direction like the best one would win back (a fraction of a
+   * frame can count).
+   */
   directions: number;
 }

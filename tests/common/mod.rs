@@ -29,7 +29,9 @@ const COUNTDOWN_TEAL_PIXELS: u32 = 40;
 /// Where two JSON values differ (paths), and how many numbers were equal only within the tolerance.
 #[derive(Default)]
 pub struct Diff {
+    /// Each difference: its path in the JSON, the core's value and Python's.
     pub wrong: Vec<String>,
+    /// How many numbers differed but within the tolerance.
     pub close: usize,
 }
 
@@ -48,6 +50,9 @@ impl Diff {
     }
 }
 
+/// Compares the core's JSON (`got`) with Python's (`want`) at `path`, adding each difference to `diff`: numbers within
+/// the relative tolerance count as close, arrays must be as long, an object is compared on Python's keys only, and
+/// anything else must be equal.
 pub fn compare(path: &str, got: &Value, want: &Value, diff: &mut Diff) {
     match (got, want) {
         (Value::Number(a), Value::Number(b)) => {
@@ -101,6 +106,7 @@ pub fn rename_key(value: &mut Value, path: &str, name: &str) {
     }
 }
 
+/// A JSON file's value; panics when it cannot be read or is not JSON.
 pub fn read(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
@@ -156,14 +162,18 @@ pub fn scenario_key(video: &str) -> String {
 /// luma frame after another, the frame numbers in review/gray.json), and the pixels the camera watch leaves out (the
 /// KovOBS overlay and the fixed map's pixels, from fixed.npy).
 pub struct GrayFrames {
+    /// review/gray.json as kept.
     pub listing: Value,
+    /// The recording's frame number of each frame kept, in order (gray.json's `frames`).
     pub numbers: Vec<usize>,
+    /// The kept frames' luma, 1280 x 720 bytes each, one after another.
     pub luma: Vec<u8>,
+    /// Per pixel of the frame: whether the camera watch leaves it out.
     pub left_out: Vec<bool>,
 }
 
 impl GrayFrames {
-    /// None when the case has no fixed.npy.
+    /// A case's gray frames and the pixels left out; None when the case has no fixed.npy.
     pub fn read(case_dir: &Path) -> Option<Self> {
         let npy = fs::read(case_dir.join("fixed.npy")).ok()?;
         let review = case_dir.join("review");
@@ -183,13 +193,16 @@ impl GrayFrames {
 /// A tracking run's inputs as python/retired/tests/fixtures.py --review kept them in test_out/parity/<case>/review/:
 /// its tracks, the camera's readings and the countdown (from teal.json's counts).
 pub struct TrackingInputs {
+    /// The run's tracks (tracks.json).
     pub tracks: Tracks,
+    /// Each frame's camera reading (camera.json).
     pub camera: Vec<CameraReading>,
+    /// Each frame: whether KovaaK's countdown bar shows (teal.json's count at COUNTDOWN_TEAL_PIXELS or more).
     pub countdown: Vec<bool>,
 }
 
 impl TrackingInputs {
-    /// None when the folder has no tracks.json.
+    /// A run's inputs from its review folder; None when the folder has no tracks.json.
     pub fn read(dir: &Path) -> Option<Self> {
         let text = fs::read_to_string(dir.join("tracks.json")).ok()?;
         let tracks = serde_json::from_str(&text).unwrap();

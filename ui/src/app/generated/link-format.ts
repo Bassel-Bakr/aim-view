@@ -5,10 +5,28 @@
  * best audio) where yt-dlp knows it.
  */
 export interface LinkFormat {
+  /**
+   * yt-dlp's format id, which the download asks for.
+   */
   id: string;
+  /**
+   * The frame's width in pixels.
+   */
   width: number | null;
+  /**
+   * The frame's height in pixels.
+   */
   height: number | null;
+  /**
+   * The frame rate.
+   */
   fps: number | null;
+  /**
+   * The video codec's name as people know it ("H.264", "AV1").
+   */
   codec: string | null;
+  /**
+   * The size in bytes, the best audio's added when it has no sound of its own.
+   */
   size: number | null;
 }

@@ -1,12 +1,17 @@
 /// <reference lib="webworker" />
-// One run of a review in the browser, in a worker: it decodes the recording (Mediabunny, the browser's own decoder),
-// turns each frame into the exact pixels ffmpeg gives (the core's converter) and runs the detector model
-// (onnxruntime-web). The core's review session (src/session.rs, as the native review uses it) does the rest: it plans
-// the runs, reads the key frames (the fixed map and the HUD's boxes), says what each frame is for, and tracks the run's
-// frames. Frames before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does too. Each frame the
-// run reads also goes to the camera worker, which feeds the session's watches (the camera's turn, KovaaK's countdown
-// bar and the HUD). The area finder has a worker of its own (area-finder.worker.ts), which decodes the frames it reads
-// as this one does (video-frames.ts, frame-converter.ts).
+/**
+ * One run of a review in the browser, in a worker: it decodes the recording (Mediabunny, the
+ * browser's own decoder), turns each frame into the exact pixels ffmpeg gives (the core's
+ * converter) and runs the detector model (onnxruntime-web). The core's review session
+ * (src/session.rs, as the native review uses it) does the rest: it plans the runs, reads the key
+ * frames (the fixed map and the HUD's boxes), says what each frame is for, and tracks the run's
+ * frames. Frames before time 0 are the edit list's pre-roll: ffmpeg drops them, so the review does
+ * too. Each frame the run reads also goes to the camera worker, which feeds the session's watches
+ * (the camera's turn, KovaaK's countdown bar and the HUD). The area finder has a worker of its own
+ * (area-finder.worker.ts), which decodes the frames it reads as this one does (video-frames.ts,
+ * frame-converter.ts). In: a `ReviewRequest` from browser-review.ts. Out: progress messages, then
+ * the run's part (`ReviewPart`), which the page joins with the other runs'.
+ */
 import { VideoSample } from 'mediabunny';
 import type { InferenceSession } from 'onnxruntime-web/wasm';
 import { CameraLink } from './camera-link';
@@ -32,46 +37,66 @@ import {
 } from './review-messages';
 import { FrameTimes, VideoFrames } from './video-frames';
 
-/** WebGPU's flag constants, which TypeScript's worker library leaves out (it has WebGPU's types). */
+/**
+ * WebGPU's buffer usage flags, which TypeScript's worker library leaves out (it has WebGPU's
+ * types).
+ */
 declare const GPUBufferUsage: Readonly<
   Record<'MAP_READ' | 'COPY_DST' | 'STORAGE', GPUBufferUsageFlags>
 >;
+/** WebGPU's map mode flags, left out for the same reason. */
 declare const GPUMapMode: Readonly<Record<'READ', GPUMapModeFlags>>;
 
-/** onnxruntime-web, either build: for the GPU (WebGPU) or the CPU (WebAssembly). Both have the same API. */
+/**
+ * onnxruntime-web, either build: for the GPU (WebGPU) or the CPU (WebAssembly). Both have the same
+ * API.
+ */
 type Ort = typeof import('onnxruntime-web/wasm');
 
 /**
- * The detector: onnxruntime-web's build, its session, and where it runs. On the GPU its outputs stay there until read
- * back, so the next call can be sent while one call's maps come back; `capture` says the session records its GPU work
- * (graph capture).
+ * The detector: onnxruntime-web's build, its session, and where it runs. On the GPU its outputs
+ * stay there until read back, so the next call can be sent while one call's maps come back;
+ * `capture` says the session records its GPU work (graph capture).
  */
 interface Detector {
+  /** The onnxruntime-web build loaded for the device. */
   ort: Ort;
+  /** The model's session. */
   session: InferenceSession;
+  /** Where it runs: the GPU, or the CPU when the GPU could not start. */
   device: BrowserDevice;
+  /** The session was made with graph capture. */
   capture: boolean;
 }
 
 /** One call's output maps, copied out of the GPU to be read back while the next call runs. */
 interface Staging {
+  /** A mappable copy of the score map. */
   score: GPUBuffer;
+  /** A mappable copy of the reg map. */
   reg: GPUBuffer;
 }
 
 /**
- * Graph capture: onnxruntime-web records the detector's GPU work on the first call and replays it on the next ones,
- * which takes most of the CPU's work out of a call. The inputs sit in fixed GPU buffers, written before each call. The
- * outputs are the buffers onnxruntime made for the first call, given back on every later one: it releases the handles
- * of outputs the caller makes, and a replayed call then fails to find them (onnxruntime-web 1.30). Each call's outputs
- * are copied to a staging pair before the next call is sent.
+ * Graph capture: onnxruntime-web records the detector's GPU work on the first call and replays it
+ * on the next ones, which takes most of the CPU's work out of a call. The inputs sit in fixed GPU
+ * buffers, written before each call. The outputs are the buffers onnxruntime made for the first
+ * call, given back on every later one: it releases the handles of outputs the caller makes, and a
+ * replayed call then fails to find them (onnxruntime-web 1.30). Each call's outputs are copied to
+ * a staging pair before the next call is sent.
  */
 interface Captured {
+  /** The GPU device onnxruntime runs on. */
   device: GPUDevice;
+  /** The fixed input buffer each call's frames are written into, a batch of 720p RGB. */
   rgb: GPUBuffer;
+  /** The inputs, as tensors over the fixed GPU buffers (rgb and the fixed map). */
   feeds: InferenceSession.FeedsType;
+  /** The output buffers onnxruntime made for the first call, given back on every call. */
   outputs: InferenceSession.ReturnType;
+  /** Two staging pairs, used in turn. */
   staging: Staging[];
+  /** The calls made so far, which picks the next staging pair. */
   turn: number;
 }
 
@@ -85,18 +110,30 @@ const WHOLE_RATE_TOLERANCE = 0.01;
 const CPU_MAX_THREADS = 8;
 /** The detector's maps are a quarter of the frame each way: one cell for each 4 x 4 pixels. */
 const MAP_SCALE = 4;
+/** The maps' width in cells. */
 const MAP_WIDTH = FRAME_WIDTH_PX / MAP_SCALE;
+/** The maps' height in cells. */
 const MAP_HEIGHT = FRAME_HEIGHT_PX / MAP_SCALE;
+/** The cells in one frame's score map. */
 const MAP_CELLS = MAP_WIDTH * MAP_HEIGHT;
 /** The reg map's values for each cell (the box's four sides). */
 const REG_VALUES = 4;
+/** A 32-bit float's bytes. */
 const FLOAT_BYTES = 4;
-/** Detector calls on their way at once: two on the GPU (one queued while one is read back), one on the CPU. */
+/**
+ * Detector calls on their way at once on the GPU: two (one queued while one is read back). The
+ * CPU takes one.
+ */
 const GPU_CALLS_IN_FLIGHT = 2;
-/** camera_rgb_rows packs the countdown rows' first row in its low 16 bits and their end in its high ones. */
+/**
+ * camera_rgb_rows packs the countdown rows' first row in its low 16 bits and their end in its
+ * high ones: the shift to the high ones.
+ */
 const ROW_BITS = 16;
+/** Keeps the low 16 bits: the first row. */
 const ROW_MASK = 0xffff;
 
+/** Sends a message to the page. */
 const say = (reply: ReviewMessage) => postMessage(reply);
 
 addEventListener('message', (event: MessageEvent<ReviewRequest>) => {
@@ -111,8 +148,9 @@ function frameRate(rate: number): number {
 }
 
 /**
- * The model's settings file (python/model/MODEL_FILE.md), beside its export: detector_<name>.json for
- * detector_<name>_u8in.onnx. Null when the model has none: the tracker then takes today's values.
+ * The model's settings file (python/model/MODEL_FILE.md), beside its export: detector_<name>.json
+ * for detector_<name>_u8in.onnx. Null when the model has none: the tracker then takes today's
+ * values. Rejects when the server answers with another error.
  */
 async function modelSettings(modelUrl: string): Promise<string | null> {
   const url = modelUrl.replace(/_u8in\.onnx$/, '.json');
@@ -135,7 +173,8 @@ async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
       ? await import('onnxruntime-web/webgpu')
       : await import('onnxruntime-web/wasm');
   ort.env.wasm.wasmPaths = ortPath;
-  // on the GPU no node runs on the CPU: more threads there only take cores from the decoder (one thread: 3% faster)
+  // on the GPU no node runs on the CPU: more threads there only take cores from the decoder (one
+  // thread: 3% faster)
   ort.env.wasm.numThreads =
     device === 'webgpu' || !self.crossOriginIsolated
       ? 1
@@ -144,9 +183,10 @@ async function loadOrt(device: BrowserDevice, ortPath: string): Promise<Ort> {
 }
 
 /**
- * The GPU session's settings: convolutions in NHWC, no extra validation, and the input size fixed to `batch` frames of
- * 1280 x 720 (every call then sends a full batch). The same tracks as the defaults, and faster: av1's first 900 frames
- * at 225 frames a second with the defaults, 251 with these, 279 with graph capture as well (the medians of 3 rounds in
+ * The GPU session's settings: convolutions in NHWC, no extra validation, and the input size fixed
+ * to `batch` frames of 1280 x 720 (every call then sends a full batch). The same tracks as the
+ * defaults, and faster: av1's first 900 frames at 225 frames a second with the defaults, 251 with
+ * these, 279 with graph capture as well (the medians of 3 rounds in
  * test_out/browser_check/profile-runs.html).
  */
 function gpuOptions(batch: number, capture: boolean): InferenceSession.SessionOptions {
@@ -160,8 +200,8 @@ function gpuOptions(batch: number, capture: boolean): InferenceSession.SessionOp
 }
 
 /**
- * The detector on the device asked for; on the CPU when the GPU cannot start. On the GPU with graph capture, unless the
- * model cannot have it (a node onnxruntime keeps on the CPU).
+ * The detector on the device asked for; on the CPU when the GPU cannot start. On the GPU with
+ * graph capture, unless the model cannot have it (a node onnxruntime keeps on the CPU).
  */
 async function startDetector(request: ReviewRequest): Promise<Detector> {
   if (request.device === 'webgpu') {
@@ -196,8 +236,9 @@ function fixedTimes(fixed: Uint8Array, frameCount: number): Uint8Array {
 }
 
 /**
- * Graph capture's buffers for a session made with it, and its first two calls (the capture, then a replay), so a
- * capture that does not work shows before the review starts. `fixed` is the fixed map once for each frame of a batch.
+ * Graph capture's buffers for a session made with it, and its first two calls (the capture, then
+ * a replay), so a capture that does not work shows before the review starts. `fixed` is the fixed
+ * map once for each frame of a batch.
  */
 async function startCapture(
   ort: Ort,
@@ -246,14 +287,21 @@ async function readStaging(staging: Staging, frameCount: number): Promise<Float3
 }
 
 /**
- * The detector's calls for a run. One call is sent at a time (the WebGPU build cannot run two at once); on the GPU a
- * call returns once it is queued and its maps are read back after, so two can be on their way.
+ * The detector's calls for a run. One call is sent at a time (the WebGPU build cannot run two at
+ * once); on the GPU a call returns once it is queued and its maps are read back after, so two can
+ * be on their way.
  */
 class DetectorCalls {
+  /** The last call sent, which the next one waits for; it never rejects. */
   private sending: Promise<unknown> = Promise.resolve();
   /** The fixed map's input for a call of each frame count, made once. */
   private readonly fixedTensors = new Map<number, InstanceType<Ort['Tensor']>>();
 
+  /**
+   * Keeps the session and what each call needs: whether it runs on the GPU, the frames a call
+   * takes, the fixed map (1280 x 720) and graph capture's buffers (null without it). Callers make
+   * one with `start`.
+   */
   private constructor(
     private readonly ort: Ort,
     private readonly session: InferenceSession,
@@ -263,7 +311,10 @@ class DetectorCalls {
     private readonly captured: Captured | null,
   ) {}
 
-  /** The calls, with graph capture where the detector has it and it works here; else the session as it is. */
+  /**
+   * The calls, with graph capture where the detector has it and it works here; else the session
+   * as it is.
+   */
   static async start(
     detector: Detector,
     fixed: Uint8Array,
@@ -287,9 +338,9 @@ class DetectorCalls {
   }
 
   /**
-   * One call's score and reg maps, read back, for the first frameCount frames of `all` (a whole batch's buffer). On
-   * the GPU a call always takes the whole batch (its input size is fixed); the frames after them are left over and
-   * give no maps.
+   * One call's score and reg maps, read back, for the first frameCount frames of `all` (a whole
+   * batch's buffer). On the GPU a call always takes the whole batch (its input size is fixed); the
+   * frames after them are left over and give no maps.
    */
   detect(all: Uint8Array, frameCount: number): Promise<Float32Array[]> {
     if (this.captured) return this.detectCaptured(this.captured, all, frameCount);
@@ -312,7 +363,10 @@ class DetectorCalls {
     });
   }
 
-  /** A captured call: its input written, the call sent, and its outputs copied out before the next call is sent. */
+  /**
+   * A captured call: its input written, the call sent, and its outputs copied out before the next
+   * call is sent.
+   */
   private detectCaptured(
     captured: Captured,
     all: Uint8Array,
@@ -333,6 +387,7 @@ class DetectorCalls {
     return sent.then((staging) => readStaging(staging, frameCount));
   }
 
+  /** The fixed map's input tensor for a call of frameCount frames, made the first time. */
   private fixedFor(frameCount: number): InstanceType<Ort['Tensor']> {
     let tensor = this.fixedTensors.get(frameCount);
     if (!tensor) {
@@ -346,11 +401,19 @@ class DetectorCalls {
 
 /** The run's tracking in the core, which takes each call's maps frame by frame, in order. */
 class TrackerFeed {
+  /** The core's handle of the run's tracking (`review_tracking`). */
   readonly tracking: number;
+  /** The core memory one frame's score map is copied into. */
   private readonly score: CoreBlock;
+  /** The core memory one frame's reg map is copied into. */
   private readonly reg: CoreBlock;
+  /** The frames given to the tracking so far. */
   private tracked = 0;
 
+  /**
+   * Starts the tracking of run `run` of the review `plan`; total is the frames all the runs
+   * track, for the progress messages.
+   */
   constructor(
     private readonly core: Core,
     plan: number,
@@ -377,16 +440,21 @@ class TrackerFeed {
 }
 
 /**
- * The frames for the next detector call, each copied once into its place in the call's input, and the calls on their
- * way. While the detector works on a call, the next frames are decoded and converted; the tracker takes each call's
- * maps in order.
+ * The frames for the next detector call, each copied once into its place in the call's input, and
+ * the calls on their way. While the detector works on a call, the next frames are decoded and
+ * converted; the tracker takes each call's maps in order.
  */
 class Batches {
+  /** The next call's input: a batch of 720p RGB frames, filled from the start. */
   private waiting: Uint8Array;
+  /** The frames in `waiting` so far. */
   private count = 0;
+  /** The calls sent and not yet waited for, oldest first. */
   private readonly inFlight: Promise<unknown>[] = [];
+  /** The chain that hands each call's maps to the tracker, in order. */
   private detecting: Promise<void> = Promise.resolve();
 
+  /** Batches frames for the calls, with at most depth calls on their way. */
   constructor(
     private readonly calls: DetectorCalls,
     private readonly tracker: TrackerFeed,
@@ -395,7 +463,10 @@ class Batches {
     this.waiting = new Uint8Array(calls.batch * FRAME_RGB_BYTES);
   }
 
-  /** A frame's RGB; a full batch goes to the detector once fewer than `depth` calls are on their way. */
+  /**
+   * A frame's RGB; a full batch goes to the detector once fewer than `depth` calls are on their
+   * way.
+   */
   async add(rgb: Uint8Array): Promise<void> {
     this.waiting.set(rgb, this.count++ * FRAME_RGB_BYTES);
     if (this.count < this.calls.batch) return;
@@ -416,14 +487,23 @@ class Batches {
   }
 }
 
-/** The camera worker's share of a frame: its Y plane, then the rows of its RGB the countdown test reads. */
+/**
+ * The camera worker's share of a frame: its Y plane, then the rows of its RGB the countdown test
+ * reads.
+ */
 interface CameraShare {
+  /** The Y plane's bytes: the recording's width times its height. */
   lumaBytes: number;
+  /** The byte offset in the 720p RGB where the countdown rows start. */
   rowsStart: number;
+  /** The byte offset in the 720p RGB where they end. */
   rowsEnd: number;
 }
 
-/** The camera worker's share of a frame of this format; `rows`: the countdown rows (the core's camera_rgb_rows). */
+/**
+ * The camera worker's share of a frame of this format; `rows`: the countdown rows (the core's
+ * camera_rgb_rows).
+ */
 function cameraShare(rows: number, format: FrameFormat): CameraShare {
   const rowBytes = FRAME_WIDTH_PX * RGB_CHANNELS;
   return {
@@ -433,15 +513,25 @@ function cameraShare(rows: number, format: FrameFormat): CameraShare {
   };
 }
 
-/** The decoding of a run's frames: the core, its converter, and the blocks a frame is converted into. */
+/**
+ * The decoding of a run's frames: the core, its converter, and the blocks a frame is converted
+ * into.
+ */
 interface Decoding {
+  /** This worker's core. */
   core: Core;
+  /** Writes each decoded frame into the core and converts it. */
   frames: FrameConverter;
+  /** The core memory a frame's 720p YUV 4:2:0 goes into. */
   yuv720: CoreBlock;
+  /** The core memory a frame's 720p RGB goes into. */
   rgb: CoreBlock;
 }
 
-/** A frame to RGB, and to the camera worker: its Y plane, and the rows of the RGB the countdown test reads. */
+/**
+ * A frame to RGB, and to the camera worker: its Y plane, and the rows of the RGB the countdown test
+ * reads.
+ */
 async function convert(
   decoding: Decoding,
   camera: CameraLink,
@@ -462,13 +552,15 @@ async function convert(
 
 /** What the key frames give: the fixed map (1280 x 720) and where the HUD's boxes are (as JSON). */
 interface KeysRead {
+  /** The fixed map, a byte a pixel at 1280 x 720 (1 fixed). */
   fixed: Uint8Array;
+  /** Where the HUD's boxes are, as JSON (keys_finish's). */
   hud: string;
 }
 
 /**
- * The key frames (ffmpeg -skip_frame nokey), the first already written into `first`: the fixed map and the HUD's
- * boxes.
+ * The key frames (ffmpeg -skip_frame nokey), the first already written into `first`: the fixed
+ * map and the HUD's boxes.
  */
 async function readKeys(
   decoding: Decoding,
@@ -494,7 +586,10 @@ async function readKeys(
   return { fixed, hud };
 }
 
-/** The review's setup (src/session.rs: `Setup`), from the request and what the packets and the first frame say. */
+/**
+ * The review's setup (src/session.rs: `Setup`), from the request and what the packets and the
+ * first frame say.
+ */
 function reviewSetup(
   request: ReviewRequest,
   fps: number,
@@ -518,24 +613,35 @@ function reviewSetup(
   };
 }
 
-/** Where decoding a run stops: at the frame after the frames it reads (a frame within half a frame of its time). */
+/**
+ * Where decoding a run stops, in seconds: half a frame before the frame after the frames it reads
+ * (so that frame is not decoded); Infinity when the run reads to the end.
+ */
 function runEnd(run: VideoRun, times: number[], fps: number): number {
   const half = 0.5 / fps;
   const after = times[run.first + run.frames + (run.to === null ? 0 : 1)];
   return after === undefined ? Infinity : after - half;
 }
 
-/** What a run's frames go to: the camera worker (its link and share), the run's tracking and the detector's batches. */
+/**
+ * What a run's frames go to: the camera worker (its link and share), the run's tracking and the
+ * detector's batches.
+ */
 interface RunSteps {
+  /** The link to the camera worker. */
   camera: CameraLink;
+  /** The bytes of each frame the camera worker gets. */
   share: CameraShare;
+  /** The run's tracking in the core. */
   tracker: TrackerFeed;
+  /** The detector's batches of tracked frames. */
   batches: Batches;
 }
 
 /**
- * The frames the run reads (its own, then but for the last run the next run's first), each converted and sent to the
- * camera worker, the run's own tracked, until the session says a frame is past the run.
+ * The frames the run reads (its own, then but for the last run the next run's first), each
+ * converted and sent to the camera worker, the run's own tracked, until the session says a frame
+ * is past the run.
  */
 async function readRun(
   videoFrames: AsyncGenerator<VideoSample, void, unknown>,
@@ -554,8 +660,8 @@ async function readRun(
       sample.close();
       continue;
     }
-    // what the session says the frame is for: the run's (track it), the next run's first (the watches only), or past
-    // the run (stop)
+    // what the session says the frame is for: the run's (track it), the next run's first (the
+    // watches only), or past the run (stop)
     const use = core.exports.tracking_next(tracking);
     if (use === NEXT_FRAME.stop) {
       sample.close();
@@ -572,8 +678,9 @@ async function readRun(
 }
 
 /**
- * One run of the recording (src/session.rs: `split_runs`): its tracking's and its watches' parts, which the page joins
- * with the other runs'. A run but the last also reads the next run's first frame, for the camera's turn into it.
+ * One run of the recording (src/session.rs: `split_runs`): its tracking's and its watches' parts,
+ * which the page joins with the other runs'. A run but the last also reads the next run's first
+ * frame, for the camera's turn into it. Says a null part when the recording has no such run.
  */
 async function review(request: ReviewRequest): Promise<void> {
   const video = await VideoFrames.open(request.file, 'software');
@@ -586,7 +693,8 @@ async function review(request: ReviewRequest): Promise<void> {
   const detector = await startDetector(request);
   const camera = new CameraLink(request.camera);
   camera.open({ kind: 'open', coreUrl: request.coreUrl });
-  // the rows of a frame's RGB the countdown test reads, which go to the camera worker after its Y plane
+  // the rows of a frame's RGB the countdown test reads, which go to the camera worker after its
+  // Y plane
   const rows = core.exports.camera_rgb_rows();
   // the converter, made for the first frame's size and colors, and the buffers it fills
   const frames = new FrameConverter(core);

@@ -1,40 +1,59 @@
-// The next release's version from the Conventional Commits since the last release tag (vX.Y.Z), as semver: a breaking
-// change (`type!:`, or a BREAKING CHANGE footer) bumps the major version (the minor while it is 0), `feat` the minor,
-// `fix` and `perf` the patch; the other types (docs, chore, refactor, test, style, ci, build) make no release. With no
-// tag yet the count starts from 0.0.0. Prints the version, or nothing when there is nothing to release (`--force`
-// makes that a patch); with `--notes`, the release's notes in Markdown instead: its commits by kind. The release
-// workflow (.github/workflows/release.yml) runs it.
-// Usage: bun scripts/next-version.ts [--force] [--notes]
+/**
+ * The next release's version from the Conventional Commits since the last release tag (vX.Y.Z),
+ * as semver: a breaking change (`type!:`, or a BREAKING CHANGE footer) bumps the major version
+ * (the minor while it is 0), `feat` the minor, `fix` and `perf` the patch; the other types (docs,
+ * chore, refactor, test, style, ci, build) make no release. With no tag yet the count starts from
+ * 0.0.0. Prints the version, or nothing when there is nothing to release (`--force` makes that a
+ * patch); with `--notes`, the release's notes in Markdown instead: its commits by kind. The
+ * release workflow (.github/workflows/release.yml) runs it. In: git's tags and log.
+ * Usage: bun scripts/next-version.ts [--force] [--notes]
+ */
 import { $ } from 'bun';
 
 /** A commit as the notes and the bump read it. */
 interface Commit {
+  /** Its Conventional Commits type (feat, fix...); "other" when the subject has none. */
   kind: string;
+  /** Its subject line, as written. */
   subject: string;
+  /** Whether it is a breaking change. */
   breaking: boolean;
 }
 
 /** How much a commit bumps the version: none, the patch, the minor, the major. */
 enum Bump {
+  /** No release. */
   None,
+  /** X.Y.Z+1. */
   Patch,
+  /** X.Y+1.0. */
   Minor,
+  /** X+1.0.0. */
   Major,
 }
 
+/** A Conventional Commits subject: its type, scope, "!" for a breaking change, and description. */
 const HEADER = /^(\w+)(\([^)]*\))?(!)?:\s*(.+)$/;
+/** The notes' sections after Breaking changes: each commit type and its heading, in order. */
 const SECTIONS: [string, string][] = [
   ['feat', 'Features'],
   ['fix', 'Fixes'],
   ['perf', 'Performance'],
 ];
 
+/** The command line's flags. */
 const args = process.argv.slice(2);
+/** The release tags' pattern. */
 const pattern = 'v*.*.*';
+/** The release tags, newest version first. */
 const tags = (await $`git tag --list ${pattern} --sort=-v:refname`.text()).split('\n').filter(Boolean);
+/** The last release's tag; undefined before the first release. */
 const last = tags[0];
+/** The commits to read: since the last release, or all of them. */
 const range = last ? `${last}..HEAD` : 'HEAD';
+/** Each commit's subject and body, ended by a NUL byte. */
 const log = await $`git log ${range} --format=%s%n%b%x00`.text();
+/** The commits since the last release, newest first. */
 const commits: Commit[] = log
   .split('\0')
   .map((text) => text.trim())

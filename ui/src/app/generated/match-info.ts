@@ -6,11 +6,33 @@ import type { KillSource } from './kill-source';
  * last seen at the crosshair within 2 frames of its kill time), the kill times' offset on the video's clock (s).
  */
 export interface MatchInfo {
+  /**
+   * The kills seen in the video: tracks that end at the crosshair (from the video alone, the kills it found).
+   */
   kills_video: number;
+  /**
+   * The kills the kill times hold; None from the video alone.
+   */
   kills_stats: number | null;
+  /**
+   * The kills matched to a target.
+   */
   matched: number;
+  /**
+   * The kills confirmed (`confirmed`); None when not checked.
+   */
   confirmed?: number;
+  /**
+   * What to add to a kill time to put it on the video's clock (seconds); None from the video alone, and when there
+   * were no kill times, or no video kills to place them by.
+   */
   offset: number | null;
+  /**
+   * The video's frame rate (frames a second).
+   */
   fps: number;
+  /**
+   * Where the kill times came from; `match_times` leaves it None for its caller to set.
+   */
   source?: KillSource;
 }

@@ -16,52 +16,71 @@ use std::time::{Duration, Instant};
 use aimview::mouse as reader;
 use aimview_desktop::mouse::{bench, local_stamp, log_to, logged_text, time_ns};
 
+/// Set by Ctrl+C, Ctrl+Break or the console closing: the logger stops.
 static STOP: AtomicBool = AtomicBool::new(false);
+/// Set once the logger has written its stop pair, which a closing console waits for.
 static DONE: AtomicBool = AtomicBool::new(false);
 
 /// The console control event for the console closing (Windows' CTRL_CLOSE_EVENT).
 const CTRL_CLOSE_EVENT: u32 = 2;
 /// How long a closing console waits for the logger's stop pair.
 const CLOSE_WAIT: Duration = Duration::from_secs(3);
-/// `--bench`'s WM_INPUT messages posted in each of its rounds, and the records it decodes (mouse_log.py --bench's).
+/// `--bench`'s WM_INPUT messages posted in each of its rounds (mouse_log.py --bench's).
 const BENCH_MESSAGES: usize = 5000;
+/// `--bench`'s records decoded.
 const BENCH_RECORDS: usize = 200_000;
 /// `--stream`'s moves a second when `--hz` is not given.
 const DEFAULT_STREAM_HZ: f64 = 8000.0;
-/// How long the stream waits for the logger to start, and how much longer than the stream the logger runs.
+/// How long the stream waits for the logger to start.
 const LOGGER_START: Duration = Duration::from_millis(500);
+/// How much longer than the stream the logger runs, in seconds.
 const LOGGER_EXTRA_S: f64 = 1.0;
-/// SendInput's INPUT_MOUSE, and MOUSEEVENTF_MOVE: a relative move.
+/// SendInput's INPUT_MOUSE: the input is the mouse's.
 const INPUT_MOUSE: u32 = 0;
+/// MOUSEEVENTF_MOVE: a relative move.
 const MOUSEEVENTF_MOVE: u32 = 0x0001;
 /// A move counts as sent late when it went out more than this many intervals after it was due.
 const LATE_INTERVALS: f64 = 2.0;
+/// Milliseconds in a second.
 const MS_PER_S: f64 = 1000.0;
+/// Nanoseconds in a second.
 const NS_PER_S: f64 = 1e9;
 
+/// Windows' MOUSEINPUT: one mouse event for SendInput.
 #[repr(C)]
 struct MouseInput {
+    /// The move right, in counts (relative with MOUSEEVENTF_MOVE).
     dx: i32,
+    /// The move down, in counts.
     dy: i32,
+    /// The wheel's or the X buttons' data; 0 here.
     data: u32,
+    /// What the event is (MOUSEEVENTF_*).
     flags: u32,
+    /// Its time stamp in ms; 0: the system's.
     time: u32,
+    /// Extra information; 0 here.
     extra: usize,
 }
 
+/// Windows' INPUT for a mouse event.
 #[repr(C)]
 struct Input {
+    /// INPUT_MOUSE.
     kind: u32,
+    /// The event.
     mouse: MouseInput,
 }
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
+    /// Adds (`add` 1) a handler for Ctrl+C, Ctrl+Break and the console closing.
     fn SetConsoleCtrlHandler(handler: Option<unsafe extern "system" fn(u32) -> i32>, add: i32) -> i32;
 }
 
 #[link(name = "user32")]
 unsafe extern "system" {
+    /// Sends `count` input events; gives how many went in.
     fn SendInput(count: u32, inputs: *const Input, size: i32) -> u32;
 }
 
@@ -78,12 +97,14 @@ unsafe extern "system" fn on_ctrl(kind: u32) -> i32 {
     1
 }
 
+/// The log's file when --out is not given: test_out/mouse/<prefix>_<local time stamp>.bin.
 fn default_out(prefix: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../test_out/mouse")
         .join(format!("{prefix}_{}.bin", local_stamp(time_ns() as f64 / NS_PER_S)))
 }
 
+/// Runs --bench, --stream, or the logger until Ctrl+C (or --seconds), then prints what it logged.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let value = |name: &str| args.iter().position(|arg| arg == name).and_then(|i| args.get(i + 1)).cloned();

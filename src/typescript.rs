@@ -1,5 +1,8 @@
 //! Names for the tuples the reports write, for the TypeScript types only (ts-rs, feature `ts`): the UI names every
 //! tuple type, and ts-rs writes a field's tuple in place. The fields that hold them say so with `#[ts(as = ...)]`.
+//!
+//! In: nothing at run time; no build uses these structs. Out: their TypeScript types, which `bun run types` writes
+//! into ui/src/app/generated/.
 
 use ts_rs::TS;
 

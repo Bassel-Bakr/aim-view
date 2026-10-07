@@ -17,20 +17,31 @@ use aimview_service::review::{Request, TimeWindow, review};
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-/// The arguments' places on the command line (after the program's own name, 0).
+/// The video's place on the command line (after the program's own name, 0).
 const VIDEO_ARG: usize = 1;
+/// The model's place.
 const MODEL_ARG: usize = 2;
+/// The out folder's place.
 const OUT_ARG: usize = 3;
+/// The target count's place.
 const CAP_ARG: usize = 4;
+/// The runs' place.
 const RUNS_ARG: usize = 5;
+/// The batch's place.
 const BATCH_ARG: usize = 6;
+/// The window's start's place.
 const WINDOW_START_ARG: usize = 7;
+/// The window's end's place.
 const WINDOW_END_ARG: usize = 8;
+/// The stats file's place.
 const STATS_ARG: usize = 9;
+/// The areas file's place.
 const AREAS_ARG: usize = 10;
-/// The defaults: the target count not known (0), two runs, four frames in each detector call.
+/// The target count when none is given: not known (0).
 const DEFAULT_CAP: usize = 0;
+/// The runs when none are given.
 const DEFAULT_RUNS: usize = 2;
+/// The frames in each detector call when none are given.
 const DEFAULT_BATCH: usize = 4;
 
 /// The review request the command line gives (`--parts` already taken out of it).
@@ -60,6 +71,8 @@ fn request(args: &[String], parts: Option<PathBuf>) -> Request {
     }
 }
 
+/// Reviews the video, writes tracks.json, readings.json, hud.json and report.json into the out folder, and tells the
+/// time, the frames, the HUD and the report's kills on stderr; panics when the review fails.
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _heap = dhat::Profiler::new_heap();

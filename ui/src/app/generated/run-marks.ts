@@ -4,7 +4,16 @@
  * The marks in seconds, any of them None.
  */
 export interface RunMarks {
+  /**
+   * Where the run starts in the video, in seconds.
+   */
   start: number | null;
+  /**
+   * Where the run ends in the video, in seconds.
+   */
   end: number | null;
+  /**
+   * The run's length in seconds, for a window marked by one end only.
+   */
   length: number | null;
 }

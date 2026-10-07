@@ -5,5 +5,8 @@ import type { KillSource } from './kill-source';
  * Where the tracking run's kill times came from.
  */
 export interface TrackInfo {
+  /**
+   * The stats file, the HUD or the video alone.
+   */
   source: KillSource;
 }

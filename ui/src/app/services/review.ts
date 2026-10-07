@@ -1,8 +1,15 @@
+/**
+ * The open recording's review (`Review`): its report, tracks, run window and job. In: the
+ * ReviewEngine contract and the open recording (Library). Out: the run page, the faint cut-off and
+ * the model panel, which read and start reviews through it.
+ */
+
 import { computed, effect, inject, Service, signal } from '@angular/core';
 import { errorMessage, Job, RunMarks } from '../api';
 import { ReviewEngine } from '../platform/review-engine';
 import { Library } from './library';
 
+/** How often a running job is asked how it stands, in ms. */
 const POLL_MS = 500;
 
 /**
@@ -11,9 +18,13 @@ const POLL_MS = 500;
  */
 @Service()
 export class Review {
+  /** The mode's reviews. */
   private readonly engine = inject(ReviewEngine);
+  /** Which recording is open. */
   private readonly library = inject(Library);
+  /** The open recording's job as last seen; none when there is none. */
   readonly job = signal<Job>({ stage: 'none' });
+  /** Whether the job is still at work (not none, done, failed or cancelled). */
   readonly running = computed(
     () => !['none', 'done', 'error', 'cancelled'].includes(this.job().stage),
   );
@@ -27,6 +38,7 @@ export class Review {
     const id = this.library.selectedId();
     return id === null ? null : this.engine.caveat(id);
   });
+  /** The open recording's id when this mode can review it; else undefined, so nothing loads. */
   private readonly reviewable = () => {
     const id = this.library.selectedId();
     return id !== null && this.engine.unavailable(id) === null ? id : undefined;
@@ -46,8 +58,10 @@ export class Review {
   /** The user's run window for the open recording; null when none is marked. */
   readonly marks = this.engine.marks(this.reviewable);
 
+  /** The number of the newest watcher; an older watcher sees it changed and stops. */
   private watcher = 0;
 
+  /** When another recording opens, its job is followed (a review may be running for it). */
   constructor() {
     effect(() => {
       const id = this.library.selectedId();

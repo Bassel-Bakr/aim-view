@@ -1,5 +1,11 @@
-//! Aim View's review core. It is built natively for the desktop app and as WebAssembly for the browser. The Python
-//! code in `python/` stays the reference: each part ported here must give the same reports on every recording.
+//! Aim View's review core: it finds the targets in a recording's frames, follows them, and measures the aim. It is
+//! built natively for the service (service/: the desktop app and the review server) and as WebAssembly for the browser
+//! (src/wasm.rs). It began as a port of the old Python review (python/retired/review.py, retired on 2026-10-04); the
+//! parity tests (tests/) still compare it with that review's stored outputs (test_out/parity/), and KovaaK's stats
+//! files are the ground truth for new work.
+//!
+//! In: the frames the hosts decode, the detector's outputs, KovaaK's stats files and scenarios. Out: the tracks and
+//! the reports, as JSON. Each module's header says where its own data comes from and goes.
 
 pub mod areas;
 pub mod camera;

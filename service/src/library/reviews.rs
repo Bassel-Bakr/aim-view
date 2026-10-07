@@ -1,8 +1,8 @@
 //! A recording's reviews (each model's kept apart, store.rs: tracks, readings, what the HUD read, the kills' check):
 //! the review on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it,
-//! browser.rs), the user's run window and the report, worked out when it is shown (python/server.py: shown, analyse,
-//! run, set_run, /api/report). In: /api/analyse, /api/job, /api/run, /api/tracks and /api/report. Out: the kept
-//! reviews (review.rs's results), the run window (run_window.rs) and the answers.
+//! browser.rs), the user's run window and the report, worked out when it is shown (python/retired/server.py: shown,
+//! analyse, run, set_run, /api/report). In: /api/analyse, /api/job, /api/cancel, /api/run, /api/tracks and
+//! /api/report. Out: the kept reviews (review.rs's results), the run window (run_window.rs) and the answers.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,16 +27,25 @@ const TENTHS_PER_SECOND: f64 = 10.0;
 /// are fetched. A job the user cancels ends as "cancelled".
 #[derive(Clone, Serialize)]
 pub struct Job {
+    /// "starting", the review's stages ("looking", "tracking", "linking", "checking"), a download's, or at the end
+    /// "done", "error" or "cancelled".
     pub(super) stage: String,
+    /// How far the stage is: frames, or megabytes for a download.
     pub(super) done: usize,
+    /// Of how many.
     pub(super) total: usize,
+    /// The whole job's time in seconds, to a tenth, once it is done.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) seconds: Option<f64>,
+    /// Why it failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) error: Option<String>,
+    /// The model the review is by (empty for a link's download).
     pub(super) model: String,
+    /// Where its detector runs, once it has loaded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) device: Option<String>,
+    /// Whether it is a link's download.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) link: bool,
     /// Set when the user cancels the job: the review's and the download's loops look at it.
@@ -49,6 +58,7 @@ pub struct Job {
 }
 
 impl Job {
+    /// A job at `stage` by `model`, nothing done yet (0 of 1).
     pub(crate) fn new(stage: &str, model: &str) -> Job {
         Job {
             stage: stage.into(),
@@ -96,9 +106,13 @@ pub(super) fn seconds_since(started: std::time::Instant) -> f64 {
 /// A review's files: its tracks, the video's readings, what the HUD read and the check of the video's kills (null:
 /// not checked).
 pub(super) struct ReviewFiles<'a, T: Serialize, R: Serialize, H: Serialize> {
+    /// The tracks (tracks.json).
     pub tracks: &'a T,
+    /// The camera's turn and the countdown (readings.json).
     pub readings: &'a R,
+    /// What the HUD read, or null (hud.json).
     pub hud: &'a H,
+    /// The kill check's evidence (kills.json); None: not checked.
     pub kills: Option<&'a [KillEvidence]>,
 }
 
@@ -123,9 +137,9 @@ pub(super) fn keep_review<T: Serialize, R: Serialize, H: Serialize>(
 }
 
 impl Library {
-    /// The review to show: (model, which): the chosen model's; else one python/server.py made before reviews were kept
-    /// per model (its model "hand" when the hand-written detector made it, else None: not recorded); else the newest
-    /// by another model. With none, the chosen model's, for a new one.
+    /// The review to show: (model, which): the chosen model's; else one python/retired/server.py made before reviews
+    /// were kept per model (its model "hand" when the hand-written detector made it, else None: not recorded); else the
+    /// newest by another model. With none, the chosen model's, for a new one.
     pub fn shown(&self, id: &str) -> (Option<String>, ReviewBy) {
         let model = self.model();
         let own = ReviewBy::Model(model.clone());
@@ -156,6 +170,7 @@ impl Library {
         self.store().reviewed(id)
     }
 
+    /// The recording's last job as JSON (`Job`), or {stage: "none"} when it has none.
     pub fn job(&self, id: &str) -> Value {
         let jobs = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
         let job = jobs.get(id).and_then(|job| job.lock().ok().map(|job| json!(*job)));
@@ -347,6 +362,7 @@ impl Library {
     }
 }
 
+/// The review jobs.
 #[cfg(test)]
 mod tests {
     use super::*;

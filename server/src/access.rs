@@ -22,13 +22,29 @@ const COOKIE_MAX_AGE_S: u32 = 31_536_000;
 /// What to do with a request.
 #[derive(Debug, PartialEq)]
 pub enum Verdict {
+    /// The request goes on.
     Pass,
-    /// The token came in the query: set the cookie and send the browser to `location` (the same page without it).
-    SetCookie { location: String, cookie: String },
-    Refuse { status: StatusCode, reason: &'static str },
+    /// The token came in the query: set the cookie (`cookie`, the Set-Cookie header's value) and send the browser to
+    /// `location` (the same page without it).
+    SetCookie {
+        /// The same page without the token in its query, for the browser to go to.
+        location: String,
+        /// The Set-Cookie header's value, which holds the token.
+        cookie: String,
+    },
+    /// The request is refused with `status` (403 for a request from the wrong place, 401 for one without the token)
+    /// and `reason`, the answer's text.
+    Refuse {
+        /// 403 for a request from the wrong place, 401 for one without the token.
+        status: StatusCode,
+        /// Why it was refused: the answer's text.
+        reason: &'static str,
+    },
 }
 
+/// Who may use this server: its token, if any, and whether dev mode opens it to the local network.
 pub struct Access {
+    /// The token every request must carry; None: no token (this machine only, or dev mode).
     token: Option<String>,
     /// Dev mode on an address other machines reach: they get in without a token.
     open_network: bool,
@@ -187,6 +203,7 @@ impl Access {
         Ok(Access { token, open_network: false })
     }
 
+    /// Whether requests must carry a token.
     pub fn has_token(&self) -> bool {
         self.token.is_some()
     }
@@ -228,20 +245,25 @@ impl Access {
     }
 }
 
+/// Who gets in: the token, the hosts, the pages.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The tests' token.
     const TOKEN: &str = "s3cret-token";
 
+    /// A server on this machine only.
     fn loopback() -> Vec<SocketAddr> {
         vec!["127.0.0.1:8770".parse().unwrap()]
     }
 
+    /// A server on every address, which other machines reach.
     fn lan() -> Vec<SocketAddr> {
         vec!["0.0.0.0:8770".parse().unwrap()]
     }
 
+    /// The verdict on a request with `method`, `uri` and `headers` (name, value).
     fn check(access: &Access, method: Method, uri: &str, headers: &[(&'static str, &str)]) -> Verdict {
         let mut map = HeaderMap::new();
         for (name, value) in headers {
@@ -250,6 +272,7 @@ mod tests {
         access.check(&method, &uri.parse().unwrap(), &map)
     }
 
+    /// The status a refusal gives; None for any other verdict.
     fn refused(verdict: &Verdict) -> Option<StatusCode> {
         match verdict {
             Verdict::Refuse { status, .. } => Some(*status),
@@ -257,6 +280,7 @@ mod tests {
         }
     }
 
+    /// A server other machines can reach will not start without a token; one on a loopback address will.
     #[test]
     fn another_machine_can_reach_the_server_only_with_a_token() {
         assert!(Access::new(&lan(), None, false).is_err());
@@ -266,6 +290,7 @@ mod tests {
         assert!(Access::new(&["[::1]:8770".parse().unwrap()], None, false).is_ok());
     }
 
+    /// Without a token, loopback hosts and pages on this machine get in; another site's name or page does not.
     #[test]
     fn without_a_token_only_this_machine_gets_in() {
         let a = Access::new(&loopback(), None, false).unwrap();
@@ -295,6 +320,7 @@ mod tests {
         assert_eq!(refused(&check(&a, Method::POST, "/api/link", &cross)), Some(StatusCode::FORBIDDEN));
     }
 
+    /// Only a page on this machine may read the answers across origins.
     #[test]
     fn only_loopback_pages_read_the_answers() {
         let caller = |origin: &str| {
@@ -310,6 +336,7 @@ mod tests {
         assert!(loopback_caller(&HeaderMap::new()).is_none());
     }
 
+    /// The right Bearer token gets in; a wrong one, none, or a token without "Bearer" gets 401.
     #[test]
     fn the_token_in_the_header() {
         let a = Access::new(&lan(), Some(TOKEN.into()), false).unwrap();
@@ -324,6 +351,8 @@ mod tests {
         assert_eq!(refused(&check(&a, Method::GET, "/", &no_bearer)), Some(StatusCode::UNAUTHORIZED));
     }
 
+    /// The token in the query sets the cookie and sends the browser to the page without it; the cookie then lets in
+    /// the server's own pages, not another site's, and an old token's cookie gets 401.
     #[test]
     fn the_token_in_the_query_sets_the_cookie_and_the_cookie_lets_the_browser_in() {
         let a = Access::new(&lan(), Some(TOKEN.into()), false).unwrap();
@@ -352,6 +381,8 @@ mod tests {
         assert_eq!(refused(&verdict), Some(StatusCode::UNAUTHORIZED));
     }
 
+    /// Dev mode drops the token and lets in local network hosts and pages, never another site; on a loopback address
+    /// it is this machine only.
     #[test]
     fn dev_mode_lets_the_local_network_in_without_a_token() {
         let a = Access::new(&lan(), Some(TOKEN.into()), true).unwrap();
@@ -380,6 +411,7 @@ mod tests {
         assert_eq!(refused(&check(&here, Method::GET, "/api/vods", &lan_host)), Some(StatusCode::FORBIDDEN));
     }
 
+    /// Addresses, bare machine names and .local names are the local network's; a web site's name is not.
     #[test]
     fn local_network_names() {
         for host in ["192.168.1.2:8770", "[::2]:1", "my-pc", "MY-PC.local:8770", "localhost", "127.0.0.1"] {
@@ -390,6 +422,8 @@ mod tests {
         }
     }
 
+    /// localhost, loopback addresses (an IPv4-mapped one too) with or without a port stay on this machine; others do
+    /// not.
     #[test]
     fn loopback_names() {
         let loopback = ["localhost", "localhost:1", "127.0.0.1", "127.8.9.10:80", "[::1]", "[::1]:8770", "::1"];

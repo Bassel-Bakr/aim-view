@@ -1,6 +1,6 @@
 //! Excluded areas that only sometimes show (a "Last kill" pop-up) are excluded only while they show
 //! (python/retired/review.py: `AreaWatch`). Every other frame, each area's stand-out pattern is kept, small: the pixels
-//! that differ from their neighbours, as text and boxes do and a plain wall does not. After the run, an area is a
+//! that differ from their neighbors, as text and boxes do and a plain wall does not. After the run, an area is a
 //! pop-up when it is off for 30% of the run or more, comes and goes 3 times or more (the results screen covering it
 //! once at the end is not), and looks the same whenever it is on; it is then excluded in its on frames and 4 frames
 //! either side. Any other area (the session box, a webcam) is excluded all the time. An area the user named the
@@ -19,7 +19,7 @@ use crate::geometry::{H, W};
 use crate::python::{numpy_median, numpy_percentile};
 use crate::scipy::{Edge, close_line, count_runs, dilate_line, uniform_filter};
 
-/// Frames between looks.
+/// Frames between looks: the watch looks at every frame whose index in the recording is a multiple of this.
 pub const STEP: usize = 2;
 
 /// The area kind of the challenge's end screen (test_out/vod_app/area_kinds.json: "Challenge results").
@@ -29,12 +29,14 @@ pub const END_SCREEN: &str = "challenge_results";
 const LOOK_SIDE_PX: usize = 64;
 /// A look with fewer sampled pixels than this on a side sees nothing: one pixel that never stands out.
 const MIN_LOOK_SIDE: usize = 3;
-/// An RGB24 pixel's bytes, and its green channel's place among them.
+/// An RGB24 pixel's bytes.
 const RGB_BYTES: usize = 3;
+/// The green channel's place among a pixel's bytes: the looks read green alone.
 const GREEN: usize = 1;
 /// A sampled pixel stands out when its green differs from the mean of the 3 x 3 sampled pixels around it by more
-/// than this.
+/// than this, in 8-bit levels.
 const STAND_OUT_LEVEL: f32 = 8.0;
+/// The side of the square of sampled pixels a pixel's mean is taken over.
 const NEIGHBOURHOOD: usize = 3;
 /// Fewer looks than this are too few to tell a pop-up by: the area is excluded all the time.
 const MIN_LOOKS: usize = 20;
@@ -55,13 +57,15 @@ const PATTERN_SHARE: f64 = 0.5;
 /// The area looks the same whenever it is on when its on looks match the pattern by ON_MATCH or more (median) and
 /// its off looks by less than OFF_MATCH (median).
 const ON_MATCH: f64 = 0.5;
+/// The median match its off looks must stay under (see `ON_MATCH`).
 const OFF_MATCH: f64 = 0.2;
 /// A look that matches the pattern by this much or more shows the pop-up.
 const SHOWN_MATCH: f64 = 0.35;
 /// A pop-up is excluded this many frames either side of the frames it shows in.
 const MARGIN_FRAMES: usize = 4;
-/// A look's bits as text: 8 to a byte, each byte 2 hex digits.
+/// A look's bits as text: 8 to a byte.
 const BITS_PER_BYTE: usize = 8;
+/// Each byte of a look's bits is written as 2 hex digits.
 const HEX_DIGITS_PER_BYTE: usize = 2;
 
 /// One look at an area: which of its sampled pixels stand out (row by row). Sent between workers as bits.
@@ -73,11 +77,14 @@ struct Look(Box<[bool]>);
 #[derive(Serialize, Deserialize)]
 #[expect(clippy::min_ident_chars, reason = "`n` is the JSON's key, which the browser's workers send")]
 struct LookBits {
+    /// How many sampled pixels the look has.
     n: usize,
+    /// The pixels' bits, 2 hex digits a byte, 8 pixels to a byte from the lowest bit.
     hex: String,
 }
 
 impl From<Look> for LookBits {
+    /// Packs the look's pixels into bytes, 8 to a byte from the lowest bit, written as hex.
     fn from(look: Look) -> LookBits {
         let hex = look
             .0
@@ -91,6 +98,7 @@ impl From<Look> for LookBits {
 impl TryFrom<LookBits> for Look {
     type Error = String;
 
+    /// Unpacks the hex into the look's pixels; an error when it is not hex or its length does not fit the pixel count.
     fn try_from(bits: LookBits) -> Result<Look, String> {
         let bytes = (0..bits.hex.len())
             .step_by(HEX_DIGITS_PER_BYTE)
@@ -109,9 +117,11 @@ impl TryFrom<LookBits> for Look {
 /// from part way in (the user's run window) starts its first watch there: the frames before it have no looks.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AreaWatch {
-    /// Per area: its box in pixels [x0, y0, x1, y1], how far apart its sampled pixels are, and its looks so far.
+    /// Per area: its box in pixels of the 1280 x 720 frame [x0, y0, x1, y1].
     boxes: Box<[[usize; 4]]>,
+    /// Per area: how far apart its sampled pixels are, in pixels (about 64 samples along its longer side).
     steps: Box<[usize]>,
+    /// Per area: its looks so far, one every `STEP` frames.
     looks: Box<[Vec<Look>]>,
     /// The frames seen, those before the first watched included: the next frame's index in the recording.
     frames: usize,
@@ -156,11 +166,13 @@ impl AreaWatch {
         self.from
     }
 
+    /// Whether no area has a look yet.
     fn unwatched(&self) -> bool {
         self.looks.iter().all(Vec::is_empty)
     }
 
-    /// The looks of the run after this one (its watch started where this one stopped).
+    /// Adds the looks of the run after this one (its watch started where this one stopped). Panics when its areas
+    /// differ.
     pub fn join(&mut self, next: AreaWatch) {
         assert_eq!(self.boxes, next.boxes, "another recording's areas");
         if self.unwatched() {
@@ -190,7 +202,8 @@ impl AreaWatch {
         self.looks.iter().enumerate().map(|(i, looks)| self.popup(looks, self.ends.get(i) == Some(&true))).collect()
     }
 
-    /// `end`: the area is the challenge's end screen, which may show only once.
+    /// One area's verdict from its looks: whether it is excluded in each frame, when it is a pop-up; None when it is
+    /// excluded all the time. `end`: the area is the challenge's end screen, which may show only once.
     fn popup(&self, looks: &[Look], end: bool) -> Option<Vec<bool>> {
         let look_count = looks.len();
         if look_count < MIN_LOOKS {
@@ -274,6 +287,7 @@ fn looks_matched(matched: &[f64], on: &[bool], on_looks: bool) -> Vec<f64> {
     matched.iter().zip(on).filter(|(_, look_on)| **look_on == on_looks).map(|(score, _)| *score).collect()
 }
 
+/// Checks the end screen's rule and joining runs' watches.
 #[cfg(test)]
 mod tests {
     use super::*;

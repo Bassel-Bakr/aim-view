@@ -1,3 +1,9 @@
+/**
+ * The models dialog's body (`ModelChoice`): the device, the frames at once, and the models side
+ * by side with their Use buttons. In: the Models service (the mode's model list) and the open
+ * review. Out: the user's picks, sent through Models.
+ */
+
 import { Component, computed, inject, signal } from '@angular/core';
 import { Badge } from '../../controls/badge';
 import { Button } from '../../controls/button';
@@ -11,19 +17,22 @@ import { ModelCell, ModelColumn, ModelRow, modelTable } from '../model-table';
 
 /** A measure's row of the model table: its label and about, and each model's cell. */
 export interface MeasureLine {
+  /** Which kind of row it is. */
   kind: 'measure';
+  /** The measure's row. */
   row: ModelRow;
 }
 
 /** The row of Use buttons under the measures. */
 export interface PickLine {
+  /** Which kind of row it is. */
   kind: 'pick';
 }
 
 /** A row of the model table, in the app's data table: a measure's, or the Use buttons. */
 export type ModelLine = MeasureLine | PickLine;
 
-/** Where the browser runs the detector, as the choice says it. */
+/** Whether each device runs the detector on the GPU or the CPU, as the choice says it. */
 const RUNS_ON: Record<Device, string> = {
   cuda: 'GPU',
   cpu: 'CPU',
@@ -44,9 +53,13 @@ const RUNS_ON: Record<Device, string> = {
   styleUrl: './model-choice.scss',
 })
 export class ModelChoice {
+  /** The model list, the pick, the device and the frames at once. */
   protected readonly models = inject(Models);
+  /** The open recording's review, shown again by the model picked. */
   private readonly review = inject(Review);
+  /** Each device's GPU or CPU, for the template. */
   protected readonly runsOn = RUNS_ON;
+  /** The models side by side; null until the list arrives. */
   protected readonly table = computed(() => {
     const list = this.models.current();
     return list ? modelTable(list) : null;
@@ -74,19 +87,25 @@ export class ModelChoice {
       align: 'end',
     })),
   ]);
+  /** Each model's column index, by its id. */
   private readonly byName = computed(
     () => new Map((this.table()?.columns ?? []).map((column, index) => [column.name, index])),
   );
+  /** A row's id in the data table: its measure's name, or "pick". */
   protected readonly lineId = (line: ModelLine): string =>
     line.kind === 'measure' ? line.row.label : 'pick';
+  /** Whether a pick is under way. */
   protected readonly switching = signal(false);
+  /** The last pick's word: loading, done, or why it failed. */
   protected readonly status = signal('');
 
+  /** A model's column, by its id; null for the measure's column. */
   protected columnOf(name: string): ModelColumn | null {
     const index = this.byName().get(name);
     return index === undefined ? null : (this.table()?.columns[index] ?? null);
   }
 
+  /** A model's cell in a row, by the model's id; null for the measure's column. */
   protected cellOf(row: ModelRow, name: string): ModelCell | null {
     const index = this.byName().get(name);
     return index === undefined ? null : (row.cells[index] ?? null);
@@ -97,10 +116,12 @@ export class ModelChoice {
     this.status.set('');
   }
 
+  /** Picks where new reviews run the detector. */
   protected useDevice(device: Device): void {
     void this.models.useDevice(device);
   }
 
+  /** Picks how many frames new reviews give the detector at once. */
   protected useBatch(batch: number): void {
     void this.models.useBatch(batch);
   }

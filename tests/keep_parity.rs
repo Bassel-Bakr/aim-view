@@ -14,6 +14,7 @@ use common::{excluded_areas, fixture_dirs, read, showing_frames};
 /// How many differing frames a fixture prints before it fails.
 const SHOWN_FRAMES: usize = 3;
 
+/// A JSON array of numbers as floats.
 fn numbers(row: &Value) -> Vec<f64> {
     row.as_array().unwrap().iter().map(|number| number.as_f64().unwrap()).collect()
 }
@@ -37,7 +38,8 @@ fn kept_spots(frame: &Value) -> Vec<Spot> {
     frame.as_array().unwrap().iter().map(spot).collect()
 }
 
-/// Keeps every frame's targets as the core does and fails on the first fixture where a frame differs from Python's.
+/// Keeps a fixture's every frame's targets as the core does, pop-ups reopened, and fails when any frame differs from
+/// Python's, printing the first few.
 fn check_fixture(dir: &Path) {
     let meta = read(&dir.join("meta.json"));
     let areas = excluded_areas(&meta);
@@ -65,6 +67,7 @@ fn check_fixture(dir: &Path) {
     eprintln!("{}: {} frames equal", dir.display(), raw.len());
 }
 
+/// Every fixture's kept targets equal Python's, frame for frame.
 #[test]
 fn keep_matches_python() {
     let dirs = fixture_dirs(&["raw.json"]);

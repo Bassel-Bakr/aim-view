@@ -23,14 +23,15 @@ VIDEO = "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4"     # in t
 SAMPLE = Path("test_out/vod_model/bench_frame.npz")
 SAMPLE_KEY_FRAME = 10           # the key frame the sample is
 WARM_UP, TIMED = 5, 30          # CPU: runs before timing, runs timed
-GPU_WARM_UP, GPU_TIMED = 10, 50
-GPU_BATCHES = (1, 16)
+GPU_WARM_UP, GPU_TIMED = 10, 50   # GPU: calls before timing, calls timed
+GPU_BATCHES = (1, 16)           # GPU: the frames a call, each timed on its own
 MB = 2 ** 20
 ERROR_CHARS = 300               # the end of a failed run's stderr kept
 
 
 def sample():
-    """A real frame and its fixed map, cached."""
+    """A real frame (RGB, 720 x 1280 x 3) and its fixed map (0/1, 720 x 1280): VIDEO's key frame SAMPLE_KEY_FRAME,
+    made once into SAMPLE, with raw copies of both beside it for the browser benchmark."""
     if not SAMPLE.exists():
         import build_data
         import local_config
@@ -55,6 +56,7 @@ def feeder(session, rgb, fixed):
         return lambda: {"rgb": rgb[None], "fixed": fixed[None]}
 
     def feed():
+        """The float input (1, 4, H, W), made afresh: RGB scaled to 0-1 and the fixed map."""
         frame = np.empty((1, 4) + fixed.shape, np.float32)
         np.multiply(rgb.transpose(2, 0, 1), np.float32(1 / 255), out=frame[0, :3], dtype=np.float32)
         frame[0, 3] = fixed
@@ -100,6 +102,8 @@ def one(path, threads):
 
 
 def gpu(path):
+    """A checkpoint's row on the GPU under bf16 autocast: its parameter count, and per batch size its time a frame in
+    ms and its peak VRAM in MB."""
     import torch
     import net
     saved = torch.load(path, map_location="cpu", weights_only=False)
@@ -128,6 +132,9 @@ def gpu(path):
 
 
 def main():
+    """With --one, prints one ONNX file's row at one thread count (the fresh process the CPU rows run in). Else runs
+    every ONNX file at every thread count in its own process, then every checkpoint on the GPU, prints each row and
+    writes them all to test_out/vod_model/bench.json."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--onnx", nargs="*", default=[])
     parser.add_argument("--pt", nargs="*", default=[])

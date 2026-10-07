@@ -1,3 +1,8 @@
+/**
+ * The "Not an aim trainer" button (`NotAimToggle`). In: the recording it marks. Out: the mark,
+ * sent through the LabelQueue service to the mode's Labelling.
+ */
+
 import { Component, inject, input, signal } from '@angular/core';
 import { Recording } from '../../api';
 import { Button } from '../../controls/button';
@@ -14,10 +19,14 @@ import { LabelQueue } from '../../services/label-queue';
   templateUrl: './not-aim-toggle.html',
 })
 export class NotAimToggle {
+  /** The recording to mark. */
   readonly recording = input.required<Recording>();
+  /** The labelling queue, which keeps the mark and moves on. */
   private readonly queue = inject(LabelQueue);
+  /** Whether the mark is being saved. */
   protected readonly saving = signal(false);
 
+  /** Marks the recording as another game, or as an aim trainer again. */
   protected async toggleNotAim(): Promise<void> {
     this.saving.set(true);
     try {

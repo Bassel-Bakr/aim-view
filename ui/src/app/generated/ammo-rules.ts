@@ -7,10 +7,28 @@
  * (ReloadTimeFromEmpty, ReloadTimeFromPartial), and the points a reload takes off (ScoreLossPerReload).
  */
 export interface AmmoRules {
+  /**
+   * The ammo a full magazine holds (MagazineMax).
+   */
   magazine: number;
+  /**
+   * The ammo a shot uses (AmmoPerShot).
+   */
   perShot: number;
+  /**
+   * The ammo a kill puts back, up to a full magazine (AmmoReloadedOnKill; 0 when the file has none).
+   */
   onKill: number;
+  /**
+   * A reload's time from an empty magazine, in seconds (ReloadTimeFromEmpty).
+   */
   fromEmpty: number;
+  /**
+   * A reload's time with some ammo left, in seconds (ReloadTimeFromPartial; `from_empty` when the file has none).
+   */
   fromPartial: number;
+  /**
+   * The points a reload takes off (the scenario's ScoreLossPerReload; 0 when it has none).
+   */
   scoreLoss: number;
 }

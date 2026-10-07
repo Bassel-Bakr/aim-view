@@ -6,11 +6,11 @@ or white one.
 Reads a checked set (checked_data.py's output, data_bars_checked: each crop's targets in `boxes`, the bar's box the
 model drew in `fix`). The fill: the colored pixels (channels differing by more than SATURATED) joined to those in the
 bar's box, within FILL_REACH_PX sideways and the bar's height up or down, off the targets' own pixels. The text: the
-pixels inside the fill that are not its color (text_of). A copy changes each pixel near the fill (within EDGE_PX) by its share of the fill's color,
-so the anti-aliased edges blend: its color (its difference from gray) is turned round the gray axis from the fill's
-hue to the new one and scaled to the new color's strength, and its brightness moves by the same share. A gray pixel
-(the wall, the bar's empty part) has no color to change. A copy without text paints the text and its edge in the
-fill's new color. Boxes, target mask and fixed map stay as they are: a color moves no box.
+pixels inside the fill that are not its color (text_of). A copy changes each pixel near the fill (within EDGE_PX) by
+its share of the fill's color, so the anti-aliased edges blend: its color (its difference from gray) is turned round
+the gray axis from the fill's hue to the new one and scaled to the new color's strength, and its brightness moves by
+the same share. A gray pixel (the wall, the bar's empty part) has no color to change. A copy without text paints the
+text and its edge in the fill's new color. Boxes, target mask and fixed map stay as they are: a color moves no box.
 
 Each train crop gets COPIES copies, each in a different color of PALETTE (none within SAME_HUE_DEG of the fill's own
 hue), seeded by the crop's name; when it has text, every other copy hides it, and one more copy hides it in the
@@ -26,9 +26,9 @@ import numpy as np
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[2]
-TAG = "chk_barcol"
-CHECKED_TAG = "chk_bars__"
-COPIES = 3
+TAG = "chk_barcol"              # put before each copy's name: 10 characters, train.py --repeat's key
+CHECKED_TAG = "chk_bars__"      # the checked crops' own tag, taken off before TAG goes on
+COPIES = 3                      # recolored copies of each train crop (one more without text when it has text)
 SATURATED = 60                  # a pixel whose channels differ by more than this is colored
 FILL_REACH_PX = 80              # how far sideways of the bar's box the fill is followed
 SEED_MARGIN_PX = 2              # the bar's box, grown by this, gives the fill's first pixels
@@ -39,12 +39,14 @@ TEXT_CLOSE_PX = 2               # gaps in the fill up to twice this wide are clo
 FILL_COLOR_DIFF = 25            # inside the bar, a pixel this far from the fill's color (any channel) is text
 BOT_COLOR_DIFF = 40             # a pixel in a target's box this near its middle color is the target's
 MIN_CHROMA = 20.0               # a fill whose color is weaker than this has no hue to turn
-SAME_HUE_DEG = 30.0
+SAME_HUE_DEG = 30.0             # a palette color within this of the fill's own hue is not used
+# the new colors, RGB
 PALETTE = {
     "green": (60, 190, 70), "blue": (40, 120, 235), "cyan": (30, 200, 220), "yellow": (235, 215, 50),
     "purple": (150, 70, 220), "pink": (235, 90, 180), "red": (215, 40, 40), "white": (240, 240, 240),
     "gray": (140, 140, 140),
 }
+# the unit vector of gray in RGB: the axis a color turns round to change its hue
 GRAY_AXIS = np.ones(3) / np.sqrt(3)
 
 
@@ -62,7 +64,9 @@ def bot_pixels(rgb, boxes):
 
 
 def fill_of(rgb, bar, boxes):
-    """The bar's fill as a mask: the colored pixels connected to those in the bar's box, near it, off the targets."""
+    """(the bar's fill, the area searched) as masks. The fill: the colored pixels connected to those in the bar's box
+    (`bar`: cx, cy, w, h in crop px), within the area searched. That area: near the bar's box and off the targets'
+    own pixels."""
     cx, cy, width, height = bar[:4]
     near = np.zeros(rgb.shape[:2], bool)
     reach_x, reach_y = max(FILL_REACH_PX, 4 * width), max(height, 6)
@@ -104,9 +108,9 @@ def paint(rgb, fill, near, new_color):
 
 
 def text_of(rgb, fill):
-    """The bot's name written in the bar: inside the fill (its gaps up to twice TEXT_CLOSE_PX wide closed, as a letter can
-    touch the bar's edge), every pixel not the fill's own color, the letters' anti-aliased edges with them. None when
-    the fill encloses fewer than MIN_TEXT_PX pixels."""
+    """The bot's name written in the bar, as a mask: inside the fill (its gaps up to twice TEXT_CLOSE_PX wide closed,
+    as a letter can touch the bar's edge), every pixel not the fill's own color, the letters' anti-aliased edges with
+    them. None when the fill encloses fewer than MIN_TEXT_PX pixels."""
     inside = ndimage.binary_fill_holes(ndimage.binary_closing(fill, iterations=TEXT_CLOSE_PX))
     if (inside & ~fill).sum() < MIN_TEXT_PX:
         return None
@@ -122,6 +126,7 @@ def hide_text(rgb, fill, text):
 
 
 def hue_deg(color):
+    """An RGB color's hue in degrees, 0 to 360: the angle of its difference from gray round the gray axis, from red."""
     chroma = np.asarray(color, float) - np.mean(color)
     reference = np.array([1.0, -0.5, -0.5])          # red
     return np.degrees(np.arctan2(GRAY_AXIS @ np.cross(reference, chroma), reference @ chroma)) % 360
@@ -136,7 +141,8 @@ def colors_for(name, fill_color):
 
 
 def copies_of(path):
-    """The copies of one crop: (suffix, rgb) pairs; none when its fill is too small or has no color."""
+    """One crop as loaded, and its copies as (suffix, rgb) pairs; no copies when its fill is too small or has no
+    color."""
     crop = np.load(path, allow_pickle=True)
     rgb = crop["rgb"]
     fill, near = fill_of(rgb, crop["fix"], crop["boxes"])
@@ -157,6 +163,7 @@ def copies_of(path):
 
 
 def main():
+    """Writes the copies of every train crop of --data into --out/train/ and prints the counts."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--data", type=Path, default=ROOT / "test_out" / "vod_model" / "data_bars_checked")
     parser.add_argument("--out", type=Path, default=ROOT / "test_out" / "vod_model" / "data_bars_recolored")

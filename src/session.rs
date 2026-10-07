@@ -1,7 +1,8 @@
 //! A review session: everything a review does between the decoder and the detector, the same for the browser and the
 //! desktop. The hosts (the browser's review and camera workers in ui/src/app/modes/wasm/, the native review in
-//! service/src/review.rs) decode the frames, run the detector and feed this. A recording is split into runs at key
-//! frames, reviewed at once (one decoder is the limit, in the browser and natively alike), then joined:
+//! service/src/review.rs) decode the frames, run the detector and feed this. A recording is split into run parts at
+//! key frames (`Run`; "runs" in this file, not runs of a scenario), reviewed at once (one decoder is the limit, in the
+//! browser and natively alike), then joined:
 //!
 //! 1. `Review::new` plans the runs from the video's frames and the setup.
 //! 2. `Keys` reads the key frames: the fixed map (the detector's 4th input) and where the HUD's boxes are.
@@ -27,21 +28,26 @@ use crate::model::ModelSettings;
 use crate::track::{Mask, REVIEW_VERSION, TrackFrame};
 use crate::tracker::{TrackPart, Tracker};
 
-/// The fewest frames a run has (10 s at 60 frames a second): a shorter recording is one run.
+/// The fewest frames a run may have (10 s at 60 frames a second): no cut leaves a shorter run, so a recording of
+/// fewer than twice this is one run.
 pub const LEAST_RUN: usize = 600;
 
 /// A part of a video, in seconds.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TimeWindow {
+    /// Where the part starts (seconds from the video's start).
     pub start: f64,
+    /// Where the part ends (seconds from the video's start).
     pub end: f64,
 }
 
 /// The frames to review: from `first` up to `end` (not included), as indexes in the recording.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameRange {
+    /// The first frame to review.
     pub first: usize,
+    /// One past the last frame to review.
     pub end: usize,
 }
 
@@ -60,9 +66,13 @@ pub fn window_frames(times: &[f64], window: Option<TimeWindow>) -> FrameRange {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "VideoRun"))]
 pub struct Run {
+    /// The time of the key frame the run starts on (seconds); 0 for a run that starts on the recording's first frame.
     pub from: f64,
+    /// The time the next run starts (seconds); None for the last run.
     pub to: Option<f64>,
+    /// The run's first frame, as an index in the recording.
     pub first: usize,
+    /// The frames the run tracks.
     pub frames: usize,
 }
 
@@ -109,18 +119,23 @@ pub fn split_runs(times: &[f64], keys: &[f64], parts: usize, least: usize, range
 /// An area the review leaves out: [x0, y0, x1, y1] as shares of the frame, and its kind's id.
 pub type AreaBox = (f64, f64, f64, f64, String);
 
-/// The recording's frames as the decoder gives them: their size, their colour matrix (`Matrix::from_code`) and whether
+/// The recording's frames as the decoder gives them: their size, their color matrix (`Matrix::from_code`) and whether
 /// they are full range.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct FrameFormat {
+    /// The decoded frame's width (pixels): its Y plane's.
     pub width: usize,
+    /// The decoded frame's height (pixels).
     pub height: usize,
+    /// The color matrix's code (`Matrix::from_code`: 0 BT.709, 2 FCC, 3 SMPTE 240M, 4 BT.2020, else BT.601).
     pub matrix: u32,
+    /// Whether the YUV is full range (0 to 255), not limited (16 to 235).
     pub full: bool,
 }
 
 impl FrameFormat {
+    /// The converter from these frames to 1280 x 720.
     fn converter(&self) -> Converter {
         Converter::new(self.width, self.height, Matrix::from_code(self.matrix), self.full)
     }
@@ -134,18 +149,27 @@ impl FrameFormat {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ReviewSetup"))]
 pub struct Setup {
+    /// The video's frame rate (frames a second).
     pub fps: f64,
+    /// Every frame's time (seconds, from 0, in order).
     pub times: Vec<f64>,
+    /// The key frames' times (seconds, in order), each one of `times`.
     pub keys: Vec<f64>,
+    /// The decoded frames' size and colors.
     pub format: FrameFormat,
+    /// The scenario's target count, which `keep` holds each frame's boxes to (0: not known, no limit).
     pub cap: usize,
+    /// The areas the review leaves out.
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::AreaBox>"))]
     pub areas: Vec<AreaBox>,
+    /// The run window to track (None: the whole video).
     pub window: Option<TimeWindow>,
+    /// The most runs to split the frames into (0 counts as 1); fewer when a cut would leave a run too short.
     pub runs: usize,
     /// The scenario's kind (None: not known): the model's at-crosshair rule may name the kinds it is for.
     #[serde(default)]
     pub kind: Option<crate::scenario::Kind>,
+    /// The detector model's settings, for the scenario's kind once `Review::new` has run. Not kept in the JSON.
     #[serde(skip)]
     pub model: ModelSettings,
 }
@@ -153,11 +177,15 @@ pub struct Setup {
 /// A review: its setup and the runs it is split into.
 #[derive(Clone, Debug)]
 pub struct Review {
+    /// What the review was set up from, the model's settings narrowed to the scenario's kind.
     setup: Setup,
+    /// The runs, in order; together they cover the frames to track.
     runs: Box<[Run]>,
 }
 
 impl Review {
+    /// Plans a review: the model's settings for the scenario's kind, and the frames to track (the run window's, else
+    /// all) split into runs. Fails when the video has no frames.
     pub fn new(mut setup: Setup) -> Result<Review, String> {
         if setup.times.is_empty() {
             return Err("the video has no frames".into());
@@ -168,6 +196,7 @@ impl Review {
         Ok(Review { setup, runs })
     }
 
+    /// What the review was set up from.
     pub fn setup(&self) -> &Setup {
         &self.setup
     }
@@ -177,6 +206,7 @@ impl Review {
         self.setup.model = model.for_kind(self.setup.kind);
     }
 
+    /// The runs, in order.
     pub fn runs(&self) -> &[Run] {
         &self.runs
     }
@@ -192,7 +222,7 @@ impl Review {
         Keys { fixed: FixedMap::default(), hud: HudWatch::new(format.width, format.height, format.full) }
     }
 
-    /// Run `run`'s tracking.
+    /// The tracking of run `run` (its index in `runs`), its tracker started at the run's first frame.
     pub fn tracking(&self, run: usize) -> RunTracking {
         let part = &self.runs[run];
         let mut tracker = self.tracker();
@@ -268,13 +298,17 @@ impl Review {
 
 /// The key frames' pass (`Review::keys`).
 pub struct Keys {
+    /// The fixed map, counted over the key frames so far.
     fixed: FixedMap,
+    /// The HUD watch, looking for the HUD's boxes in the key frames.
     hud: HudWatch,
 }
 
 /// What the key frames give every run: the fixed map (1280 x 720, 1 fixed) and where the HUD's boxes are.
 pub struct KeysRead {
+    /// The fixed map (1280 x 720, row by row): 1 where a pixel stood out in 80% of the key frames or more, else 0.
     pub fixed: Vec<u8>,
+    /// Where the HUD's boxes are, for each run's HUD watch.
     pub hud: HudKeys,
 }
 
@@ -292,6 +326,7 @@ impl Keys {
         self.hud.add_key(y);
     }
 
+    /// The fixed map and the HUD's boxes, every key frame added.
     pub fn finish(mut self) -> KeysRead {
         KeysRead { fixed: self.fixed.map(), hud: self.hud.keys() }
     }
@@ -311,11 +346,17 @@ pub enum NextFrame {
 /// A run's tracking (`Review::tracking`): which frames it reads, each tracked frame's excluded areas watched for
 /// pop-ups, and the detector's maps in order.
 pub struct RunTracking {
+    /// The tracker, started at the run's first frame.
     tracker: Tracker,
+    /// The run's start (seconds), to name the run in an error.
     from: f64,
+    /// The frames the run tracks.
     frames: usize,
+    /// The frames the run reads: its own, and the next run's first in all but the last run.
     reads: usize,
+    /// The frames `next_frame` has handed out so far.
     read: usize,
+    /// The frames whose detector maps have come so far.
     pushed: usize,
 }
 
@@ -364,22 +405,32 @@ pub fn countdown_bytes() -> Range<usize> {
 
 /// A run's watches (`Review::watching`): the camera watch and the HUD watch, fed each frame the run reads.
 pub struct RunWatching {
+    /// Makes the 720p luma from a decoded Y plane, when the host gives none.
     convert: Converter,
+    /// The camera watch: the camera's turn and KovaaK's countdown bar.
     camera: CameraWatch,
+    /// The HUD watch, from the HUD's boxes the key frames found.
     hud: HudWatch,
-    /// The frame at 720p: its luma, and its RGB24 (only the countdown's rows are filled).
+    /// The frame's luma at 720p, when it is made here.
     luma: Box<[u8; FRAME_WIDTH * FRAME_HEIGHT]>,
+    /// The frame's RGB24 at 720p: only the countdown's rows are filled, since the camera watch reads only those.
     rgb: Box<[u8; FRAME_WIDTH * FRAME_HEIGHT * RGB_BYTES]>,
+    /// The bytes of a decoded frame's Y plane (the format's width times its height).
     y_bytes: usize,
+    /// The run's start (seconds), to name the run in an error.
     from: f64,
+    /// The frames the run reads: its own, and the next run's first in all but the last run.
     reads: usize,
+    /// The frames watched so far.
     read: usize,
 }
 
 /// A run's part of the watches (`RunWatching::part`).
 #[derive(Serialize, Deserialize)]
 pub struct WatchPart {
+    /// What the camera watch read.
     pub camera: CameraPart,
+    /// What the HUD watch read.
     pub hud: HudPart,
 }
 
@@ -431,9 +482,13 @@ impl RunWatching {
 /// covers, and the detector that found them.
 #[derive(Serialize)]
 pub struct Tracks {
+    /// The video's frame rate (frames a second).
     pub fps: f64,
+    /// Every frame's targets, one entry per frame of the recording.
     pub frames: Box<[TrackFrame]>,
+    /// The share of the frame the fixed map covers (0 to 1).
     pub fixed: f64,
+    /// The detector that ran, by name.
     pub detector: String,
     /// The part of the video tracked, when only part of it was; the frames outside are empty.
     pub window: Option<TimeWindow>,
@@ -447,19 +502,29 @@ pub struct Tracks {
 /// HUD read (None: no HUD was read).
 #[derive(Serialize)]
 pub struct Joined {
+    /// The tracks, as tracks.json keeps them.
     pub tracks: Tracks,
+    /// Each frame's camera reading and countdown bar, as readings.json keeps them.
     pub readings: VideoReadings,
+    /// What the HUD read, as hud.json keeps it; None when no HUD was read.
     pub hud: Option<HudReading>,
 }
 
 /// The runs' parts joined in order (`Review::joining`).
 pub struct Joining {
+    /// The review whose runs are joined.
     review: Review,
+    /// The tracker the runs' tracking parts are added to.
     tracker: Tracker,
+    /// The camera watch the runs' camera parts join into.
     camera: CameraWatch,
+    /// The HUD watch the runs' HUD parts join into.
     hud: HudWatch,
+    /// The share of the frame the fixed map covers (0 to 1).
     fixed: f64,
+    /// The runs added so far.
     added: usize,
+    /// Whether every run added so far gave as many frames as the run has.
     joined: bool,
 }
 
@@ -500,6 +565,7 @@ impl Joining {
     }
 }
 
+/// Checks the split into runs, the frames each run reads and the join.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,6 +577,7 @@ mod tests {
         (times, keys)
     }
 
+    /// All of a video of `frame_count` frames, as a range.
     fn all(frame_count: usize) -> FrameRange {
         FrameRange { first: 0, end: frame_count }
     }

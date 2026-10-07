@@ -1,12 +1,13 @@
-"""A minimal local inference API for the detector (deployment path B). Python standard library + NumPy + ONNX Runtime;
-no PyTorch. Listens on 127.0.0.1 only.
+"""A small local HTTP API for the detector, so a program in another language can call it. It needs only Python's
+standard library, NumPy and ONNX Runtime (no PyTorch), and listens on 127.0.0.1 only.
 
-  GET  /health                       -> {"model": ..., "threshold": ...}
+  GET  /health                       answers {"model": ..., "threshold": ...}
   POST /detect?w=1280&h=720[&fixed=1][&thr=0.3]
        body: the frame as raw RGB bytes (w * h * 3), followed, when fixed=1, by the fixed map (w * h bytes, 0 or 1)
-       -> {"detections": [[cx, cy, w, h, score], ...], "ms": inference time}
-w and h must be multiples of 16. Coordinates are pixels of the frame sent.
-Usage: python python/model/serve.py [--model python/model/exports/detector_small_v2_fp32.onnx] [--port 8771] [--threads 4]
+       answers {"detections": [[cx, cy, w, h, score], ...], "ms": inference time}
+w and h must be multiples of 16. Coordinates are pixels of the frame sent. A bad request gets 400 and {"error": ...}.
+Usage: python python/model/serve.py [--model python/model/exports/detector_<infer.BEST>_fp32.onnx] [--port 8771]
+       [--threads 4]
        python python/model/serve.py --client [--n 100]   (sends a real frame N times and prints the round-trip time)
 """
 import argparse
@@ -29,13 +30,19 @@ SHOWN = 4                           # --client: detections printed
 
 
 class Handler(BaseHTTPRequestHandler):
+    """Answers /health and /detect. main sets the detector and the model's file name before the server starts."""
+
+    # infer.OnnxDetector: called with the frame, the fixed map and the threshold
     detector = None
+    # the model file's name, for /health
     model = None
 
     def log_message(self, message_format, *args):
+        """Logs nothing, where the default prints a line per request."""
         pass
 
     def reply(self, answer, code=200):
+        """Sends `answer` as JSON with the HTTP status `code`."""
         body = json.dumps(answer).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -44,11 +51,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        """/health: the model's file name and the default threshold; any other path: 404."""
         if urlparse(self.path).path == "/health":
             return self.reply(dict(model=self.model, threshold=infer.THRESHOLD))
         self.reply(dict(error="not found"), 404)
 
     def do_POST(self):
+        """/detect: the frame's detections and the detector's time in ms (400 for a bad size or body); any other path:
+        404."""
         url = urlparse(self.path)
         if url.path != "/detect":
             return self.reply(dict(error="not found"), 404)
@@ -75,6 +85,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def client(port, requests):
+    """Sends bench.py's sample frame and fixed map to the server on `port` `requests` times, one connection each, and
+    prints the last answer's first detections and the median and 90th percentile round trip."""
     import http.client
     import bench
     rgb, fixed = bench.sample()
@@ -93,6 +105,7 @@ def client(port, requests):
 
 
 def main():
+    """Runs the client with --client, else loads the model and serves until stopped."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=str(Path(__file__).resolve().parent / "exports" /
                                                f"detector_{infer.BEST}_fp32.onnx"))

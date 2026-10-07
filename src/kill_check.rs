@@ -25,35 +25,47 @@ use crate::python::hypot;
 use crate::statistics::median;
 use crate::track::Tracks;
 
-/// The frames before a kill its target is measured in (its tracked places), and after it (where it died) for `after`;
-/// the trail goes on to TRAIL frames after it.
+/// The frames before a kill its target is measured in, at its tracked places (offsets from the kill's frame).
 const BEFORE: [i64; 3] = [-4, -3, -2];
+/// The frames after a kill whose measures, where it died, give `KillEvidence::after` (offsets from the kill's frame).
 const AFTER: [i64; 4] = [3, 4, 5, 6];
+/// The trail goes on to this many frames after the kill.
 const TRAIL: i64 = 40;
 /// The target's patch: a disc this share of its box's longer side across (at least MIN_RADIUS_PX), against a ring from
 /// RING_NEAR to RING_FAR times its radius: the wall round it.
 const CORE_SHARE: f64 = 0.6;
+/// The smallest radius of the disc, in pixels.
 const MIN_RADIUS_PX: f64 = 2.5;
+/// The ring starts this many times the disc's radius out, so the target's soft edge stays out of it.
 const RING_NEAR: f64 = 1.2;
+/// The ring ends this many times the disc's radius out: 1.6 times the box's longer side from the center (while the
+/// radius is not raised to MIN_RADIUS_PX).
 const RING_FAR: f64 = 1.6 / CORE_SHARE;
 /// A patch needs this many pixels in the disc and in the ring (the fixed map's pixels, the crosshair's, left out), and
 /// MIN_FREE_SHARE of its disc off the fixed map: a target as small as the crosshair, at it, is mostly crosshair, whose
 /// soft edges (not in the fixed map) would stand out after the kill as if the target were still there. On the gate's
-/// static runs that vetoed 29 true kills where 3 are now (and caught 10 false kills where it caught 28).
+/// static runs that vetoed 29 true kills where 3 are now (and caught 10 false kills where it caught 28). This is the
+/// disc's count.
 const MIN_CORE_PIXELS: usize = 2;
+/// The fewest pixels off the fixed map the ring needs.
 const MIN_RING_PIXELS: usize = 6;
+/// The smallest share of the disc's pixels off the fixed map.
 const MIN_FREE_SHARE: f64 = 0.3;
 /// A target that still shows after the kill by this share of how it showed before (or more) did not die.
 const STILL_THERE_SHARE: f64 = 0.5;
 /// A target that stands out by this share of how it did before (at least GONE_FLOOR) or less, in two frames measured
 /// one after the other, has gone.
 const GONE_SHARE: f64 = 0.12;
+/// The least that counts as gone, in the color distance `standing_out` gives (8-bit levels).
 const GONE_FLOOR: f64 = 5.0;
 /// A kill whose target goes more than HIDDEN_FRAMES after its track's end, its place within AT_CROSSHAIR_DEG of the
 /// crosshair until then, was hidden under the crosshair: it died FADE_FRAMES before it went (the death's fade).
 const HIDDEN_FRAMES: i64 = 6;
+/// The frames a dying target takes to fade: a hidden target died this many frames before it went.
 const FADE_FRAMES: i64 = 6;
+/// How near the crosshair, in degrees, a hidden target's place must stay until it goes.
 const AT_CROSSHAIR_DEG: f64 = 0.4;
+/// The bytes of an RGB24 pixel.
 const RGB: usize = 3;
 
 /// A kill's evidence: how much its target stood out from the wall before it and after it (the median over the frames
@@ -62,9 +74,15 @@ const RGB: usize = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct KillEvidence {
+    /// The kill's frame, as the video alone gave it; the key a review request matches the kill by.
     pub frame: i64,
+    /// The median of how much the target stood out at its tracked places 4 to 2 frames before the kill (the color
+    /// distance between the disc and the ring, 8-bit levels).
     pub before: Option<f64>,
+    /// The same median where it died, 3 to 6 frames after the kill.
     pub after: Option<f64>,
+    /// How much the place it died stood out in each of the TRAIL frames after the kill (frame kill + 1 first); empty in
+    /// a kills.json written before the trail.
     #[serde(default)]
     pub trail: Vec<Option<f64>>,
 }
@@ -126,24 +144,34 @@ fn hidden_until(flick: &Flick, evidence: &KillEvidence, tracks: &Tracks) -> Opti
 /// One measurement to make in a frame: the kill's, `offset` frames from it (before it when negative), a patch round
 /// (x, y) of this radius (pixels).
 struct Look {
+    /// The kill's frame, which names the kill the measure belongs to.
     kill: i64,
+    /// The frame's offset from the kill: negative before it, 1 to TRAIL after it.
     offset: i64,
+    /// The patch's center x: degrees from the crosshair until `KillCheck::look` turns it into pixels.
     x: f64,
+    /// The patch's center y: degrees until `KillCheck::look` turns it into pixels.
     y: f64,
+    /// The disc's radius, in pixels.
     radius: f64,
 }
 
 /// A kill's measurements: before it, and the trail after it (frame kill + 1 at 0).
 #[derive(Default)]
 struct Measured {
+    /// The measures before the kill that could be made, in the order made.
     before: Vec<f64>,
+    /// The measure in each of the TRAIL frames after the kill; None where it could not be made.
     trail: Vec<Option<f64>>,
 }
 
 /// The kills of a review being checked: the measurements each frame needs, and those made.
 pub struct KillCheck {
+    /// The measures to make, by the frame's index in the recording.
     looks: BTreeMap<usize, Vec<Look>>,
+    /// The measures made, by the kill's frame.
     measured: BTreeMap<i64, Measured>,
+    /// The review's fixed map, 1280 x 720 row by row: true where the screen does not move, which no patch counts.
     fixed: Vec<bool>,
 }
 
@@ -278,12 +306,13 @@ fn standing_out(rgb: &[u8], fixed: &[bool], cx: f64, cy: f64, radius: f64) -> Op
     Some(squares.sqrt())
 }
 
+/// Checks the patch measure, the hidden kills and the rule that leaves a kill out.
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::track::TrackFrame;
 
-    /// A grey wall with a red disc of radius 6 at (100, 100).
+    /// A gray wall with a red disc of radius 6 at (100, 100).
     fn wall_with_target() -> Vec<u8> {
         let mut rgb = vec![128u8; W * H * RGB];
         for y in 90..110 {
@@ -296,6 +325,8 @@ mod tests {
         rgb
     }
 
+    /// A red disc stands out from a plain wall and the wall does not; a patch near the frame's edge, under the fixed
+    /// map, or mostly under it has no measure.
     #[test]
     fn a_target_stands_out_and_the_wall_does_not() {
         let (rgb, fixed) = (wall_with_target(), vec![false; W * H]);
@@ -341,6 +372,8 @@ mod tests {
         KillEvidence { frame: 10, before: Some(100.0), after: Some(30.0), trail }
     }
 
+    /// A target held at the crosshair after its track ended dies a fade before it goes; not when the view turned it
+    /// away, and the next flick starts at the moved kill.
     #[test]
     fn a_target_hidden_under_the_crosshair_dies_when_it_goes() {
         let flicks = with_hidden_kills(vec![lost_at_crosshair()], &[hidden_then_gone()], &still_tracks(0.0));
@@ -355,6 +388,8 @@ mod tests {
         assert!(both[1].path.iter().all(|point| point.0 >= both[0].kill_frame));
     }
 
+    /// A kill is left out when its target shows after by half as much as before or more, and never without both
+    /// measures.
     #[test]
     fn a_kill_is_ruled_out_only_when_its_target_still_shows() {
         let evidence = |before, after| KillEvidence { frame: 0, before, after, trail: Vec::new() };

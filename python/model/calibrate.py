@@ -19,8 +19,8 @@ under 0.01 are dropped, and a model with none left needs no map (null).
 
 Why not match the scores of true targets (the same recall at the same score)? Because a model that finds fewer targets
 is then pushed down to scores where most peaks are false: small_v13 would keep peaks from raw 0.21 up (where a fifth of
-them are targets) to reach full_v3's recall at 0.3, and small_v11, which never saw a moving target, would map its 0.05 to
-0.35. The precision at a score is what the review's numbers rely on, and it is a property of the score; recall is a
+them are targets) to reach full_v3's recall at 0.3, and small_v11, which never saw a moving target, would map its 0.05
+to 0.35. The precision at a score is what the review's numbers rely on, and it is a property of the score; recall is a
 property of the model, for the acceptance checks to judge.
 
 The threshold: as infer.THRESHOLD was picked (eval.py: the best F1 over 0.2, 0.3, ... 0.6 on the val split of
@@ -28,7 +28,7 @@ test_out/vod_model/data, the one it was picked on; full_v3's best there is 0.3),
 than the reference's 0.3 is taken only when its F1 is better on 95% of the scenario draws: where two thresholds are
 within the noise, the reference's stands. The reference's own map is null and its threshold 0.3.
 
-Usage: python python/model/calibrate.py <model> [--report FILE] [--write]
+Usage: python python/model/calibrate.py <model> [--report FILE] [--write] [--val <dataset> ...] [--data <dataset>]
   <model>: a name (small_v13), or an export (python/model/exports/detector_<name>_u8in.onnx, or any detector_<name>*
   file beside it). Prints the settings; --write writes them to exports/detector_<name>.json when that file does not
   exist yet (it never replaces one); --report saves them with the numbers behind them as JSON.
@@ -49,10 +49,11 @@ sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
 import local_config  # noqa: E402
 
-FORMAT = 1
+FORMAT = 1                                  # the settings file's format
 REFERENCE = infer.BEST                      # the scale every model's scores are put on
 EXPORTS = HERE / "exports"
-VODS = local_config.folder("vods")                     # crop names start with the md5 of the recording's path here (build_data)
+# crop names start with the md5 of the recording's path in this folder (build_data)
+VODS = local_config.folder("vods")
 # the map: the val splits full_v3 and small_v13 were picked on (every scenario kind)
 VAL = ("test_out/vod_model/data_v3", "test_out/vod_model/data_kills4", "test_out/vod_model/data_moving_dark")
 SWEEP_DATA = "test_out/vod_model/data"      # the threshold: eval.py's default, where infer.THRESHOLD was picked
@@ -105,6 +106,7 @@ def session(path, gpu=False):
 
 
 def crop_files(folders, split):
+    """The crop files of a split of each dataset folder, in name order."""
     return [file for folder in folders for file in sorted((Path(folder) / split).glob("*.npz"))]
 
 
@@ -182,6 +184,7 @@ class Scored:
     and scenario. The crops' peaks and labels stay in `dets` and `gts`."""
 
     def __init__(self, dets, gts, files):
+        """dets and gts: each crop's peaks and labels, as peaks() gives them; files: the crops' files."""
         self.dets, self.gts, self.files = dets, gts, files
         rows = []
         for crop, (found, truth) in enumerate(zip(dets, gts)):
@@ -220,7 +223,8 @@ class Scored:
 
 
 def score(model, folders=VAL, split="val"):
-    files = crop_files(folders, split)
+    """The model's peaks on a split of the dataset folders, matched (Scored); stops when there are no crops."""
+    files =crop_files(folders, split)
     if not files:
         raise SystemExit(f"no crops in {', '.join(str(Path(folder) / split) for folder in folders)}")
     return Scored(*peaks(session(u8in_of(model)), files), files)
@@ -269,6 +273,7 @@ def draw_of(rng, units):
 
 
 def rounded(value):
+    """A number rounded to 4 places for the report, None for NaN."""
     return None if np.isnan(value) else round(float(value), 4)
 
 
@@ -314,7 +319,8 @@ def fit_map(new, ref, draws=DRAWS, seed=0):
 
 def pick_threshold(new, points, draws=DRAWS, seed=0):
     """eval.py's sweep on the mapped scale: the best F1 over SWEEP, taken over the reference's threshold only when it
-    is better on 95% of the scenario draws. Returns the threshold and the sweep."""
+    is better on 95% of the scenario draws. Returns the threshold, the sweep, and how the best compared with the
+    reference's threshold (None when the best is the reference's)."""
     mapped = apply_map(points, new.score)
     sweep = {threshold: new.at(threshold, mapped) for threshold in SWEEP}
     best = max(sweep, key=lambda threshold: sweep[threshold]["f1"])
@@ -334,6 +340,7 @@ def pick_threshold(new, points, draws=DRAWS, seed=0):
 
 
 def settings(name, threshold, points):
+    """A model's settings file's contents (the module's docstring gives its fields)."""
     return {"format": FORMAT, "name": name, "threshold": threshold, "score_map": points, "reference": REFERENCE}
 
 
@@ -370,7 +377,8 @@ def write_settings(model_settings, folder=EXPORTS):
 
 
 def print_report(report):
-    moved = [knot for knot in report["knots"] if knot["raw"] != knot["reference"]]
+    """Prints the map's largest move, each knot it moved, and the threshold sweep."""
+    moved =[knot for knot in report["knots"] if knot["raw"] != knot["reference"]]
     print(f"  largest move {report['largest_move']}; knots moved: " +
           (", ".join(f"raw {knot['raw']} -> {knot['reference']} (fit {knot['fitted']}, 95% {knot['low']} to "
                      f"{knot['high']})" for knot in moved) or "none"))
@@ -381,6 +389,7 @@ def print_report(report):
 
 
 def main():
+    """Calibrates the model, prints its settings and the report, and saves or writes them as the options say."""
     parser = argparse.ArgumentParser()
     parser.add_argument("model")
     parser.add_argument("--val", action="append", help="a dataset folder whose val split fits the map (repeat it) "

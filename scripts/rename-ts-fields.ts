@@ -1,40 +1,58 @@
-// Renames fields in TypeScript where the compiler reports them missing, after the type's fields were renamed (in Rust,
-// then `bun run types`, or by hand):
-//
-//   bun scripts/rename-ts-fields.ts [--project ui/tsconfig.spec.json] [--compiler ngc|tsc] Type.old=new ...
-//
-// Type is the type the compiler names, or one that extends it (Measure, TimedFlick), and `*` matches any type. Each
-// rename is made at the exact place the compiler reports: a property read (TS2339, TS2551) or an object literal's key
-// (TS2353). It runs the compiler again until nothing more changes, then lists the errors left for a hand fix (a
-// literal cast with `as`, a shorthand key). Angular's ngc, the default, checks the templates too; tsc does not.
+/**
+ * Renames fields in TypeScript where the compiler reports them missing, after the type's fields
+ * were renamed (in Rust, then `bun run types`, or by hand):
+ *
+ *   bun scripts/rename-ts-fields.ts [--project ui/tsconfig.spec.json] [--compiler ngc|tsc]
+ *     Type.old=new ...
+ *
+ * Type is the type the compiler names, or one that extends it (Measure, TimedFlick), and `*`
+ * matches any type. Each rename is made at the exact place the compiler reports: a property read
+ * (TS2339, TS2551) or an object literal's key (TS2353). It runs the compiler again until nothing
+ * more changes, then lists the errors left for a hand fix (a literal cast with `as`, a shorthand
+ * key). Angular's ngc, the default, checks the templates too; tsc does not.
+ */
 import { dirname, join, resolve } from 'node:path';
 
+/** One rename the command line asks for: Type.old=new. */
 interface Rename {
+  /** The type whose field it renames, or `*` for any. */
   type: string;
+  /** The field's old name. */
   from: string;
+  /** The field's new name. */
   to: string;
 }
 
+/** A field the compiler reports missing: where, which field, and on which type. */
 interface Missing {
+  /** The file, as an absolute path. */
   file: string;
+  /** The line, from 1. */
   line: number;
+  /** The column, from 1. */
   column: number;
+  /** The field's name. */
   property: string;
+  /** The type the compiler names. */
   type: string;
 }
 
 /** An error's place, as tsc writes it (`file(1,2): error`) or as ngc does (`file:1:2 - error`), and its message. */
 const ERROR = /^(.+?)(?:\((\d+),(\d+)\):|:(\d+):(\d+) -) error (TS\d+): (.*)$/;
+/** A missing field's error codes: a property read (TS2339, TS2551), a literal's key (TS2353). */
 const MISSING_CODES = ['TS2339', 'TS2551', 'TS2353'];
+/** Their messages: the field and the type. */
 const MISSING =
   /^(?:Property|Object literal may only specify known properties, and) '(\w+)' does not exist (?:on|in) type '([^']+)'/;
 
+/** A rename from its command-line form, Type.old=new; throws on any other text. */
 function parseRename(text: string): Rename {
   const match = /^([\w*]+)\.(\w+)=(\w+)$/.exec(text);
   if (!match) throw new Error(`not Type.old=new: ${text}`);
   return { type: match[1], from: match[2], to: match[3] };
 }
 
+/** Runs the compiler on the project, writing nothing; gives its error lines, colors stripped. */
 function compile(project: string, compiler: string): string[] {
   const command = [process.execPath, 'x', compiler, '-p', project, '--noEmit'];
   const run = Bun.spawnSync(command, { cwd: dirname(project) });
@@ -45,6 +63,7 @@ function compile(project: string, compiler: string): string[] {
     .filter((line) => ERROR.test(line));
 }
 
+/** A missing field from a compiler error, its file under `root`; undefined for any other error. */
 function parseMissing(root: string, error: string): Missing | undefined {
   const place = ERROR.exec(error);
   if (!place || !MISSING_CODES.includes(place[6])) return undefined;
@@ -54,6 +73,7 @@ function parseMissing(root: string, error: string): Missing | undefined {
   return { file: join(root, place[1]), line: +line, column: +column, property: found[1], type: found[2] };
 }
 
+/** The rename for a missing field: its old name, on its type or `*`; undefined for none. */
 function renameFor(missing: Missing, renames: Rename[]): Rename | undefined {
   const named = (type: string) => type === '*' || new RegExp(`\\b${type}\\b`).test(missing.type);
   return renames.find((rename) => rename.from === missing.property && named(rename.type));
@@ -84,6 +104,7 @@ async function renameAll(root: string, errors: string[], renames: Rename[]): Pro
   return made;
 }
 
+/** Renames until the compiler asks for no more; exits 0 with no errors left, 1 with, 2 on usage. */
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const at = args.indexOf('--project');

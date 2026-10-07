@@ -1,7 +1,15 @@
+/**
+ * How the page writes numbers, times, sizes, shares, degrees and directions ("425 ms", "79%",
+ * "0.48°", "↗"); a missing value is a dash. In: the API's values (seconds, shares, degrees,
+ * bytes). Out: every feature's text.
+ */
+
 import { Direction, Kind } from './api';
 
+/** The months' short names, January first. */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+/** Each scenario kind's name on the page. */
 export const KIND_LABELS: Record<Kind, string> = {
   static: 'Static',
   dynamic: 'Dynamic',
@@ -31,12 +39,19 @@ export function formatSize(bytes: number): string {
   return `${Math.round(bytes / BYTES_PER_MB)} MB`;
 }
 
+/** What a missing value shows as: a dash. */
 const NONE = '–';
+/** Bytes in a megabyte (decimal, as file sizes are given). */
 const BYTES_PER_MB = 1e6;
+/** Milliseconds in a second. */
 const MS_PER_SECOND = 1000;
+/** A share of 1 in percent. */
 const PERCENT = 100;
+/** Seconds in a minute. */
 const SECONDS_PER_MINUTE = 60;
+/** Seconds in an hour. */
 const SECONDS_PER_HOUR = 3600;
+/** Seconds in a day. */
 const SECONDS_PER_DAY = 86400;
 
 /** Seconds as "425 ms". */
@@ -65,7 +80,10 @@ export function formatSpeed(degPerSecond: number | null | undefined): string {
   return degPerSecond == null ? NONE : `${Math.round(degPerSecond)} °/s`;
 }
 
-/** How far one time is from another: "at the same time", "12 s after", "3 min before", "2 h after", "4 days before". */
+/**
+ * How far one time is from another, from seconds (negative: before): "at the same time",
+ * "12 s after", "3 min before", "2 h after", "4 days before".
+ */
 export function formatOffset(seconds: number): string {
   const apart = Math.abs(seconds);
   if (apart < 1) return 'at the same time';
@@ -88,7 +106,9 @@ export function formatCount(value: number | null | undefined): string {
 
 /** The arrows for the eight directions, from right round to down-right, each 45 degrees on from the one before. */
 const ARROWS = '→↗↑↖←↙↓↘';
+/** Degrees in a full turn. */
 const FULL_TURN_DEG = 360;
+/** Degrees between one arrow's direction and the next: 45. */
 const ARROW_STEP_DEG = FULL_TURN_DEG / ARROWS.length;
 
 /** A flick's direction in degrees (0 right, 90 up) as one of eight arrows. */
@@ -97,6 +117,7 @@ export function arrow(direction: number): string {
   return ARROWS[Math.round(angleDeg / ARROW_STEP_DEG) % ARROWS.length];
 }
 
+/** Each of the core's eight direction names as its arrow. */
 export const DIRECTION_ARROWS: Record<Direction, string> = {
   right: '→',
   'up-right': '↗',
@@ -108,7 +129,11 @@ export const DIRECTION_ARROWS: Record<Direction, string> = {
   'down-right': '↘',
 };
 
-/** Where a flick landed, against a target of radius r: on target, an underflick (the degrees still to go) or an overflick (past the far edge). */
+/**
+ * Where a flick landed, against a target of radius `radiusDeg`: on target, an underflick (the
+ * degrees still to go) or an overflick (the degrees past the far edge). `endLeft` is how far along
+ * the way to the target was left when the flick ended, in degrees (below 0: past it).
+ */
 export function formatEnded(endLeft: number, radiusDeg: number): string {
   if (endLeft > radiusDeg) return `underflick ${endLeft.toFixed(1)}°`;
   if (endLeft < -radiusDeg) return `overflick ${(-endLeft - radiusDeg).toFixed(1)}°`;

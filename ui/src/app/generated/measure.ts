@@ -4,11 +4,18 @@ import type { SpeedCurve } from './speed-curve';
 import type { TargetOffset } from './target-offset';
 
 /**
- * One flick's measures (seconds, degrees and degrees a second): the keys measure.py has always written, plus
- * settle, still and the time parts.
+ * One flick's measures (seconds, degrees and degrees a second): the keys the old review's `measure` wrote, plus
+ * settle, still and the time parts. Speeds and distances are the crosshair's relative to the target; times count
+ * from the flick's start (its path's first point), except where a field says otherwise.
  */
 export interface Measure {
+  /**
+   * The kill's number in the run, from 1 (the flick's `kill_number`).
+   */
   kill_number: number;
+  /**
+   * The shots the kill took, from the kill times; None from the video alone.
+   */
   shots: number | null;
   /**
    * The distance to the target when the flick started.
@@ -18,14 +25,31 @@ export interface Measure {
    * The direction to the target (0 = right, 90 = up).
    */
   direction_deg: number;
+  /**
+   * The kill's TTK: seconds from the flick's start to the kill.
+   */
   total: number;
+  /**
+   * The reaction: seconds until the crosshair closes on the target faster than `REACTION_SPEED_DEG_S` for 2
+   * points; None when it never does.
+   */
   react: number | null;
+  /**
+   * The main flick: seconds from the reaction's end to the first point after the peak below `FLICK_END_SHARE` of
+   * the peak speed; None when there is no reaction or the flick ends before it.
+   */
   flick: number | null;
+  /**
+   * The highest speed on the path, degrees a second.
+   */
   peak: number;
   /**
    * How far along the way to the target was left when the main flick ended (below 0: past it).
    */
   end_left: number;
+  /**
+   * The distance from the target's center when the main flick ended, degrees.
+   */
   end_off: number;
   /**
    * When the crosshair reached the target, from the flick's start: the first point of its path inside the target's
@@ -33,28 +57,68 @@ export interface Measure {
    * flick can pass through the target between them). Dwell, settle and hold run from it.
    */
   arrive: number | null;
+  /**
+   * Seconds from the arrival to the kill; None when the crosshair never reached the target. The same as `hold`.
+   */
   dwell: number | null;
+  /**
+   * How far the crosshair went past the target's center along the way to it, from the reaction's end on (degrees;
+   * below 0 when it stopped short of the center). Past the target's edge when it is more than the radius.
+   */
   past: number;
   /**
-   * Bursts of movement after the main flick.
+   * Bursts of movement after the main flick (the micros).
    */
   corrections: number;
+  /**
+   * The speed at the kill, degrees a second: above `MOVING_CLICK_DEG_S` (src/summary.rs) the click was on the move.
+   */
   click_speed: number;
+  /**
+   * The distance from the target's center at the kill, degrees.
+   */
   click_off: number;
+  /**
+   * The target's offset from the crosshair at the kill (degrees, right and up positive): where the click landed.
+   */
   click_off_xy: TargetOffset;
+  /**
+   * Seconds from the arrival until the crosshair settled (its smoothed speed stays below `SETTLED_DEG_S` until the
+   * kill); None without an arrival.
+   */
   settle: number | null;
+  /**
+   * The confirmation: seconds from the settling to the kill, the crosshair still on the target; None without an
+   * arrival.
+   */
   still: number | null;
+  /**
+   * The frame the flick starts on: the kill before's frame (the first kill's: the run's start or the target's first
+   * sighting), or the frame the target appeared on when it appeared later.
+   */
   start_frame: number;
+  /**
+   * The frame the target was last seen on near the kill.
+   */
   kill_frame: number;
+  /**
+   * Whether the target appeared after the kill before, so the flick starts when it showed.
+   */
   spawned: boolean;
+  /**
+   * The hold of a hold-fire run: seconds from the arrival to the kill; None without an arrival.
+   */
   hold: number | null;
   /**
-   * How often the crosshair slipped off the target after reaching it, and for how long in all.
+   * How often the crosshair slipped off the target after reaching it.
    */
   breaks: number;
+  /**
+   * How long the crosshair was off the target in all after reaching it, seconds.
+   */
   off: number;
   /**
-   * React, main flick, onto the target, settle, still.
+   * The kill steps in seconds: react, main flick, onto the target, settle, still. They add up to `total`.
    */
   parts?: KillParts;
   /**
@@ -62,9 +126,12 @@ export interface Measure {
    */
   speed?: SpeedCurve;
   /**
-   * The reloads an empty magazine forced in this kill, and their time in seconds (src/reload.rs; none without the
-   * scenario's ammo rules or the kills' shots).
+   * The reloads an empty magazine forced in this kill (src/reload.rs; none without the scenario's ammo rules or the
+   * kills' shots).
    */
   reloads?: number;
+  /**
+   * The time those reloads took, seconds (src/reload.rs; none with `reloads`).
+   */
   reload_time?: number;
 }

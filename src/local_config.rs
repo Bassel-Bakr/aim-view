@@ -17,7 +17,9 @@ const LOCAL_FILE: &str = "aimview.json";
 
 /// The settings: the defaults with this computer's file over them, and the folder their relative paths start at.
 pub struct LocalConfig {
+    /// The folder relative paths start at: the repo's root, where aimview.json is looked for.
     root: PathBuf,
+    /// The settings: the defaults' top-level keys, each replaced by this computer's file where it has the key.
     value: Value,
 }
 
@@ -45,12 +47,13 @@ impl LocalConfig {
         LocalConfig { root: root.to_path_buf(), value }
     }
 
-    /// A folder the settings name (data, models, ui, ffmpeg, vods): relative ones from the repo's root; None for null.
+    /// A folder the settings name (data, models, ui, ffmpeg, vods): relative ones from the repo's root; None when the
+    /// key is null, missing or not a string.
     pub fn folder(&self, key: &str) -> Option<PathBuf> {
         self.value[key].as_str().map(|path| self.root.join(native(path)))
     }
 
-    /// The server's default address and port.
+    /// The server's default address and port; an empty host or port 0 when the settings lack them.
     pub fn server(&self) -> (String, u16) {
         let server = &self.value["server"];
         let host = server["host"].as_str().unwrap_or_default().to_string();
@@ -104,6 +107,7 @@ fn native(path: &str) -> PathBuf {
     PathBuf::from(path.replace('/', MAIN_SEPARATOR_STR))
 }
 
+/// Checks how this computer's file and the defaults combine.
 #[cfg(test)]
 mod tests {
     use super::*;

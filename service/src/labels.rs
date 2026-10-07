@@ -1,8 +1,8 @@
-//! Labelling (python/server.py): the recordings the user marked as another game, the queue of recordings to label
-//! areas in and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists of recording ids,
-//! not_aim_trainer.json and label_skipped.json in its data folder). In: the page's marks and skips (/api/not_aim,
-//! /api/label_skip) and the recordings list. Out: those lists, and the queues the page labels from (/api/label_queue;
-//! faint.rs's).
+//! Labelling (python/retired/server.py): the recordings the user marked as another game, the queue of recordings to
+//! label areas in and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists of
+//! recording ids, not_aim_trainer.json and label_skipped.json in its data folder). In: the page's marks and skips
+//! (/api/not_aim, /api/label_skip) and the recordings list. Out: those lists, and the queues the page labels from
+//! (/api/label_queue; faint.rs's).
 
 use std::collections::BTreeSet;
 
@@ -70,9 +70,9 @@ impl Library {
         Ok(json!(ids))
     }
 
-    /// The labelling queues' order (python/server.py: label_queue, faint_queue): uploads first, then the rest, newest
-    /// first; one recording per scenario folder (each upload is its own), none from a probe scenario or another game,
-    /// and none that `left_out` leaves out.
+    /// The labelling queues' order (python/retired/server.py: label_queue, faint_queue): uploads first, then the rest,
+    /// newest first; one recording per scenario folder (each upload is its own), none from a probe scenario or another
+    /// game, and none that `left_out` leaves out.
     pub(crate) fn queue(&self, left_out: impl Fn(&str) -> bool) -> Answer<Vec<String>> {
         let Value::Array(mut list) = self.recordings(false)? else { return Ok(Vec::new()) };
         // a stable sort, as Python's sorted(): equal times keep the list's order

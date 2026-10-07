@@ -1,4 +1,4 @@
-//! The faint-target cut-off (python/server.py: faint, set_faint, submit_faint, skip_faint, faint_queue).
+//! The faint-target cut-off (python/retired/server.py: faint, set_faint, submit_faint, skip_faint, faint_queue).
 //!
 //! In: the page's cut-off for a recording ({on, offset}), its submits and its skips. Kept (store.rs): the recording's
 //! cut-off (faint.json), which a tracking run's report measures with (report.rs), and the recordings left out of the
@@ -29,15 +29,16 @@ use crate::store::{ReviewBy, Store};
 use crate::store::{IdList, Item, Mark, Part};
 #[cfg(feature = "native")]
 use crate::video::{Frames, VideoInfo, probe};
-/// The offsets a cut-off can have (python/server.py's check).
+/// The offsets a cut-off can have (python/retired/server.py's check).
 const OFFSET_RANGE: RangeInclusive<f64> = 0.2..=0.6;
 /// The decimals an offset is kept with.
 const OFFSET_DECIMALS: usize = 2;
-/// How near the crosshair, in degrees, a track's frames do not count toward its score (`CutoffRequest`'s `near`; a
-/// target under the crosshair scores low). A tracking run's bot is under the crosshair most of the time, so every
-/// frame counts; a clicking run leaves out the targets being shot.
+/// How near the crosshair, in degrees, a track's frames do not count toward its score in a tracking run
+/// (`CutoffRequest`'s `near`; a target under the crosshair scores low). A tracking run's bot is under the crosshair
+/// most of the time, so every frame counts.
 #[cfg(feature = "native")]
 const TRACKING_NEAR_DEG: f64 = 0.0;
+/// The same in a clicking run, which leaves out the targets being shot.
 #[cfg(feature = "native")]
 const CLICKING_NEAR_DEG: f64 = 2.0;
 /// Bytes per pixel of an RGB frame.
@@ -47,15 +48,21 @@ const RGB_BYTES: usize = 3;
 /// faint.json as the review server writes it: on and offset, and once submitted when and how many labels it gave.
 #[derive(Serialize, Deserialize)]
 struct FaintFile {
+    /// Whether the report leaves out the tracks the cut-off cuts.
     on: bool,
+    /// The cut-off's offset (0.2 to 0.6, two decimals): how far below the recording's level a track scores to be cut.
     offset: f64,
+    /// The last submit's record; None: never submitted.
     #[serde(flatten)]
     record: Option<Submitted>,
 }
 
+/// A submit's record in faint.json.
 #[derive(Serialize, Deserialize)]
 struct Submitted {
+    /// When it was submitted, as Python's isoformat ("2026-10-07T12:00:00").
     submitted: String,
+    /// How many labels it gave; null until they are written.
     #[serde(default)]
     labels: Value,
 }
@@ -80,8 +87,8 @@ fn now_iso() -> String {
     format!("{}T{}", date.replace('.', "-"), time.replace('.', ":"))
 }
 
-/// A body's offset as python/server.py reads it (`float(body.get("offset", DEFAULT_OFFSET))`), checked to be one the
-/// cut-off can have.
+/// A body's offset as python/retired/server.py read it (`float(body.get("offset", DEFAULT_OFFSET))`), checked to be
+/// one the cut-off can have.
 fn offset_of(body: &Value) -> Answer<f64> {
     let offset = match body.get("offset") {
         None => DEFAULT_OFFSET,
@@ -117,6 +124,7 @@ impl Library {
         kept.unwrap_or_else(|| json!({ "on": false, "offset": DEFAULT_OFFSET }))
     }
 
+    /// The recording's faint.json read; None when it is missing or not that file.
     fn faint_file(&self, id: &str) -> Option<FaintFile> {
         serde_json::from_value(pyjson::load(self.store(), Item::Mark(id, Mark::Cutoff))?).ok()
     }
@@ -198,9 +206,9 @@ impl Library {
     }
 }
 
-/// The labels of a submitted cut-off (python/server.py: submit_faint's run): the crops the core picks from the run's
-/// frames (the review's `tracks`), each kept as hand_crops.py writes them (train/<stem>_<frame>.npz: the crop's RGB
-/// and fixed map, an empty target mask, the boxes kept; a row in checked.jsonl). Returns how many.
+/// The labels of a submitted cut-off (python/retired/server.py: submit_faint's run): the crops the core picks from the
+/// run's frames (the review's `tracks`), each kept as hand_crops.py writes them (train/<stem>_<frame>.npz: the crop's
+/// RGB and fixed map, an empty target mask, the boxes kept; a row in checked.jsonl). Returns how many.
 #[cfg(feature = "native")]
 fn cutoff_labels(
     video: &Path,

@@ -1,3 +1,9 @@
+/**
+ * The page's own reads and writes of the files browser mode's service sees. In: paths in the
+ * service's mounts (/data, /kovaak, /vods) and files the user chose. Out: requests to /files/...,
+ * which service-api.ts sends to the service worker's file queue.
+ */
+
 import { HttpClient, HttpEventType, HttpResponse } from '@angular/common/http';
 import { inject, Service } from '@angular/core';
 import { filter, firstValueFrom, lastValueFrom, map, tap } from 'rxjs';
@@ -8,6 +14,7 @@ export const FILES = '/files';
 
 /** What a copy into a folder of the mounts is sent as (POST /files/<folder>). */
 export interface CopyRequest {
+  /** The files to copy, each with its path below the folder. */
   files: ChosenFile[];
 }
 
@@ -20,22 +27,25 @@ function filesUrl(path: string): string {
 }
 
 /**
- * Where a recording's video is in the mounts, from its id (as service/src/library/recordings.rs `resolve` reads it in
- * the app's layout): an upload ("uploads/<name>") in /data/uploads, anything else below the VODs folder.
+ * Where a recording's video is in the mounts, from its id (as service/src/library/recordings.rs
+ * `resolve` reads it in the app's layout): an upload ("uploads/<name>") in /data/uploads, anything
+ * else below the VODs folder.
  */
 export function recordingPath(id: string): string {
   return id.startsWith('uploads/') ? `/data/${id}` : `/vods/${id}`;
 }
 
 /**
- * The page's own files in the review service's mounts, through the worker's queue (service-api.ts answers /files/):
- * a recording's video to play or review, the area finder's files, a mouse log to forget, KovaaK's folders copied in.
+ * The page's own files in the review service's mounts, through the worker's queue (service-api.ts
+ * answers /files/): a recording's video to play or review, the area finder's files, a mouse log to
+ * forget, KovaaK's folders copied in.
  */
 @Service()
 export class MountedFiles {
+  /** Sends the /files/ requests, which service-api.ts answers. */
   private readonly http = inject(HttpClient);
 
-  /** A file of the mounts. */
+  /** A file of the mounts; rejects when it is not there. */
   read(path: string): Promise<Blob> {
     return firstValueFrom(this.http.get(filesUrl(path), { responseType: 'blob' }));
   }
@@ -69,7 +79,10 @@ export class MountedFiles {
     await firstValueFrom(this.http.post(filesUrl('/kovaak'), body, { params: { show: '1' } }));
   }
 
-  /** Copies files into a folder at their paths below it: only those new or changed since the last copy. */
+  /**
+   * Copies files into a folder at their paths below it: only those new or changed since the last
+   * copy. progress hears the files copied; gives how many were.
+   */
   copyIn(dir: string, files: ChosenFile[], progress: CopyProgress): Promise<CopyDone> {
     const body: CopyRequest = { files };
     return lastValueFrom(

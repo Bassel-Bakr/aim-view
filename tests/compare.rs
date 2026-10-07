@@ -5,12 +5,14 @@ mod common;
 use common::{compare, rename_key, Diff};
 use serde_json::json;
 
+/// The differences `compare` finds between the core's JSON and Python's, from the root path "r".
 fn differences(got: serde_json::Value, want: serde_json::Value) -> Vec<String> {
     let mut diff = Diff::default();
     compare("r", &got, &want, &mut diff);
     diff.wrong
 }
 
+/// A field in the core's output that Python's lacks passes.
 #[test]
 fn a_field_only_the_core_has_is_not_a_difference() {
     let got = json!({"kills": 3, "summary": {"median": 0.5, "what_if": [1, 2]}});
@@ -18,6 +20,7 @@ fn a_field_only_the_core_has_is_not_a_difference() {
     assert!(differences(got, want).is_empty());
 }
 
+/// A field in Python's output that the core's lacks is a difference, named by its path.
 #[test]
 fn a_field_python_has_and_the_core_lacks_is_a_difference() {
     let wrong = differences(json!({"summary": {}}), json!({"summary": {"median": 0.5}}));
@@ -25,6 +28,7 @@ fn a_field_python_has_and_the_core_lacks_is_a_difference() {
     assert!(wrong[0].contains("r.summary.median"));
 }
 
+/// Different values and arrays of different lengths are differences; a number off in its last bits is not.
 #[test]
 fn a_different_value_is_a_difference_and_float_noise_is_not() {
     assert_eq!(differences(json!({"a": 1.0, "b": "x"}), json!({"a": 1.5, "b": "y"})).len(), 2);
@@ -32,6 +36,8 @@ fn a_different_value_is_a_difference_and_float_noise_is_not() {
     assert_eq!(differences(json!({"a": [1, 2]}), json!({"a": [1, 2, 3]})).len(), 1);
 }
 
+/// `rename_key` renames the key in every array element its path reaches, nested too, and a path to nothing changes
+/// nothing.
 #[test]
 fn a_renamed_key_moves_in_every_element_the_path_reaches() {
     let mut value = json!({"flicks": [{"n": 1, "speed": {"v": [2]}}, {"n": 3}], "n": 4});

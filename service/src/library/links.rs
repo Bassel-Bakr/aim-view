@@ -123,11 +123,17 @@ fn download_link(
 /// A link's download: the link, yt-dlp's format, the folder it downloads into, where the video goes, and the new
 /// recording's id and job.
 struct Download {
+    /// The link.
     url: String,
+    /// yt-dlp's format (-f) for the chosen quality (`ytdlp::format_spec`).
     spec: String,
+    /// The folder it downloads into: ".link-<process id>-<number>" in the uploads, removed at the end.
     folder: PathBuf,
+    /// Where the finished video goes in the uploads.
     dest: PathBuf,
+    /// The new recording's id ("uploads/<name>").
     id: String,
+    /// The download's job, which /api/job follows.
     job: Arc<Mutex<Job>>,
 }
 
@@ -160,6 +166,7 @@ impl Library {
     /// Adds a recording from a link ({url, format}: format is one of `link_formats`' ids, or null for the best). It
     /// answers at once with the new recording's id and row; the download runs in a job, followed with /api/job.
     pub fn add_link(self: &Arc<Self>, body: &Value) -> Answer<Value> {
+        /// The next download folder's number in this process.
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let url = link_url(body)?;
         let format = body["format"].as_str().map(String::from);
@@ -230,11 +237,14 @@ impl Library {
     }
 }
 
+/// Links: their names, checks and downloads, with a stand-in for yt-dlp.
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{Config, Layout};
 
+    /// A link's file name: a KovOBS title kept as it is, else "<title> - <stamp>" with forbidden characters gone and
+    /// the title cut to TITLE_CHARS; its stamp from the upload time, else the upload day, else now.
     #[test]
     fn link_names() {
         let kovobs = "1wall 6targets small - 1931.23 - 2026.10.01-16.23.04";
@@ -250,6 +260,7 @@ mod tests {
         assert_eq!(link_stamp(Some(1e9), Some("20261001"), 0.0), local_stamp(1e9));
     }
 
+    /// Only http and https links with a host are taken; any other is a bad request (400).
     #[test]
     fn only_web_links() {
         for url in ["https://www.youtube.com/watch?v=x", " http://example.com/a.mp4 "] {
@@ -266,6 +277,7 @@ mod tests {
         }
     }
 
+    /// A finished download is moved into place, and never over a file that is there.
     #[test]
     fn a_download_is_moved_into_place_and_never_over_a_file() {
         let dir = std::env::temp_dir().join(format!("aimview-place-{}", std::process::id()));

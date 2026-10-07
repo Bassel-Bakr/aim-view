@@ -4,7 +4,8 @@
 Each recording (with a stats file, outside the gate's own runs) is reviewed as the app reviews it (aimview-tool review,
 the excluded areas eval_video_alone.py uses), kept in <out>/reviews/<model>/<stem>/. The core finds its kills from the
 video alone (eval_video_alone.core_review) and they are matched to the stats file's (within 3 frames), as the gate
-does. Two rules give crops 256 x 256 round the crosshair (shifted up to 48 px at random):
+does. Three rules give crops 256 x 256 round the crosshair (shifted up to 48 px at random); the first two are the
+default:
 - false_kill: a kill the video gave and the stats file does not have. On the gate's small-target runs the box nearest
   the crosshair is nearly always the player's own crosshair, boxed, but elsewhere it is often a real target whose kill
   the video timed wrong, so nothing is crossed out in advance.
@@ -12,9 +13,9 @@ does. Two rules give crops 256 x 256 round the crosshair (shifted up to 48 px at
   that the detector lost.
 - kill (--rules kill): a kill of the stats file, BEFORE_KILL frames before it: the target at or near the crosshair, for
   a teacher to box (teacher_label.py) where the detector finds it in pieces (robots).
-The crops carry the review's boxes, for the user to judge and fix. Saved like build_mined.py's (rgb, fixed, tmask: each
-box's pill, boxes, scores, mined, frame, why) in the split folder
-build_data.split_of gives the scenario folder, with a manifest.jsonl for make_page.py.
+The crops carry the review's boxes, for the user to judge and fix. They are saved as build_mined.py's are (rgb, fixed,
+tmask: each box's pill, boxes, scores, mined, frame, why), in the split folder build_data.split_of gives the scenario
+folder, with a manifest.jsonl for make_page.py.
 
 Usage: python python/model/build_kill_feedback.py <out> <model> [--kind static] [--match xsmall,extra small,...]
        [--recordings 20] [--per-rule 4] [--rules false_kill,missed_kill,kill] [--seed 0]
@@ -71,8 +72,9 @@ def recordings(lib, kind, words, count, rnd):
 
 
 def kills(lib, video, stats, args):
-    """The review's frames, the false kills and the missed kills (frames), or None when the stats file gives no clock
-    offset."""
+    """(the review's track frames, the false kills, the missed kills, the stats file's kills), the kills as frame
+    numbers; None for a run reviewed as tracking or when the stats file gives no clock offset. Reviews the video first
+    when <out>/reviews/<model>/<stem>/ has no tracks."""
     folder = args.out / "reviews" / args.model / video.stem
     if not (folder / "tracks.json").is_file():
         lib.review_video(str(video), args.model, str(folder), stats=str(stats), areas=eval_video_alone.AREAS,
@@ -106,7 +108,8 @@ def save(path, rgb, fixed, labels, rule, i, why, rnd):
 
 
 def crops_of(lib, video, stats, args, rnd):
-    """One recording's crops; its manifest row."""
+    """Writes one recording's crops (up to --per-rule a rule, picked at random) into its split folder, and gives its
+    manifest row."""
     found = kills(lib, video, stats, args)
     if found is None:
         return dict(video=str(video), crops=0, reason="the stats file gives no clock offset")
@@ -139,6 +142,7 @@ def crops_of(lib, video, stats, args, rnd):
 
 
 def main():
+    """Picks the recordings, writes their crops and <out>/manifest.jsonl, and prints the crop count."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
     parser.add_argument("model")

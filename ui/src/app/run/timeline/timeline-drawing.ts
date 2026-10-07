@@ -1,18 +1,40 @@
+/**
+ * A tracking run's timeline, drawn on its canvas.
+ *
+ * In: the run moment by moment (track.ts `timeline`: each frame's state and distance off the bot,
+ * the bots' deaths) and the timeline's tokens (themes/timeline.scss).
+ * Out: the distance chart, the on and off strip, the deaths and the seconds, drawn on the canvas's
+ * 2D context (timeline.ts calls it).
+ */
+
 import { Timeline, TrackState } from '../track';
 
-/** How the timeline draws: colors, font and the strip's height, from its tokens (themes/timeline.scss). */
+/**
+ * How the timeline draws: colors, font and the strip's height, from its tokens
+ * (themes/timeline.scss).
+ */
 export interface TimelineStyle {
+  /** The grid lines, and the strip where no bot was found. */
   grid: string;
+  /** The strip where the crosshair was on the bot. */
   on: string;
+  /** The distance areas, and the strip where the crosshair was off the bot. */
   off: string;
+  /** The strip while switching after a bot's death. */
   switching: string;
+  /** The scale's labels. */
   text: string;
+  /** Behind the scale's labels. */
   labelBg: string;
+  /** A bot's death mark. */
   death: string;
+  /** The labels' font. */
   font: string;
+  /** The strip's height, in CSS pixels. */
   strip: number;
 }
 
+/** Reads the timeline's tokens from the CSS variables in force on `element` (the canvas). */
 export function readTimelineStyle(element: Element): TimelineStyle {
   const css = getComputedStyle(element);
   const token = (name: string) => css.getPropertyValue(name).trim();
@@ -29,29 +51,43 @@ export function readTimelineStyle(element: Element): TimelineStyle {
   };
 }
 
-/** Space above the chart, between it and the strip, and under the strip for the seconds, in pixels. */
+/** Space above the chart, in CSS pixels. */
 const TOP = 6;
+/** Space between the chart and the strip, in CSS pixels. */
 const STRIP_GAP = 8;
+/** Space under the strip for the seconds, in CSS pixels. */
 const AXIS = 30;
+/** The dashed grid lines' dash and gap, in CSS pixels. */
 const DASH = [3, 4];
 /** The grid's lines: at no distance, half the scale and its top. */
 const GRID_SHARES = [0, 0.5, 1];
 /** Lines on the canvas sit on a pixel's center, so they stay sharp. */
 const HALF_PIXEL = 0.5;
+/** The furthest distance's area is this opaque: light, behind the average's. */
 const MAX_ALPHA = 0.35;
+/** The average distance's area is this opaque. */
 const MEAN_ALPHA = 0.9;
+/** A scale label's padding, in CSS pixels. */
 const LABEL_PAD = 3;
+/** A scale label's height, in CSS pixels. */
 const LABEL_HEIGHT = 14;
-/** A death's mark: its width, and how far it rises above the strip, in pixels. */
+/** A death's mark is this wide, in CSS pixels. */
 const DEATH_WIDTH = 1.5;
+/** A death's mark rises this far above the strip, in CSS pixels. */
 const DEATH_RISE = 4;
-/** The seconds' labels: every 10 s, or every 20 s on a run longer than 90 s; right-aligned this near the right edge. */
+/** Seconds between the seconds' labels. */
 const STEP_SECONDS = 10;
+/** Seconds between the seconds' labels on a run longer than `LONG_RUN_SECONDS`. */
 const LONG_STEP_SECONDS = 20;
+/** A run longer than this, in seconds, gets the longer step between labels. */
 const LONG_RUN_SECONDS = 90;
+/** A seconds label this near the right edge, in CSS pixels, is right-aligned so it stays whole. */
 const RIGHT_EDGE = 20;
 
-/** Calls back with the frames each pixel column covers: from firstFrame up to endFrame (at least one frame). */
+/**
+ * Calls back with the frames each pixel column covers: from firstFrame up to endFrame (at least one
+ * frame), counted from the run's start.
+ */
 function columns(
   run: Timeline,
   widthPx: number,
@@ -69,10 +105,13 @@ function columns(
 
 /** Per pixel column, the average and the furthest distance outside the bot's edge, in degrees. */
 interface ColumnDistances {
+  /** Each column's average distance over the frames with one; 0 when none has. */
   mean: number[];
+  /** Each column's furthest distance; 0 when no frame has one. */
   furthest: number[];
 }
 
+/** The distances outside the bot's edge per pixel column, frames with none (NaN) left out. */
 function columnDistances(run: Timeline, widthPx: number): ColumnDistances {
   const mean: number[] = [];
   const furthest: number[] = [];
@@ -96,6 +135,9 @@ function columnDistances(run: Timeline, widthPx: number): ColumnDistances {
 /** The chart's height in pixels at a distance in degrees. */
 type ChartY = (distanceDeg: number) => number;
 
+/**
+ * The grid's lines across the chart: solid at no distance, dashed at half the scale and its top.
+ */
 function drawGrid(
   context: CanvasRenderingContext2D,
   run: Timeline,
@@ -137,7 +179,9 @@ function drawArea(
   context.globalAlpha = 1;
 }
 
-/** The strip: per pixel column, the state most of its frames had. Then the bots' deaths across it. */
+/**
+ * The strip: per pixel column, the state most of its frames had. Then the bots' deaths across it.
+ */
 function drawStrip(
   context: CanvasRenderingContext2D,
   run: Timeline,
@@ -205,9 +249,10 @@ function drawSeconds(
 }
 
 /**
- * The chart: how far outside the bot's edge the crosshair was, per pixel column the furthest (light) and the average
- * (dark); under it a strip of on target, off target and switching (the state most of the column's frames had), the
- * bots' deaths, and the seconds.
+ * The chart: how far outside the bot's edge the crosshair was, per pixel column the furthest
+ * (light) and the average (dark); under it a strip of on target, off target and switching (the
+ * state most of the column's frames had), the bots' deaths, and the seconds. The canvas is widthPx
+ * by heightPx CSS pixels.
  */
 export function drawTimeline(
   context: CanvasRenderingContext2D,

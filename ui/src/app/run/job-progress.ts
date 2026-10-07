@@ -1,13 +1,26 @@
+/**
+ * A review job's progress line. In: the job the review engine reports (its stage, frames done and
+ * total, device, seconds and error). Out: the run page's progress bar and text (run.ts).
+ */
+
 import { Job, JobStage } from '../api';
 
-/** A review job's progress as the page shows it: the stage (announced) and the frames done (not announced). */
+/**
+ * A review job's progress as the page shows it: the stage (announced) and the frames done (not
+ * announced).
+ */
 export interface JobProgress {
+  /** The stage in words, with the device or the error where there is one. */
   stage: string;
+  /** "120 / 6038 frames" while frames are counted, "in 15.9 s" when done, else empty. */
   count: string;
+  /** How far the job is, from 0 to 1, for the progress bar. */
   fraction: number;
+  /** True when the review failed. */
   failed: boolean;
 }
 
+/** Each job stage's words on the page; `none` shows nothing. */
 const STAGES: Record<JobStage, string> = {
   none: '',
   starting: 'Starting',
@@ -27,8 +40,9 @@ const STAGES: Record<JobStage, string> = {
 };
 
 /**
- * The progress line of a review job, or null when there is none. While it tracks and when it is done, the stage names
- * the device the detector ran on, when the job says it ("Tracking the targets on DirectML").
+ * The progress line of a review job, or null when there is none. While it tracks and when it is
+ * done, the stage names the device the detector ran on, when the job says it ("Tracking the targets
+ * on DirectML").
  */
 export function jobProgress(job: Job): JobProgress | null {
   if (job.stage === 'none') return null;

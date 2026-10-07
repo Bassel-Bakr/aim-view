@@ -11,23 +11,66 @@ import type { TrackSummary } from './track-summary';
  * A tracking run's report, as report.json keeps it: the summary, with the clicking run's parts empty.
  */
 export interface TrackReport {
+  /**
+   * The recording's name, as the request gave it.
+   */
   video: string;
+  /**
+   * The stats file's name; None for a run without one.
+   */
   stats: string | null;
+  /**
+   * The run's summary (src/tracking.rs): time on target, switches, motion and what-ifs among others.
+   */
   summary: TrackSummary;
+  /**
+   * Always empty: the checks are a clicking run's.
+   */
   issues: Issue[];
+  /**
+   * Always empty: a tracking run has no flicks.
+   */
   flicks: Measure[];
+  /**
+   * Always `Mode::Track`.
+   */
   mode: 'track';
+  /**
+   * Always empty: a tracking run has no kill paths.
+   */
   paths: Record<string, PathPoint[]>;
+  /**
+   * The video's frame rate (frames a second).
+   */
   fps: number;
+  /**
+   * The frame's size, the crosshair's place and the focal length, for the page to turn degrees into pixels.
+   */
   geometry: Geometry;
+  /**
+   * Always empty.
+   */
   appeared: Record<string, number>;
+  /**
+   * Always empty: the crosshair spot is looked for in clicking runs only.
+   */
   crosshair: CrosshairSpot[];
+  /**
+   * The user's run marks as given ({start, end, length}: the service's RunMarks).
+   */
   run: unknown;
+  /**
+   * The run's length the summary measured (seconds): the run window's, else the stats file's, else the scenario's
+   * time limit; None when none is known.
+   */
   limit: number | null;
   /**
    * The bots' hitbox its time on target was measured with (None: each target's box), for the page to draw and test
    * targets the same way.
    */
   hitbox?: Hitbox;
+  /**
+   * Kept by an older version of the review (`REVIEW_VERSION`): review again for what it lacks.
+   */
   outdated?: boolean;
 }

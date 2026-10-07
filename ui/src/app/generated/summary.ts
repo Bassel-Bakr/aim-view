@@ -9,43 +9,154 @@ import type { Mode } from './mode';
 import type { Reloads } from './reloads';
 
 /**
- * A clicking run's summary: the stats file's facts, then the medians and shares of the measures.
+ * A clicking run's summary: the stats file's facts, then the medians and shares of the measures. Without a stats
+ * file the facts are those the HUD and the recording's name give (src/review.rs `unpaired_kills`). Times are in
+ * seconds, distances in degrees and speeds in degrees a second.
  */
 export interface Summary {
+  /**
+   * The scenario's name, from the stats file (without one, from the recording's name).
+   */
   scenario: string | null;
+  /**
+   * The stats file's score; None from the video alone or when the file gives none.
+   */
   score: number | null;
+  /**
+   * The stats file's kill count (0 when it gives none); from the video alone, the kills matched.
+   */
   kills: number;
+  /**
+   * The stats file's Miss Count.
+   */
   misses: number | null;
+  /**
+   * The game's average frames a second over the run, from the stats file.
+   */
   fps_avg: number | null;
+  /**
+   * The sensitivity and its scale as the stats file gives them ("2.5 cm/360"; "None" for a missing scale).
+   */
   sens: string | null;
+  /**
+   * The field of view as the stats file writes it.
+   */
   fov: string | null;
+  /**
+   * The targets' radius, degrees (src/measure.rs `target_radius`).
+   */
   radius: number;
+  /**
+   * How many kills were measured: the flicks with a long enough path.
+   */
   measured: number;
+  /**
+   * How the kills were matched to the tracks (src/matching.rs).
+   */
   info: MatchInfo;
+  /**
+   * The median TTK, seconds.
+   */
   median_interval: number | null;
+  /**
+   * How much the TTKs vary: their standard deviation over their mean, with MIN_KILLS_FOR_SPREAD kills or more.
+   */
   spread: number | null;
+  /**
+   * The median reaction, seconds.
+   */
   react: number | null;
+  /**
+   * The median main flick, seconds.
+   */
   flick: number | null;
+  /**
+   * The median peak speed, degrees a second.
+   */
   peak: number | null;
+  /**
+   * The median time to reach the target, seconds.
+   */
   arrive: number | null;
+  /**
+   * The median confirmation (still on the target before the click), seconds.
+   */
   still: number | null;
+  /**
+   * The median speed at the click, degrees a second.
+   */
   click_speed: number | null;
+  /**
+   * The median distance from the target's center at the click, degrees.
+   */
   click_off: number | null;
+  /**
+   * The share of flicks that underflicked: the main flick ended short of the target.
+   */
   ended_short: number | null;
+  /**
+   * The share of flicks that overflicked: the main flick ended past the target's far edge.
+   */
   ended_past: number | null;
+  /**
+   * The share of flicks that went past the target's edge at some point from the reaction's end on.
+   */
   crossed_past: number | null;
+  /**
+   * The share of clicks on the move, faster than MOVING_CLICK_DEG_S.
+   */
   moving_clicks: number | null;
+  /**
+   * The shots the measured kills took, from the kill times; None from the video alone.
+   */
   shots: number | null;
+  /**
+   * Whether the run clicks, holds the trigger or tracks.
+   */
   mode: Mode;
+  /**
+   * The stats file's hits over its hits and misses.
+   */
   accuracy: number | null;
+  /**
+   * The median confirmation of the flicks whose main flick did not end short (it landed on the target or past it),
+   * seconds.
+   */
   still_landed: number | null;
+  /**
+   * The median confirmation of the flicks whose main flick ended short, so micros brought the crosshair on, seconds.
+   */
   still_corrected: number | null;
+  /**
+   * How much of the way an underflick covered (the median share), over flicks that started more than
+   * MIN_UNDERFLICK_DISTANCE_DEG away.
+   */
   short_covered: number | null;
+  /**
+   * What underflicking cost: the median TTK of the underflicks in MID_DISTANCE_DEG less that of the other flicks
+   * there, seconds.
+   */
   mid_short_cost: number | null;
+  /**
+   * The mean time of each kill step over the kills that have them (react, main flick, onto the target, settle,
+   * still), seconds.
+   */
   budget: KillParts | null;
+  /**
+   * The flicks of each distance group in DISTANCES that has any.
+   */
   by_distance: DistanceGroup[];
+  /**
+   * The flicks of each direction in DIRECTIONS that has any.
+   */
   by_direction: DirectionGroup[];
+  /**
+   * The share of kills after the first whose next target was the nearest on screen (src/measure.rs `choices`).
+   */
   nearest_chosen: number | null;
+  /**
+   * When the next target was not the nearest: how much farther it was (the median), degrees.
+   */
   extra_when_not_nearest: number | null;
   /**
    * What would raise the score, biggest first (src/what_if.rs; Python's report has none).
@@ -60,9 +171,24 @@ export interface Summary {
    * scenario's ammo rules or the kills' shots).
    */
   reloads?: Reloads;
+  /**
+   * The median hold: seconds from reaching the target to its kill, over the kills held for some time.
+   */
   hold?: number | null;
+  /**
+   * The share of the held kills where the crosshair slipped off the target at least once.
+   */
   slipped?: number;
+  /**
+   * The share of all the held time spent off the target.
+   */
   off_share?: number;
+  /**
+   * The median TTK of the first third's kills, seconds.
+   */
   pace_first?: number | null;
+  /**
+   * The median TTK of the last third's kills, seconds.
+   */
   pace_last?: number | null;
 }

@@ -5,6 +5,12 @@ import type { TargetView } from './target-view';
  * A scene seen on a crop: its targets, and the pixels of all of them (the training `tmask`) as run lengths.
  */
 export interface SceneView {
+  /**
+   * Each target, in the order `targets` gives them.
+   */
   targets: TargetView[];
+  /**
+   * Every target's visible pixels as run lengths over the crop (`runs`).
+   */
   mask: number[];
 }

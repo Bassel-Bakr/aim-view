@@ -5,9 +5,11 @@
 //! and view shift in track.rs, the pop-up watch, the matching, the measures, the tracking summary, the area finder,
 //! the mouse log and the faint cut-off). Each function follows its C source step for step: change none of the order.
 
-/// IEEE 754 double: the fraction's bits, the exponent's mask once shifted down, and its bias.
+/// The fraction's bits in an IEEE 754 double, below the exponent.
 const FRACTION_BITS: u32 = 52;
+/// The 11 exponent bits of a double, once shifted down past the fraction.
 const EXPONENT_MASK: u64 = 0x7ff;
+/// The bias of a double's exponent: the stored exponent less this is the power of two.
 const EXPONENT_BIAS: i32 = 1023;
 /// The sign and exponent bits above the fraction in a double's 64.
 const SIGN_AND_EXPONENT_BITS: i32 = 12;
@@ -182,10 +184,12 @@ fn unrolled_sum(values: &[f64]) -> f64 {
     sum
 }
 
+/// Checks rounding and sums against values Python gives.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// `round` rounds the stored value, not the decimal it was typed as, and ties go to even.
     #[test]
     fn rounds_as_python_does() {
         assert_eq!(round(23.00034999, 4), 23.0003);
@@ -194,6 +198,7 @@ mod tests {
         assert_eq!(round(2.5, 0), 2.0);
     }
 
+    /// A pairwise sum of 300 values stays within 1e-9 of adding them one by one, and short sums and means are exact.
     #[test]
     fn sums_in_numpys_order() {
         let a: Vec<f64> = (0..300).map(|i| 0.1 * i as f64 + 1e-9 * (i * i) as f64).collect();

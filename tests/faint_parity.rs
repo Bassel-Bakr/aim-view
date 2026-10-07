@@ -15,9 +15,12 @@ use serde_json::{Value, json};
 mod common;
 use common::{Diff, TrackingInputs, compare, parity_root, read};
 
+/// The parity cases of tracking runs with Python's cut-off reports.
 const CASES: [&str; 5] = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol"];
+/// The cut-off's offsets Python reviewed each case at, as its folder names write them.
 const OFFSETS: [&str; 3] = ["0.2", "0.3", "0.45"];
 
+/// Each case's tracking review with the cut-off on, at each offset, equals Python's report.
 #[test]
 fn tracking_review_with_the_cut_off_matches_python() {
     let root = parity_root();
@@ -70,6 +73,8 @@ fn compare_crops(name: &str, crops: &[CutoffCrop], wanted: &[Value], diff: &mut 
     }
 }
 
+/// For every recording the user set a cut-off for: the tracks' scores, the level, the cut, the targets left and the
+/// label crops equal Python's.
 #[test]
 fn the_users_cut_offs_match_python() {
     let Ok(list) = fs::read_dir(parity_root().join("faint")) else {

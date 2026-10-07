@@ -1,3 +1,9 @@
+/**
+ * A fake review server for the UI's tests: it answers the app's pending HttpClient requests from
+ * a table of API paths, and gives a test recording and the server mode's providers. In: a spec's
+ * routes. Out: the specs, and the contract specs' modes (platform/contract-case.ts).
+ */
+
 import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import {
   HttpTestingController,
@@ -23,6 +29,7 @@ export const NO_SERVER = Symbol('no server');
 
 /** An answer refusing the request, as the review server does a request it cannot carry out: 400 and why. */
 export class Refused {
+  /** `error`: why the server refuses, sent as the body's error. */
   constructor(readonly error: string) {}
 }
 
@@ -31,12 +38,14 @@ export class Refused {
  * any other failure with more than an error's text.
  */
 export class Status {
+  /** `status`: the HTTP status to answer with; `body`: the JSON body. */
   constructor(
     readonly status: number,
     readonly body: unknown,
   ) {}
 }
 
+/** Waits one turn of the event loop, so what an answer started can send its requests. */
 const settle = () => new Promise((resolve) => setTimeout(resolve));
 
 /**

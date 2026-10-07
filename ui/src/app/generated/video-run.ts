@@ -5,8 +5,20 @@
  * (`to`, None for the last), its first frame's index in the recording and how many frames it has.
  */
 export interface VideoRun {
+  /**
+   * The time of the key frame the run starts on (seconds); 0 for a run that starts on the recording's first frame.
+   */
   from: number;
+  /**
+   * The time the next run starts (seconds); None for the last run.
+   */
   to: number | null;
+  /**
+   * The run's first frame, as an index in the recording.
+   */
   first: number;
+  /**
+   * The frames the run tracks.
+   */
   frames: number;
 }

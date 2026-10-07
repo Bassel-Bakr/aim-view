@@ -8,10 +8,29 @@ import type { ViewShift } from './view-shift';
  * its id, its area, and from the model its box (w, h in degrees, 3 decimals) and score (3 decimals).
  */
 export interface TrackFrame {
+  /**
+   * The frame's index in the recording, from 0.
+   */
   i: number;
+  /**
+   * How far the view moved since the frame before, x and y in degrees ((0, 0) when no shift was found).
+   */
   shift: ViewShift;
+  /**
+   * The frame's targets: each one's track id and place (degrees from the crosshair, 4 decimals).
+   */
   t: TrackPoint[];
+  /**
+   * Each target's area in pixels, in the order of `t`.
+   */
   a: number[];
+  /**
+   * Each target's box width and height in degrees (3 decimals), in the order of `t`; None when the detector model
+   * gave no boxes.
+   */
   wh?: TargetSize[];
+  /**
+   * Each target's score (3 decimals), in the order of `t`; None when the detector model gave no boxes.
+   */
   s?: number[];
 }

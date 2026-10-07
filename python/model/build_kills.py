@@ -13,6 +13,7 @@ Each frame gives one 256 x 256 crop round the crosshair (shifted a little at ran
 Splits follow build_data.split_of (scenario folders), so the end-to-end test VODs never reach training.
 Incremental: a VOD already in the manifest (same file and size) is skipped.
 Usage: python python/model/build_kills.py [--out test_out/vod_model/data_kills] [--per-folder 1] [--kills 10]
+       [--vods <recordings' folder>] [--also <file of VOD hashes>] [--threads 4]
 """
 import argparse
 import hashlib
@@ -38,9 +39,9 @@ import aimview_tools  # noqa: E402
 
 CROP = 256
 BACK = (1, 3, 6, 10, 15, 22, 30)          # frames before the kill used, at 120 fps (scaled for other rates)
-BACK_FPS = 120
+BACK_FPS = 120                             # the frame rate BACK's numbers are for
 LABELLER = "small_v2"                      # never marks KovaaK's crosshair; the models trained on these crops did
-GPU = threading.Lock()
+GPU = threading.Lock()                     # one detector call at a time across the VODs' threads
 BATCH = 16                                 # frames the detector takes at once
 MIN_KILLS = 8                              # a run with fewer kills is left out
 # the clock offset: from the first kills (up to FIRST_KILLS of those in the first FIRST_KILLS_S seconds, else the
@@ -55,7 +56,7 @@ LAST_SEEN_FRAMES = 2                       # a track's last sighting counts up t
 KILLED_DEG = 1.5                           # the killed target ends (and is placed) this near the crosshair
 LATE_DEG_PER_S = 4.0                       # a track that ends before the kill counts as this much farther per second
 SIZE_MATCH_PX = 2                          # a box this near the track's place gives the target's size
-MIN_RADIUS_PX = 1.5
+MIN_RADIUS_PX = 1.5                        # the smallest radius of a target's disc in the mask and of a lost target
 RING_IN, RING_OUT = 1.6, 2.6               # the wall round a lost target: a ring of 1.6 to 2.6 times its radius
 WINDOW_RADII = 3                           # the window looked at: 3 radii (and 2 px) round it
 MIN_VISIBLE, MIN_RING = 3, 6               # pixels of the target and of the ring that must show
@@ -63,8 +64,8 @@ MIN_CONTRAST = 40                          # the target's middle differs from th
 OTHER_MIN_PX = 2.0                         # another box: farther than this (or half the target's width) from it
 CONFIDENT = 0.6                            # without a target count, the other boxes scoring this or more
 JITTER_PX = 48                             # a crop's corner moves up to this far at random
-HASH_CHARS = 10
-FOLDER_CHARS, REASON_CHARS = 40, 120
+HASH_CHARS = 10                            # a crop's name starts with this much of its VOD path's md5
+FOLDER_CHARS, REASON_CHARS = 40, 120       # the printed folder's width; an error's reason kept in the manifest
 SPLITS = ("train", "val", "test")
 
 
@@ -138,7 +139,8 @@ def tracks_of(boxes, start):
 
 
 def to_px(x_deg, y_deg):
-    x = old_review.CX + old_review.K * math.tan(math.radians(x_deg))
+    """A place in degrees from the crosshair as frame pixels (1280 x 720): old_review.to_px's formula."""
+    x =old_review.CX + old_review.K * math.tan(math.radians(x_deg))
     return x, old_review.CY - math.tan(math.radians(y_deg)) * math.hypot(old_review.K, x - old_review.CX)
 
 
@@ -290,6 +292,8 @@ def kill_crops(detector, video, kill_frame, fps, fixed, plan):
 
 
 def one(job, detector):
+    """Lines up one VOD's clock with its stats file and writes the crops of up to KILLS of its kills; returns its
+    manifest row (kept when it wrote a crop, else with the reason)."""
     folder, video, stats, split, out, seed = job
     count = COUNTS.get(folder.lower())
     row = dict(folder=folder, file=Path(video).name, size=Path(video).stat().st_size, split=split, kept=False, crops=0)
@@ -364,6 +368,8 @@ def done_and_todo(jobs, manifest):
 
 
 def main():
+    """Labels the VODs not done before on --threads threads, rewriting the manifest after each, and prints each
+    split's counts."""
     global KILLS, COUNTS
     parser = argparse.ArgumentParser()
     parser.add_argument("--vods", default=aimview_tools.VODS_DEFAULT)
@@ -404,6 +410,7 @@ def main():
 
 
 def _safe(job, detector):
+    """one's row, or a dropped row with the error's reason when it raises."""
     try:
         return one(job, detector)
     except Exception as error:                              # one bad VOD does not stop the build

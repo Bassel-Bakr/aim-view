@@ -1,3 +1,9 @@
+/**
+ * Opens a recording for decoding in a worker, with Mediabunny and the browser's own decoder. In:
+ * the video file. Out: its frame times, its key frames and any frame by time, decoded, for the
+ * review, area finder and cut-off workers.
+ */
+
 import {
   ALL_FORMATS,
   BlobSource,
@@ -10,25 +16,29 @@ import {
 } from 'mediabunny';
 
 /**
- * The decoder a worker asks for. 'software': the browser's software decoder, where it has one for the video (the review,
- * which copies out every frame). 'any': the browser's choice, a hardware one where it has one (the area finder, which
- * copies out only the frames it reads: the frames it decodes on the way to them cost the CPU nothing). Both give the
- * same bytes. A recording with 11 key frames, the 90 frames picked over it: 6 s with the hardware decoder, 35 s with
- * the software one (both beside a review).
+ * The decoder a worker asks for. 'software': the browser's software decoder, where it has one for
+ * the video (the review, which copies out every frame). 'any': the browser's choice, a hardware one
+ * where it has one (the area finder, which copies out only the frames it reads: the frames it
+ * decodes on the way to them cost the CPU nothing). Both give the same bytes. A recording with 11
+ * key frames, the 90 frames picked over it: 6 s with the hardware decoder, 35 s with the software
+ * one (both beside a review).
  */
 export type DecoderChoice = 'software' | 'any';
 
 /** Every frame's time from 0 on, in order, and the key frames' times. */
 export interface FrameTimes {
+  /** Every frame's time in seconds, smallest first. */
   times: number[];
+  /** The key frames' times in seconds, in the file's order. */
   keys: number[];
 }
 
 /**
- * The decoder to ask for. For 'software', the browser's software decoder, where it has one for the video. A hardware
- * decoder's frames are on the GPU, and copying each one back takes longer than the software decoder does, while the
- * detector waits for the GPU (av1 at 2560x1440: 50 frames a second with the hardware decoder, 76 with the software
- * one). Both give the same bytes. Chrome has no software decoder for HEVC: there, the hardware one.
+ * The decoder to ask for. For 'software', the browser's software decoder, where it has one for the
+ * video. A hardware decoder's frames are on the GPU, and copying each one back takes longer than
+ * the software decoder does, while the detector waits for the GPU (av1 at 2560x1440: 50 frames a
+ * second with the hardware decoder, 76 with the software one). Both give the same bytes. Chrome has
+ * no software decoder for HEVC: there, the hardware one.
  */
 async function decoderOptions(
   track: InputVideoTrack,
@@ -45,16 +55,22 @@ async function decoderOptions(
 }
 
 /**
- * A recording opened for decoding in a worker (Mediabunny, the browser's own decoder), as the review and the area
- * finder read it. Frames before time 0 are the edit list's pre-roll: ffmpeg drops them, so these do too.
+ * A recording opened for decoding in a worker (Mediabunny, the browser's own decoder), as the
+ * review and the area finder read it. Frames before time 0 are the edit list's pre-roll: ffmpeg
+ * drops them, so these do too.
  */
 export class VideoFrames {
+  /**
+   * Keeps the opened file (input), its video track and the decoder's sink, which gives decoded
+   * frames by time. Callers make one with `open`.
+   */
   private constructor(
     readonly input: Input,
     readonly track: InputVideoTrack,
     readonly samples: VideoSampleSink,
   ) {}
 
+  /** Opens the file's main video track with the decoder asked for. Rejects when it has no video. */
   static async open(file: Blob, decoder: DecoderChoice): Promise<VideoFrames> {
     const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
     const track = await input.getPrimaryVideoTrack();

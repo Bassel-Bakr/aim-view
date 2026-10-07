@@ -1,8 +1,12 @@
 /// <reference lib="webworker" />
-// The review service (service/, built for the browser as browser-service/) in a worker of the page's own: browser mode
-// answers the same API as the review server and the desktop app with it. The service's files are mounted as the
-// contract says (mounts.ts): /data and /kovaak in the browser's private file system, /vods the VODs folder the user
-// opened, /models the models beside the app. One request runs at a time, in the order asked.
+/**
+ * The review service (service/, built for the browser as browser-service/) in a worker of the
+ * page's own: browser mode answers the same API as the review server and the desktop app with it.
+ * The service's files are mounted as the contract says (mounts.ts): /data and /kovaak in the
+ * browser's private file system, /vods the VODs folder the user opened, /models the models beside
+ * the app. One request runs at a time, in the order asked. In: `ServiceTask`s from
+ * service-host.ts. Out: `ServiceReply`s, each with its task's id.
+ */
 import { moveBrowserData } from './browser-data-move';
 import { DirMount, FilesMount, FsError, HttpMount, KovaakMount, Mounts, PackStore } from './mounts';
 import {
@@ -22,29 +26,48 @@ import { HandleRequest, OpenFailed, ServiceModule } from './service-module';
 
 /** The shipped area finder data the first run starts from, when /data has none of its own. */
 const SHIPPED = ['area_examples.jsonl', 'area_kinds.json'];
-/** Where the old browser mode remembered the VODs folder's handle (IndexedDB), as recordings-folder.ts kept it. */
+/**
+ * The IndexedDB database the VODs folder's handle is remembered in: vods-folder.ts keeps it there
+ * under `FOLDER_KEY` (BrowserStore), as the old browser mode's recordings-folder.ts did.
+ */
 const DB = 'aimview';
+/** BrowserStore's object store in that database. */
 const STORE = 'kv';
+/** The key of the VODs folder's handle. */
 const FOLDER_KEY = 'recordings-folder';
-/** This worker's mark on the files uploads are written to first: the service clears another's at its next open. */
+/**
+ * This worker's mark on the files uploads are written to first: the service clears another's at
+ * its next open.
+ */
 const SPOOL_OWNER = crypto.getRandomValues(new Uint32Array(1))[0] || 1;
-/** A file system call's code for a file not there (mounts.ts), and the statuses a failed task answers with. */
+/** A file system call's code for a file not there (mounts.ts). */
 const FS_NOT_FOUND = 1;
+/** The status of a task that failed for a file not there. */
 const NOT_FOUND = 404;
+/** The status of a task that failed because the service is not open. */
 const UNAVAILABLE = 503;
+/** The status of a task that failed for any other reason. */
 const SERVER_ERROR = 500;
 
+/** The service's file system: every mount by its name. */
 const mounts = new Mounts();
-/** KovaaK's files at /kovaak: the ones chosen this visit over the copies kept (mounted when the service starts). */
+/**
+ * KovaaK's files at /kovaak: the ones chosen this visit over the copies kept (mounted when the
+ * service starts).
+ */
 let kovaak: KovaakMount | null = null;
+/** The service's module once started; null until the start task. */
 let service: Promise<ServiceModule> | null = null;
-/** Where the module is, and the config it opens with: kept to load it again after a trap. */
+/** Where the module is: kept to load it again after a trap. */
 let wasmUrl = '';
+/** The config (JSON) the module opens with: kept to open it again after a trap. */
 let config = '';
 /** The end of the queue: each task runs once the ones before it have ended. */
 let tail: Promise<unknown> = Promise.resolve();
+/** The uploads written so far, which numbers each upload's file. */
 let spools = 0;
 
+/** Sends a reply to the page, moving the transfer buffers to it. */
 const say = (reply: ServiceReply, transfer: Transferable[] = []) => postMessage(reply, transfer);
 
 /** Runs a step after every step asked before it. */
@@ -54,7 +77,10 @@ function inTurn<T>(step: () => Promise<T>): Promise<T> {
   return out;
 }
 
-/** Why a task failed, as the status the page sees: 404 for a file not there, 503 when the service is not open. */
+/**
+ * Says why a task failed, with the status the page sees: 404 for a file not there, 503 when the
+ * service is not open, else 500.
+ */
 function failure(id: number, error: unknown): void {
   const missing = error instanceof FsError && error.code === FS_NOT_FOUND;
   const status = missing ? NOT_FOUND : error instanceof Unready ? UNAVAILABLE : SERVER_ERROR;
@@ -81,7 +107,10 @@ addEventListener('message', (event: MessageEvent<ServiceTask>) => {
   run.catch((err: unknown) => failure(task.id, err));
 });
 
-/** The VODs folder remembered from a visit before, when the browser still lets it be read; else null. */
+/**
+ * The VODs folder remembered from a visit before, when the browser still lets it be read; else
+ * null.
+ */
 async function rememberedFolder(): Promise<FileSystemDirectoryHandle | null> {
   if (typeof indexedDB === 'undefined') return null;
   const db = await new Promise<IDBDatabase | null>((resolve) => {
@@ -120,7 +149,10 @@ async function fillShipped(dataUrl: string): Promise<void> {
   }
 }
 
-/** Mounts the folders, fills /data on the first run, opens the service, then moves the old browser mode's data. */
+/**
+ * Mounts the folders, fills /data on the first run, opens the service, then moves the old browser
+ * mode's data. Rejects with an `Unready` when the service cannot start.
+ */
 async function start(task: ServiceStart): Promise<ServiceModule> {
   try {
     mounts.set('data', new DirMount(privateFolder('data'), true));
@@ -177,11 +209,15 @@ async function load(): Promise<ServiceModule> {
   return module;
 }
 
+/** The service once open; rejects with an `Unready` when it was not started or could not start. */
 function opened(): Promise<ServiceModule> {
   return service ?? Promise.reject(new Unready('The review service was not started'));
 }
 
-/** A request through the module; after a trap the module is loaded again for the requests that follow. */
+/**
+ * A request through the module; after a trap the module is loaded again for the requests that
+ * follow.
+ */
 async function handle(request: HandleRequest, body: Uint8Array): Promise<ServiceAnswer> {
   const module = await opened();
   try {
@@ -194,7 +230,10 @@ async function handle(request: HandleRequest, body: Uint8Array): Promise<Service
   }
 }
 
-/** A request to the service. An upload's file is written to the uploads first, and the service moves it in place. */
+/**
+ * A request to the service. An upload's file is written to the uploads first, and the service
+ * moves it in place.
+ */
 async function ask(task: ServiceAsk): Promise<void> {
   const answer = await inTurn(async (): Promise<ServiceAnswer> => {
     const { method, path, body } = task;
@@ -217,9 +256,13 @@ async function ask(task: ServiceAsk): Promise<void> {
   say({ kind: 'answer', id: task.id, answer }, [answer.body.buffer as ArrayBuffer]);
 }
 
-/** One of the page's own file tasks: a read, a listing, a write, a removal, or a copy into a folder. */
+/**
+ * One of the page's own file tasks: a read, a listing, a write, a removal, or a copy into a
+ * folder.
+ */
 async function files(task: FilesAsk): Promise<void> {
-  // the mounts are made before the service opens: the page's files are there even when the service could not start
+  // the mounts are made before the service opens: the page's files are there even when the
+  // service could not start
   await opened().catch(() => undefined);
   const result: FilesResult =
     task.op === 'copy'

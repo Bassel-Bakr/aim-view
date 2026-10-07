@@ -49,20 +49,24 @@ pub const GAP: u16 = 5;
 pub const NONE: &str = "none";
 /// The nearest examples that vote on an area's kind.
 pub const NEAREST_EXAMPLES: usize = 5;
-/// One frame: YUV 4:2:0 at 1280 x 720.
+/// One frame's bytes: YUV 4:2:0 at 1280 x 720.
 pub const FRAME: usize = W * H * 3 / 2;
-/// The features of an area (`features`).
+/// How many features an area has (`features`).
 pub const FEATURES: usize = 7;
 
-/// The kinds the rules give, by name.
+/// The kind the rules give KovaaK's session box, and Aim Lab's POINTS and ACCURACY boxes.
 const SESSION: &str = "Session stats";
+/// The kind of a magnified copy of the screen around the crosshair (`zoomed`).
 const ZOOMED: &str = "Zoomed crosshair";
+/// The kind of the challenge's timer, and of Aim Lab's TIME box.
 const TIMER: &str = "Timer";
+/// The kind of an area no rule names.
 const OTHER: &str = "Other";
 /// The type id of an area saved without a kind, or of an unknown kind.
 const OTHER_ID: &str = "other";
-/// Who named a proposed area (`Named::by`).
+/// Who named a proposed area (`Named::by`): the learner.
 const BY_LEARNER: &str = "learned";
+/// Who named a proposed area: the rules.
 const BY_RULE: &str = "rule";
 /// The examples learned from the KovOBS layout are from recordings named with this prefix.
 const LAYOUT_PREFIX: &str = "kovobs:";
@@ -88,6 +92,7 @@ pub fn sample_frames(keys: usize, times_s: &[f64], duration_s: f64) -> Option<Ve
 
 /// python/areas.py spreads the frames over the recording's duration less TRIMMED_END_S, and over at least MIN_SPAN_S.
 const TRIMMED_END_S: f64 = 1.0;
+/// The shortest span the sampled frames are spread over (seconds).
 const MIN_SPAN_S: f64 = 1.0;
 /// It writes the rate into the fps filter with this many decimals.
 const RATE_DECIMALS: usize = 5;
@@ -121,9 +126,12 @@ fn fps_frames(times_s: &[f64], duration_s: f64, count: usize) -> Vec<usize> {
 /// the kind the rules give it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Area {
+    /// The box: x0, y0, x1, y1 as shares of the frame, rounded to DECIMALS.
     #[serde(rename = "box")]
     pub bounds: [f64; 4],
+    /// What the area looks like, for the learner (`features`).
     pub feat: [f64; FEATURES],
+    /// The kind the rules give it (`rule_kind`), or "Zoomed crosshair".
     pub rule: String,
 }
 
@@ -131,11 +139,14 @@ pub struct Area {
 /// files), None when the entry has only four numbers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SavedBox {
+    /// The box: x0, y0, x1, y1 as shares of the frame.
     pub bounds: [f64; 4],
+    /// Its kind: a type id, or a name in older files; None when the entry has only four numbers.
     pub kind: Option<String>,
 }
 
 impl Serialize for SavedBox {
+    /// As [x0, y0, x1, y1], with the kind after them when it has one.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut values: Vec<Value> = self.bounds.iter().map(|&share| json!(share)).collect();
         if let Some(kind) = &self.kind {
@@ -146,6 +157,8 @@ impl Serialize for SavedBox {
 }
 
 impl<'de> Deserialize<'de> for SavedBox {
+    /// From four numbers and a kind after them; no kind when the fifth entry is missing or not text. Fails without
+    /// four numbers.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<SavedBox, D::Error> {
         let values = Vec::<Value>::deserialize(deserializer)?;
         let share =
@@ -160,17 +173,23 @@ impl<'de> Deserialize<'de> for SavedBox {
 /// One example for the learner (a line of area_examples.jsonl): the recording, an area's features, and its kind.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Example {
+    /// The recording it comes from; "kovobs:" and the recording for an example of KovOBS's layout.
     pub rec: String,
+    /// The area's features (`features`).
     pub feat: [f64; FEATURES],
+    /// The area's kind: a type id (a name in older examples), or "none" for an area the user removed.
     pub kind: String,
 }
 
 /// A found area with the kind given to it, and by what ("learned" or "rule").
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Named {
+    /// The found area.
     #[serde(flatten)]
     pub area: Area,
+    /// The kind given to it.
     pub kind: String,
+    /// Who gave it: "learned" (the learner) or "rule" (the rules).
     pub by: String,
 }
 
@@ -179,7 +198,10 @@ pub struct Named {
 pub struct Found {
     /// The frames read.
     pub frames: usize,
+    /// The areas found, each part of no bigger one, in SciPy's label order, with KovaaK's session box last when the
+    /// HUD watch found it.
     pub areas: Vec<Area>,
+    /// The stand-out and change maps the areas came from.
     pub maps: Maps,
 }
 
@@ -190,7 +212,9 @@ pub struct Found {
 /// python/areas.py keeps them (areas_maps.npz). As JSON each map is packed (`pack`) and in base64.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Maps {
+    /// The stand-out map: per pixel, the share of the frames it stood out in, times 255, rounded.
     stand: Box<[u8; W * H]>,
+    /// The change map: per pixel, its mean brightness change from one frame to the next, cut to 0..255.
     change: Box<[u8; W * H]>,
 }
 
@@ -198,13 +222,18 @@ pub struct Maps {
 #[derive(Serialize, Deserialize)]
 #[expect(clippy::min_ident_chars, reason = "the JSON's field names, which areas.json and the UI read")]
 struct MapsText {
+    /// The maps' width (pixels): 1280.
     w: usize,
+    /// The maps' height (pixels): 720.
     h: usize,
+    /// The stand-out map, packed and in base64.
     stand: String,
+    /// The change map, packed and in base64.
     change: String,
 }
 
 impl Serialize for Maps {
+    /// As `MapsText`: each map packed and in base64.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let text = |map: &[u8]| base64(&pack(map, W, H));
         MapsText { w: W, h: H, stand: text(&self.stand[..]), change: text(&self.change[..]) }.serialize(serializer)
@@ -212,6 +241,7 @@ impl Serialize for Maps {
 }
 
 impl<'de> Deserialize<'de> for Maps {
+    /// From `MapsText`; fails when the maps are not 1280 x 720 or do not unpack.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Maps, D::Error> {
         let text = MapsText::deserialize(deserializer)?;
         if (text.w, text.h) != (W, H) {
@@ -230,10 +260,12 @@ impl Maps {
         Some(Maps { stand: stand.try_into().ok()?, change: change.try_into().ok()? })
     }
 
+    /// The stand-out map (W x H, row by row).
     pub fn stand(&self) -> &[u8] {
         &self.stand[..]
     }
 
+    /// The change map (W x H, row by row).
     pub fn change(&self) -> &[u8] {
         &self.change[..]
     }
@@ -267,12 +299,14 @@ pub struct AreaFinder {
 }
 
 impl Default for AreaFinder {
+    /// A finder with no frames yet.
     fn default() -> AreaFinder {
         AreaFinder { stood_out_frames: vec![0; W * H].try_into().unwrap(), y_planes: Vec::new() }
     }
 }
 
 impl AreaFinder {
+    /// A finder with no frames yet.
     pub fn new() -> AreaFinder {
         AreaFinder::default()
     }
@@ -370,8 +404,11 @@ pub fn session_share(session: SessionRows) -> [f64; 4] {
 /// The maps the areas are found in, per pixel at 1280 x 720: the share of the frames it stood out in, whether that
 /// makes it fixed, and its mean change from frame to frame.
 struct PixelMaps<'a> {
+    /// Per pixel, the share of the frames it stood out in (0 to 1).
     stand: &'a [f64],
+    /// Per pixel, whether it stood out in FIXED of the frames or more.
     fixed: &'a [bool],
+    /// Per pixel, its mean brightness change from one frame to the next (0 to 255).
     change: &'a [f64],
 }
 
@@ -433,6 +470,7 @@ fn cut_out(grown: &mut [bool], bounds: &[f64; 4]) {
 /// An area is at least MIN_AREA_PX pixels and MIN_SIDE_PX either way, and holds a fixed pixel; else it is too small,
 /// or a sliver of a box's border.
 const MIN_AREA_PX: usize = 80;
+/// The shortest side an area may have (pixels).
 const MIN_SIDE_PX: usize = 7;
 /// An area over the screen's center narrower than this is the crosshair, which is never an area.
 const CROSSHAIR_MAX_WIDTH_PX: usize = 120;
@@ -500,7 +538,7 @@ pub type AimBoxes = [([f64; 4], &'static str); 3];
 const GROW_PX: u16 = GAP / 2;
 
 /// The fixed pixels grown into areas: closed over GAP pixels, then grown by GROW_PX (SciPy's binary_closing and
-/// binary_dilation with the 4-neighbour cross; the closing's erosion counts the pixels past the frame's edge as
+/// binary_dilation with the 4-neighbor cross; the closing's erosion counts the pixels past the frame's edge as
 /// empty).
 fn grow(fixed: &[bool]) -> Vec<bool> {
     let dilated: Vec<bool> = city_block(fixed, false).into_iter().map(|distance| distance <= GAP).collect();
@@ -580,9 +618,13 @@ fn components(on: &[bool]) -> Vec<[usize; 4]> {
 /// A box's pixels: columns x0..x1 and rows y0..y1 of the 1280 x 720 frame.
 #[derive(Clone, Copy, Debug)]
 struct Rect {
+    /// The first column.
     x0: usize,
+    /// The first row.
     y0: usize,
+    /// One past the last column.
     x1: usize,
+    /// One past the last row.
     y1: usize,
 }
 
@@ -595,6 +637,7 @@ impl Rect {
         Rect { x0, y0, x1: cut(x1, W).max(x0), y1: cut(y1, H).max(y0) }
     }
 
+    /// The box's pixel count.
     fn size(self) -> usize {
         (self.x1 - self.x0) * (self.y1 - self.y0)
     }
@@ -613,10 +656,12 @@ const MAX_TEXT_ROWS: usize = 12;
 /// In an area wider than BORDERED_MIN_WIDTH_PX, text rows are read BORDER_PX inside its left and right edges (off a
 /// box's border).
 const BORDERED_MIN_WIDTH_PX: usize = 16;
+/// How far inside a wide area's left and right edges its text rows are read (pixels).
 const BORDER_PX: usize = 6;
 /// A row of pixels is text when more than TEXT_FIXED_PX of them are fixed, and a text row is at least
 /// MIN_TEXT_ROW_PX such rows tall.
 const TEXT_FIXED_PX: usize = 1;
+/// The fewest rows of pixels a text row is (pixels).
 const MIN_TEXT_ROW_PX: usize = 3;
 
 /// What an area looks like, for the learner (python/areas.py: features): its center and size (shares of the frame),
@@ -677,6 +722,7 @@ impl Float for f64 {}
 
 /// NumPy's pairwise summation keeps this many running sums, over blocks of up to PAIRWISE_BLOCK values.
 const PAIRWISE_LANES: usize = 8;
+/// The most values NumPy's pairwise summation adds in running sums; a longer list is halved.
 const PAIRWISE_BLOCK: usize = 128;
 
 /// NumPy's pairwise summation (pairwise_sum in loops_utils.h.src): PAIRWISE_LANES running sums in blocks of up to
@@ -742,6 +788,7 @@ const BILINEAR_SUPPORT: f64 = 1.0;
 /// Pillow's 8-bit resize keeps its weights in fixed point with this many fractional bits, and adds ROUNDING before it
 /// shifts a sum back to a byte.
 const WEIGHT_BITS: u32 = 22;
+/// Half of one in WEIGHT_BITS fixed point: a weighted sum starts at it, so its shift back rounds.
 const ROUNDING: i64 = 1 << (WEIGHT_BITS - 1);
 
 /// Pillow's 8-bit bilinear resize of a width x height image to THUMBNAIL_PX square (Image.resize with BILINEAR on an
@@ -840,9 +887,11 @@ fn thumbnails(y_planes: &[Box<[u8]>], columns: Range<usize>, rows: Range<usize>)
 /// A crosshair zoom is at least MIN_ZOOM_SIDE_PX pixels either way, and is looked for over MIN_ZOOM_FRAMES frames or
 /// more.
 const MIN_ZOOM_SIDE_PX: usize = 24;
+/// The fewest frames a crosshair zoom is looked for over.
 const MIN_ZOOM_FRAMES: usize = 10;
 /// The zooms tried; one that correlates MIN_ZOOM_CORRELATION or more makes the area a crosshair zoom.
 const ZOOMS: [f64; 6] = [1.5, 2.0, 3.0, 4.0, 6.0, 8.0];
+/// The least correlation between the area's pictures and the center's, at one of ZOOMS, for a crosshair zoom.
 const MIN_ZOOM_CORRELATION: f64 = 0.8;
 /// The screen compared reaches at least this many pixels either side of the center.
 const MIN_HALF_SIDE_PX: usize = 4;
@@ -908,31 +957,44 @@ pub fn iou(a: &[f64; 4], b: &[f64; 4]) -> f64 {
 /// An area more than SESSION_INSIDE_SHARE inside KovaaK's session box is it; more than AIM_INSIDE_SHARE inside one of
 /// Aim Lab's boxes is that box.
 const SESSION_INSIDE_SHARE: f64 = 0.5;
+/// The share of an area inside one of Aim Lab's boxes beyond which it is that box.
 const AIM_INSIDE_SHARE: f64 = 0.3;
 /// A webcam is bigger than WEBCAM_MIN_SIZE (a share of the frame), has less than WEBCAM_MAX_FIXED_SHARE of it fixed
 /// (its content does not stay put, a hand moving or still: only its border is fixed), and at most
 /// WEBCAM_MAX_TEXT_ROWS text rows.
 const WEBCAM_MIN_SIZE: f64 = 0.015;
+/// The share of a webcam that may be fixed, at most (its border).
 const WEBCAM_MAX_FIXED_SHARE: f64 = 0.2;
+/// The text rows a webcam may have, at most.
 const WEBCAM_MAX_TEXT_ROWS: f64 = 2.0;
 /// Where an area's center is, as shares of the frame: the timer above TIMER_MAX_Y, between TIMER_MIN_X and TIMER_MAX_X
 /// across; a clock above CLOCK_MAX_Y, outside CLOCK_NOT_X.
 const TIMER_MAX_Y: f64 = 0.15;
+/// The timer's center is right of this (a share of the frame's width).
 const TIMER_MIN_X: f64 = 0.35;
+/// The timer's center is left of this (a share of the frame's width).
 const TIMER_MAX_X: f64 = 0.65;
+/// A clock's center is above this (a share of the frame's height).
 const CLOCK_MAX_Y: f64 = 0.18;
+/// A clock's center is not across this middle part of the frame (shares of its width).
 const CLOCK_NOT_X: RangeInclusive<f64> = 0.2..=0.8;
 /// The scenario name below SCENARIO_MIN_Y, between SCENARIO_MIN_X and SCENARIO_MAX_X across.
 const SCENARIO_MIN_Y: f64 = 0.85;
+/// The scenario name's center is right of this (a share of the frame's width).
 const SCENARIO_MIN_X: f64 = 0.3;
+/// The scenario name's center is left of this (a share of the frame's width).
 const SCENARIO_MAX_X: f64 = 0.7;
 /// The settings box below SETTINGS_MIN_Y, outside SETTINGS_NOT_X, with SETTINGS_MIN_TEXT_ROWS text rows or more.
 const SETTINGS_MIN_Y: f64 = 0.75;
+/// The settings box's center is not across this middle part of the frame (shares of its width).
 const SETTINGS_NOT_X: RangeInclusive<f64> = 0.35..=0.65;
+/// The fewest text rows the settings box has.
 const SETTINGS_MIN_TEXT_ROWS: f64 = 3.0;
 /// The version below VERSION_MIN_Y, smaller than VERSION_MAX_SIZE, outside VERSION_NOT_X.
 const VERSION_MIN_Y: f64 = 0.9;
+/// The version is smaller than this (a share of the frame's area).
 const VERSION_MAX_SIZE: f64 = 0.002;
+/// The version's center is not across this part of the frame (shares of its width).
 const VERSION_NOT_X: RangeInclusive<f64> = 0.1..=0.9;
 
 /// Whether a value is strictly between two others.
@@ -1132,6 +1194,8 @@ fn py_str(text: &str) -> String {
 /// The learner names an area when at least MIN_AGREEING of its nearest examples agree and their median distance is
 /// under MAX_MEDIAN_DISTANCE.
 const MIN_AGREEING: usize = 3;
+/// The nearest examples' median distance from an area (in feature space) must be under this for the learner to
+/// name it.
 const MAX_MEDIAN_DISTANCE: f64 = 0.08;
 
 /// Step 2 for one area: its kind from its `nearest_count` nearest examples, when MIN_AGREEING or more agree and they
@@ -1222,18 +1286,24 @@ fn mean_best_iou(areas: &[Area], others: &[Area]) -> f64 {
 /// A recording the user saved areas for: its found areas and its saved areas.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Labelled {
+    /// The recording.
     pub rec: String,
+    /// The areas the area finder found in it.
     pub found: Vec<Area>,
+    /// The areas the user saved for it.
     pub saved: Vec<SavedBox>,
 }
 
 impl<'de> Deserialize<'de> for Labelled {
     /// {rec, found, saved}, or [rec, found, saved] as python/server.py's labelled() gives them.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Labelled, D::Error> {
+        /// The two shapes a labelled recording comes in.
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Either {
+            /// {rec, found, saved}.
             Named { rec: String, found: Vec<Area>, saved: Vec<SavedBox> },
+            /// [rec, found, saved].
             Tuple(String, Vec<Area>, Vec<SavedBox>),
         }
         Ok(match Either::deserialize(deserializer)? {
@@ -1339,7 +1409,9 @@ pub fn check(examples: &[Example]) -> Check {
 /// An area type (area_kinds.json): its id and name.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Kind {
+    /// The type's id, which saved areas and examples name it by.
     pub id: String,
+    /// The type's name, as the Excluded areas editor shows it.
     pub name: String,
 }
 
@@ -1369,11 +1441,14 @@ pub fn with_ids(boxes: &[SavedBox], kinds: &[Kind]) -> Vec<SavedBox> {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Examples {
+    /// area_examples.jsonl's text: one example a line.
     Lines(String),
+    /// The examples as a list.
     List(Vec<Example>),
 }
 
 impl Default for Examples {
+    /// No examples.
     fn default() -> Examples {
         Examples::List(Vec::new())
     }
@@ -1397,37 +1472,49 @@ impl Examples {
     }
 }
 
+/// A JSON request read as `T`, or why it could not be.
 fn parse<'a, T: Deserialize<'a>>(text: &'a str) -> Result<T, String> {
     serde_json::from_str(text).map_err(|error| error.to_string())
 }
 
+/// A value as JSON text, or why it could not be written.
 fn text(value: &impl Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| error.to_string())
 }
 
-/// {keys, times, duration} -> null (read the key frames) or [frame index, ...] (`sample_frames`).
+/// `sample_frames` as JSON: takes {keys, times, duration}, gives null (read the key frames) or [frame index, ...].
 pub fn sample_json(input: &str) -> Result<String, String> {
+    /// The request.
     #[derive(Deserialize)]
     struct In {
+        /// The run's key frames.
         keys: usize,
+        /// Every frame's time (seconds).
         times: Vec<f64>,
+        /// The recording's duration (seconds), as ffprobe gives it.
         duration: f64,
     }
     let request: In = parse(input)?;
     text(&sample_frames(request.keys, &request.times, request.duration))
 }
 
-/// {found, examples, labelled, kinds?} -> {boxes, copied, by, examples, recordings} (python/server.py: find_areas):
-/// `labelled` as {rec, found, saved} or [rec, found, saved], `kinds` (area_kinds.json) turns the boxes' kinds into
-/// type ids; `examples` and `recordings` count the examples and the recordings (not "kovobs:" ones) they are from.
+/// `find` as JSON (python/server.py: find_areas): takes {found, examples, labelled, kinds?}, gives {boxes, copied, by,
+/// examples, recordings}. `labelled` as {rec, found, saved} or [rec, found, saved], `kinds` (area_kinds.json) turns
+/// the boxes' kinds into type ids; `examples` and `recordings` count the examples and the recordings (not "kovobs:"
+/// ones) they are from.
 pub fn find_json(input: &str) -> Result<String, String> {
+    /// The request.
     #[derive(Deserialize)]
     struct In {
+        /// The recording's found areas.
         found: Vec<Area>,
+        /// The learner's examples.
         #[serde(default)]
         examples: Examples,
+        /// The recordings the user saved areas for.
         #[serde(default)]
         labelled: Vec<Labelled>,
+        /// The area types; with them, the boxes' kinds become type ids.
         #[serde(default)]
         kinds: Option<Vec<Kind>>,
     }
@@ -1445,19 +1532,27 @@ pub fn find_json(input: &str) -> Result<String, String> {
     text(&json!({"boxes": boxes, "copied": copied, "by": by, "examples": examples.len(), "recordings": recs.len()}))
 }
 
-/// {rec, found, saved, maps?, examples?, kinds?} -> {examples: the new area_examples.jsonl text, added}
-/// (python/areas.py: learn; python/server.py's set_exclude gives the saved boxes type ids first, as `kinds` does).
+/// `learn` and `merge` as JSON (python/areas.py: learn; python/server.py's set_exclude gives the saved boxes type ids
+/// first, as `kinds` does): takes {rec, found, saved, maps?, examples?, kinds?}, gives {examples: the new
+/// area_examples.jsonl text, added}.
 pub fn learn_json(input: &str) -> Result<String, String> {
+    /// The request.
     #[derive(Deserialize)]
     struct In {
+        /// The recording.
         rec: String,
+        /// Its found areas.
         #[serde(default)]
         found: Vec<Area>,
+        /// The areas the user saved for it.
         saved: Vec<SavedBox>,
+        /// Its maps (areas.json); with them every saved area is an example.
         #[serde(default)]
         maps: Option<Maps>,
+        /// The examples so far.
         #[serde(default)]
         examples: Examples,
+        /// The area types; with them, the saved areas' kinds become type ids first.
         #[serde(default)]
         kinds: Option<Vec<Kind>>,
     }
@@ -1470,14 +1565,19 @@ pub fn learn_json(input: &str) -> Result<String, String> {
     text(&json!({"examples": merge(&request.examples.lines(), &request.rec, &new), "added": new.len()}))
 }
 
-/// {found, examples, k?} -> [{box, feat, rule, kind, by}, ...] (`predict`; k: the nearest examples that vote).
+/// `predict` as JSON: takes {found, examples, k?} (k: the nearest examples that vote), gives [{box, feat, rule, kind,
+/// by}, ...].
 pub fn predict_json(input: &str) -> Result<String, String> {
+    /// The request.
     #[derive(Deserialize)]
     #[expect(clippy::min_ident_chars, reason = "the JSON's field name, which the page sends")]
     struct In {
+        /// The found areas to name.
         found: Vec<Area>,
+        /// The learner's examples.
         #[serde(default)]
         examples: Examples,
+        /// The nearest examples that vote (NEAREST_EXAMPLES when missing).
         #[serde(default)]
         k: Option<usize>,
     }
@@ -1485,21 +1585,26 @@ pub fn predict_json(input: &str) -> Result<String, String> {
     text(&predict(&request.found, &request.examples.list(), request.k.unwrap_or(NEAREST_EXAMPLES)))
 }
 
-/// {found, other} -> a number (`same_layout`).
+/// `same_layout` as JSON: takes {found, other}, gives a number.
 pub fn same_layout_json(input: &str) -> Result<String, String> {
+    /// The request.
     #[derive(Deserialize)]
     struct In {
+        /// One recording's found areas.
         found: Vec<Area>,
+        /// The other recording's found areas.
         other: Vec<Area>,
     }
     let request: In = parse(input)?;
     text(&same_layout(&request.found, &request.other))
 }
 
-/// {examples} -> {sure, right, count, wrong: [[truth, guess, n], ...]} (`check`).
+/// `check` as JSON: takes {examples}, gives {sure, right, count, wrong: [[truth, guess, n], ...]}.
 pub fn check_json(input: &str) -> Result<String, String> {
+    /// The request.
     #[derive(Deserialize)]
     struct In {
+        /// The examples to check.
         examples: Examples,
     }
     let request: In = parse(input)?;
@@ -1515,13 +1620,16 @@ pub fn check_json(input: &str) -> Result<String, String> {
 
 /// A code's unary quotient stops at LIMIT ones; the code's ESCAPE_BITS bits follow instead of its remainder.
 const LIMIT: u32 = 20;
+/// The bits a code is written in whole after LIMIT ones.
 const ESCAPE_BITS: u32 = 8;
 /// How busy a pixel's neighborhood is picks one of this many contexts, each with its own Rice parameter.
 const CONTEXTS: usize = 8;
 /// A context starts as a sum of codes of INITIAL_SUM over INITIAL_COUNT codes; both are halved when the count reaches
 /// HALVING_COUNT, so the parameter follows the recent pixels.
 const INITIAL_SUM: u32 = 4;
+/// The codes a context starts as having counted.
 const INITIAL_COUNT: u32 = 1;
+/// A context's sum and count are halved when its count reaches this.
 const HALVING_COUNT: u32 = 64;
 /// The largest Rice parameter.
 const MAX_RICE: u32 = 7;
@@ -1533,12 +1641,16 @@ const BYTE_VALUES: usize = 256;
 /// Writes bits, the first in the lowest bit of each byte.
 #[derive(Default)]
 struct BitWriter {
+    /// The bytes written whole.
     out: Vec<u8>,
+    /// The bits not yet written as a byte, the first in the lowest bit.
     bits: u64,
+    /// How many bits `bits` holds.
     bit_count: u32,
 }
 
 impl BitWriter {
+    /// Writes `value`'s lowest `len` bits, its lowest bit first (`value` has no bits above them).
     fn put(&mut self, value: u64, len: u32) {
         self.bits |= value << self.bit_count;
         self.bit_count += len;
@@ -1590,13 +1702,18 @@ impl BitWriter {
 
 /// Reads the bits a BitWriter wrote; past the data's end, zeros.
 struct BitReader<'a> {
+    /// The bytes to read.
     data: &'a [u8],
+    /// The next byte to take into `bits`; past the data's end it counts on, so the caller can tell it ran out.
     next_byte: usize,
+    /// The bits taken but not yet read, the next in the lowest bit.
     bits: u64,
+    /// How many bits `bits` holds.
     bit_count: u32,
 }
 
 impl BitReader<'_> {
+    /// The next `len` bits as a number, the first read in its lowest bit.
     fn get(&mut self, len: u32) -> u64 {
         while self.bit_count < len {
             self.bits |= (*self.data.get(self.next_byte).unwrap_or(&0) as u64) << self.bit_count;
@@ -1638,11 +1755,14 @@ impl BitReader<'_> {
 
 /// Each context's running sum of codes and count, for its Rice parameter.
 struct RiceStats {
+    /// Per context, the sum of its codes, halved now and then.
     sums: [u32; CONTEXTS],
+    /// Per context, how many codes it counted, halved with its sum.
     counts: [u32; CONTEXTS],
 }
 
 impl RiceStats {
+    /// Every context at INITIAL_SUM over INITIAL_COUNT codes.
     fn new() -> RiceStats {
         RiceStats { sums: [INITIAL_SUM; CONTEXTS], counts: [INITIAL_COUNT; CONTEXTS] }
     }
@@ -1656,6 +1776,7 @@ impl RiceStats {
         rice
     }
 
+    /// Counts a code in its context, halving the context's sum and count when the count reaches HALVING_COUNT.
     fn update(&mut self, context: usize, code: u32) {
         self.sums[context] += code;
         self.counts[context] += 1;
@@ -1669,13 +1790,18 @@ impl RiceStats {
 /// A pixel's neighbors, the row above taken as zeros on the first row and the edge pixels standing in past the sides.
 #[derive(Clone, Copy)]
 struct Neighbors {
+    /// The pixel to the left.
     left: u8,
+    /// The pixel above.
     up: u8,
+    /// The pixel above and to the left.
     up_left: u8,
+    /// The pixel above and to the right.
     up_right: u8,
 }
 
 impl Neighbors {
+    /// The neighbors of pixel (x, y) of an image `width` pixels wide.
     fn of(image: &[u8], width: usize, x: usize, y: usize) -> Neighbors {
         let above = |x: usize| if y > 0 { image[(y - 1) * width + x] } else { 0 };
         let up = above(x);
@@ -1803,6 +1929,7 @@ fn decode(data: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
     (bits.next_byte <= data.len()).then_some(image)
 }
 
+/// Standard base64's 64 characters, by the 6-bit value each stands for.
 const BASE64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Standard base64, padded: each 3 bytes as 4 characters of 6 bits.
@@ -1840,14 +1967,19 @@ fn unbase64(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Checks the maps' packing, Python's JSON, NumPy's sums, Pillow's resize, SciPy's growing, the rules, the learner and
+/// the JSON calls.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// A found area with box `b`, every feature 0.5, and the rules' kind `rule`.
     fn found(b: [f64; 4], rule: &str) -> Area {
         Area { bounds: b, feat: [0.5; 7], rule: rule.into() }
     }
 
+    /// Flat, ramp, random and mixed maps pack, unpack and go through base64 unchanged; an empty map packs small; the
+    /// maps' JSON reads back the same.
     #[test]
     fn maps_pack_and_unpack_to_the_same_bytes() {
         let mut seed = 7u32;
@@ -1872,6 +2004,7 @@ mod tests {
         assert_eq!(serde_json::from_str::<Maps>(&text).unwrap(), maps);
     }
 
+    /// base64 gives the standard's text, padding and all, and reads it back.
     #[test]
     fn base64_matches_the_standard() {
         assert_eq!(base64(b"Man"), "TWFu");
@@ -1880,6 +2013,7 @@ mod tests {
         assert_eq!(unbase64("TWE="), Some(b"Ma".to_vec()));
     }
 
+    /// Floats, strings and example lines come out as Python's json.dumps writes them.
     #[test]
     fn floats_and_strings_are_written_as_python_writes_them() {
         for (value, text) in
@@ -1898,12 +2032,14 @@ mod tests {
         );
     }
 
+    /// A text row is a run of 3 or more rows of pixels with text.
     #[test]
     fn text_rows_are_runs_of_three_or_more() {
         let on = [true, true, true, false, true, true, false, true, true, true, true];
         assert_eq!(review_rows(&on), vec![0..3, 7..11]);
     }
 
+    /// `numpy_sum` adds every pixel of a box once, and `pairwise` adds in NumPy's order.
     #[test]
     fn numpy_sums_follow_its_order() {
         // the order itself is checked against NumPy by examples/areas.rs; here, that every pixel is summed once
@@ -1920,6 +2056,7 @@ mod tests {
         assert_eq!(pairwise(&[1e8f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 4.0]), ((1e8f32 + 1.0) + 2.0) + 4.0 + 4.0);
     }
 
+    /// `thumbnail` gives Pillow's bytes for a picture made smaller, one made bigger and a tall one.
     #[test]
     fn pillow_bilinear_matches_its_bytes() {
         // Pillow 12.3's Image.resize((16, 16), BILINEAR) of the same patterns
@@ -1941,6 +2078,8 @@ mod tests {
         assert_eq!(col, [131, 190, 88, 112, 184, 92, 100, 176, 106, 87, 168, 121, 75, 156, 152, 63]);
     }
 
+    /// `grow` and `components` give SciPy's areas: blocks 3 pixels apart join, a dot at the frame's edge goes, and a
+    /// block at the top loses its edge rows.
     #[test]
     fn growing_closes_gaps_and_keeps_off_the_edge() {
         // SciPy's binary_dilation(binary_closing(f, iterations=5), iterations=2), labelled, of the same blocks: two
@@ -1959,6 +2098,8 @@ mod tests {
         assert_eq!(components(&grow(&fixed)), vec![[598, 3, 642, 22], [98, 98, 125, 112], [298, 298, 303, 303]]);
     }
 
+    /// The rules name the timer, a clock, a webcam, the scenario name, the settings, the version and the session box
+    /// by where they are and what they show.
     #[test]
     fn rules_name_areas_by_place() {
         let feat = |center_x: f64, center_y: f64, width: f64, height: f64, fixed: f64, rows: f64| {
@@ -1977,6 +2118,8 @@ mod tests {
         assert_eq!(rule_kind(&b, &feat(0.5, 0.5, 0.2, 0.2, 0.1, 2.0), None, None), "Other");
     }
 
+    /// The learner names an area its nearest examples agree on, leaves it to the rules with too few examples, and
+    /// leaves out an area the user removed.
     #[test]
     fn the_learner_votes_and_leaves_removed_areas_out() {
         let ex = |rec: &str, x: f64, kind: &str| Example {
@@ -2003,6 +2146,8 @@ mod tests {
         assert_eq!(check(&examples).count, 5);
     }
 
+    /// Learning gives the saved areas' kinds, with and without the maps, and "none" for a found area the user removed;
+    /// `merge` replaces the recording's own and its KovOBS lines.
     #[test]
     fn learning_replaces_the_recordings_examples() {
         let saved = vec![
@@ -2026,6 +2171,8 @@ mod tests {
         assert!(lines.starts_with("{\"rec\": \"q\""));
     }
 
+    /// `find` copies a labelled recording's saved areas when the layout matches, else names the found areas; a kind
+    /// becomes its type id, and an unknown one "other".
     #[test]
     fn find_copies_a_labelled_layout_or_names_the_found_areas() {
         let found_areas = vec![found([0.0, 0.0, 0.1, 0.1], "Clock")];
@@ -2042,6 +2189,7 @@ mod tests {
         assert_eq!(kind_id("FPS", &kinds), "other");
     }
 
+    /// A run with 24 key frames or more is read from them; one with fewer at the frames ffmpeg's fps filter picks.
     #[test]
     fn few_key_frames_take_ninety_frames_over_the_run() {
         assert_eq!(sample_frames(24, &[0.0], 10.0), None);
@@ -2054,6 +2202,7 @@ mod tests {
         assert!(picked.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
+    /// The JSON calls read and write the shapes python/server.py used.
     #[test]
     fn json_calls_read_and_write_pythons_shapes() {
         let found =

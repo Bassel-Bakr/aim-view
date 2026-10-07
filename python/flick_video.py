@@ -3,7 +3,9 @@
 
 Every path is a real flick from <VOD_DIR>/flicks.json and measures.json, except the one panel marked as an
 illustration. The kill numbers shown (43, 42, 13) and the title's run are that run's; pick new ones for another VOD.
-    VOD_DIR=test_out/vod test_out/manim_venv/Scripts/manim -qh --media_dir test_out/vod/media python/flick_video.py FlickVideo
+Usage, one command line (the video goes under --media_dir):
+    VOD_DIR=test_out/vod test_out/manim_venv/Scripts/manim -qh --media_dir test_out/vod/media
+        python/flick_video.py FlickVideo
 """
 import json
 import math
@@ -14,12 +16,13 @@ import numpy as np
 from manim import *
 
 HERE = Path(os.environ.get("VOD_DIR", "test_out/vod"))
-FL = {f["n"]: f for f in json.load(open(HERE / "flicks.json"))}
-MS = {m["n"]: m for m in json.load(open(HERE / "measures.json"))}
+FL = {f["n"]: f for f in json.load(open(HERE / "flicks.json"))}         # each kill's flick, by kill number
+MS = {m["n"]: m for m in json.load(open(HERE / "measures.json"))}       # each kill's measures (s), by kill number
 R = 0.43                       # the target's radius, deg
-FPS = 120.0
+FPS = 120.0                    # the recording's frame rate: flick frame numbers become seconds by it
 WALL, TARGET, CROSS, TRAIL = "#c9ccd2", "#111111", "#e0302a", "#e0302a"
 BG = "#1d1f24"
+# each step's color in the anatomy scene
 PHASES = {"React": "#8ab4f8", "Main flick": "#f6c26b", "Stopped short": "#b0b0b0", "Second push": "#f28b82",
           "On target": "#81c995"}
 config.background_color = BG
@@ -43,10 +46,12 @@ def track(n, rotate=False):
 
 
 def at(t, s, x):
+    """The crosshair's place (deg) at time `x` (s) on the path `t`, `s` that track gives, between its samples."""
     return np.array([np.interp(x, t, s[:, 0]), np.interp(x, t, s[:, 1])])
 
 
 def speeds(t, s):
+    """The crosshair's speed (deg/s) at each sample of the path, from its neighbors either side (0 at the ends)."""
     v = np.zeros(len(t))
     v[1:-1] = np.linalg.norm(s[2:] - s[:-2], axis=1) / (t[2:] - t[:-2])
     return v
@@ -56,6 +61,8 @@ class View(VGroup):
     """A patch of the wall: the target at world (0, 0), degrees mapped into the panel."""
 
     def __init__(self, center, size, world_center, scale, label=None):
+        """center and size: the panel's on screen (manim units). world_center: the place (deg) at the panel's center.
+        scale: manim units a degree. label: a title above the panel."""
         super().__init__()
         self.c, self.wc, self.k = np.array([*center, 0.0][:3], float), np.array(world_center), scale
         self.panel = RoundedRectangle(width=size[0], height=size[1], corner_radius=0.08, fill_color=WALL,
@@ -66,17 +73,21 @@ class View(VGroup):
             self.add(Text(label, font_size=22, color=WHITE).next_to(self.panel, UP, buff=0.12).align_to(self.panel, LEFT))
 
     def p(self, w):
+        """The screen point (manim units, z 0) of a place `w` on the wall (deg from the target)."""
         return np.array([*(self.c[:2] + self.k * (np.array(w) - self.wc)), 0.0])
 
 
 def crosshair(view, t, s, clock, t_from=0.0):
-    dot = Dot(radius=0.07, color=CROSS).move_to(view.p(at(t, s, t_from)))
+    """The crosshair's dot in a view, which follows the path as the `clock` tracker's time (s) moves, and the trail it
+    leaves; the dot starts at time `t_from`."""
+    dot =Dot(radius=0.07, color=CROSS).move_to(view.p(at(t, s, t_from)))
     dot.add_updater(lambda m: m.move_to(view.p(at(t, s, clock.get_value()))))
     trail = TracedPath(dot.get_center, stroke_color=TRAIL, stroke_width=2.5, stroke_opacity=0.55)
     return dot, trail
 
 
 def click_mark(view, pos, hit=True):
+    """A click's mark at `pos` (deg) in a view: a white ring for a hit, a yellow cross for a miss."""
     if hit:
         return Circle(radius=0.28, color=WHITE, stroke_width=4).move_to(view.p(pos))
     return Cross(Square(0.3), stroke_color=YELLOW, stroke_width=6).move_to(view.p(pos))
@@ -107,7 +118,10 @@ def budget():
 
 
 class FlickVideo(Scene):
+    """The video: a title, one flick slowed down, four ways a flick goes wrong, and where a kill's time goes."""
+
     def construct(self):
+        """Plays the four parts in order (manim calls it to render the scene)."""
         self.title_card()
         self.anatomy()
         self.gallery()
@@ -115,7 +129,8 @@ class FlickVideo(Scene):
 
     # ---- 1 ------------------------------------------------------------------------------------------------------
     def title_card(self):
-        t1 = Text("Anatomy of a flick", font_size=64, weight=BOLD)
+        """The title and the run it was measured from."""
+        t1 =Text("Anatomy of a flick", font_size=64, weight=BOLD)
         t2 = Text("Measured from your 143 run in 1w4ts Voltaic", font_size=30, color=GREY_B)
         t3 = Text("139 flicks tracked frame by frame at 120 fps", font_size=26, color=GREY_C)
         g = VGroup(t1, t2, t3).arrange(DOWN, buff=0.3)
@@ -126,6 +141,8 @@ class FlickVideo(Scene):
 
     # ---- 2 ------------------------------------------------------------------------------------------------------
     def anatomy(self):
+        """Kill 43 played ten times slower beside its speed curve, step by step with each step's time, then its end
+        again zoomed in on the target."""
         n, slow = 43, 10.0
         m = MS[n]
         t, s = track(n)
@@ -204,13 +221,16 @@ class FlickVideo(Scene):
         self.play(*[FadeOut(x) for x in self.mobjects], run_time=0.5)
 
     def _curve(self, ax, t, v, now):
-        k = int(np.searchsorted(t, now, side="right"))
+        """The speed curve on the axes up to time `now` (s), speeds capped at the axis's 180 deg/s."""
+        k =int(np.searchsorted(t, now, side="right"))
         pts = [ax.c2p(1000 * t[i], min(180, v[i])) for i in range(max(2, k))]
         return VMobject(stroke_color=WHITE, stroke_width=3).set_points_as_corners(pts)
 
     # ---- 3 ------------------------------------------------------------------------------------------------------
     def gallery(self):
-        head = Text("Four ways a flick goes wrong", font_size=36, weight=BOLD).to_edge(UP, buff=0.35)
+        """Four panels, each a way a flick goes wrong: three real kills (13, 43, 42) turned to run left to right, and
+        one made-up path."""
+        head =Text("Four ways a flick goes wrong", font_size=36, weight=BOLD).to_edge(UP, buff=0.35)
         self.play(FadeIn(head), run_time=0.5)
         spots = [(-3.55, 1.25), (3.55, 1.25), (-3.55, -2.15), (3.55, -2.15)]
         size, wc, k = (6.6, 2.2), (-1.6, 0.0), 1.25
@@ -261,7 +281,8 @@ class FlickVideo(Scene):
 
     # ---- 4 ------------------------------------------------------------------------------------------------------
     def time_budget(self):
-        head = Text("Where a kill's time goes", font_size=36, weight=BOLD).to_edge(UP, buff=0.5)
+        """A bar of the average kill split into its parts (budget), and what to work on next."""
+        head =Text("Where a kill's time goes", font_size=36, weight=BOLD).to_edge(UP, buff=0.5)
         avg, n = budget()
         total = sum(avg)
         sub = Text(f"Average of each part over {n} of your kills; together they make the average kill, "

@@ -1,8 +1,8 @@
-//! The review server's API (python/server.py), free of any web framework: a request's method, path and query, Range
-//! header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`). The desktop app answers its
-//! window with it (over a custom protocol), and the HTTP server answers the browser. Routes that need the desktop (the
-//! folder dialog, /api/folder; the mouse logger's switch, /api/mouse/logger) are answered by the desktop app before it
-//! asks here: here they are not found (404). Each route asks the library (library/) for its answer.
+//! The review server's API (python/retired/server.py's), free of any web framework: a request's method, path and
+//! query, Range header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`). The desktop app
+//! answers its window with it (over a custom protocol), and the HTTP server answers the browser. Routes that need the
+//! desktop (the folder dialog, /api/folder; the mouse logger's switch, /api/mouse/logger) are answered by the desktop
+//! app before it asks here: here they are not found (404). Each route asks the library (library/) for its answer.
 //!
 //! The browser build (no `native` feature) answers the same routes, but for these: the page runs the review
 //! (/api/analyse answers what to review; /api/job and /api/reviewed take its progress and its end), the area finder
@@ -22,20 +22,27 @@ use crate::library::{Answer, Failure, Library};
 /// The most of a video one ranged response holds: the player asks again for the rest.
 #[cfg(feature = "native")]
 const VIDEO_CHUNK: u64 = 4 << 20;
-/// The answers' statuses: done, part of a video, and a route the browser build leaves to the page.
+/// An answer's status: done.
 const OK: u16 = 200;
+/// An answer's status: part of a video (every video answer is one, even without a Range header).
 #[cfg(feature = "native")]
 const PARTIAL_CONTENT: u16 = 206;
+/// An answer's status: a route the browser build leaves to the page.
 #[cfg(not(feature = "native"))]
 const NOT_IMPLEMENTED: u16 = 501;
+/// The Content-Type of a JSON answer.
 const JSON: &str = "application/json";
 
 /// A request: its method ("GET", "POST"), its path with its query ("/api/report?id=..."), its Range header if any, and
 /// its body (in memory, or for an upload a file).
 pub struct ApiRequest<'a> {
+    /// "GET" or "POST" (any case); anything but POST is answered as a GET.
     pub method: &'a str,
+    /// The path with its query, as "/api/report?id=...".
     pub path_and_query: &'a str,
+    /// The Range header, for /video.
     pub range: Option<&'a str>,
+    /// The body's bytes (empty for a GET).
     pub body: &'a [u8],
     /// An upload's body as a file instead, written to disk as it arrived (the HTTP server streams /api/upload's body
     /// into `Library::spool`'s file): /api/upload moves it into place. None: the body is `body`.
@@ -44,12 +51,16 @@ pub struct ApiRequest<'a> {
 
 /// A response: its status, its headers (Content-Type always; for a video Accept-Ranges and Content-Range) and its body.
 pub struct ApiResponse {
+    /// The HTTP status.
     pub status: u16,
+    /// The headers, as (name, value).
     pub headers: Vec<(String, String)>,
+    /// The body's bytes.
     pub body: Vec<u8>,
 }
 
 impl ApiResponse {
+    /// A response with only its Content-Type header (`kind`).
     fn new(status: u16, kind: &str, body: Vec<u8>) -> ApiResponse {
         ApiResponse { status, headers: vec![("Content-Type".into(), kind.into())], body }
     }
@@ -68,13 +79,18 @@ fn json_response(answer: Answer<Value>) -> ApiResponse {
 
 /// A request as the routes read it: whether it is a POST, its path, its query's values and its body.
 struct Route<'a> {
+    /// The request itself, for its body, Range header and upload.
     request: &'a ApiRequest<'a>,
+    /// The path and query parsed as a URL; None when they cannot be.
     url: Option<url::Url>,
+    /// The path without its query ("/api/report"); empty when it cannot be parsed.
     path: String,
+    /// Whether the method is POST.
     post: bool,
 }
 
 impl<'a> Route<'a> {
+    /// The request's path and query, parsed.
     fn new(request: &'a ApiRequest<'a>) -> Route<'a> {
         let url = url::Url::parse(&format!("http://api.localhost{}", request.path_and_query)).ok();
         let path = url.as_ref().map(|url| url.path().to_string()).unwrap_or_default();
@@ -274,7 +290,8 @@ fn crop_ids(route: &Route) -> Answer<(String, String)> {
     Ok((page(route)?, route.id()?))
 }
 
-/// A cut-off's offset from the query (python/server.py: `float(q.get("offset", 0.3))`).
+/// A cut-off's offset from the query (python/retired/server.py: `float(q.get("offset", 0.3))`); an error, in Python's
+/// words, when it is not a number.
 fn offset(text: Option<String>) -> Answer<f64> {
     text.map_or(Ok(aimview::faint::DEFAULT_OFFSET), |text| {
         text.trim().parse().map_err(|_| Failure::bad(format!("could not convert string to float: '{text}'")))

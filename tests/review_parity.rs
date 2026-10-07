@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 mod common;
 use common::{Diff, compare, parity_root, read, rename_key};
 
+/// The parity cases of clicking runs with Python's reports.
 const CASES: [&str; 2] = ["av1", "pokeball134"];
 
 /// The numbers in a text, in order: "-12 ms (5.5%)" gives -12 and 5.5. A sign counts only at the start of a word.
@@ -55,6 +56,8 @@ const MEASURE_RENAMES: [(&str, &str); 3] = [("n", "kill_number"), ("dir", "direc
 /// Python's names for the flicks' fields that the core names in full (src/matching.rs).
 const FLICK_RENAMES: [(&str, &str); 3] = [("n", "kill_number"), ("traj", "path"), ("area", "area_px")];
 
+/// Each case's flicks, measures and report equal Python's, Python's short field names renamed and the checks' words
+/// left out.
 #[test]
 fn clicking_review_matches_python() {
     let root = parity_root();

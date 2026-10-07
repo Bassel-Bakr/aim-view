@@ -15,8 +15,9 @@ const VERSION_1: [u8; 2] = [1, 0];
 const MAJOR_AT: usize = MAGIC.len();
 /// Where the header's length starts, after the version's two bytes.
 const LENGTH_AT: usize = MAJOR_AT + 2;
-/// The bytes before the header: in format 1.0 its length is a u16, in 2.0 and 3.0 a u32.
+/// The bytes before the header in format 1.0, where its length is a u16.
 const PREAMBLE_BYTES_V1: usize = LENGTH_AT + 2;
+/// The bytes before the header in formats 2.0 and 3.0, where its length is a u32.
 const PREAMBLE_BYTES_V2: usize = LENGTH_AT + 4;
 /// NumPy pads the header with spaces so the data starts at a multiple of this many bytes.
 const HEADER_ALIGN: usize = 64;
@@ -24,11 +25,14 @@ const HEADER_ALIGN: usize = 64;
 /// An array's element type: bytes, or 32-bit floats (little-endian).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Dtype {
+    /// Unsigned bytes (NumPy's uint8).
     U8,
+    /// Little-endian 32-bit floats (NumPy's float32).
     F32,
 }
 
 impl Dtype {
+    /// The type as a .npy header names it ("|u1", "<f4").
     fn descr(self) -> &'static str {
         match self {
             Dtype::U8 => "|u1",
@@ -36,6 +40,7 @@ impl Dtype {
         }
     }
 
+    /// The bytes of one element.
     fn size(self) -> usize {
         match self {
             Dtype::U8 => 1,
@@ -46,16 +51,21 @@ impl Dtype {
 
 /// An array: its type, its shape (empty for a single value) and its bytes in C order.
 pub struct Array {
+    /// Its element type.
     pub dtype: Dtype,
+    /// Its shape; empty for a single value.
     pub shape: Vec<usize>,
+    /// Its elements' bytes in C order (the last index fastest).
     pub data: Vec<u8>,
 }
 
 impl Array {
+    /// A byte array of `shape` holding `data` (as many bytes as the shape has elements).
     pub fn u8(shape: &[usize], data: Vec<u8>) -> Array {
         Array { dtype: Dtype::U8, shape: shape.to_vec(), data }
     }
 
+    /// A float array of `shape` holding `values`, stored little-endian.
     pub fn f32(shape: &[usize], values: &[f32]) -> Array {
         let data = values.iter().flat_map(|value| value.to_le_bytes()).collect();
         Array { dtype: Dtype::F32, shape: shape.to_vec(), data }
@@ -149,10 +159,13 @@ pub fn array(bytes: &[u8], name: &str) -> Result<Array, String> {
     Array::from_npy(&bytes)
 }
 
+/// Writing and reading .npz files.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Byte, float and single-value arrays written to a .npz read back the same, each .npy's data at a multiple of
+    /// HEADER_ALIGN.
     #[test]
     fn arrays_read_back() {
         let img = Array::u8(&[2, 3], vec![1, 2, 3, 4, 5, 6]);

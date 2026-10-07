@@ -1,3 +1,9 @@
+/**
+ * The CropSets contract: the check folders of detector crops and the user's answers. In: each
+ * mode's implementation (modes/mode.*.ts; service/src/crops.rs answers it). Out: the Crops page
+ * (crops/).
+ */
+
 import { ResourceRef } from '@angular/core';
 import { CropAnswer, CropAnswers, CropEntry, CropPage } from '../api';
 
@@ -6,8 +12,11 @@ export type CropAnswerMap = Record<string, CropAnswer>;
 
 /** What an import of answers did: written, kept (the folder held a newer answer), and of crops it does not have. */
 export interface CropImport {
+  /** Answers written. */
   written: number;
+  /** Answers not written because the folder held a newer one. */
   kept: number;
+  /** Answers for crops the folder does not have, left out. */
   unknown: number;
 }
 

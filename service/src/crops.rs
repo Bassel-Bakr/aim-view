@@ -19,13 +19,15 @@ use crate::library::{Answer, Failure, Library};
 /// Where a check folder keeps its answers: the page's own, and older folders the claude.ai pages' answers were saved
 /// to (answers*/checks), read too.
 const ANSWERS: &str = "answers";
+/// The folder of answer files in each answers folder.
 const CHECKS: &str = "checks";
 /// Where an answer goes when its crop is answered again (beside answers/checks/): nothing the user said is lost.
 const REPLACED: &str = "replaced";
 /// A crop's side in pixels (make_page.py's crops are 256 x 256).
 pub const CROP_PX: usize = 256;
-/// A crop's added mark: a box [cx, cy, w, h], or a tapped point [x, y].
+/// The numbers of an added box: [cx, cy, w, h].
 const BOX_VALUES: usize = 4;
+/// The numbers of a tapped point: [x, y].
 const POINT_VALUES: usize = 2;
 
 /// What the user said of a crop: its boxes are right, wrong (and fixed), or it cannot tell.
@@ -33,8 +35,11 @@ const POINT_VALUES: usize = 2;
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum CropVerdict {
+    /// The model's boxes are right (with the crossed-out ones crossed out).
     Right,
+    /// The boxes are wrong; the answer's marks or scene fix them.
     Wrong,
+    /// The user cannot tell.
     Unsure,
 }
 
@@ -44,20 +49,29 @@ pub enum CropVerdict {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct CropAnswer {
+    /// Right, wrong or can't tell.
     pub verdict: CropVerdict,
+    /// The crop's set; it must be the crop's.
     pub set: String,
+    /// The crop's file in the training data (as train/a.npz); it must be the crop's.
     pub file: String,
+    /// When it was answered, in ms since 1970: of two answers to a crop the later wins.
     pub at: f64,
+    /// The model's boxes crossed out, by their index in the crop's `boxes`.
     #[serde(default)]
     pub remove: Vec<usize>,
+    /// The model's boxes moved or resized, by their index: [cx, cy, w, h] in crop pixels.
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "BTreeMap<String, aimview::typescript::CropBox>"))]
     pub edit: BTreeMap<String, [f64; 4]>,
+    /// The boxes drawn ([cx, cy, w, h]) and the points tapped ([x, y]), in crop pixels.
     #[serde(default)]
     pub add: Vec<Vec<f64>>,
+    /// Whether the page's suggestion was taken as offered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub suggested: Option<bool>,
+    /// The scene the Crops page drew (src/shapes.rs), when it drew one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub scene: Option<Scene>,
@@ -68,22 +82,32 @@ pub struct CropAnswer {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct CropEntry {
+    /// The crop's id, made from its set and file, which names its picture (crops/<id>.png) and its answer file.
     pub id: String,
+    /// The set it belongs to (its tab on the page).
     pub set: String,
+    /// Its file in the training data, relative to the set's source (as train/a.npz).
     pub file: String,
+    /// The recording's folder it came from; empty when not known.
     #[serde(default)]
     pub folder: String,
+    /// The recording's scenario kind; empty when not known.
     #[serde(default)]
     pub kind: String,
+    /// Why it was picked.
     #[serde(default)]
     pub why: Vec<String>,
+    /// The rule that mined it, when one did.
     #[serde(default)]
     pub rule: Option<String>,
+    /// The model's boxes, [cx, cy, w, h] in crop pixels.
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Vec<aimview::typescript::CropBox>"))]
     pub boxes: Vec<[f64; 4]>,
+    /// The boxes' scores, 0 to 1, in the boxes' order.
     #[serde(default)]
     pub scores: Vec<f64>,
+    /// The boxes it starts with crossed out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub preset: Option<CropPreset>,
@@ -93,6 +117,7 @@ pub struct CropEntry {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct CropPreset {
+    /// Their indexes in the crop's `boxes`.
     pub remove: Vec<usize>,
 }
 
@@ -102,11 +127,17 @@ pub struct CropPreset {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct CropSet {
+    /// The set's name, as the crops name it.
     pub set: String,
+    /// Its tab's title: sets.json's, else the name.
     pub title: String,
+    /// The note shown over a crop with a crossed-out box.
     pub crossed_out: Option<String>,
+    /// Whether its answers teach the page's suggestions (true unless sets.json says no).
     pub learn: bool,
+    /// Its crops.
     pub count: usize,
+    /// Its crops with an answer.
     pub answered: usize,
 }
 
@@ -114,7 +145,9 @@ pub struct CropSet {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct CropPage {
+    /// The check folder's name.
     pub page: String,
+    /// Its sets, in the order their first crops come in crops.json.
     pub sets: Vec<CropSet>,
 }
 
@@ -123,7 +156,9 @@ pub struct CropPage {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct CropAnswers {
+    /// The check folder's name.
     pub page: String,
+    /// The newest answer of each crop, by crop id.
     pub answers: BTreeMap<String, CropAnswer>,
 }
 
@@ -131,8 +166,11 @@ pub struct CropAnswers {
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SetInfo {
+    /// Its tab's title (make_page.py's --title).
     title: Option<String>,
+    /// The note over a crossed-out box (--crossed-out).
     crossed_out: Option<String>,
+    /// False when its answers must not teach the suggestions (--no-learn).
     learn: Option<bool>,
 }
 
@@ -386,6 +424,7 @@ fn keep_replaced(folder: &Path, id: &str, path: &Path) -> Answer<()> {
     crate::disk::rename(path, place).map_err(|error| error.to_string().into())
 }
 
+/// The Crops page's routes on a check folder made for each test.
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -396,6 +435,7 @@ mod tests {
     use crate::config::{Config, Layout};
     use crate::library::Library;
 
+    /// The test check folder's name.
     const PAGE: &str = "check_bars";
 
     /// A library in Python's layout with one check folder: two crops of set "bars", one picture, and an answer saved by
@@ -422,6 +462,8 @@ mod tests {
         (Library::open(config).unwrap(), folder)
     }
 
+    /// A Wrong answer to crop a, given at `at`: box 1 crossed out, a box added, and a scene of a head and a body joined
+    /// into one target.
     fn answer(at: f64) -> serde_json::Value {
         json!({
             "verdict": "wrong", "set": "bars", "file": "train/a.npz", "at": at, "remove": [1], "add": [[30, 30, 5, 5]],
@@ -432,6 +474,8 @@ mod tests {
         })
     }
 
+    /// Only check_* folders are listed, with their sets' titles and counts, crops, answers (a claude.ai page's too)
+    /// and pictures; a name that climbs out or is no check folder is refused.
     #[test]
     fn the_check_folders_their_sets_and_answers_are_listed() {
         let (library, folder) = library("list");
@@ -449,6 +493,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
     }
 
+    /// An answer is written whole (no .part left), with its scene; a scene naming a missing shape, an answer for
+    /// another crop, or a missing box is refused.
     #[test]
     fn an_answer_is_kept_as_its_crop_said_and_a_slip_is_refused() {
         let (library, folder) = library("save");
@@ -470,6 +516,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
     }
 
+    /// Each answer given again moves the one it replaces to answers/replaced/<id>.<its time>.json, and only the newest
+    /// is read.
     #[test]
     fn an_answer_given_again_keeps_the_one_it_replaces() {
         let (library, folder) = library("again");
@@ -487,6 +535,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
     }
 
+    /// A scene answer gives one label per target (head and body joined), with its mask; answers without a scene and
+    /// sets not asked for give none.
     #[test]
     fn a_scene_answer_gives_one_label_per_target() {
         let (library, folder) = library("labels");
@@ -503,6 +553,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
     }
 
+    /// An exported document imports with the newer answer of each crop winning and unknown crops counted; importing
+    /// it again writes nothing.
     #[test]
     fn answers_move_between_modes_and_the_newer_one_wins() {
         let (library, folder) = library("move");

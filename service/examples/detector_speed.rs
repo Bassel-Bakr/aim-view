@@ -12,11 +12,15 @@ use aimview::convert::{DST_H, DST_W};
 use aimview_service::Device;
 use aimview_service::detector::Detector;
 
+/// The frames a call when none is given.
 const DEFAULT_BATCH: usize = 4;
+/// The frames each session times when none is given.
 const DEFAULT_FRAMES: usize = 2400;
+/// The sessions at once when none is given.
 const DEFAULT_SESSIONS: usize = 1;
 /// Calls before the timing starts (the first ones compile the graph).
 const WARM_UP_CALLS: usize = 5;
+/// The bytes of an RGB pixel.
 const RGB_CHANNELS: usize = 3;
 /// A fixed seed for the noise, so every run sees the same frames.
 const NOISE_SEED: u64 = 0x5DEE_CE66;
@@ -48,6 +52,7 @@ fn run_session(model: &Path, batch: usize, frames: usize, device: Device) -> Res
     Ok((detector.device, started.elapsed().as_secs_f64()))
 }
 
+/// Runs the sessions at once and prints the frames, the device, the seconds and the time a frame.
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
     let model = PathBuf::from(args.get(1).ok_or("give a model's _u8in.onnx")?);

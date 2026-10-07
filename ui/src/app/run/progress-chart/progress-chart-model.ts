@@ -1,16 +1,31 @@
+/**
+ * The progress chart's layout: every past run of a scenario, laid out in pixels.
+ *
+ * In: the scenario's past runs from KovaaK's stats files (platform/score-history.ts `PastRun`), the
+ * time stamp of the run on the page, and the chart's size.
+ * Out: the dots, median line, grid and dates (progress-chart-drawing.ts draws them), and the
+ * helpers the chart uses to match a dot to a recording.
+ */
+
 import { formatNumber } from '../../format';
 import { PastRun } from '../../platform/score-history';
 
+/** The months' short names, for the dates. */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** A file name's time stamp: "2026.10.07-14.03.59". */
 const STAMP = /^(\d{4})\.(\d\d)\.(\d\d)-(\d\d)\.(\d\d)\.(\d\d)$/;
 /** A stats file and a recording this many seconds apart or less are the same run. */
 export const SAME_RUN_S = 5;
 /** The runs the line takes the median of: this many, centered on each run. */
 export const MEDIAN_RUNS = 9;
 
+/** The plot's left margin, for the scores, in pixels. */
 const MARGIN_LEFT = 48;
+/** The plot's right margin, in pixels. */
 const MARGIN_RIGHT = 12;
+/** The plot's top margin, in pixels. */
 const MARGIN_TOP = 10;
+/** The plot's bottom margin, for the dates, in pixels. */
 const MARGIN_BOTTOM = 22;
 /** The room above and below the scores, as a share of their range. */
 const SCORE_ROOM = 0.06;
@@ -19,52 +34,75 @@ const DATE_WIDTH = 110;
 
 /** The chart's size in pixels. */
 export interface HistorySize {
+  /** The chart's width, in pixels. */
   width: number;
+  /** The chart's height, in pixels. */
   height: number;
 }
 
 /** A run as a dot: where it is, the run, and its day's label. */
 export interface HistoryDot {
+  /** The dot's place across, in pixels. */
   x: number;
+  /** The dot's height for its score, in pixels from the top. */
   y: number;
+  /** The run: its time stamp, score, kills and accuracy. */
   run: PastRun;
   /** When the run ended, in seconds (on the stamps' own clock). */
   seconds: number;
+  /** The run's day, "25 Apr 2024". */
   date: string;
 }
 
 /** A run with its time as seconds. */
 interface TimedRun {
+  /** The run. */
   run: PastRun;
+  /** When it ended, in seconds on the stamps' clock. */
   seconds: number;
 }
 
 /** A point of a line. */
 export interface HistoryPoint {
+  /** Across, in pixels. */
   x: number;
+  /** Down, in pixels from the top. */
   y: number;
 }
 
 /** A horizontal grid line at a score, or a date on the time axis. */
 export interface HistoryTick {
+  /** The grid line's height, or the date's place across, in pixels. */
   at: number;
+  /** The score or the date. */
   label: string;
 }
 
 /**
- * Every run of a scenario over the days it was played (each day played gets the same width; its runs spread across
- * it in order), laid out in pixels: the dots, the median line, the personal best, and the run on the page.
+ * Every run of a scenario over the days it was played (each day played gets the same width; its
+ * runs spread across it in order), laid out in pixels: the dots, the median line, the personal
+ * best, and the run on the page.
  */
 export interface HistoryModel {
+  /** The chart's size. */
   size: HistorySize;
+  /** The plot's left edge, in pixels. */
   left: number;
+  /** The plot's right edge, in pixels. */
   right: number;
+  /** The plot's top, in pixels. */
   top: number;
+  /** The plot's bottom, in pixels. */
   bottom: number;
+  /** One dot for each run, oldest first. */
   dots: HistoryDot[];
+  /** The median line, a point at each run. */
   median: HistoryPoint[];
+  /** The score grid's lines. */
   grid: HistoryTick[];
+  /** The days along the bottom, those that fit. */
   dates: HistoryTick[];
+  /** The personal best's dot (the first, on a tie). */
   best: HistoryDot;
   /** This page's run among them, or null when none is within five seconds of its time. */
   current: HistoryDot | null;
@@ -74,7 +112,10 @@ export interface HistoryModel {
   summary: string;
 }
 
-/** A file-name time stamp as seconds on one clock. The year 0026 reads as 2026. */
+/**
+ * A file-name time stamp as seconds on one clock (read as UTC, so the dates shown are the stamps'
+ * own days in any time zone); null when it is not a stamp. The year 0026 reads as 2026.
+ */
 export function stampSeconds(stamp: string): number | null {
   const match = STAMP.exec(stamp);
   if (!match) return null;
@@ -124,13 +165,20 @@ export function runAt(runs: readonly HistoryDot[], stamp: string): number {
   return found;
 }
 
-/** Each day played as its label, and each run's day (an index into them): each day played is one slot. */
+/**
+ * Each day played as its label, and each run's day (an index into them): each day played is one
+ * slot.
+ */
 interface RunDays {
+  /** Each day played, in order, as "25 Apr 2024". */
   labels: string[];
+  /** Each run's day, an index into `labels`. */
   dayOf: number[];
+  /** How many runs each day has, by its index. */
   runsPerDay: Map<number, number>;
 }
 
+/** The days the runs (oldest first) were played on, and each run's day. */
 function runDays(timed: TimedRun[]): RunDays {
   const labels: string[] = [];
   const dayOf = timed.map(({ seconds }) => {
@@ -143,11 +191,17 @@ function runDays(timed: TimedRun[]): RunDays {
   return { labels, dayOf, runsPerDay };
 }
 
-/** The score axis: its lowest and highest scores, the grid's step, and a score's height in pixels. */
+/**
+ * The score axis: its lowest and highest scores, the grid's step, and a score's height in pixels.
+ */
 interface ScoreAxis {
+  /** The score at the plot's bottom, a whole number of steps. */
   floor: number;
+  /** The score at the plot's top, a whole number of steps. */
   ceil: number;
+  /** The scores between grid lines. */
   step: number;
+  /** A score's height, in pixels from the top. */
   yOf: (score: number) => number;
 }
 
@@ -195,6 +249,7 @@ function medianLine(dots: HistoryDot[], scores: number[], yOf: ScoreAxis['yOf'])
   }));
 }
 
+/** A grid line at every step of the score axis, from its floor to its ceiling. */
 function gridTicks(axis: ScoreAxis): HistoryTick[] {
   const grid: HistoryTick[] = [];
   for (let score = axis.floor; score <= axis.ceil + axis.step / 2; score += axis.step)
@@ -214,6 +269,7 @@ function dateTicks(labels: string[], left: number, right: number, slot: number):
   return dates;
 }
 
+/** The line under the chart: how many runs since when, the best, and this run's place. */
 function summaryText(
   dots: HistoryDot[],
   best: HistoryDot,
@@ -231,8 +287,9 @@ function summaryText(
 }
 
 /**
- * The chart of a scenario's runs (oldest first), with the run ended at thisStamp marked; null with no runs. The y
- * axis spans the scores with a little room; the line is the median of the runs around each one.
+ * The chart of a scenario's runs (oldest first), with the run ended at thisStamp marked; null with
+ * no runs (runs whose stamp cannot be read are left out). The y axis spans the scores with a little
+ * room; the line is the median of the runs around each one.
  */
 export function progressChart(
   runs: readonly PastRun[],
@@ -275,7 +332,7 @@ export function progressChart(
   };
 }
 
-/** The dot nearest a point, within reach pixels; else null. */
+/** The dot nearest a point (pixels), within `reach` pixels of it; else null. */
 export function dotNear(
   model: HistoryModel,
   x: number,

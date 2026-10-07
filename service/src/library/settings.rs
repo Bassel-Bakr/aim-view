@@ -1,7 +1,7 @@
 //! What the user set, kept in settings.json: the VODs folder they chose in the app (`vods`), the model new reviews
 //! use (`model`), the device the detector runs on (`device`) and the frames it takes at once on each device (`batch`,
 //! by device name). Other keys in the file are kept as they are (the desktop app also kept KovaaK's folder as `kovaak`;
-//! python/server.py keeps only `model`). And the models to pick from (models.json and the exports in the models
+//! python/retired/server.py kept only `model`). And the models to pick from (models.json and the exports in the models
 //! folder). In: /api/model, /api/device, /api/batch and the app's folder dialog. Out: settings.json, /api/models'
 //! answer, and the model, device and frames at once new reviews use (reviews.rs).
 
@@ -32,10 +32,12 @@ impl Settings {
 }
 
 impl Library {
+    /// A copy of the settings; none when their lock is broken.
     fn settings(&self) -> Settings {
         self.settings.lock().map(|settings| settings.clone()).unwrap_or_default()
     }
 
+    /// Sets `key` to `value` and writes every setting to settings.json.
     fn save_settings(&self, key: &str, value: Value) -> Answer<()> {
         let mut settings = self.settings.lock().map_err(|_| "the settings are broken".to_string())?;
         settings.0.insert(key.into(), value);
@@ -53,8 +55,8 @@ impl Library {
         Ok(json!({ "folder": folder }))
     }
 
-    /// The model new reviews use: the user's pick, else full_v3 (also when the pick's export is not here: a pick
-    /// python/server.py kept can be a model only it runs).
+    /// The model new reviews use: the user's pick, else the default (`default_model`; also when the pick's export is
+    /// not here: a pick python/retired/server.py kept can be a model only it ran).
     pub fn model(&self) -> String {
         let picked = self.settings().0.get("model").and_then(Value::as_str).map(str::to_string);
         picked.filter(|name| crate::disk::is_file(self.model_file(name))).unwrap_or_else(|| self.default_model())
@@ -109,7 +111,9 @@ impl Library {
         read_json(&here).or_else(|| read_json(&self.config.models.parent()?.join("models.json")))
     }
 
-    /// The models to pick from: the ones models.json describes whose exports are here (python/server.py: models).
+    /// The models to pick from: the ones models.json describes whose exports are here, with the chosen model, the
+    /// device and the frames at once and their choices (python/retired/server.py: models). An error without
+    /// models.json.
     pub fn models(&self) -> Answer<Value> {
         let info: Value = self.models_info().ok_or("models.json is missing".to_string())?;
         let mut models = Vec::new();
@@ -146,6 +150,7 @@ impl Library {
     }
 }
 
+/// The user's picks of device and frames at once.
 #[cfg(test)]
 mod tests {
     use crate::config::{Config, Device, Layout};

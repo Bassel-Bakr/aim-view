@@ -1,6 +1,7 @@
-//! The browser build's own routes (api.rs): the page runs the review, the area finder and the cut-off's labels itself
-//! and sends what they give, which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs
-//! folder (a folder it mounted) and says when it copied new KovaaK files.
+//! The browser build's own routes (api.rs): the page runs the review and the area finder itself and sends what they
+//! give, which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it
+//! mounted) and says when it copied new KovaaK files. In: /api/job (POST), /api/reviewed, /api/found, /api/mouse_log,
+//! /api/folder and /api/kovaak. Out: the reviews, found areas, mouse logs and settings kept, and the jobs' state.
 
 use std::path::{Path, PathBuf};
 
@@ -17,16 +18,23 @@ use crate::review::Request;
 /// frames, its time (seconds) and device ("WebGPU", "WebAssembly"), and the model it ran (else the job's).
 #[derive(Deserialize)]
 struct PageReview {
+    /// The tracks (tracks.json); they must have frames.
     tracks: Value,
+    /// The camera's turn and the countdown (readings.json).
     readings: Value,
+    /// What the HUD read (hud.json); null when none was read.
     #[serde(default)]
     hud: Value,
+    /// What the area finder found in the key frames, when it read them.
     #[serde(default)]
     found: Option<Found>,
+    /// The review's time in seconds.
     #[serde(default)]
     seconds: Option<f64>,
+    /// Where the detector ran ("WebGPU", "WebAssembly").
     #[serde(default)]
     device: Option<String>,
+    /// The model it ran; None: the job's.
     #[serde(default)]
     model: Option<String>,
 }
@@ -34,12 +42,16 @@ struct PageReview {
 /// How far a review the page runs is (POST /api/job), or its error.
 #[derive(Deserialize)]
 struct PageProgress {
+    /// The review's stage; "done" and "error" are refused (the end comes by /api/reviewed or `error`).
     #[serde(default)]
     stage: Option<String>,
+    /// Frames done.
     #[serde(default)]
     done: usize,
+    /// Of how many.
     #[serde(default)]
     total: usize,
+    /// Why the review failed; it ends the job.
     #[serde(default)]
     error: Option<String>,
 }

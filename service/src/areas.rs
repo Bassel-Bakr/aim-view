@@ -1,5 +1,5 @@
-//! The areas a review leaves out (python/server.py: exclude, set_exclude, kinds, save_kind, find_areas, labelled): a
-//! webcam, another player's overlay.
+//! The areas a review leaves out (python/retired/server.py: exclude, set_exclude, kinds, save_kind, find_areas,
+//! labelled): a webcam, another player's overlay.
 //!
 //! In: the page's areas for a recording, its new and renamed area kinds, and an area_examples.jsonl it loads. Kept
 //! (store.rs): each recording's areas (exclude.json: [x0, y0, x1, y1, kind id], shares of the frame); for an added
@@ -24,15 +24,17 @@ use crate::review::AreaBox;
 use crate::library::slug as recording_slug;
 use crate::store::{Item, Mark, Part, ReviewBy};
 
-/// The names messages give the area kinds and the area finder's examples.
+/// The name messages give the area kinds.
 const AREA_KINDS: &str = Item::AreaKinds.file_name();
+/// The name messages give the area finder's examples.
 const AREA_EXAMPLES: &str = Item::AreaExamples.file_name();
 /// An area the user removed: an example of "not an area" (python/areas.py: NONE).
 const NONE: &str = "none";
 /// The kind of an area whose kind is not known.
 const OTHER_KIND: &str = "other";
-/// The longest kind name and description kept, in characters (python/server.py cuts them there).
+/// The longest kind name kept, in characters (python/retired/server.py cut them there).
 const MAX_KIND_NAME_CHARS: usize = 40;
+/// The longest kind description kept, in characters.
 const MAX_KIND_ABOUT_CHARS: usize = 200;
 /// How far apart two areas' edges (shares of the frame) can be and still be the same: JSON can give an edge back a
 /// last place off.
@@ -43,8 +45,8 @@ const KOVOBS_EXAMPLE_PREFIX: &str = "kovobs:";
 /// One change to area_examples.jsonl at a time (the finder learns in the background).
 static EXAMPLES: Mutex<()> = Mutex::new(());
 
-/// The kinds an area can be, built in (python/retired/review.py: EXCLUDE_KINDS), and what each is (python/server.py:
-/// KIND_ABOUT).
+/// The kinds an area can be, built in (python/retired/review.py: EXCLUDE_KINDS), and what each is
+/// (python/retired/server.py: KIND_ABOUT).
 const BUILT_IN: [(&str, &str); 11] = [
     ("Session stats", "KovaaK's SESSION box (kills, accuracy, damage), or a game's score and accuracy boxes"),
     ("Timer", "the run's time left"),
@@ -68,16 +70,22 @@ const OVERLAY_KINDS: [&str; 8] =
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "AreaKind"))]
 pub struct Kind {
+    /// The kind's id, which saved areas and examples hold ("session_stats").
     id: String,
+    /// The name the page shows.
     name: String,
+    /// What it is, in a few words.
     about: String,
 }
 
 /// A kind as area_kinds.json kept it before kinds had ids.
 #[derive(Deserialize)]
 struct OldKind {
+    /// Its id; None in a list kept before kinds had ids.
     id: Option<String>,
+    /// Its name.
     name: String,
+    /// What it is: any JSON value, read as Python's `str` reads it.
     #[serde(default)]
     about: Value,
 }
@@ -85,9 +93,13 @@ struct OldKind {
 /// One of the finder's examples (area_examples.jsonl): the recording, the area's features, its kind.
 #[derive(Serialize, Deserialize)]
 struct Example {
+    /// The recording it came from, or "kovobs:..." for one learned from KovOBS's layout.
     rec: String,
+    /// The area's features, as the core's finder reads them.
     feat: Value,
+    /// The kind's id, a name in an example kept before kinds had ids, or "none" for not an area.
     kind: Value,
+    /// Any other fields, kept as they are.
     #[serde(flatten)]
     rest: Map<String, Value>,
 }
@@ -110,7 +122,8 @@ pub fn kovobs_areas() -> Vec<AreaBox> {
         .collect()
 }
 
-/// python/server.py: `_slug`.
+/// A kind's id from its name (python/retired/server.py: `_slug`): its ASCII letters and digits in lower case, each run
+/// of other characters as one "_", none at the ends; "type" when nothing is left.
 fn slug(name: &str) -> String {
     let mut out = String::new();
     for character in name.to_lowercase().chars() {
@@ -124,7 +137,7 @@ fn slug(name: &str) -> String {
     if out.is_empty() { "type".into() } else { out }
 }
 
-/// python/server.py: `_new_id`: the name's slug, with a number when another kind has it.
+/// A new kind's id (python/retired/server.py: `_new_id`): the name's slug, with a number when another kind has it.
 fn new_id(name: &str, kinds: &[Kind]) -> String {
     let base = slug(name);
     let (mut out, mut number) = (base.clone(), 2);
@@ -191,9 +204,9 @@ pub fn tracked_areas(tracks: &[u8]) -> Option<Vec<[f64; 4]>> {
     })
 }
 
-/// area_kinds.json kept before kinds had ids, given ids (python/server.py: kinds): the built-in kinds first, with the
-/// user's description of one where they gave one, then the user's own kinds (a later one of a name takes the earlier
-/// one's place).
+/// area_kinds.json kept before kinds had ids, given ids (python/retired/server.py: kinds): the built-in kinds first,
+/// with the user's description of one where they gave one, then the user's own kinds (a later one of a name takes the
+/// earlier one's place).
 fn kinds_with_ids(kept: Vec<OldKind>) -> Vec<Kind> {
     let mut own: Vec<(String, OldKind)> = Vec::new();
     for kind in kept {
@@ -218,8 +231,8 @@ fn kinds_with_ids(kept: Vec<OldKind>) -> Vec<Kind> {
 }
 
 impl Library {
-    /// The area kinds, built-in ones first (python/server.py: kinds). The first use, or a list kept before kinds had
-    /// ids, writes the list with ids.
+    /// The area kinds, built-in ones first (python/retired/server.py: kinds). The first use, or a list kept before
+    /// kinds had ids, writes the list with ids.
     pub fn kinds(&self) -> Answer<Vec<Kind>> {
         let kept: Vec<OldKind> = match pyjson::load(self.store(), Item::AreaKinds) {
             Some(value) => serde_json::from_value(value).map_err(|error| format!("{AREA_KINDS}: {error}"))?,
@@ -400,7 +413,7 @@ impl Library {
     }
 
     /// The recordings the user saved areas for: (its slug, its found areas, its saved areas), leaving out `but` and
-    /// other games (python/server.py: labelled, by its folder's name).
+    /// other games (python/retired/server.py: labelled, by its folder's name).
     pub fn labelled(&self, but: Option<&str>) -> Vec<(String, Value, Value)> {
         let skip: BTreeSet<String> = self.not_aim().iter().map(|id| recording_slug(id)).chain(but.map(recording_slug)).collect();
         let parsed = |(name, found, saved): (String, Vec<u8>, Vec<u8>)| {
@@ -409,8 +422,8 @@ impl Library {
         self.store().labelled(&skip).into_iter().filter_map(parsed).collect()
     }
 
-    /// The areas to propose (python/server.py: find_areas): the user's own areas from a recording with the same layout
-    /// (unless `copy` is off), else the areas found in this one, named by what was learned or by rules.
+    /// The areas to propose (python/retired/server.py: find_areas): the user's own areas from a recording with the same
+    /// layout (unless `copy` is off), else the areas found in this one, named by what was learned or by rules.
     pub fn find_areas(&self, id: &str, copy: bool) -> Answer<Value> {
         let video = self.resolve(id)?;
         let found = self.found_areas(id, &video, false)?.0;
@@ -520,7 +533,7 @@ impl Library {
         Ok(json!({ "examples": count }))
     }
 
-    /// Examples kept before kinds had ids hold the kind's name: their kinds as ids (python/server.py: Library's
+    /// Examples kept before kinds had ids hold the kind's name: their kinds as ids (python/retired/server.py: Library's
     /// start). Nothing changes when they have ids.
     pub fn fix_examples(&self) -> Answer<()> {
         let Ok(Some(text)) = self.store().read(Item::AreaExamples) else { return Ok(()) };
@@ -553,10 +566,12 @@ impl Library {
     }
 }
 
+/// The kinds' ids.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Kind ids are made, numbered and looked up by id or name as Python made them; an unknown name is "other".
     #[test]
     fn ids_as_python_makes_them() {
         assert_eq!(slug("Session stats"), "session_stats");

@@ -1,5 +1,5 @@
-"""Read a raw mouse log from python/mouse_log.py and measure each flick of a KovaaK's run from it (see "Raw mouse log" in
-python/README.md).
+"""Read a raw mouse log from python/mouse_log.py and measure each flick of a KovaaK's run from it (see "Raw mouse log"
+in python/README.md).
 
 Counts become degrees with 360 / (cm360 / 2.54 * dpi). Positive x is right; raw input's positive y is down. In run
 mode the dpi and cm/360 come from the stats file when it uses cm/360; --dpi and --cm360 override it.
@@ -10,7 +10,7 @@ busiest 100 ms), the total travel and the left-button presses.
 Run mode (--stats) matches the run's kills with the left-button presses. It searches one clock offset between the
 stats file and the log, within 1 s, that puts the most kills within 10 ms of a press, and takes each kill's press as
 the nearest one within 10 ms of it. Presses in the run that killed nothing are misses. Then, for each kill, from the
-previous kill's press to this one, it measures the speed on a 0.25 ms grid, each over a centred window (4 ms by
+previous kill's press to this one, it measures the speed on a 0.25 ms grid, each over a centered window (4 ms by
 default; never past the click):
   start   when the mouse starts moving: the first time the speed rises to --start (30 deg/s) or more. If it was
           still moving that fast at the previous press, the start is when it rises again after dropping under
@@ -27,6 +27,8 @@ Precision: a 4 ms window holds about 32 reports at 8000 Hz, and at 1600 dpi and 
 2 deg/s. On the self-test's synthetic runs (8000 Hz, 0.02 to 0.15 ms of handling delay) the start, stop, still and
 click times come out within 1 ms, and the peak speed within 5%: it reads a few percent high, because the delay's
 jitter moves the window's edges and the highest of many noisy speeds wins.
+
+The app measures logs with the core's port of this (src/mouse.rs, checked equal to it).
 
 Usage: python python/mouse_read.py <log.bin> [--stats "<stats csv>"] [--dpi N] [--cm360 N]
                                 [--window MS] [--start DEG_S] [--stop DEG_S] [--hold MS]
@@ -52,10 +54,12 @@ SEARCH = 1.0          # the clock offset is searched within 1 s
 
 
 def deg_per_count(dpi, cm360):
+    """The degrees the view turns for one count of the mouse, from its dpi and the cm a 360 takes."""
     return 360 / (cm360 / 2.54 * dpi)
 
 
 def local(wall):
+    """A wall-clock time (s since the epoch) as this computer's local time of day, to the microsecond."""
     return datetime.fromtimestamp(wall).strftime("%H:%M:%S.%f")
 
 
@@ -66,6 +70,7 @@ class Motion:
     out of a speed window."""
 
     def __init__(self, log, k):
+        """log: as mouse_log.read_log gives it. k: degrees a count. Up is positive y here."""
         self.t, self.x, self.y = [], [], []
         x = y = 0.0
         for t, dx, dy, fl in zip(log["t"], log["dx"], log["dy"], log["flags"]):
@@ -80,6 +85,7 @@ class Motion:
         self.cap = max(0.001, 2 * st.median(gaps)) if gaps else 0.001
 
     def pos(self, i):
+        """The position (deg) after the first i events: (0, 0) before any."""
         return (self.x[i - 1], self.y[i - 1]) if i else (0.0, 0.0)
 
     def at(self, t, i=None):
@@ -150,7 +156,10 @@ def find(ts, vs, dt, o):
 
 
 def measure(m, a, c, o):
-    ts, vs = m.speeds(a, c, o.window / 1000)
+    """One kill's measures from the motion `m` between the previous press `a` and this kill's press `c` (s on the
+    log's scale), with the options `o`: the times found (s), and reaction, flick, peak, stop to click and still (ms,
+    deg/s), the speed at the click, the corrections after the stop and the distance moved (deg)."""
+    ts, vs =m.speeds(a, c, o.window / 1000)
     s, p, stop, settle = find(ts, vs, DT, o)
     ms = lambda x: round(x * 1000, 3)
     (x0, y0), (x1, y1) = m.at(a), m.at(c)
@@ -167,10 +176,13 @@ def measure(m, a, c, o):
 
 
 def presses_of(log):
+    """The times (s) of the log's left-button presses."""
     return [t for t, b in zip(log["t"], log["bflags"]) if b & ml.RI_MOUSE_LEFT_BUTTON_DOWN]
 
 
 def rate_line(log):
+    """(the median interval between events in s, or None, a line on the event rate with a warning when the log
+    looks throttled)."""
     t = log["t"]
     gaps = [b - a for a, b in zip(t, t[1:])]
     med = st.median(gaps) if gaps else None
@@ -183,7 +195,8 @@ def rate_line(log):
 
 
 def head(log):
-    t0, dur = log["wall0"], log["duration"]
+    """Prints the log's file, times, event count, clock drift and devices, and how many absolute events it skips."""
+    t0, dur =log["wall0"], log["duration"]
     drift = f"clock drift {log['drift_ms']:.3f} ms" if log["drift_ms"] is not None else "no stop pair (killed?)"
     print(f"log: {log['path']}\n  {local(t0)} to {local(t0 + dur)}, {dur:.2f} s, {len(log['t'])} events, {drift}")
     for d, h in enumerate(log["devices"]):
@@ -194,6 +207,8 @@ def head(log):
 
 
 def summary(path, o):
+    """Summary mode: prints the log's head, its event rate, its travel (deg, summed over 1 ms steps) and its
+    left-button presses. Without --dpi and --cm360, 1600 dpi and 70 cm/360."""
     log = ml.read_log(path)
     k = deg_per_count(o.dpi or 1600, o.cm360 or 70)
     head(log)
@@ -211,7 +226,10 @@ def summary(path, o):
 
 
 def read_stats(path):
-    L = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    """A KovaaK's stats file: its kills (number, local time, epoch time, shots), the run's start and end (epoch s),
+    its total shots, its (dpi, cm/360) when it uses cm/360 (else None) and its scenario. Stops when the file's name
+    has no date."""
+    L =Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     meta = dict(l.split(":,", 1) for l in L if ":," in l)
     m = re.search(r"(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2})", Path(path).name)
     if not m:
@@ -219,7 +237,9 @@ def read_stats(path):
     end = datetime(*map(int, m.groups()))                 # when the stats were written, about the run's end
 
     def epoch(hms):
-        d = datetime.combine(end.date(), datetime.strptime(hms.strip(), "%H:%M:%S.%f").time())
+        """A time of day from the file ("HH:MM:SS.fff") as epoch seconds, on the day the file was written (the day
+        before, when that puts it more than an hour after the file)."""
+        d =datetime.combine(end.date(), datetime.strptime(hms.strip(), "%H:%M:%S.%f").time())
         return (d - timedelta(days=1) if d > end + timedelta(hours=1) else d).timestamp()   # a run over midnight
 
     rows = []
@@ -272,17 +292,22 @@ def match(presses, kills):
 
 
 def q(vals, p):
+    """The values' p-quantile for p a tenth from 0.1 to 0.9 (the one value when there is only one)."""
     return st.quantiles(vals, n=10, method="inclusive")[round(p * 10) - 1] if len(vals) > 1 else vals[0]
 
 
 def show(name, vals, fmt="{:7.1f}"):
-    vals = [v for v in vals if v is not None]
+    """Prints one measure's count, p10, median and p90 over the kills, Nones left out; nothing when none is left."""
+    vals =[v for v in vals if v is not None]
     if vals:
         print(f"  {name:34s} n {len(vals):3d}  p10 {fmt.format(q(vals, .1))}  median "
               f"{fmt.format(st.median(vals))}  p90 {fmt.format(q(vals, .9))}")
 
 
 def run(path, stats_path, o):
+    """Run mode: matches the stats file's kills to the log's presses, measures each matched kill, prints the summary
+    and writes <log>.kills.json. Returns the offset (s), the matched count, the misses' times and the kills' rows.
+    Stops when the log does not cover the run or no press is near a kill."""
     log = ml.read_log(path)
     stats = read_stats(stats_path)
     dpi, cm360 = (o.dpi or (stats["sens"] or (1600, 70))[0]), (o.cm360 or (stats["sens"] or (1600, 70))[1])
@@ -345,6 +370,9 @@ def run(path, stats_path, o):
 # ---- self-test: a synthetic run with known flicks ----
 
 def selftest(o):
+    """Builds a synthetic run (20 minimum-jerk flicks logged at 8000 Hz with a handling delay, a clock drift, a stats
+    file whose clock is off and one miss), reads it with run, and checks every measure against the same rules on the
+    exact speed. Prints the errors; returns 0 when every one is within its limit, else 1."""
     rng = random.Random(7)
     folder = Path(__file__).resolve().parent.parent / "test_out" / "mouse" / "selftest"
     folder.mkdir(parents=True, exist_ok=True)
@@ -353,7 +381,7 @@ def selftest(o):
     NS0 = int(datetime(2026, 9, 30, 4, 54, 20).timestamp()) * 10 ** 9
     DRIFT, OFFSET = 20e-6, -0.0373          # wall clock 20 ppm fast against QPC; stats clock 37.3 ms behind the log
     snap = lambda t: round(t / REPORT) * REPORT
-    wall = lambda t: NS0 / 1e9 + t * (1 + DRIFT)            # QPC seconds since Q0 -> wall clock
+    wall = lambda t: NS0 / 1e9 + t * (1 + DRIFT)            # QPC seconds since Q0 as wall-clock seconds
 
     segs, clicks, plan, a = [], [], [], 1.0                 # min-jerk moves (t0, T, dx, dy); x right, y down
     cs = a
@@ -474,6 +502,7 @@ def selftest(o):
 
 
 def main():
+    """Runs the self-test, run mode (with --stats) or summary mode."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("log", nargs="?", help="a log from python/mouse_log.py")
     ap.add_argument("--stats", help="the run's KovaaK's stats csv")

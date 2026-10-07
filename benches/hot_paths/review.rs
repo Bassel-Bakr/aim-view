@@ -20,6 +20,7 @@ use crate::{FEW_SAMPLES, FEWEST_SAMPLES};
 
 /// av1's stats file, as the byte-compare's review takes it.
 const AV1_STATS: &str = "test_out/parity/av1/review/stats.csv";
+/// flower's stats file, for the tracking review.
 const FLOWER_STATS: &str = "test_out/parity/flower/review/stats.csv";
 /// The seconds before a kill where its target is looked for, as the review matches (src/review.rs).
 const KILL_WINDOW_S: f64 = 0.25;
@@ -27,7 +28,9 @@ const KILL_WINDOW_S: f64 = 0.25;
 /// readings.json: each frame's camera reading and whether KovaaK's countdown bar shows.
 #[derive(Deserialize)]
 struct Readings {
+    /// Each frame's camera reading.
     camera: Vec<CameraReading>,
+    /// Each frame: whether KovaaK's countdown bar shows.
     countdown: Vec<bool>,
 }
 
@@ -37,6 +40,7 @@ fn av1(bench: &str) -> Option<(Tracks, String)> {
     Some((tracks, inputs::text(bench, AV1_STATS)?))
 }
 
+/// av1's kills matched in its tracks: from its stats file's times, and from the video alone.
 pub fn matching(criterion: &mut Criterion) {
     let Some((tracks, stats)) = av1("matching") else { return };
     let kills = StatsFile::parse(&stats).kills().unwrap();
@@ -50,6 +54,7 @@ pub fn matching(criterion: &mut Criterion) {
     group.finish();
 }
 
+/// Each of av1's flicks measured, its kills matched from the stats file first.
 pub fn measure(criterion: &mut Criterion) {
     let Some((tracks, stats)) = av1("measure") else { return };
     let kills = StatsFile::parse(&stats).kills().unwrap();
@@ -120,6 +125,8 @@ fn tracking_review(group: &mut BenchmarkGroup<WallTime>) {
     }
 }
 
+/// The whole report: av1's clicking reviews (with its stats file, from the HUD, and through JSON) and flower's tracking
+/// review.
 pub fn report(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("report");
     group.sample_size(FEWEST_SAMPLES).sampling_mode(SamplingMode::Flat);

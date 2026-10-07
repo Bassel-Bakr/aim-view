@@ -2,12 +2,28 @@
 import type { Flag } from './flag';
 
 /**
- * One check: the issue's number (as in docs/issues.md), the number it reads, a plain verdict and why.
+ * One check: the issue's number, the number it reads, a plain verdict and why. The numbers are those of the old
+ * review's issue list (python/retired/review.py cites docs/issues.md, which this repo does not have).
  */
 export interface Issue {
+  /**
+   * The issue's number in the issue list.
+   */
   issue: number;
+  /**
+   * The check's name, shown as its heading ("Slow start").
+   */
   title: string;
+  /**
+   * What the run measured, as a sentence with its number.
+   */
   value: string;
+  /**
+   * The verdict: past the threshold or not.
+   */
   flag: Flag;
+  /**
+   * Why it matters and the threshold it is flagged at.
+   */
   why: string;
 }

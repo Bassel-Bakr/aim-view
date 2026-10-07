@@ -7,8 +7,9 @@
 //! ffmpeg's and the RGB against convert.rs's, byte for byte. Media Foundation counts its times from the file's
 //! earliest frame, the pre-roll an MP4 edit list hides included (OBS's AV1 files have about 100 such frames; its H.264
 //! files none), where ffmpeg's and the browser's start at the first frame shown: a frame's time here is its time there
-//! less `VideoInfo::earliest`. Only 2560 x 1440 MP4s (`usable`); other videos keep ffmpeg (video.rs). In: the video,
-//! its `VideoInfo`, where a run starts, the Y plane's rows wanted. Out: each frame's RGB, 720p luma and those rows.
+//! less `VideoInfo::earliest`. Only 2560 x 1440 AV1 or H.264 MP4s (`usable`); other videos keep ffmpeg (video.rs).
+//! In: the video, its `VideoInfo`, where a run starts, the Y plane's rows wanted. Out: each frame's RGB, 720p luma and
+//! those rows.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -31,29 +32,37 @@ use windows::core::{GUID, Interface, PCSTR, PCWSTR};
 
 use crate::video::VideoInfo;
 
-/// The size this path converts (exactly 2:1 to the detector's frame).
+/// The width this path converts, in pixels (exactly 2:1 to the detector's frame).
 const SRC_W: u32 = 2 * DST_W as u32;
+/// The height this path converts, in pixels (exactly 2:1 to the detector's frame).
 const SRC_H: u32 = 2 * DST_H as u32;
+/// The bytes of the detector's 1280 x 720 RGB frame.
 const RGB_BYTES: usize = DST_W * DST_H * 3;
+/// The bytes of the 1280 x 720 luma the camera reads.
 const SMALL_BYTES: usize = DST_W * DST_H;
 /// The shader's constant buffer: the Y plane's rows it lays out, padded to D3D11's 16 bytes.
 const ROWS_CONSTANTS: usize = 4;
 /// Frames read back this many behind the newest the GPU was given.
 const RING: usize = 4;
-/// Media Foundation's version (MF_SDK_VERSION << 16 | MF_API_VERSION) and its full start.
+/// Media Foundation's version (MF_SDK_VERSION << 16 | MF_API_VERSION).
 const MF_VERSION: u32 = 0x0002_0070;
+/// MFStartup's flag for a full start (MFSTARTUP_FULL).
 const MF_START_FULL: u32 = 0;
-/// The shader's threads a group and pixels a thread (gpu_frames.hlsl).
+/// The shader's threads a group (gpu_frames.hlsl's numthreads).
 const THREADS_PER_GROUP: u32 = 64;
+/// The detector-frame pixels each of the shader's threads makes (gpu_frames.hlsl).
 const PIXELS_PER_THREAD: u32 = 4;
-/// ffmpeg's yuv2rgb tables, as src/convert.rs builds them (RgbTables::new).
+/// The length of ffmpeg's yuv2rgb luma table, as src/convert.rs builds it (RgbTables::new).
 const Y_TABLE_LEN: i64 = 2048;
+/// The length of each of ffmpeg's four yuv2rgb chroma tables, as src/convert.rs builds them.
 const CHROMA_TABLE_LEN: i64 = 256;
 /// Media Foundation's times are in units of 100 ns.
 const UNITS_PER_SECOND: f64 = 1e7;
 
+/// Media Foundation is started once for the process.
 static MF_STARTED: Once = Once::new();
 
+/// An error message maker for a Windows call: `what` failed, then Windows' own message.
 fn failed(what: &str) -> impl Fn(windows::core::Error) -> String + '_ {
     move |error| format!("{what}: {error}")
 }
@@ -132,7 +141,9 @@ fn reader(device: &ID3D11Device, video: &Path) -> windows::core::Result<IMFSourc
 /// src/convert.rs's RgbTables for a matrix and range, flattened as gpu_frames.hlsl reads them (convert.rs keeps its
 /// tables private; the shader's output is checked against convert.rs's, so the two cannot drift apart unseen).
 fn tables(matrix: Matrix, full_range: bool) -> Vec<i32> {
+    /// 1.0 in the tables' 16.16 fixed point.
     const ONE: i64 = 1 << 16;
+    /// 0.5 in the same fixed point, added to round.
     const ROUND: i64 = 1 << 15;
     let [crv, cbu, cgu, cgv]: [i64; 4] = match matrix {
         Matrix::Bt709 => [117_489, 138_438, 13_975, 34_925],
@@ -159,6 +170,7 @@ fn tables(matrix: Matrix, full_range: bool) -> Vec<i32> {
     out
 }
 
+/// Compiles gpu_frames.hlsl (built into the exe) for the device; an error carries the compiler's messages.
 fn compile_shader(device: &ID3D11Device) -> Result<ID3D11ComputeShader, String> {
     let source = include_str!("gpu_frames.hlsl");
     let (mut code, mut errors): (Option<ID3DBlob>, Option<ID3DBlob>) = (None, None);
@@ -190,6 +202,7 @@ fn compile_shader(device: &ID3D11Device) -> Result<ID3D11ComputeShader, String> 
     shader.ok_or_else(|| "no frame shader".to_string())
 }
 
+/// A GPU buffer as `desc` says, filled with `initial` when given.
 fn buffer(device: &ID3D11Device, desc: &D3D11_BUFFER_DESC, initial: Option<&[i32]>) -> Result<ID3D11Buffer, String> {
     let data = initial.map(|values| D3D11_SUBRESOURCE_DATA {
         pSysMem: values.as_ptr().cast(),
@@ -230,7 +243,7 @@ fn output_buffer(device: &ID3D11Device, bytes: usize) -> Result<(ID3D11Buffer, I
     Ok((out, view.ok_or("no GPU buffer view")?))
 }
 
-/// The texture a decoded frame is copied into, and the shader's views of it (luma, chroma) and of the colour tables.
+/// The texture a decoded frame is copied into, and the shader's views of it (luma, chroma) and of the color tables.
 fn inputs(device: &ID3D11Device, info: &VideoInfo) -> Result<(ID3D11Texture2D, InputViews), String> {
     let nv12_desc = D3D11_TEXTURE2D_DESC {
         Width: SRC_W,
@@ -270,6 +283,7 @@ fn rows_buffer(device: &ID3D11Device, plane_rows: usize) -> Result<ID3D11Buffer,
     buffer(device, &desc, Some(&constants))
 }
 
+/// A buffer of `bytes` the CPU can read, which a ring slot's outputs are copied into.
 fn staging_buffer(device: &ID3D11Device, bytes: usize) -> Result<ID3D11Buffer, String> {
     let desc = D3D11_BUFFER_DESC {
         ByteWidth: bytes as u32,
@@ -282,6 +296,7 @@ fn staging_buffer(device: &ID3D11Device, bytes: usize) -> Result<ID3D11Buffer, S
     buffer(device, &desc, None)
 }
 
+/// The shader's view of one plane of the NV12 texture: R8_UINT gives the luma plane, R8G8_UINT the chroma plane.
 fn texture_view(
     device: &ID3D11Device,
     texture: &ID3D11Texture2D,
@@ -326,41 +341,59 @@ fn table_view(device: &ID3D11Device, matrix: Matrix, full_range: bool) -> Result
     view.ok_or_else(|| "no tables view".to_string())
 }
 
-/// The shader's views of a frame's luma and chroma and of the colour tables (gpu_frames.hlsl's t0 to t2).
+/// The shader's views of a frame's luma and chroma and of the color tables (gpu_frames.hlsl's t0 to t2).
 type InputViews = [Option<ID3D11ShaderResourceView>; 3];
 
 /// One slot of the read-back ring: where a frame's RGB, 720p luma and Y plane's top rows wait for the CPU, and its
 /// decoded sample, held so the decoder cannot reuse its surface before the GPU has copied it.
 struct Readback {
+    /// The frame's 1280 x 720 RGB, for the CPU to read.
     rgb: ID3D11Buffer,
+    /// The frame's 720p luma, for the CPU to read.
     small: ID3D11Buffer,
+    /// The Y plane's top rows, for the CPU to read.
     plane: ID3D11Buffer,
+    /// The decoded sample, held until the slot is read back.
     sample: Option<IMFSample>,
 }
 
 /// A run's frames from the GPU, in order: `next_into` gives each one's RGB, 720p luma and Y plane's top rows.
 pub struct GpuFrames {
+    /// The device's context, which copies, runs the shader and maps the staging buffers.
     context: ID3D11DeviceContext,
+    /// Media Foundation's reader of the video's first video stream, decoding into NV12 textures.
     reader: IMFSourceReader,
+    /// The NV12 texture each decoded frame is copied into for the shader.
     nv12: ID3D11Texture2D,
+    /// The compiled gpu_frames.hlsl.
     shader: ID3D11ComputeShader,
+    /// The shader's inputs: luma, chroma and the color tables.
     views: InputViews,
+    /// The shader's outputs, in its register order: RGB (u0), the Y plane's rows (u1), the 720p luma (u2).
     outputs: [Option<ID3D11UnorderedAccessView>; 3],
+    /// The shader's constant buffer (`rows_buffer`).
     rows: Option<ID3D11Buffer>,
+    /// The buffer the shader writes the RGB into, copied to a ring slot after each frame.
     rgb: ID3D11Buffer,
+    /// The buffer the shader writes the 720p luma into.
     small: ID3D11Buffer,
+    /// The buffer the shader writes the Y plane's top rows into.
     plane: ID3D11Buffer,
     /// The Y plane's bytes laid out: its first rows, as many as `open` was asked for.
     plane_bytes: usize,
+    /// The read-back ring, `RING` slots.
     ring: Vec<Readback>,
     /// The ring's slots holding frames not read back yet, oldest first.
     waiting: VecDeque<usize>,
+    /// The ring slot the next frame goes in.
     next_slot: usize,
-    /// The first frame's time on Media Foundation's clock (100 ns, less half a frame), and the frames still to give.
+    /// The first frame's time on Media Foundation's clock (100 ns, less half a frame): earlier samples are skipped.
     start: i64,
+    /// The frames still to give; None: all to the end.
     left: Option<usize>,
+    /// Whether the decoder reached the end (or the count), so no more frames are submitted.
     ended: bool,
-    // kept alive for the reader
+    /// The Direct3D device, kept alive for the reader.
     _device: ID3D11Device,
 }
 

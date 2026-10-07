@@ -13,12 +13,16 @@ import re
 import subprocess
 import sys
 
+# a whole-line comment: //, ///, //!, or a block comment's opening, middle or closing line
 COMMENT_LINE = re.compile(r"^\s*(//|/\*|\*|\*/)")
+# the files checked line by line (Python is checked by its syntax tree)
 LINE_CHECKED = (".rs", ".ts", ".js", ".mjs", ".scss")
+# a diff hunk's header line
 HUNK = re.compile(r"^@@ ")
 
 
 def git(*args):
+    """The output of git with `args`, as text; raises when git fails."""
     return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8", check=True).stdout
 
 
@@ -34,6 +38,7 @@ def without_trailing_comment(line):
 
 
 def code_lines(lines):
+    """The code in `lines`: blank and whole-line comment lines left out, and each trailing // comment cut off."""
     return [without_trailing_comment(line) for line in lines if line.strip() and not COMMENT_LINE.match(line)]
 
 
@@ -60,6 +65,7 @@ class NoDocstrings(ast.NodeTransformer):
     """A syntax tree with each module's, class's and function's docstring taken out."""
 
     def strip(self, node):
+        """The node without its docstring (a `pass` when that was its whole body), its children stripped too."""
         body = getattr(node, "body", None)
         if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
                 and isinstance(body[0].value.value, str):
@@ -70,6 +76,7 @@ class NoDocstrings(ast.NodeTransformer):
 
 
 def python_check(commit, path):
+    """None when the file's syntax tree, docstrings left out, is the same at `commit` and now, else what differs."""
     old = git("show", f"{commit}:{path}")
     with open(path, encoding="utf-8") as file:
         new = file.read()
@@ -78,6 +85,8 @@ def python_check(commit, path):
 
 
 def main():
+    """Checks every file changed since the commit under the paths, prints each that changed more than comments (and
+    each added, deleted or renamed one), and exits with 1 when there is any."""
     commit, paths = sys.argv[1], sys.argv[2:]
     changed = git("diff", "--name-only", "--diff-filter=M", commit, "--", *paths).splitlines()
     failed = 0

@@ -32,8 +32,9 @@ const RELEASES_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/dow
 const COMMON_OPTIONS: [&str; 5] = ["--no-playlist", "--ignore-config", "--no-warnings", "--encoding", "utf-8"];
 /// The format yt-dlp downloads when none is chosen: the best video with the best audio, else the best file.
 const BEST_FORMAT: &str = "bv*+ba/b";
-/// What a downloaded file is called in its folder (yt-dlp's template), and the MP4 it ends as.
+/// What a downloaded file is called in its folder (yt-dlp's template).
 const OUTPUT_TEMPLATE: &str = "video.%(ext)s";
+/// The MP4 a download ends as, in its folder.
 const OUTPUT_FILE: &str = "video.mp4";
 /// What starts each of yt-dlp's progress lines (`PROGRESS_TEMPLATE`).
 const PROGRESS_PREFIX: &str = "aimview ";
@@ -66,12 +67,17 @@ const CODEC_NAMES: [(&str, &str); 10] = [
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct LinkInfo {
+    /// The video's title; empty when yt-dlp gives none.
     pub title: String,
+    /// Its length in seconds, when known.
     pub duration: Option<f64>,
+    /// When it was uploaded, in seconds since 1970, when known (the file's name takes it).
     #[serde(skip)]
     pub timestamp: Option<f64>,
+    /// The day it was uploaded (YYYYMMDD), when known.
     #[serde(skip)]
     pub upload_date: Option<String>,
+    /// The qualities to choose from, best first.
     pub formats: Vec<Choice>,
 }
 
@@ -80,41 +86,64 @@ pub struct LinkInfo {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "LinkFormat"))]
 pub struct Choice {
+    /// yt-dlp's format id, which the download asks for.
     pub id: String,
+    /// The frame's width in pixels.
     pub width: Option<u32>,
+    /// The frame's height in pixels.
     pub height: Option<u32>,
+    /// The frame rate.
     pub fps: Option<f64>,
+    /// The video codec's name as people know it ("H.264", "AV1").
     pub codec: Option<String>,
+    /// The size in bytes, the best audio's added when it has no sound of its own.
     pub size: Option<f64>,
     /// It has its own sound: downloaded alone, not with the best audio.
     #[serde(skip)]
     pub audio: bool,
 }
 
+/// The fields of yt-dlp's -J answer the app reads.
 #[derive(Deserialize)]
 struct RawInfo {
+    /// The video's title.
     title: Option<String>,
+    /// Its length in seconds.
     duration: Option<f64>,
+    /// When it was uploaded, in seconds since 1970.
     timestamp: Option<f64>,
+    /// The day it was uploaded (YYYYMMDD).
     upload_date: Option<String>,
+    /// Every format yt-dlp found, worst first.
     #[serde(default)]
     formats: Vec<RawFormat>,
 }
 
+/// One of yt-dlp's formats, as -J lists it.
 #[derive(Clone, Deserialize)]
 struct RawFormat {
+    /// Its id, which -f takes.
     format_id: Option<String>,
+    /// Its video codec ("avc1.640028"); "none" for sound alone.
     vcodec: Option<String>,
+    /// Its audio codec; "none" for video alone.
     acodec: Option<String>,
+    /// The frame's width in pixels.
     width: Option<u32>,
+    /// The frame's height in pixels.
     height: Option<u32>,
+    /// The frame rate.
     fps: Option<f64>,
+    /// Its size in bytes, when the site gives it.
     filesize: Option<f64>,
+    /// yt-dlp's estimate of its size in bytes.
     filesize_approx: Option<f64>,
+    /// "SDR", "HDR10" and so on.
     dynamic_range: Option<String>,
 }
 
 impl RawFormat {
+    /// Its size in bytes: the site's, else yt-dlp's estimate.
     fn size(&self) -> Option<f64> {
         self.filesize.or(self.filesize_approx)
     }
@@ -127,6 +156,7 @@ impl RawFormat {
         }
     }
 
+    /// Whether it has sound.
     fn has_audio(&self) -> bool {
         self.acodec.as_deref().is_some_and(|acodec| acodec != "none")
     }
@@ -169,6 +199,7 @@ pub fn set_stand_in(program: Option<PathBuf>) {
     *STAND_IN.lock().unwrap_or_else(PoisonError::into_inner) = program;
 }
 
+/// The tests' stand-in for yt-dlp, when one is set.
 fn stand_in() -> Option<PathBuf> {
     STAND_IN.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
@@ -179,12 +210,14 @@ fn command(program: &Path) -> Command {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        /// Windows' process flag for no console window.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
     command
 }
 
+/// Whether `program --version` runs and succeeds.
 fn runs(program: &Path) -> bool {
     let mut version = command(program);
     version.arg("--version").stdout(Stdio::null()).stderr(Stdio::null());
@@ -193,6 +226,7 @@ fn runs(program: &Path) -> bool {
 
 /// Whether the PATH has a yt-dlp that runs: asked once a process.
 fn on_path() -> bool {
+    /// The answer, once asked.
     static FOUND: OnceLock<bool> = OnceLock::new();
     *FOUND.get_or_init(|| runs(Path::new(PROGRAM)))
 }
@@ -323,6 +357,7 @@ pub fn info(program: &Path, url: &str) -> Result<LinkInfo, String> {
     parse_info(&out.stdout)
 }
 
+/// yt-dlp's -J answer as a link's title, length, upload time and qualities; an error when it is not that JSON.
 fn parse_info(json: &[u8]) -> Result<LinkInfo, String> {
     let raw: RawInfo =
         serde_json::from_slice(json).map_err(|error| format!("yt-dlp's answer could not be read: {error}"))?;
@@ -350,11 +385,15 @@ pub fn format_spec(chosen: Option<&str>, formats: &[Choice]) -> String {
 /// (yt-dlp's count, else its estimate).
 #[derive(Debug, PartialEq)]
 struct ProgressLine {
+    /// The part's format id.
     format_id: String,
+    /// Its bytes done.
     done_bytes: f64,
+    /// Its bytes in all: yt-dlp's count, else its estimate; None when it has neither.
     total_bytes: Option<f64>,
 }
 
+/// A line of yt-dlp's output as a progress line; None for any other line.
 fn progress_line(line: &str) -> Option<ProgressLine> {
     let mut fields = line.strip_prefix(PROGRESS_PREFIX)?.split(' ');
     let bytes = |field: Option<&str>| field.and_then(|text| text.parse::<f64>().ok());
@@ -367,8 +406,11 @@ fn progress_line(line: &str) -> Option<ProgressLine> {
 /// A part of a download (video or audio) as far as it got: its format, its bytes done and in all (its bytes done
 /// until yt-dlp knows).
 struct DownloadPart {
+    /// The part's format id.
     format_id: String,
+    /// Its bytes done.
     done_bytes: f64,
+    /// Its bytes in all, at least its bytes done.
     total_bytes: f64,
 }
 
@@ -484,10 +526,12 @@ fn follow_progress(stdout: ChildStdout, progress: impl Fn(usize, usize)) {
     }
 }
 
+/// yt-dlp's answers read: its reasons, its formats and its progress.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// A failure's reason is its last ERROR line without the site and the video's id; with none, a plain sentence.
     #[test]
     fn plain_reasons() {
         let stderr = "WARNING: x\nERROR: [youtube] dQw4w9WgXcQ: Private video. Sign in if you've been granted access\n";
@@ -498,6 +542,8 @@ mod tests {
         assert_eq!(reason(""), "yt-dlp could not read it");
     }
 
+    /// The qualities come best first, one per frame size and rate (standard range over HDR), with the best audio's
+    /// size added to a video without sound; the format asked for adds the best audio only where it is needed.
     #[test]
     fn qualities_best_first_one_per_size_and_rate() {
         let json = br#"{"title": "A run", "duration": 42.5, "upload_date": "20261001", "formats": [
@@ -534,6 +580,7 @@ mod tests {
         assert_eq!(file.formats.len(), 1);
     }
 
+    /// A progress line gives its bytes done and in all, the estimate when the count is NA; other lines give none.
     #[test]
     fn progress_lines() {
         let line = |format_id: &str, done_bytes, total_bytes| {

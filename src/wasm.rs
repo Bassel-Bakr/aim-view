@@ -1,6 +1,11 @@
 //! The core's interface to the browser (WebAssembly builds only): plain exports over the module's memory, so no
 //! binding generator is needed. The page reserves memory with `alloc`, fills it, calls a function with pointers, and
 //! frees it with `dealloc`. ui/src/app/modes/wasm/core.ts wraps these.
+//!
+//! In: the page's decoded frames, the detector's maps, and JSON requests (a review's setup, a report's request, a
+//! scenario file, a cut-off, a crop's scene, the area finder's calls). Out: the objects the page drives (trackers,
+//! converters, watches, the review session's passes) as pointers, and their results as JSON or bytes in buffers that
+//! start with their length (`bytes_out`).
 
 use std::alloc::{Layout, alloc as raw_alloc, dealloc as raw_dealloc};
 
@@ -10,6 +15,7 @@ use crate::session::{Joining, Keys, KeysRead, NextFrame, Review, RunTracking, Ru
 use crate::track::{RawBox, TrackFrame};
 use crate::tracker::{TrackPart, Tracker};
 
+/// The layout of a buffer of `len` bytes, 8-byte aligned (at least 1 byte, as the allocator needs).
 fn layout(len: usize) -> Layout {
     Layout::from_size_align(len.max(1), 8).unwrap()
 }
@@ -216,6 +222,8 @@ pub extern "C" fn camera_rgb_rows() -> u32 {
     (from | (to << 16)) as u32
 }
 
+/// Frees a converter.
+///
 /// # Safety
 /// `converter` from `converter_new`, not used again.
 #[unsafe(no_mangle)]
@@ -250,7 +258,7 @@ pub unsafe extern "C" fn fixed_finish(fixed: *mut FixedMap, out: *mut u8) {
 }
 
 /// A scenario file's facts (its bytes, UTF-8 or UTF-16 with its mark, at least up to "[Map Data]"), as JSON: {kind,
-/// limit, targets}. Free the result as `tracker_finish`'s.
+/// limit, targets, reload, hitbox} (`scenario::Facts`). Free the result as `tracker_finish`'s.
 ///
 /// # Safety
 /// `text` must hold `len` bytes.
@@ -482,7 +490,7 @@ pub extern "C" fn areas_new() -> *mut crate::areas::AreaFinder {
     Box::into_raw(Box::new(crate::areas::AreaFinder::new()))
 }
 
-/// One frame as YUV 4:2:0 at 1280 x 720 (`convert_yuv420p`'s output).
+/// One frame as YUV 4:2:0 at 1280 x 720 (`converter_yuv420p`'s output).
 ///
 /// # Safety
 /// `finder` from `areas_new`; `yuv` must hold 1280 * 720 * 3 / 2 bytes.
@@ -552,7 +560,7 @@ unsafe fn areas_call(input: *const u8, len: usize, answer: fn(&str) -> Result<St
     bytes_out(out.into_bytes())
 }
 
-/// Which frames the area finder reads: {keys, times, duration} -> null (the key frames) or [frame index, ...]
+/// Which frames the area finder reads: {keys, times, duration} in; null (the key frames) or [frame index, ...] out
 /// (`areas::sample_json`). Free the result as `tracker_finish`'s.
 ///
 /// # Safety
@@ -562,7 +570,7 @@ pub unsafe extern "C" fn areas_sample(input: *const u8, len: usize) -> *mut u8 {
     unsafe { areas_call(input, len, crate::areas::sample_json) }
 }
 
-/// The areas to propose: {found, examples, labelled, kinds?} -> {boxes, copied, by, examples, recordings}
+/// The areas to propose: {found, examples, labelled, kinds?} in, {boxes, copied, by, examples, recordings} out
 /// (`areas::find_json`). Free the result as `tracker_finish`'s.
 ///
 /// # Safety
@@ -572,8 +580,8 @@ pub unsafe extern "C" fn areas_find(input: *const u8, len: usize) -> *mut u8 {
     unsafe { areas_call(input, len, crate::areas::find_json) }
 }
 
-/// Learning from saved areas: {rec, found, saved, maps?, examples?, kinds?} -> {examples: the new
-/// area_examples.jsonl text, added} (`areas::learn_json`). Free the result as `tracker_finish`'s.
+/// Learning from saved areas: {rec, found, saved, maps?, examples?, kinds?} in, {examples: the new
+/// area_examples.jsonl text, added} out (`areas::learn_json`). Free the result as `tracker_finish`'s.
 ///
 /// # Safety
 /// `input` must hold `len` bytes.
@@ -582,8 +590,8 @@ pub unsafe extern "C" fn areas_learn(input: *const u8, len: usize) -> *mut u8 {
     unsafe { areas_call(input, len, crate::areas::learn_json) }
 }
 
-/// Found areas named: {found, examples, k?} -> [{box, feat, rule, kind, by}, ...] (`areas::predict_json`). Free the
-/// result as `tracker_finish`'s.
+/// Found areas named: {found, examples, k?} in, [{box, feat, rule, kind, by}, ...] out (`areas::predict_json`). Free
+/// the result as `tracker_finish`'s.
 ///
 /// # Safety
 /// `input` must hold `len` bytes.
@@ -592,8 +600,8 @@ pub unsafe extern "C" fn areas_predict(input: *const u8, len: usize) -> *mut u8 
     unsafe { areas_call(input, len, crate::areas::predict_json) }
 }
 
-/// How alike two recordings' overlays are: {found, other} -> a number (`areas::same_layout_json`). Free the result as
-/// `tracker_finish`'s.
+/// How alike two recordings' overlays are: {found, other} in, a number out (`areas::same_layout_json`). Free the result
+/// as `tracker_finish`'s.
 ///
 /// # Safety
 /// `input` must hold `len` bytes.
@@ -602,7 +610,7 @@ pub unsafe extern "C" fn areas_same_layout(input: *const u8, len: usize) -> *mut
     unsafe { areas_call(input, len, crate::areas::same_layout_json) }
 }
 
-/// Leave one recording out: {examples} -> {sure, right, count, wrong: [[truth, guess, n], ...]}
+/// Leave one recording out: {examples} in, {sure, right, count, wrong: [[truth, guess, n], ...]} out
 /// (`areas::check_json`). Free the result as `tracker_finish`'s.
 ///
 /// # Safety
@@ -689,6 +697,8 @@ pub unsafe extern "C" fn review_runs(review: *const Review) -> *mut u8 {
     bytes_out(serde_json::to_vec(unsafe { &*review }.runs()).unwrap_or_default())
 }
 
+/// Frees a review.
+///
 /// # Safety
 /// `review` from `review_new`, not used again (what it made lives on).
 #[unsafe(no_mangle)]

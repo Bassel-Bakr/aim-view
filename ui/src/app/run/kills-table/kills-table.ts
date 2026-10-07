@@ -1,3 +1,12 @@
+/**
+ * A clicking run's kills in the app's data table (data-table.ts), one row each (kill-rows.ts says
+ * what each cell holds): a column header sorts by it, the Group by menu groups the kills (how the
+ * flick landed, its direction, its distance, the first shot, the spawn), each group's row giving
+ * its count and median TTK, and the Columns menu hides columns (kept in this browser). A row's
+ * click plays its kill (playKill); the kill in focus is marked and kept in view. In: the rows the
+ * flick list builds and the flick in focus. Out: the kill to play.
+ */
+
 import { Component, computed, input, output } from '@angular/core';
 import { Flick } from '../../api';
 import { DataColumn, SortValue, TableGrouping } from '../../data-table/data-column';
@@ -5,18 +14,13 @@ import { DataTable } from '../../data-table/data-table';
 import { median } from '../median';
 import { FlickRow, GROUPINGS } from './kill-rows';
 
-/**
- * A clicking run's kills in the app's data table (data-table.ts), one row each (kill-rows.ts says what each cell
- * holds): a column header sorts by it, the Group by menu groups the kills (how the flick landed, its direction, its
- * distance, the first shot, the spawn), each group's row giving its count and median TTK, and the Columns menu hides
- * columns (kept in this browser). A row's click plays its kill (playKill); the kill in focus is marked and kept in view.
- */
-
 /** Seconds as milliseconds; nothing when not measured. */
 const ms = (seconds: number | null | undefined): SortValue =>
   seconds == null ? undefined : 1000 * seconds;
+/** A measure as a sort value; nothing when not measured, so it sorts last. */
 const measured = (value: number | null | undefined): SortValue => value ?? undefined;
 
+/** The kills table's columns, in order: each one's header, tooltip, cell text and sort value. */
 export const KILL_COLUMNS: readonly DataColumn<FlickRow>[] = [
   {
     id: 'kill',
@@ -127,6 +131,10 @@ function medianTtk(rows: readonly FlickRow[]): string {
   return ttk === null ? '' : `median TTK ${Math.round(ttk)} ms`;
 }
 
+/**
+ * The kills table's groupings (GROUPINGS without "Nothing"), each group's row giving its count of
+ * kills and median TTK.
+ */
 export const KILL_GROUPINGS: readonly TableGrouping<FlickRow>[] = GROUPINGS.flatMap((choice) => {
   const key = choice.key;
   return key === null
@@ -141,6 +149,7 @@ export const KILL_GROUPINGS: readonly TableGrouping<FlickRow>[] = GROUPINGS.flat
       ];
 });
 
+/** The kills table: one row for each kill, in the data table; a row's click plays its kill. */
 @Component({
   selector: 'app-kills-table',
   imports: [DataTable],
@@ -148,15 +157,23 @@ export const KILL_GROUPINGS: readonly TableGrouping<FlickRow>[] = GROUPINGS.flat
   styleUrl: './kills-table.scss',
 })
 export class KillsTable {
+  /** The kills as rows (flickRows). */
   readonly rows = input.required<FlickRow[]>();
+  /** The kill in focus, marked and kept in view; null for none. */
   readonly selected = input<Flick | null>(null);
+  /** Fires with the kill whose row was picked, to play it. */
   readonly playKill = output<Flick>();
+  /** The table's columns. */
   protected readonly columns = KILL_COLUMNS;
+  /** The table's groupings. */
   protected readonly groupings = KILL_GROUPINGS;
+  /** The row id of the kill in focus; null for none. */
   protected readonly selectedId = computed(() => {
     const flick = this.selected();
     return flick ? String(flick.kill_number) : null;
   });
+  /** A row's id: its kill number. */
   protected readonly rowId = (row: FlickRow): string => String(row.killNumber);
+  /** The words for picking a row ("Play kill 3"); with them, the table's rows can be picked. */
   protected readonly pickLabel = (row: FlickRow): string => `Play kill ${row.killNumber}`;
 }

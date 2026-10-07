@@ -28,16 +28,23 @@ use crate::tracking::{CameraReading, disc_radius_deg};
 const GRID_STEP_DEG: f64 = 0.15;
 /// A tile's side, in grid cells (12 degrees).
 const TILE_SIDE: usize = 80;
+/// A tile's cells (6,400).
 const TILE_CELLS: usize = TILE_SIDE * TILE_SIDE;
-/// The grid's tiles: 6 across, 3 down; tile k is at row k / 6, column k % 6.
+/// The grid's tiles across: tile k is at row k / 6, column k % 6.
 const TILES_ACROSS: usize = 6;
+/// The grid's tiles down.
 const TILES_DOWN: usize = 3;
+/// The grid's tiles (18), each matched on its own.
 const TILES: usize = TILES_ACROSS * TILES_DOWN;
+/// The grid's columns (480 cells: 72 degrees of azimuth).
 const GRID_COLUMNS: usize = TILES_ACROSS * TILE_SIDE;
+/// The grid's rows (240 cells: 36 degrees of elevation).
 const GRID_ROWS: usize = TILES_DOWN * TILE_SIDE;
+/// The grid's cells, all tiles together.
 const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
 /// The columns of a tile's spectrum: a real FFT along x keeps the frequencies 0 to half the side.
 const SPECTRUM_COLUMNS: usize = TILE_SIDE / 2 + 1;
+/// The values in a tile's half spectrum: TILE_SIDE rows of SPECTRUM_COLUMNS.
 const SPECTRUM_CELLS: usize = TILE_SIDE * SPECTRUM_COLUMNS;
 /// A tile whose phase correlation peaks under this matched nothing.
 const MIN_PEAK: f32 = 0.08;
@@ -58,6 +65,7 @@ const TILE_HALF_DEG: f64 = 6.0;
 const TARGET_MARGIN_DEG: f64 = 1.5;
 /// NumPy's float32 sum adds in this many running sums, over blocks of up to `PAIRWISE_BLOCK` values.
 const PAIRWISE_LANES: usize = 8;
+/// The most values NumPy's float32 sum adds in running sums; a longer run is split in halves and each summed alone.
 const PAIRWISE_BLOCK: usize = 128;
 
 /// Each tile's shift since the frame before (degrees, the room's move on screen), or None where its peak is too low.
@@ -66,15 +74,24 @@ pub type TileShifts = [Option<(f32, f32)>; TILES];
 /// The grid's bilinear gather (per grid cell, the top-left pixel of the four it is read from, and the weights of the
 /// pixels right and below), each tile's center (degrees), and the Hann window.
 struct Grid {
+    /// Per grid cell (row by row), the index in the 1280 x 720 frame of the top-left pixel of the four it is read from.
     top_left: Box<[usize; GRID_CELLS]>,
+    /// Per grid cell, the weight of the right-hand pixels (0 to 1); the left-hand ones get 1 less this.
     weight_x: Box<[f32; GRID_CELLS]>,
+    /// Per grid cell, the weight of the lower pixels (0 to 1); the upper ones get 1 less this.
     weight_y: Box<[f32; GRID_CELLS]>,
+    /// Each tile's center azimuth (degrees, right positive), to tell which tiles a target covers.
     tile_azimuth_deg: [f64; TILES],
+    /// Each tile's center elevation (degrees, up positive).
     tile_elevation_deg: [f64; TILES],
+    /// The Hann window a tile is multiplied by before its FFT: it fades the tile to 0 at its edges, since the FFT
+    /// treats the tile as repeating and the jump between opposite edges would swamp the match.
     hann: Box<[f32; TILE_CELLS]>,
 }
 
 impl Grid {
+    /// The grid for a 1280 x 720 frame: each cell's place on the frame, each tile's center and the window. A watch
+    /// makes it once.
     fn new() -> Grid {
         let azimuth_deg: [f64; GRID_COLUMNS] =
             std::array::from_fn(|column| (column as f64 - (GRID_COLUMNS / 2) as f64 + 0.5) * GRID_STEP_DEG);
@@ -204,12 +221,13 @@ fn vertex(before: f32, after: f32, peak: f32) -> f32 {
     if curvature >= 0.0 { 0.0 } else { 0.5 * (before - after) / curvature }
 }
 
-/// One axis of the shifts.
+/// One axis of the shifts (degrees), as `pick` takes it from each: x or y.
 fn axis(shifts: &[(f32, f32)], pick: fn(&(f32, f32)) -> f32) -> Capped<f32, TILES> {
     shifts.iter().map(pick).collect()
 }
 
-/// A frame's camera reading from its tiles' shifts: the tiles allowed (`clear`) that agree with their median.
+/// A frame's camera reading from its tiles' shifts: the mean of the tiles allowed (`clear`) that agree with their
+/// median, and how many agree. None when fewer than 3 allowed tiles have a shift, or fewer than 3 agree.
 fn agreed(shifts: &TileShifts, clear: &[bool; TILES]) -> CameraReading {
     let allowed: Capped<(f32, f32), TILES> =
         (0..TILES).filter(|&tile| clear[tile]).filter_map(|tile| shifts[tile]).collect();
@@ -323,10 +341,13 @@ fn peak_shift(correlation: &[f32]) -> Option<(f32, f32)> {
 /// The camera watch over a recording: fed each frame's luma (1280 x 720), it keeps each frame's tile shifts and its
 /// countdown bar's showing; the readings come once the tracks are known (a tile with a target in it is left out).
 pub struct CameraWatch {
+    /// Where each grid cell is read from on the frame, and each tile's center.
     grid: Grid,
     /// The tiles clear of the pixels no tile may be read from.
     clear_tiles: [bool; TILES],
+    /// The forward FFT over TILE_SIDE values: a tile's rows, then its spectrum's columns.
     forward_fft: Arc<dyn Fft<f32>>,
+    /// The inverse FFT over TILE_SIDE values, from the cross-power spectrum back to the phase correlation.
     inverse_fft: Arc<dyn Fft<f32>>,
     /// The FFTs' working space, kept from frame to frame.
     scratch: Box<[Complex32]>,
@@ -334,7 +355,9 @@ pub struct CameraWatch {
     previous_spectra: Option<Vec<Complex32>>,
     /// The buffers a frame's work needs, kept from frame to frame (each is written whole before it is read).
     work: Work,
+    /// Per frame added (or skipped), each tile's shift since the frame before; the first frame's are all None.
     pub shifts: Vec<TileShifts>,
+    /// Per frame added (or skipped), whether KovaaK's countdown bar shows.
     pub countdown: Vec<bool>,
 }
 
@@ -342,14 +365,20 @@ pub struct CameraWatch {
 /// this frame's), and the FFTs' rows, columns and correlation.
 #[derive(Default)]
 struct Work {
+    /// The frame on the grid, as 18 tiles of TILE_CELLS (`Grid::tiles_into`).
     tiles: Vec<f32>,
+    /// Spare spectra for the next frame to fill: the frame before's, once this frame's shifts are read from them.
     spectra: Vec<Complex32>,
+    /// A tile's rows (TILE_SIDE x TILE_SIDE) for the FFT along x, and the full spectrum's rows on the way back.
     rows: Vec<Complex32>,
+    /// A tile's half spectrum column by column (SPECTRUM_COLUMNS columns of TILE_SIDE), for the FFT along y.
     columns: Vec<Complex32>,
+    /// A tile's phase correlation (TILE_SIDE x TILE_SIDE, row by row), whose peak gives its shift.
     correlation: Vec<f32>,
 }
 
 impl Work {
+    /// The buffers at their full sizes, zeroed.
     fn new() -> Work {
         Work {
             tiles: vec![0.0; TILES * TILE_CELLS],
@@ -362,7 +391,8 @@ impl Work {
 }
 
 impl CameraWatch {
-    /// `excluded_pixels`: the pixels no tile may be read from (`excluded`).
+    /// A watch with no frames yet. `excluded_pixels` (1280 x 720, `excluded`) are the pixels no tile may be read from:
+    /// a tile a tenth or more of which they cover is never read.
     pub fn new(excluded_pixels: &[bool]) -> CameraWatch {
         let grid = Grid::new();
         let excluded_share = grid.tiles(&excluded_pixels.iter().map(|&pixel| u8::from(pixel)).collect::<Vec<u8>>());
@@ -425,8 +455,8 @@ impl CameraWatch {
         shifts
     }
 
-    /// The watch for a recording, its tiles kept clear of the KovOBS overlay and of the fixed map (1280 x 720, 1
-    /// fixed).
+    /// The watch for a recording, its tiles kept clear of the KovOBS overlay and of the fixed map (1280 x 720, a
+    /// pixel fixed where its count is not 0).
     pub fn for_recording(fixed: &[u8]) -> CameraWatch {
         let overlay = crate::track::Mask::without(&crate::geometry::overlay_shares());
         CameraWatch::new(&excluded(overlay.kept(), fixed))
@@ -437,21 +467,22 @@ impl CameraWatch {
         VideoReadings { camera: self.readings(frames), countdown: self.countdown }
     }
 
-    /// Frames not reviewed before the first one (a review from part way in): no reading, no countdown. Before any
-    /// frame is added.
+    /// Adds `frames` frames with no shifts and no countdown: the frames before the first one reviewed, for a review
+    /// that starts part way in. Call it before any frame is added.
     pub fn skip(&mut self, frames: usize) {
         self.shifts.extend(std::iter::repeat_n([None; TILES], frames));
         self.countdown.extend(std::iter::repeat_n(false, frames));
     }
 
-    /// What this run of the recording read, to join with the other runs' (a recording split into runs, reviewed in
-    /// workers at once, has a watch for each).
+    /// What this run part of the recording read, to join with the other parts' (a recording split into run parts,
+    /// reviewed in workers at once, has a watch for each).
     pub fn part(self) -> CameraPart {
         CameraPart { shifts: self.shifts, countdown: self.countdown }
     }
 
-    /// The next run's part. Each run but the last also reads the next run's first frame, for the camera's turn into
-    /// it; the next run read that frame without the one before it, so its first entry is left out.
+    /// Adds the next run part's readings. Each part but the last also reads the next part's first frame, for the
+    /// camera's turn into it; the next part read that frame without the one before it, so its first entry is left
+    /// out (unless this watch has no frames yet).
     pub fn join(&mut self, next: CameraPart) {
         let skip = usize::from(!self.countdown.is_empty());
         self.shifts.extend(next.shifts.into_iter().skip(skip));
@@ -476,7 +507,8 @@ impl CameraWatch {
         self.shifts.push(shifts);
     }
 
-    /// A frame's reading from its tiles' shifts, leaving out the tiles a target is in, in it or the frame before.
+    /// A frame's reading from its tiles' shifts, leaving out the tiles a tracked target covers in any frame of `near`
+    /// (the frame and the one before).
     pub fn reading(&self, shifts: &TileShifts, near: &[&TrackFrame]) -> CameraReading {
         let mut clear = self.clear_tiles;
         for frame in near {
@@ -494,7 +526,8 @@ impl CameraWatch {
         agreed(shifts, &clear)
     }
 
-    /// Every frame's reading, the tracks known.
+    /// Every frame's reading, the tracks known. The first frame has none; a frame past the tracks' end is read with no
+    /// tile left out for targets.
     pub fn readings(&self, frames: &[TrackFrame]) -> Vec<CameraReading> {
         (0..self.shifts.len())
             .map(|i| {
@@ -511,14 +544,18 @@ impl CameraWatch {
 /// What a tracking run reads from the video besides the tracks (CameraWatch::finish).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct VideoReadings {
+    /// Per frame, the camera's reading; None on the first frame and where too few tiles agree.
     pub camera: Vec<CameraReading>,
+    /// Per frame, whether KovaaK's countdown bar shows.
     pub countdown: Vec<bool>,
 }
 
 /// A run's part of the camera watch (CameraWatch::part): each frame's tile shifts and whether the countdown bar shows.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CameraPart {
+    /// Per frame of the part, each tile's shift since the frame before (`CameraWatch::shifts`).
     pub shifts: Vec<TileShifts>,
+    /// Per frame of the part, whether KovaaK's countdown bar shows.
     pub countdown: Vec<bool>,
 }
 
@@ -526,27 +563,33 @@ pub struct CameraPart {
 pub const COUNTDOWN_ROWS: (usize, usize) = (214, 247);
 /// The countdown bar's box's columns (x from, to).
 const COUNTDOWN_COLUMNS: (usize, usize) = (520, 761);
-/// The bar inside its box: its first row below the box's top, and its rows.
+/// The bar's first row, below its box's top (pixels).
 const BAR_TOP: usize = 6;
+/// The bar's height (pixels).
 const BAR_ROWS: usize = 21;
-/// The fill's color is read from these columns at the bar's left end: the first after the box's left, and how many.
+/// The fill's color is read from the bar's left end: its first column, after the box's left (pixels).
 const FILL_SAMPLE_LEFT: usize = 2;
+/// The columns the fill's color is read from.
 const FILL_SAMPLE_COLUMNS: usize = 4;
-/// The track must show at the bar's right end, in these columns: the first before the box's right, and how many.
+/// The track must show at the bar's right end: its first column, before the box's right (pixels).
 const TRACK_END_LEFT: usize = 12;
+/// The columns at the bar's right end that must show the track.
 const TRACK_END_COLUMNS: usize = 8;
 /// The bar's dark gray track (RGB).
 const TRACK_RGB: [f64; 3] = [64.0, 60.0, 68.0];
 /// A fill color this near the track's in every channel is the track: no fill shows.
 const FILL_LIKE_TRACK: f64 = 40.0;
-/// A pixel this near the fill's color, or the track's, in every channel is fill, or track.
+/// A pixel this near the fill's color in every channel is fill.
 const FILL_TOLERANCE: f64 = 24.0;
+/// A pixel this near the track's color in every channel is track.
 const TRACK_TOLERANCE: f64 = 12.0;
 /// A pixel this bright in every channel is a digit's (white).
 const WHITE_MIN: i32 = 170;
-/// The fill pixels a bar needs, and the shares of its box the track and the pixels known (fill, track or digits) need.
+/// The fill pixels a bar needs.
 const MIN_FILL_PIXELS: usize = 40;
+/// The share of the box that must be track.
 const MIN_TRACK_SHARE: f64 = 0.05;
+/// The share of the box that must be known: fill, track or a digit's white.
 const MIN_KNOWN_SHARE: f64 = 0.9;
 /// The share of the bar's right end that must be track.
 const MIN_TRACK_END_SHARE: f64 = 0.8;
@@ -579,14 +622,20 @@ fn fill_color(rgb: &[u8]) -> [f64; 3] {
 /// left, and the pixels known (fill, track or a digit's white).
 #[derive(Default)]
 struct BoxCounts {
+    /// The pixels near the fill's color.
     fill: usize,
+    /// The pixels near the track's dark gray.
     track: usize,
+    /// The pixels that are fill, track or a digit's white.
     known: usize,
+    /// The fill pixels' x from the box's left, summed (pixels), for their mean.
     fill_x_sum: usize,
+    /// The track pixels' x from the box's left, summed (pixels), for their mean.
     track_x_sum: usize,
 }
 
 impl BoxCounts {
+    /// Counts the countdown box's pixels in a frame's RGB24 (1280 x 720), with the fill's color `fill_rgb`.
     fn read(rgb: &[u8], fill_rgb: [f64; 3]) -> BoxCounts {
         let mut counts = BoxCounts::default();
         let ((left, right), (top, bottom)) = (COUNTDOWN_COLUMNS, COUNTDOWN_ROWS);
@@ -607,7 +656,7 @@ impl BoxCounts {
     }
 }
 
-/// The track's pixels at the bar's right end.
+/// How many of the pixels at the bar's right end are track.
 fn track_end_pixels(rgb: &[u8]) -> usize {
     let (left, top) = (COUNTDOWN_COLUMNS.1 - TRACK_END_LEFT, COUNTDOWN_ROWS.0 + BAR_TOP);
     (top..top + BAR_ROWS)

@@ -25,17 +25,21 @@ use crate::track::{TrackFrame, Tracks};
 
 /// The target's own motion and the camera's turn are smoothed over this long (seconds), and at least this many frames.
 const SMOOTH_S: f64 = 0.05;
+/// The fewest frames the motion is smoothed over, at a low frame rate.
 const MIN_SMOOTH_FRAMES: usize = 3;
 /// The crosshair is engaged with the nearest target within this many of its radii, or at least ENGAGED_MIN_DEG.
 const ENGAGED_RADII: f64 = 5.0;
+/// The engaged distance for a small target, degrees: within it the crosshair counts as engaged whatever the radius.
 const ENGAGED_MIN_DEG: f64 = 2.0;
 /// A target moves, and its motion is measured, above this speed.
 const MOVING_DEG_S: f64 = 5.0;
 /// The aim error counts frames whose nearest target is within this many radii (each at least MIN_RADIUS_DEG).
 const NEAR_RADII: f64 = 3.0;
+/// The least radius the motion's aim error measures NEAR_RADII in, degrees, so a tiny box still has a reach.
 const MIN_RADIUS_DEG: f64 = 0.2;
 /// The motion is read when the target is measured moving for this share of the run, and at least MIN_MOVING_S.
 const MIN_MOVING_SHARE: f64 = 0.2;
+/// The least moving time, seconds, for the motion to be read: a short run must still give this much.
 const MIN_MOVING_S: f64 = 10.0;
 /// Offsets within this of an edge or of the target's middle are jitter.
 const JITTER_DEG: f64 = 0.05;
@@ -44,13 +48,17 @@ const MIN_OVERSHOOT_FRAMES: usize = 2;
 /// A direction change of the target: its motion on one axis changes sign between REVERSAL_HALF_S before and after,
 /// at REVERSAL_MIN_DEG_S or faster on both sides.
 const REVERSAL_HALF_S: f64 = 0.1;
+/// The least speed on both sides of a direction change, degrees a second: slower motion is drift, not a turn.
 const REVERSAL_MIN_DEG_S: f64 = 8.0;
 /// After a direction change: the mouse reacts when it turns the new way faster than REACTION_DEG_S within
 /// REACTION_WINDOW_S; the overshoot and the lost time are counted over TURN_WINDOW_S; the motion within STEADY_MARGIN_S
 /// of it is not steady.
 const REACTION_WINDOW_S: f64 = 0.5;
+/// The mouse's speed the new way, degrees a second, that counts as its reaction to a direction change.
 const REACTION_DEG_S: f64 = 3.0;
+/// The seconds after a direction change over which its overshoot and the time off the target are counted.
 const TURN_WINDOW_S: f64 = 0.4;
+/// The seconds either side of a direction change whose motion is not steady (no swings or corrections counted).
 const STEADY_MARGIN_S: f64 = 0.25;
 /// A swing crosses the target's middle to the other side by this share of its radius (or JITTER_DEG).
 const SWING_SHARE: f64 = 0.5;
@@ -64,7 +72,9 @@ const INSIDE_MARGIN_DEG: f64 = 0.05;
 const LOSS_S: f64 = 0.1;
 /// "Your best 10 seconds" needs a run of this many seconds, and BEST_TRACKED_S of tracking in the window.
 const MIN_RUN_SECONDS_FOR_BEST: usize = 20;
+/// The length of "your best 10 seconds", in whole seconds.
 const BEST_WINDOW_SECONDS: usize = 10;
+/// The least tracking (not switching) in a best-seconds window, seconds, so a window of mostly switches is not best.
 const BEST_TRACKED_S: usize = 5;
 /// The what-if of switching faster: this much less per switch (seconds).
 const FASTER_SWITCH_S: f64 = 0.1;
@@ -93,15 +103,24 @@ fn target_size(frame: &TrackFrame, index: usize) -> (f64, f64) {
 /// line (a sphere's center, a capsule's long axis) and that offset's length, and the target's half-width (degrees).
 #[derive(Clone, Copy)]
 struct Nearest {
+    /// The crosshair's distance from the target's center line, degrees.
     distance: f64,
+    /// The target's track id.
     track: u32,
+    /// The target's center, degrees from the crosshair (right positive).
     x: f64,
+    /// The target's center, degrees from the crosshair (up positive).
     y: f64,
+    /// The target's nearest point of its center line, x: its center moved toward the crosshair along the long axis.
     line_x: f64,
+    /// The same point's y.
     line_y: f64,
+    /// The target's half-width: half its box's shorter side (or its disc's radius), degrees.
     radius: f64,
 }
 
+/// The target in `frame` whose center is nearest the crosshair, with its center line offset; None in a frame without
+/// targets.
 fn nearest(frame: &TrackFrame) -> Option<Nearest> {
     let mut best: Option<(f64, usize)> = None;
     for (index, &(_, x, y)) in frame.t.iter().enumerate() {
@@ -151,10 +170,12 @@ fn sector(motion: (f64, f64)) -> usize {
     ((degrees(motion.1.atan2(motion.0)).rem_euclid(360.0) / 45.0).round_ties_even() as usize) % 8
 }
 
+/// The median of the values, or None when there are none.
 fn median_of(values: &[f64]) -> Option<f64> {
     (!values.is_empty()).then(|| median(values))
 }
 
+/// How many of the values are true.
 fn count_true(values: &[bool]) -> usize {
     values.iter().filter(|&&value| value).count()
 }
@@ -169,11 +190,16 @@ fn share_true(values: &[bool]) -> f64 {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct MotionDirection {
+    /// The direction's name in DIRECTIONS (src/summary.rs).
     #[cfg_attr(feature = "ts", ts(as = "crate::summary::Direction"))]
     pub name: &'static str,
+    /// The share of the measured (moving) frames the target moved this way.
     pub share: f64,
+    /// The share of those frames the crosshair was on the target.
     pub on: f64,
+    /// The median distance from the target's center line in those frames, degrees.
     pub distance: f64,
+    /// The median offset along the motion in those frames, degrees (positive: ahead of the target's center).
     pub lag: f64,
 }
 
@@ -181,9 +207,14 @@ pub struct MotionDirection {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct OffFrames {
+    /// Measured frames off the target with the crosshair ahead of it, past its leading edge.
     pub ahead: usize,
+    /// Measured frames off the target with the crosshair behind it, past its trailing edge.
     pub behind: usize,
+    /// Frames off the target within TURN_WINDOW_S after one of its direction changes, switches left out.
     pub turns: usize,
+    /// The frames off the target that tracking every direction like the best one would win back (a fraction of a
+    /// frame can count).
     pub directions: f64,
 }
 
@@ -191,12 +222,16 @@ pub struct OffFrames {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MotionCounts {
+    /// How many times the crosshair swung across the target's middle to the other side, in steady motion.
     #[cfg_attr(feature = "ts", ts(as = "Option<usize>", optional))]
     pub swing_count: usize,
+    /// How many times the crosshair turned back toward the target's middle along the motion, in steady motion.
     #[cfg_attr(feature = "ts", ts(as = "Option<usize>", optional))]
     pub corrections: usize,
+    /// The swings over the corrections: how often a correction went too far; None without corrections.
     #[cfg_attr(feature = "ts", ts(optional = nullable))]
     pub overcorrect: Option<f64>,
+    /// What the off-target time went on.
     #[cfg_attr(feature = "ts", ts(as = "Option<OffFrames>", optional))]
     pub frames: OffFrames,
 }
@@ -206,7 +241,10 @@ pub struct MotionCounts {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TurnBack {
+    /// The direction change's frame.
     pub frame: usize,
+    /// Seconds from the change until the crosshair was back on the bot: 0 when it stayed on; None when it was not back
+    /// before the next change, a bot's death or the run's end.
     pub back: Option<f64>,
 }
 
@@ -233,24 +271,45 @@ fn turns_back(turns: &[usize], inside: &[bool], stop: &[bool], window: usize, en
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Motion {
+    /// The share of the run's frames with a camera reading.
     pub camera: f64,
+    /// The target's own median speed over the measured frames, degrees a second.
     pub target_speed: Option<f64>,
+    /// The mouse's median speed (the camera's turn) over the measured frames, degrees a second.
     pub mouse_speed: Option<f64>,
+    /// The crosshair's median offset from the target's center line along its motion, degrees (positive: ahead).
     pub lag: Option<f64>,
+    /// That offset as time at the target's speed, the median, ms (positive: ahead).
     pub lag_ms: Option<f64>,
+    /// Of the measured frames off the target, the share with the crosshair ahead of it, past its leading edge.
     pub off_ahead: Option<f64>,
+    /// Of the measured frames off the target, the share with the crosshair behind it.
     pub off_behind: Option<f64>,
+    /// Of the measured frames off the target, the share with the crosshair to its side.
     pub off_side: Option<f64>,
+    /// Overshoots past the target's leading edge, per second of measured time.
     pub overshoots: Option<f64>,
+    /// The median of each overshoot's farthest point past the leading edge, degrees.
     pub overshoot_dist: Option<f64>,
+    /// Swings across the target's middle, per second of steady motion.
     pub swings: Option<f64>,
+    /// How many direction changes of the target were found.
     pub reversals: usize,
+    /// The mouse's median reaction to a direction change, ms, over the changes it reacted to within REACTION_WINDOW_S.
     pub reaction: Option<f64>,
+    /// The share of direction changes after which the crosshair went on the old way past the target's edge (by more
+    /// than JITTER_DEG) within TURN_WINDOW_S.
     pub reversal_overshoot: Option<f64>,
+    /// How far past the edge those went, the median, degrees.
     pub reversal_overshoot_dist: Option<f64>,
+    /// The tracking in each direction the target moved in.
     pub by_direction: Vec<MotionDirection>,
+    /// The median horizontal distance from the nearest target's center line, degrees, over the frames where the
+    /// crosshair is within NEAR_RADII of its radii.
     pub error_h: Option<f64>,
+    /// The same, vertical.
     pub error_v: Option<f64>,
+    /// The measured time: frames with the target moving and the crosshair engaged, in seconds.
     pub seconds: f64,
     /// Each moving frame's offset along the target's motion (positive: ahead of it) and across it, and the target's
     /// radius, in degrees: where the crosshair sat around the target.
@@ -262,9 +321,12 @@ pub struct Motion {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub turns_back: Option<Vec<TurnBack>>,
+    /// Why the motion was not read: too little measured time (MIN_MOVING_SHARE, MIN_MOVING_S); None when it was.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub reason: Option<&'static str>,
+    /// The counts behind the swings and the off-target frames, when the motion was read; their keys are left out
+    /// otherwise.
     #[serde(flatten)]
     pub counts: OptionalFields<MotionCounts>,
 }
@@ -305,14 +367,21 @@ impl Motion {
 /// second), the own motion's speed, and the frames measured: the target moving, the crosshair engaged with it, and no
 /// bot just died.
 struct MotionFrames {
+    /// Each frame's target nearest the crosshair.
     nearest: Vec<Option<Nearest>>,
+    /// Each frame's own motion of the target, smoothed (x, y degrees a second; NaN where unknown).
     own: Vec<(f64, f64)>,
+    /// Each frame's mouse motion (the camera's turn), smoothed (x, y degrees a second; NaN where unknown).
     mouse: Vec<(f64, f64)>,
+    /// Each frame's own motion's speed, degrees a second.
     speed: Vec<f64>,
+    /// The measured frames, in order.
     moving: Vec<usize>,
 }
 
 impl MotionFrames {
+    /// Reads `frames` over `span` with the camera's readings, the frames switching between bots (`switching`) left
+    /// out of the measured ones.
     fn new(frames: &[TrackFrame], fps: f64, camera: &[CameraReading], span: Range<usize>, switching: &[bool]) -> Self {
         let count = frames.len();
         let mut nearest_target: Vec<Option<Nearest>> = vec![None; count];
@@ -348,11 +417,15 @@ impl MotionFrames {
 /// positive ahead of it) and the target's radius there (NaN elsewhere), and each measured frame's [along, across,
 /// radius].
 struct CenterLineOffsets {
+    /// Each frame's offset along the motion, degrees (positive: ahead; NaN outside the measured frames).
     along: Vec<f64>,
+    /// Each frame's target radius, degrees (NaN outside the measured frames).
     radius: Vec<f64>,
+    /// Each measured frame's [along, across, radius], in order: the report's `around`.
     around: Vec<[f64; 3]>,
 }
 
+/// The crosshair's offsets from the target's center line in the measured frames of `motion`, over `count` frames.
 fn offsets_from_center_line(motion: &MotionFrames, count: usize) -> CenterLineOffsets {
     let (mut along, mut radius) = (vec![f64::NAN; count], vec![f64::NAN; count]);
     let mut around = Vec::with_capacity(motion.moving.len());
@@ -413,8 +486,11 @@ fn read_overshoots(out: &mut Motion, moving: &[usize], along: &[f64], radius: &[
 /// motion after it.
 #[derive(Clone, Copy)]
 struct DirectionChange {
+    /// The frame the target's motion on the axis is slowest on.
     frame: usize,
+    /// The axis that changed: 0 for x, 1 for y.
     axis: usize,
+    /// The sign of the motion on the axis after the change: 1 or -1.
     sign: f64,
 }
 
@@ -665,8 +741,11 @@ pub fn track_motion(
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct WhatIf {
+    /// The change, as the run page's heading ("Don't slip").
     pub what: &'static str,
+    /// The time on target it would add, as a share of the run.
     pub gain: f64,
+    /// How the gain is worked out, in a sentence.
     pub how: String,
 }
 
@@ -675,10 +754,13 @@ pub struct WhatIf {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunShares {
+    /// The share of the run's frames on a target, the switches between bots included.
     #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub on_all: f64,
+    /// The share of the tracked frames lost in stretches off the target longer than LOSS_S.
     #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub lost_cost: f64,
+    /// The share of the tracked frames off the target in shorter slips.
     #[cfg_attr(feature = "ts", ts(as = "Option<f64>", optional))]
     pub slip_cost: f64,
 }
@@ -687,8 +769,11 @@ pub struct RunShares {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct FaintCut {
+    /// How far below the recording's level a track may score before it is cut (faint.json's offset, src/faint.rs).
     pub offset: f64,
+    /// The score it cut at, to 3 decimals; None without scores, when nothing is cut.
     pub cut: Option<f64>,
+    /// How many tracks it left out.
     pub tracks: usize,
 }
 
@@ -696,45 +781,72 @@ pub struct FaintCut {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackInfo {
+    /// The stats file, the HUD or the video alone.
     pub source: KillSource,
 }
 
-/// A tracking run's summary (see the old review's `track_summary`).
+/// A tracking run's summary (see the old review's `track_summary`). Shares of the run count its tracked frames (the
+/// switches between bots left out) unless a field says otherwise.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackSummary {
+    /// The scenario's name, from the stats file (without one, from the recording's name).
     pub scenario: Option<String>,
+    /// The stats file's score.
     pub score: Option<f64>,
+    /// The stats file's hits over its hits and misses.
     pub accuracy: Option<f64>,
+    /// The game's average frames a second over the run, from the stats file.
     pub fps_avg: Option<f64>,
+    /// Always `Mode::Track`: the clicking summary's `mode` key, set for a tracking run.
     pub mode: crate::summary::Mode,
+    /// The sensitivity and its scale as the stats file gives them ("None" for a missing scale).
     pub sens: Option<String>,
+    /// The time on target: the share of the tracked frames with the crosshair on a target.
     pub on_target: Option<f64>,
+    /// The median distance from the nearest target's center line, over tracked frames within NEAR_RADII of its radii,
+    /// degrees.
     pub error: Option<f64>,
+    /// Losses (stretches off the target longer than LOSS_S) per second of tracking.
     pub lost: Option<f64>,
+    /// The median loss's length: how long getting back on took, seconds.
     pub back: Option<f64>,
+    /// The longest loss, seconds.
     pub longest_off: Option<f64>,
+    /// Each second's [share on a target, share switching between bots], to 3 decimals.
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::SecondShares>"))]
     pub per_second: Vec<[f64; 2]>,
+    /// The run's first frame; None when no frame has a target.
     pub start: Option<usize>,
+    /// The frame after the run's last one.
     pub end: Option<usize>,
+    /// How many bots died within the run (the switches).
     pub bots: usize,
     /// Per bot death: [death, back on a target, first frame a target shows].
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::Switch>"))]
     pub switches: Vec<[usize; 3]>,
+    /// The median time from a bot's death to the crosshair on the next, seconds.
     pub to_next: Option<f64>,
+    /// The median time from a bot's death until the next one shows, seconds.
     pub waiting: Option<f64>,
+    /// The median time from the next bot showing to the crosshair on it, seconds.
     pub onto: Option<f64>,
+    /// The share of the run's frames spent switching between bots.
     pub switching: Option<f64>,
+    /// The shares that need the run's frames; their keys are left out without a run.
     #[serde(flatten)]
     pub shares: OptionalFields<RunShares>,
+    /// The tracking diagnostics from the target's and the camera's motion; none without the camera's readings.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub motion: Option<Motion>,
+    /// The what-if estimates, biggest first; none without a run.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub what_if: Option<Vec<WhatIf>>,
+    /// The faint-target cut-off the tracks went through (src/review.rs fills it in); None when it is off.
     pub faint: Option<FaintCut>,
+    /// Where the kill times came from.
     pub info: TrackInfo,
 }
 
@@ -764,7 +876,9 @@ pub fn countdown_end(showing: &[bool], fps: f64, until: f64) -> Option<usize> {
 /// Where a detector marks the crosshair in a tracking run: the points its box sits on (degrees from the crosshair),
 /// and the box's width and height (degrees).
 struct CrosshairBox {
+    /// The piles' points, the first the densest (degrees from the crosshair).
     points: Capped<(f64, f64), 3>,
+    /// The box's width and height, degrees: the medians at the first point.
     size: (f64, f64),
 }
 
@@ -773,20 +887,28 @@ type NearBox = (f64, f64, f64, f64);
 
 /// `crosshair_box`'s search: boxes within NEAR_DEG of the crosshair, in a histogram of STEP_DEG bins.
 const NEAR_DEG: f64 = 0.5;
+/// The histogram's bin size, degrees.
 const STEP_DEG: f64 = 0.01;
 /// The fewest boxes near the crosshair for a search, and the fewest in a pile (with a share of all the frames: the
 /// first pile's, then the others').
 const MIN_NEAR_BOXES: usize = 30;
+/// The fewest boxes in any pile, whatever the run's length.
 const MIN_PILE_BOXES: f64 = 25.0;
+/// The first pile holds boxes in at least this share of the frames.
 const FIRST_PILE_SHARE: f64 = 0.05;
+/// Each further pile holds boxes in at least this share of the frames.
 const MORE_PILE_SHARE: f64 = 0.02;
 /// More piles are looked for within this of the first (degrees); a pile's point is its boxes' mean within POINT_DEG of
 /// its bin, and its bins within CLEAR_DEG of that point are emptied.
 const MORE_PILES_DEG: f64 = 0.3;
+/// The reach around a pile's bin whose boxes give its point, and around the first point whose boxes give the size,
+/// degrees.
 const POINT_DEG: f64 = 0.02;
+/// The reach around a pile's point whose bins are emptied before the next pile is looked for, degrees.
 const CLEAR_DEG: f64 = 0.06;
 /// A box is the crosshair's within this of one of its points, with a width and a height within SAME_SIZE_SHARE.
 const ON_POINT_DEG: f64 = 0.1;
+/// How far a box's width and height may differ from the crosshair box's, as a share of it, and still be its.
 const SAME_SIZE_SHARE: f64 = 0.2;
 
 /// NumPy's histogram2d of the boxes' centers over `bins` x `bins` bins from -NEAR_DEG to NEAR_DEG: edges as `linspace`
@@ -803,7 +925,7 @@ fn center_histogram(boxes: &[NearBox], bins: usize) -> Vec<f64> {
     counts
 }
 
-/// The bin whose count with its 8 neighbours' (wrapping round, as np.roll does) is the largest, the first such: after
+/// The bin whose count with its 8 neighbors' (wrapping round, as np.roll does) is the largest, the first such: after
 /// the first point, only bins within MORE_PILES_DEG of it. Its row, column and count.
 fn densest_bin(counts: &[f64], centers: &[f64], first: Option<&(f64, f64)>) -> (usize, usize, f64) {
     let bins = centers.len();
@@ -1108,12 +1230,21 @@ fn read_switches(summary: &mut TrackSummary, switching: &[bool], fps: f64) {
 /// (seconds) and its first frame when known, the camera's readings, the frames where bots die, where the kills come
 /// from, and the bots' hitbox (None: the crosshair is on a target within INSIDE_MARGIN_DEG of its box).
 pub struct RunFacts<'a> {
+    /// The stats file's "Key:,value" lines (without one, the scenario's name from the recording's).
     pub meta: &'a HashMap<String, String>,
+    /// The run's length, seconds: the user's run window's, the stats file's or the scenario's time limit; None when
+    /// unknown.
     pub limit: Option<f64>,
+    /// The run's first frame, when known: the user's run window's, else where the stats file's kills place the
+    /// challenge's start, else the end of KovaaK's countdown.
     pub start: Option<i64>,
+    /// The camera's reading for each frame; None without the camera watch, and then no motion is read.
     pub camera: Option<&'a [CameraReading]>,
+    /// The frames the bots die on.
     pub deaths: &'a [i64],
+    /// Where the kill times (the deaths) came from.
     pub source: KillSource,
+    /// The bots' hitbox, from the scenario; None: each target's box, with INSIDE_MARGIN_DEG.
     pub hitbox: Option<Hitbox>,
 }
 
@@ -1242,6 +1373,7 @@ fn what_if(summary: &TrackSummary, tracking: &[bool], on: &[bool], losses: &[usi
     estimates
 }
 
+/// Tests of the hitbox test and the turns back onto the bot.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1261,6 +1393,8 @@ mod tests {
         assert!(!on_box(0.95, 0.95, 2.0, 2.0, ball), "the box's corner");
     }
 
+    /// `turns_back` times each direction change until the crosshair is back on the bot: 0 when it stays on, None when
+    /// the next change, a bot's death or the run's end comes first.
     #[test]
     fn turns_back_times_the_way_back_onto_the_bot() {
         // 10 fps: on, then off from frame 3 after the turn at 2, back on at 6; a turn at 10 the crosshair stays on

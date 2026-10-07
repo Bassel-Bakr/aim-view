@@ -1,3 +1,9 @@
+/**
+ * Test helpers for the contract specs (platform/*.spec.ts): the modes each spec runs against and
+ * the set-up of one. In: each mode's providers and the fake review server (fake-api.ts). Out: the
+ * specs, which run the same checks on every mode.
+ */
+
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { EnvironmentProviders, Provider } from '@angular/core';
@@ -10,8 +16,11 @@ import { MODE as BROWSER } from '../modes/mode.browser';
  * review server's answers: in browser mode, the review service in the page stands in for it).
  */
 export interface ModeCase {
+  /** The mode's name, in the spec's titles. */
   name: string;
+  /** The providers a test of the mode needs. */
   providers: () => (Provider | EnvironmentProviders)[];
+  /** Answers a call's requests from the routes until the call settles, and gives its result. */
   finish: <T>(call: Promise<T>, routes: ApiRoutes) => Promise<T>;
 }
 

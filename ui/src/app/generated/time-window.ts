@@ -4,6 +4,12 @@
  * A part of a video, in seconds.
  */
 export interface TimeWindow {
+  /**
+   * Where the part starts (seconds from the video's start).
+   */
   start: number;
+  /**
+   * Where the part ends (seconds from the video's start).
+   */
   end: number;
 }

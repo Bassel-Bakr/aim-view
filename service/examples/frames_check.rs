@@ -1,6 +1,7 @@
 //! A video's frames from the GPU (gpu_frames.rs) against ffmpeg's, converted by the core (video.rs, convert.rs), byte
-//! for byte: each frame's RGB, 720p luma and Y plane (all its rows), from the start or from a time on. Reports the frames that differ and, for the
-//! first, which of ffmpeg's frames near it the GPU's equals (a frame lost or doubled shows as a shift).
+//! for byte: each frame's RGB, 720p luma and Y plane (all its rows), from the start or from a time on. Reports the
+//! frames that differ and, for the first, which of ffmpeg's frames near it the GPU's equals (a frame lost or doubled
+//! shows as a shift). Windows only, for the videos gpu_frames.rs takes.
 //! cargo run -p aimview-service --release --example frames_check -- <video> [frames] [from (seconds)]
 
 use std::path::PathBuf;
@@ -9,10 +10,12 @@ use aimview::convert::{Converter, DST_H, DST_W};
 use aimview_service::gpu_frames::GpuFrames;
 use aimview_service::video::{Frames, probe};
 
+/// The frames compared when no count is given.
 const DEFAULT_FRAMES: usize = 300;
 /// How far either way a differing frame is looked for among ffmpeg's.
 const SHIFT_REACH: usize = 3;
 
+/// Decodes the frames both ways, holds them all in memory, and prints how many differ.
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
     let video = PathBuf::from(args.get(1).ok_or("give a video")?);

@@ -1,6 +1,7 @@
 //! File names and time stamps: a recording's name as KovOBS writes it, a stats file's as KovaaK writes it, their time
-//! stamps, and a recording's folder name (python/server.py: NAME, STATS_NAME, stamp_seconds, cache_dir). In: file names
-//! and times. Out: their parts and stamps, for the recordings list, the stats files' pairing, uploads and links.
+//! stamps, and a recording's folder name (python/retired/server.py: NAME, STATS_NAME, stamp_seconds, cache_dir). In:
+//! file names and times. Out: their parts and stamps, for the recordings list, the stats files' pairing, uploads and
+//! links.
 
 use std::path::{Path, PathBuf};
 #[cfg(windows)]
@@ -12,15 +13,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const STAMP_FORM: &[u8; 19] = b"0000.00.00-00.00.00";
 /// Added to a year written as 00yy: some KovOBS recordings from June 2026 are named with the year 0026.
 const MISSING_CENTURIES: i64 = 2000;
-/// Howard Hinnant's civil calendar: years in an era (the Gregorian cycle), the days in one, and the days from
-/// 0000-03-01 to 1970-01-01 and to 2000-01-01.
+/// Howard Hinnant's civil calendar: the years in an era (the Gregorian calendar's 400-year cycle).
 const YEARS_PER_ERA: i64 = 400;
+/// The days in an era.
 const DAYS_PER_ERA: i64 = 146_097;
+/// The days from 0000-03-01 to 1970-01-01.
 const DAYS_TO_UNIX_EPOCH: i64 = 719_468;
+/// The days from 0000-03-01 to 2000-01-01.
 const DAYS_TO_2000: i64 = 730_425;
+/// The seconds in a day.
 const SECONDS_PER_DAY: i64 = 86_400;
+/// The seconds in an hour.
 const SECONDS_PER_HOUR: i64 = 3600;
+/// The seconds in a minute.
 const SECONDS_PER_MINUTE: i64 = 60;
+/// The minutes in an hour.
 const MINUTES_PER_HOUR: i64 = 60;
 /// Seconds from 1970-01-01 to 2000-01-01.
 #[cfg(windows)]
@@ -115,8 +122,8 @@ pub fn stamp_seconds(stamp: &str) -> Option<f64> {
     Some((days * SECONDS_PER_DAY + hour * SECONDS_PER_HOUR + minute * SECONDS_PER_MINUTE + second) as f64)
 }
 
-/// A recording's folder name: its file name's stem, with anything but word characters, dots and dashes as "_"
-/// (python/server.py: cache_dir).
+/// A recording's folder name: its file name's stem, with anything but word characters, dots and dashes as "_" (a run
+/// of them as one) (python/retired/server.py: cache_dir).
 pub fn slug(id: &str) -> String {
     let stem = Path::new(id).file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
     let mut out = String::new();
@@ -164,10 +171,12 @@ pub fn local_stamp(secs: f64) -> String {
 /// the system's time zone's at that time, daylight saving time included (mouse.rs: `utc_offset_at`).
 #[cfg(windows)]
 fn offset_at(_secs: f64) -> i64 {
+    /// The offset, read the first time it is asked for.
     static OFFSET: OnceLock<i64> = OnceLock::new();
     *OFFSET.get_or_init(local_offset)
 }
 
+/// This computer's offset from UTC in seconds at `secs` (seconds since 1970), daylight saving time included.
 #[cfg(not(windows))]
 fn offset_at(secs: f64) -> i64 {
     crate::disk::utc_offset_at(secs)
@@ -177,19 +186,28 @@ fn offset_at(secs: f64) -> i64 {
 /// time now, rounded to a quarter hour.
 #[cfg(windows)]
 fn local_offset() -> i64 {
-    /// SYSTEMTIME.
+    /// Windows' SYSTEMTIME: a local date and time in parts.
     #[repr(C)]
     struct SystemTimeParts {
+        /// The year, as 2026.
         year: u16,
+        /// The month, 1 to 12.
         month: u16,
+        /// The day of the week, 0 (Sunday) to 6.
         weekday: u16,
+        /// The day of the month, 1 to 31.
         day: u16,
+        /// The hour, 0 to 23.
         hour: u16,
+        /// The minute, 0 to 59.
         minute: u16,
+        /// The second, 0 to 59.
         second: u16,
+        /// The millisecond, 0 to 999.
         ms: u16,
     }
     unsafe extern "system" {
+        /// Windows' local date and time now (kernel32).
         fn GetLocalTime(parts: *mut SystemTimeParts);
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
@@ -208,10 +226,12 @@ fn local_offset() -> i64 {
     }
 }
 
+/// The names and stamps.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Recordings', stats files' and links' names, stamps (the year 0026 too) and slugs read as Python read them.
     #[test]
     fn names_as_python_reads_them() {
         assert_eq!(

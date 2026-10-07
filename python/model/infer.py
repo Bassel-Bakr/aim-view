@@ -36,7 +36,11 @@ def decode_np(score, reg, threshold=THRESHOLD):
 
 
 class OnnxDetector:
+    """An exported model (export.py) under ONNX Runtime, one frame a call: a float export, or a _u8in or _embed one
+    that takes the frame's bytes."""
+
     def __init__(self, path, threads=0, providers=None):
+        """threads: ONNX Runtime's threads (0: its own choice). providers: its execution providers (None: the CPU)."""
         import onnxruntime as ort
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
@@ -46,7 +50,8 @@ class OnnxDetector:
         self.gives_boxes = self.session.get_outputs()[0].name == "dets"
 
     def __call__(self, rgb, fixed, threshold=THRESHOLD):
-        """rgb uint8 (H, W, 3), fixed 0/1 (H, W) -> (n, 5)."""
+        """One frame's detections, an (n, 5) array of cx, cy, w, h (frame px) and score, from rgb uint8 (H, W, 3) and
+        the fixed map 0/1 (H, W)."""
         if self.takes_bytes:
             out = self.session.run(None, {"rgb": rgb[None], "fixed": fixed[None].astype(np.uint8, copy=False)})
             if self.gives_boxes:
@@ -66,6 +71,7 @@ class TorchDetector:
     or equal in the abstract, but confirmed fewer kills held under the crosshair (Pokeball 1: 55 against 61)."""
 
     def __init__(self, checkpoint, device="cuda"):
+        """Loads a training checkpoint (a .pt train.py saved, with its config) onto `device`, ready to run."""
         import torch
         import net
         saved = torch.load(checkpoint, map_location="cpu", weights_only=False)
@@ -79,9 +85,10 @@ class TorchDetector:
         self.bf16 = device == "cuda" and torch.cuda.is_bf16_supported(including_emulation=False)
 
     def batch(self, frames, fixed, threshold=THRESHOLD, max_detections=MAX_DETECTIONS):
-        """frames uint8 (N, H, W, 3), a NumPy array or a (pinned) torch tensor; fixed 0/1 (H, W) shared by the batch
-        -> list of (n, 5). The same detections as net.decode (at most max_detections per image, the strongest), but
-        the peaks of the whole batch are found on the GPU and copied back once."""
+        """Each frame's detections, a list of (n, 5) arrays, from frames uint8 (N, H, W, 3), a NumPy array or a
+        (pinned) torch tensor, and the fixed map 0/1 (H, W) the batch shares. The same detections as net.decode (at
+        most max_detections per image, the strongest), but the peaks of the whole batch are found on the GPU and
+        copied back once."""
         torch, functional = self.torch, self.torch.nn.functional
         with torch.no_grad():
             rgb = frames if isinstance(frames, torch.Tensor) else torch.from_numpy(frames)
@@ -107,10 +114,13 @@ class TorchDetector:
             return per_frame
 
     def __call__(self, rgb, fixed, threshold=THRESHOLD):
+        """One frame's detections, as OnnxDetector gives them: a batch of one."""
         return self.batch(rgb[None], fixed, threshold)[0]
 
 
 def main():
+    """Runs the model (a .pt on the GPU, else an ONNX file on the CPU) on the video's first frames, prints every 30th
+    frame's first detections, then the time taken."""
     import old_review
     parser = argparse.ArgumentParser()
     parser.add_argument("model")

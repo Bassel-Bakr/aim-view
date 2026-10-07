@@ -49,6 +49,7 @@ class Runner:
     """One interface over a checkpoint (PyTorch, GPU) and an ONNX file (ONNX Runtime, CPU)."""
 
     def __init__(self, path):
+        """Loads an .onnx export on the CPU, else a training checkpoint on the GPU."""
         self.path = str(path)
         self.onnx = self.path.endswith(".onnx")
         if self.onnx:
@@ -59,7 +60,8 @@ class Runner:
             self.model.load_state_dict(saved["model"])
 
     def __call__(self, inputs, threshold):
-        """inputs: (B, 4, S, S) float tensor on the GPU -> list of (n, 5) tensors."""
+        """Each crop's detections, a list of (n, 5) tensors (cx, cy, w, h in crop px, score), from the network input
+        (B, 4, S, S), a float tensor on the GPU."""
         if self.onnx:
             crops = inputs.cpu().numpy()
             outs = []
@@ -82,7 +84,9 @@ def added(tally, more):
 
 
 def run(runner, folder, threshold, recolor=False, by_file=False):
-    crops = train.Crops(folder)
+    """The model's numbers on a split's crops (train.summarize), and with `by_file` each recording's tally by its
+    crops' name prefix (else {}). `recolor` recolors every crop first, with seeds fixed so each run gets the same."""
+    crops =train.Crops(folder)
     loader = DataLoader(crops, BATCH, num_workers=WORKERS)
     seeds = torch.Generator().manual_seed(0)
     total = [0, 0, 0, []]
@@ -133,6 +137,7 @@ def evaluate(path, args, folders):
 
 
 def main():
+    """Evaluates each model, and prints its test numbers, its recolored F1 and its weakest test scenarios."""
     parser = argparse.ArgumentParser()
     parser.add_argument("models", nargs="+")
     parser.add_argument("--data", default="test_out/vod_model/data")

@@ -1,13 +1,14 @@
-import { Shape, Solid } from '../api';
-import type { CropPoint } from './shape-geometry';
-
 /**
  * A solid (3D) shape on a crop, as the core draws it (src/shapes.rs `rotation`, `solid_corners`,
- * `solid_pill_segment`): a box or a capsule with a thickness, tipped and swung out of the screen's plane, seen
- * straight on from the camera. Here: where its corners and axis fall, its handles (turn, tumble, thickness), what a
- * drag on them does, and its wireframe. Coordinates are crop pixels; angles are degrees; x runs to the right, y down,
- * z away from the camera.
+ * `solid_pill_segment`): a box or a capsule with a thickness, tipped and swung out of the screen's
+ * plane, seen straight on from the camera. Here: where its corners and axis fall, its handles
+ * (turn, tumble, sides), what a drag on them does, its faces and edges, and its wireframe.
+ * Coordinates are crop pixels; angles are degrees; x runs to the right, y down, z away from the
+ * camera. Out: shape-geometry.ts, free-geometry.ts and the Crops page's stage.
  */
+
+import { Shape, Solid } from '../api';
+import type { CropPoint } from './shape-geometry';
 
 /** A point or a direction in 3D, crop pixels. */
 type Vector3 = [x: number, y: number, z: number];
@@ -16,15 +17,18 @@ type Turn = [Vector3, Vector3, Vector3];
 /** A box edge: the indexes of its two corners in `solidCorners`. */
 export type Edge = [from: number, to: number];
 
-/** How a new 3D shape starts: tipped and swung so its top and right side show (a target seen from above, to the right). */
+/** How far a new 3D shape is tipped, in degrees, so its top shows (a target seen from above). */
 export const START_TIP_DEG = 20;
+/** How far a new 3D shape is swung, in degrees, so its right side shows (seen from the right). */
 export const START_SWING_DEG = 25;
 /** How far a drag across half a shape's size tumbles it, in degrees. */
 const TUMBLE_DEG_PER_HALF = 90;
 /** Points round each end of a capsule's outline. */
 const RING_POINTS = 32;
 
+/** Degrees as radians. */
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
+/** Radians as degrees. */
 const degreesOf = (turn: number) => (turn * 180) / Math.PI;
 
 /** Rz(angle) Ry(swing) Rx(tip), as the core's `rotation`. */
@@ -39,10 +43,12 @@ export function rotation(shape: Shape, solid: Solid): Turn {
   ];
 }
 
+/** A vector turned: the matrix times the vector. */
 function times(turn: Turn, vector: Vector3): Vector3 {
   return turn.map((row) => row[0] * vector[0] + row[1] * vector[1] + row[2] * vector[2]) as Vector3;
 }
 
+/** Two turns one after the other: `b` first, then `a` (the matrix product a b). */
 function product(a: Turn, b: Turn): Turn {
   return a.map((row) =>
     [0, 1, 2].map(
@@ -92,10 +98,12 @@ export function pillAxis(shape: Shape, solid: Solid): CropPoint[] {
   );
 }
 
+/** A box's twelve edges: each pair of corners whose indexes differ in one bit. */
 export const EDGES: Edge[] = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((corner) =>
   [1, 2, 4].filter((side) => !(corner & side)).map((side): Edge => [corner, corner | side]),
 );
 
+/** How far a point is from the segment between `a` and `b`, in crop pixels. */
 export function segmentDistance(
   [x, y]: CropPoint,
   [ax, ay]: CropPoint,
@@ -130,6 +138,7 @@ export function convexHull(points: CropPoint[]): CropPoint[] {
   return hull;
 }
 
+/** Whether a point is in a convex polygon (corners in order) or on its edge; false under 3. */
 export function inConvex(polygon: CropPoint[], [x, y]: CropPoint): boolean {
   const sides = polygon.map(([ax, ay], i) => {
     const [bx, by] = polygon[(i + 1) % polygon.length];
@@ -234,6 +243,7 @@ export function turnedInSpace(shape: Shape, solid: Solid, axis: Vector3, degrees
 /** Where a turn button turns a solid: one of its sides toward the camera. */
 export type SideShown = 'top' | 'bottom' | 'left' | 'right';
 
+/** The screen axis each turn button turns about: x brings the top or bottom, y a side. */
 const SHOWING: Readonly<Record<SideShown, Vector3>> = {
   top: [1, 0, 0],
   bottom: [-1, 0, 0],
@@ -246,17 +256,26 @@ export function showing(shape: Shape, solid: Solid, side: SideShown, degrees: nu
   return turnedInSpace(shape, solid, SHOWING[side], degrees);
 }
 
-/** A face of a solid box on the crop: its corners in order round it, whether it faces the camera, and its light (0 to 1). */
+/**
+ * A face of a solid box on the crop: its corners in order round it, whether it faces the camera,
+ * and its light (0 to 1).
+ */
 export interface SolidFace {
+  /** Its corners on the crop, in order round it. */
   corners: CropPoint[];
+  /** Whether it faces the camera. */
   facing: boolean;
+  /** How much the light falls on it, 0 to 1. */
   light: number;
 }
 
 /** An edge of a solid box on the crop, and whether the camera sees it (a face it bounds faces the camera). */
 export interface SolidEdge {
+  /** One end on the crop. */
   from: CropPoint;
+  /** The other end on the crop. */
   to: CropPoint;
+  /** Whether the camera sees it. */
   seen: boolean;
 }
 
@@ -314,12 +333,18 @@ export function solidEdges(shape: Shape, solid: Solid): SolidEdge[] {
 
 /** One end ring of a capsule on the crop: an ellipse, and whether it is the end nearer the camera. */
 export interface CapsuleRing {
+  /** The ring's middle on the crop. */
   center: CropPoint;
-  /** Half the ring along the axis on screen (shorter the more the axis faces the camera) and across it. */
+  /**
+   * Half the ring along the axis on screen: the radius when the axis points at the camera, 0
+   * when it lies flat in the screen's plane.
+   */
   along: number;
+  /** Half the ring across the axis: the capsule's radius. */
   across: number;
   /** The axis's direction on screen, radians. */
   tilt: number;
+  /** Whether it is the end nearer the camera. */
   near: boolean;
 }
 
@@ -353,8 +378,11 @@ export function capsuleRings(shape: Shape, solid: Solid): CapsuleRing[] {
  * 0 and 1 its ends, 2 its thickness), and whether the camera sees that side.
  */
 export interface SideHandle {
+  /** Where the handle is on the crop. */
   point: CropPoint;
+  /** Which side it moves. */
   side: number;
+  /** Whether the camera sees that side. */
   seen: boolean;
 }
 
@@ -411,7 +439,9 @@ function alongOf(shape: Shape, [x, y]: CropPoint, [dx, dy]: CropPoint): number |
 
 /** How a side is pushed: the smallest a side may get (crop pixels), and whether its opposite side moves with it. */
 export interface SidePush {
+  /** The smallest a side may get, in crop pixels. */
   minSide: number;
+  /** Whether the opposite side moves the other way, the shape keeping its middle. */
   mirror: boolean;
 }
 

@@ -1,19 +1,33 @@
+/**
+ * The fastest order to kill the targets on screen, by Fitts' law fitted to the run's own flicks.
+ * In: the clicking report's flicks and target radius, and each frame's targets from the tracks.
+ * Out: the costs and orders path-analysis.ts works out the Pathing check and overlays from.
+ */
+
 import { Flick, TrackPoint } from '../../api';
 
 /**
- * Fitts' law fitted to a run's kills: a flick takes a + b * log2(1 + D / W) seconds, D its distance and W the target's
- * width.
+ * Fitts' law fitted to a run's kills: a flick takes a + b * log2(1 + D / W) seconds, D its distance
+ * and W the target's width.
  */
 export interface Fitts {
+  /** The fixed time a flick takes, in seconds (the fit's intercept). */
   a: number;
+  /** The seconds each log unit of difficulty adds (the fit's slope). */
   b: number;
+  /** The targets' width W, in degrees: twice the report's target radius. */
   widthDeg: number;
 }
 
 /** Fewer kills than this give no fit: a flat 0.1 s per unit is used. */
 const MIN_FIT = 3;
+/** The slope used without a fit, or when the fit's slope is not above 0, in seconds a log unit. */
 const DEFAULT_B = 0.1;
 
+/**
+ * Fits Fitts' law by least squares to the flicks with a time and a start distance above 0: their
+ * total time in seconds against log2(1 + D0 / W). `radius` is the targets' radius in degrees.
+ */
 export function fitFitts(flicks: Flick[], radius: number): Fitts {
   const widthDeg = 2 * radius;
   const samples = flicks
@@ -33,47 +47,73 @@ export function fitFitts(flicks: Flick[], radius: number): Fitts {
 }
 
 /**
- * For a set of targets: best[mask * targetCount + j], the least cost to visit every target in mask starting at j, and next[...]
- * the target after j. It depends only on the targets' places relative to each other, which hold while the view moves.
+ * For a set of targets: best[mask * targetCount + j], the least cost to visit every target in mask
+ * starting at j, and next[...] the target after j. It depends only on the targets' places relative
+ * to each other, which hold while the view moves.
  */
 interface OrderTable {
+  /** How many targets the table orders. */
   targetCount: number;
+  /** The mask with every target's bit set. */
   fullMask: number;
+  /**
+   * The least cost in log units to visit a mask's targets starting at j; Infinity where j is not
+   * in the mask.
+   */
   best: Float64Array;
+  /** The target after j on that best path; -1 at its end. */
   next: Int8Array;
 }
 
 /** A table kept for one set of targets (key: their sorted ids), in the order of ids. */
 interface CachedTable {
+  /** The targets' ids, sorted and joined with commas. */
   key: string;
+  /** The targets' ids in the table's order. */
   ids: number[];
+  /** The table for those targets. */
   table: OrderTable;
 }
 
-/** The best orders through a set: the targets (in the table's order), from[j] (the whole set's cost when j goes first), and bestFirst, the best j. */
+/**
+ * The best orders through a set: the targets (in the table's order), from[j] (the whole set's cost
+ * when j goes first), and bestFirst, the best j.
+ */
 export interface Solution {
+  /** The targets ordered, in the table's order. */
   targets: TrackPoint[];
+  /** The table of best paths through them. */
   table: OrderTable;
+  /** For each target, the whole set's cost in log units from the crosshair when it goes first. */
   from: number[];
+  /** The index of the target that is best to kill first. */
   bestFirst: number;
 }
 
 /** The fastest order through the targets, and its predicted time in seconds. */
 export interface FastestOrder {
+  /** The targets in the order to kill them. */
   order: TrackPoint[];
+  /** The predicted time to kill them all in that order, in seconds. */
   seconds: number;
 }
 
-/** Over this many targets, only the ones cheapest to reach are ordered (the table doubles with each one). */
+/**
+ * Over this many targets, only the ones cheapest to reach are ordered (the table doubles with each
+ * one).
+ */
 const MAX_TARGETS = 14;
 
 /**
- * Orders targets by Fitts' law. Costs are in log units (seconds = a per flick + b per unit). The table for a set of
- * targets is kept until the set changes, so each frame only adds the flick from the crosshair.
+ * Orders targets by Fitts' law. Costs are in log units (seconds = a per flick + b per unit). The
+ * table for a set of targets is kept until the set changes, so each frame only adds the flick from
+ * the crosshair.
  */
 export class OrderSolver {
+  /** The table for the last set of targets solved; null before the first. */
   private cache: CachedTable | null = null;
 
+  /** A solver with the run's fit. */
   constructor(readonly fitts: Fitts) {}
 
   /** From the crosshair to a target, in log units. */
@@ -100,6 +140,10 @@ export class OrderSolver {
     );
   }
 
+  /**
+   * The best orders through the targets (only the MAX_TARGETS cheapest to reach, when there are
+   * more); null without targets. The table is made again only when the set of targets changes.
+   */
   solve(targets: TrackPoint[]): Solution | null {
     if (!targets.length) return null;
     const candidates =
@@ -128,6 +172,9 @@ export class OrderSolver {
     return { targets: inTableOrder, table, from, bestFirst: from.indexOf(Math.min(...from)) };
   }
 
+  /**
+   * The fastest order through the targets from the crosshair, and its time; null without targets.
+   */
   fastestOrder(targets: TrackPoint[]): FastestOrder | null {
     const solution = this.solve(targets);
     if (!solution) return null;
@@ -142,6 +189,10 @@ export class OrderSolver {
     return { order, seconds: this.seconds(order.length, solution.from[solution.bestFirst]) };
   }
 
+  /**
+   * The table of best paths through the targets (Held-Karp's dynamic programming over subsets):
+   * each mask builds on the smaller masks before it. The table doubles with each target.
+   */
   private table(targets: TrackPoint[]): OrderTable {
     const count = targets.length;
     const fullMask = (1 << count) - 1;

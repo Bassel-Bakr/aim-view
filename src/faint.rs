@@ -1,9 +1,11 @@
 //! The faint-target cut-off (python/retired/review.py: `faint_scores`, `without_faint`; python/model/hand_crops.py:
 //! `cutoff_crops`): each track's score, the recording's level, the tracks the user's cut-off leaves out, and the
-//! detector labels a submitted cut-off gives. The scores come from the tracks (tracks.json: each target's detector
-//! score per frame) and the setting from faint.json. src/review.rs measures a tracking run without the tracks the cut
-//! leaves out; a submitted cut-off's crops go to the service (service/src/faint.rs), or in the browser to the page
-//! (`cutoff_json`), which write the crops and their labels for training the detector.
+//! detector labels a submitted cut-off gives.
+//!
+//! In: the tracks (tracks.json: each target's detector score per frame) and the setting (faint.json). Out: the frames
+//! without the tracks the cut leaves out, which src/review.rs measures a tracking run on; and a submitted cut-off's
+//! crops, which the service (service/src/faint.rs), or in the browser the page (`cutoff_json`), writes with their
+//! labels for training the detector.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -15,7 +17,7 @@ use crate::py_random::{PyRandom, hex, md5};
 use crate::python::{hypot, round};
 use crate::track::{TrackFrame, TrackPoint};
 
-/// The offset a cut-off takes when none is given (python/server.py: `faint`).
+/// The offset a cut-off takes when none is given (python/retired/server.py: `faint`).
 pub const DEFAULT_OFFSET: f64 = 0.3;
 /// A track needs this many frames with a score away from the crosshair to have a score of its own.
 const MIN_SCORED_FRAMES: usize = 3;
@@ -24,8 +26,9 @@ const TRACK_PERCENTILE: f64 = 0.9;
 /// The recording's level is the score of the track that brings the frames counted, from the lowest score up, to this
 /// share of all scored frames: the 90th percentile of the scores, weighted by frames.
 const LEVEL_SHARE: f64 = 0.9;
-/// The decimals the cut is rounded to, and a label's boxes.
+/// The decimals the cut is rounded to.
 const CUT_DECIMALS: usize = 3;
+/// The decimals a label's boxes are rounded to (crop pixels).
 const BOX_DECIMALS: usize = 2;
 /// A crop's side, in pixels at 1280 x 720.
 pub const CROP: usize = 256;
@@ -33,10 +36,12 @@ pub const CROP: usize = 256;
 const CROPS_PER_SIDE: usize = 20;
 /// A crop's corner moves from its target's center by up to this many pixels each way (Python's `randint(-48, 48)`).
 const CROP_JITTER_PX: i64 = 48;
-/// A crop's file name starts with this many characters of the recording's name, and this many hex digits of its MD5.
+/// A crop's file name starts with this many characters of the recording's name.
 const STEM_CHARACTERS: usize = 40;
+/// A crop's file name has this many hex digits of the MD5 of the recording's file name, after its characters.
 const STEM_HASH_DIGITS: usize = 6;
 
+/// `DEFAULT_OFFSET`, for a faint.json without an offset.
 fn default_offset() -> f64 {
     DEFAULT_OFFSET
 }
@@ -45,7 +50,9 @@ fn default_offset() -> f64 {
 /// level a track may score before the cut leaves it out.
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct FaintSetting {
+    /// Whether the cut-off applies to the recording's review.
     pub on: bool,
+    /// How far under the recording's level a track's score may be before the cut leaves it out (a score, from 0 to 1).
     #[serde(default = "default_offset")]
     pub offset: f64,
 }
@@ -54,8 +61,11 @@ pub struct FaintSetting {
 /// gave one.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct TrackScore {
+    /// The track's id in tracks.json.
     pub id: u32,
+    /// The 90th percentile of its scores, from 0 to 1.
     pub score: f64,
+    /// The frames whose scores counted.
     pub frames: usize,
 }
 
@@ -63,7 +73,9 @@ pub struct TrackScore {
 /// scores, weighted by frames (None without scores).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct FaintScores {
+    /// The tracks with enough scored frames, in the order they first scored.
     pub scores: Vec<TrackScore>,
+    /// The recording's level, a score from 0 to 1; None when no track has a score.
     pub level: Option<f64>,
 }
 
@@ -118,8 +130,11 @@ pub fn faint_scores(frames: &[TrackFrame], near: f64) -> FaintScores {
 /// What a cut-off left: the frames without the tracks it cuts, the score it cut at (rounded to 3 decimals; None
 /// without scores, when nothing is cut) and how many tracks went.
 pub struct FaintCutFrames {
+    /// Every frame, without the targets of the tracks cut.
     pub frames: Vec<TrackFrame>,
+    /// The score the cut was at, rounded to 3 decimals; None when no track has a score.
     pub cut: Option<f64>,
+    /// How many tracks the cut left out.
     pub gone: usize,
 }
 
@@ -161,13 +176,21 @@ pub(crate) fn picked<Value: Copy>(values: &[Value], keep: &[usize]) -> Vec<Value
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CutoffRequest {
+    /// The recording's frames of tracks (tracks.json's `frames`).
     pub frames: Vec<TrackFrame>,
+    /// The recording's path or name; its file name names the crops and seeds the random numbers.
     pub video: String,
+    /// The run's first frame; None makes no crops.
     pub start: Option<i64>,
+    /// The run's last frame, included; None makes no crops.
     pub end: Option<i64>,
+    /// The excluded areas as shares of the frame [x0, y0, x1, y1]; None for KovOBS's layout.
     #[serde(default)]
     pub exclude: Option<Vec<[f64; 4]>>,
+    /// How far under the recording's level the cut is (a score).
     pub offset: f64,
+    /// How near the crosshair, in degrees, a target's score does not count (0 for a tracking run, 2 for a clicking
+    /// run).
     pub near: f64,
 }
 
@@ -175,13 +198,21 @@ pub struct CutoffRequest {
 /// pixels: center, size, 2 decimals), every box the model gave there, and where the label came from.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CutoffRow {
+    /// The crop's file, "train/<stem>_<frame, 6 digits>.npz".
     pub file: String,
+    /// The boxes of the tracks the cut keeps (and of unscored ones near the crosshair), in crop pixels.
     pub boxes: Vec<[f64; 4]>,
+    /// Always "correct": the label is taken as checked.
     pub verdict: &'static str,
+    /// Every box the model gave in the crop, in crop pixels.
     pub model: Vec<[f64; 4]>,
+    /// Always "cutoff": the label came from a cut-off.
     pub source: &'static str,
+    /// The recording, as the request named it.
     pub video: String,
+    /// The cut-off's offset.
     pub offset: f64,
+    /// The score the cut was at, rounded to 3 decimals.
     pub cut: f64,
 }
 
@@ -189,14 +220,20 @@ pub struct CutoffRow {
 /// (float32 there), and its row.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CutoffCrop {
+    /// The frame the crop is cut from, its index in the recording.
     pub frame: usize,
+    /// The crop's left edge, in pixels of the 1280 x 720 frame.
     pub x0: usize,
+    /// The crop's top edge, in pixels of the 1280 x 720 frame.
     pub y0: usize,
+    /// The boxes the label keeps, in crop pixels (center x, y, width, height), not rounded.
     pub boxes: Vec<[f64; 4]>,
+    /// The label's row for checked.jsonl.
     pub row: CutoffRow,
 }
 
-/// The crops' file names start with the recording's name (40 characters) and 6 hex digits of its MD5.
+/// The start of the crops' file names: the first 40 characters of the recording's file name without its extension,
+/// "_", then 6 hex digits of the MD5 of its file name; spaces become underscores.
 pub fn crop_stem(video: &str) -> String {
     let name = video.rsplit(['/', '\\']).next().unwrap_or(video);
     let stem = match name.rfind('.') {
@@ -236,7 +273,9 @@ fn excluded_areas_px(shares: Option<&[[f64; 4]]>) -> Vec<[f64; 4]> {
 /// A crop's square on the frame: its left and top (pixels at 1280 x 720).
 #[derive(Clone, Copy)]
 struct CropSquare {
+    /// The square's left edge, in pixels.
     left: f64,
+    /// The square's top edge, in pixels.
     top: f64,
 }
 
@@ -265,11 +304,17 @@ impl CropSquare {
 /// What a submitted cut-off's crops are made with: the request, each scored track's score, the score it cuts at, the
 /// excluded areas (pixels), the file names' stem, and Python's random numbers, seeded with the stem.
 struct CropMaker<'a> {
+    /// The submitted cut-off.
     request: &'a CutoffRequest,
+    /// Each scored track's score, by its id.
     scores: HashMap<u32, f64>,
+    /// The score the cut is at: the recording's level less the offset.
     cut: f64,
+    /// The excluded areas in pixels (left, top, right, bottom).
     excluded_px: Vec<[f64; 4]>,
+    /// The start of the crops' file names (`crop_stem`).
     stem: String,
+    /// Python's random numbers, seeded with the stem, drawn in Python's order.
     random: PyRandom,
 }
 
@@ -386,10 +431,12 @@ pub fn cutoff_json(request: &[u8]) -> Vec<u8> {
     .unwrap_or_default()
 }
 
+/// Checks the scores, the cut and the crops' names.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Frame `i` with these targets (id, x, y in degrees) and scores, each 10 pixels and 1 x 1 degrees.
     fn frame(i: usize, points: Vec<(u32, f64, f64)>, scores: Vec<f64>) -> TrackFrame {
         let count = points.len();
         let sizes = Some(vec![(1.0, 1.0); count]);
@@ -415,6 +462,7 @@ mod tests {
         assert_eq!((none.cut, none.gone), (Some(0.3), 0));
     }
 
+    /// Frames with no scores give no level, so nothing is cut.
     #[test]
     fn tracks_without_scores_are_not_cut() {
         let mut unscored = frame(0, vec![(1, 5.0, 0.0)], vec![0.9]);
@@ -430,5 +478,6 @@ mod tests {
         assert_eq!(crop_stem(video), PYTHON_STEM);
     }
 
+    /// The stem Python gives for the recording in `the_stem_is_pythons`.
     const PYTHON_STEM: &str = "1wall_6targets_extra_small_-_889.26_-_20_6a3425";
 }

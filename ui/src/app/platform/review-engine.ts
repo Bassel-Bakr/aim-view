@@ -1,3 +1,9 @@
+/**
+ * The ReviewEngine contract: starting, following and cancelling a recording's review, its report,
+ * its tracks and its run window. In: each mode's implementation (modes/mode.*.ts). Out: the
+ * Review service (services/review.ts), which the run page reads.
+ */
+
 import { ResourceRef } from '@angular/core';
 import { Job, Report, RunMarks, Tracks } from '../api';
 

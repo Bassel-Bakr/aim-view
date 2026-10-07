@@ -20,6 +20,7 @@ MAX_DETECTIONS = 100            # detections kept per image at most, the stronge
 
 
 def conv_bn(in_channels, out_channels, kernel=3, stride=1, groups=1, dilation=1, padding=None):
+    """A convolution without bias, then batch norm and ReLU. The padding keeps the size (at stride 1) unless given."""
     padding = dilation * (kernel // 2) if padding is None else padding
     return nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel, stride, padding,
                                    dilation=dilation, groups=groups, bias=False),
@@ -31,12 +32,14 @@ class Block(nn.Module):
     checkpoints' keys."""
 
     def __init__(self, in_channels, out_channels, stride=1, dilation=1):
+        """`stride` 2 halves the map's size; `dilation` widens the depthwise kernel's reach."""
         super().__init__()
         self.dw = conv_bn(in_channels, in_channels, 3, stride, groups=in_channels, dilation=dilation)
         self.pw = conv_bn(in_channels, out_channels, 1)
         self.res = stride == 1 and in_channels == out_channels
 
     def forward(self, features):
+        """The block's output for a (N, in_channels, H, W) map, with the input added back when the shapes match."""
         out = self.pw(self.dw(features))
         return features + out if self.res else out
 
@@ -45,6 +48,9 @@ class Detector(nn.Module):
     """The network. Its attribute names (stem, s4, s8, s16, lat16, lat8, head) are the checkpoints' keys."""
 
     def __init__(self, widths=(16, 32, 48, 64), blocks=(2, 2, 2), head=32, stem="conv"):
+        """widths: the channels of the stem and of the stride 4, 8 and 16 maps. blocks: the extra blocks at strides 4,
+        8 and 16. head: the head block's channels. stem: "conv" (3 x 3 at stride 2) or "patch" (4 x 4 at stride 4).
+        The heatmap's bias starts at a prior of 0.1, the other outputs' at 0."""
         super().__init__()
         stem_channels, channels4, channels8, channels16 = widths
         if stem == "patch":
@@ -67,6 +73,8 @@ class Detector(nn.Module):
             self.head[-1].bias[0] = HEATMAP_PRIOR_LOGIT
 
     def forward(self, frames):
+        """The output (N, 5, H/4, W/4) for the input (N, 4, H, W): the stride 16 and 8 maps are brought up and added
+        to the finer ones before the head."""
         stride4 = self.s4(self.stem(frames))
         stride8 = self.s8(stride4)
         stride16 = self.s16(stride8)
@@ -76,6 +84,7 @@ class Detector(nn.Module):
 
 
 def build(config):
+    """A new, untrained Detector of the shape a training config's "model" section gives."""
     model = config["model"]
     return Detector(tuple(model["widths"]), tuple(model["blocks"]), model["head"], model.get("stem", "conv"))
 
@@ -87,7 +96,8 @@ def prepare(rgb, fixed):
 
 
 def decode(out, threshold=0.3, max_detections=MAX_DETECTIONS):
-    """Network output to detections per image: tensor (n, 5) of cx, cy, w, h (input px) and score."""
+    """Network output to detections, a tensor (n, 5) per image of cx, cy, w, h (input px) and score: each heatmap peak
+    whose score is over `threshold`, the strongest `max_detections` at most."""
     heat = torch.sigmoid(out[:, 0:1].float())
     peak = (heat == F.max_pool2d(heat, PEAK_WINDOW, 1, 1)) & (heat > threshold)
     detections = []

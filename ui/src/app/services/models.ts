@@ -1,3 +1,8 @@
+/**
+ * The detector models and the one in use (`Models`). In: the ModelCatalog contract. Out: the top
+ * bar's model panel and the run page.
+ */
+
 import { computed, inject, Service } from '@angular/core';
 import { Device, ModelList } from '../api';
 import { ModelCatalog } from '../platform/model-catalog';
@@ -14,7 +19,9 @@ export const DEVICE_LABELS: Record<Device, string> = {
 /** The detector models, and the one new reviews use (the top bar and the run page show it). */
 @Service()
 export class Models {
+  /** The mode's models. */
   private readonly catalog = inject(ModelCatalog);
+  /** The model list as the mode last gave it; a pick sets it to the answer. */
   readonly list = this.catalog.list;
   /** The models, or null until they load. */
   readonly current = computed<ModelList | null>(() =>

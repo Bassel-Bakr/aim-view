@@ -28,6 +28,7 @@ def defined_names(node):
 
 
 def is_main_block(node):
+    """Whether a top-level statement is the `if __name__ == "__main__":` block, which the new module leaves out."""
     return isinstance(node, ast.If) and "__main__" in ast.unparse(node.test)
 
 
@@ -53,6 +54,8 @@ def needed(definitions, wanted):
 
 
 def main():
+    """Writes the new module, drops its unused imports with Ruff, and stops with an error when a name is not defined
+    at the source's top level or a copied definition does not parse to the source's tree."""
     parser = argparse.ArgumentParser(description="Copies chosen definitions of a module into a new one, verbatim.")
     parser.add_argument("source", type=Path)
     parser.add_argument("out", type=Path)

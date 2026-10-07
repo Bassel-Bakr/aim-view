@@ -1,3 +1,12 @@
+/**
+ * A tracking run's numbers, in words for the page.
+ *
+ * In: the tracking summary the core works out (src/tracking.rs `TrackSummary`, its `motion` and
+ * `what_if`).
+ * Out: the cards (the headline takes the first six), the note on how they were measured, the
+ * motion's cards and by-direction rows, and the what-if table, for track-report.ts and run.ts.
+ */
+
 import { Motion, TrackSummary, WhatIf } from '../../api';
 import { WhatIfTable } from '../what-if-section/what-if-section';
 import {
@@ -8,11 +17,18 @@ import {
   formatSeconds,
 } from '../../format';
 
-/** A tracking card: its value, what it is, a detail under it, and why it matters (shown, not only on hover). */
+/**
+ * A tracking card: its value, what it is, a detail under it, and why it matters (shown, not only on
+ * hover).
+ */
 export interface TrackStat {
+  /** What the number is. */
   label: string;
+  /** The number, formatted. */
   value: string;
+  /** A line under the number, or ''. */
   detail: string;
+  /** Why the number matters and how it is measured. */
   why: string;
 }
 
@@ -24,7 +40,9 @@ function card(label: string, value: string, why: string, detail = ''): TrackStat
   return { label, value, detail, why };
 }
 
-/** Why losing the bot matters, with what the drops and the slips cost where the review measured it. */
+/**
+ * Why losing the bot matters, with what the drops and the slips cost where the review measured it.
+ */
 function lostWhy(summary: TrackSummary): string {
   if (summary.lost_cost == null) {
     return 'How often you lost the bot: came off it for more than 0.1 s, per second of tracking.';
@@ -39,7 +57,10 @@ function lostWhy(summary: TrackSummary): string {
   );
 }
 
-/** The cards on the time on the bot: the score, on target, accuracy and the distance from the center. */
+/**
+ * The cards on the time on the bot: the score, on target, accuracy and the distance from the
+ * center.
+ */
 function onTargetCards(summary: TrackSummary, bots: boolean): TrackStat[] {
   return [
     card(
@@ -165,25 +186,36 @@ export function trackNote(summary: TrackSummary): string {
 
 /** A row of the by-direction table, as shown. */
 export interface MotionRow {
+  /** The bot's direction, an arrow and its name. */
   moving: string;
+  /** The share of the moving time the bot went this way. */
   time: string;
+  /** The share of that time the crosshair was on the bot. */
   on: string;
+  /** The median distance from the bot's center line. */
   distance: string;
+  /** The median offset along the motion: behind or ahead. */
   lag: string;
 }
 
 /** How the crosshair followed the bot: its cards and rows, or why it was not measured. */
 export interface MotionView {
+  /** Why the motion was not measured; null when it was. */
   reason: string | null;
+  /** The motion's cards; empty when not measured. */
   stats: TrackStat[];
+  /** The by-direction table's rows; empty when not measured. */
   rows: MotionRow[];
+  /** How the following was measured; '' when not measured. */
   note: string;
 }
 
+/** An offset along the bot's motion, in degrees, as "0.25° behind" or "ahead"; a dash for none. */
 const side = (offsetDeg: number | null | undefined) =>
   offsetDeg == null
     ? '–'
     : `${Math.abs(offsetDeg).toFixed(2)}° ${offsetDeg < 0 ? 'behind' : 'ahead'}`;
+/** A rate a second to two decimals; a dash for none. */
 const rate = (perSecond: number | null | undefined) =>
   perSecond == null ? '–' : perSecond.toFixed(2);
 
@@ -192,7 +224,10 @@ function motionCard(label: string, value: string, detail: string, why: string): 
   return card(label, value, why, detail);
 }
 
-/** The cards on where the crosshair sat along the bot's motion: behind, ahead, to the side, past its edge. */
+/**
+ * The cards on where the crosshair sat along the bot's motion: behind, ahead, to the side, past its
+ * edge.
+ */
 function followCards(motion: Motion): TrackStat[] {
   return [
     motionCard(
@@ -228,7 +263,10 @@ function followCards(motion: Motion): TrackStat[] {
   ];
 }
 
-/** The cards on correcting: over-correcting, turns, the distances from the line and the bot's own speed. */
+/**
+ * The cards on correcting: over-correcting, turns, the distances from the line and the bot's own
+ * speed.
+ */
 function correctionCards(motion: Motion): TrackStat[] {
   return [
     motionCard(
@@ -289,6 +327,10 @@ function motionNote(motion: Motion, camera: string): string {
   );
 }
 
+/**
+ * How the crosshair followed the bot's motion, for the report; null when the summary has no motion,
+ * and only the reason (with the camera's share) when it was not measured.
+ */
 export function motionView(motion: Motion | null): MotionView | null {
   if (!motion) return null;
   const camera = `the camera's turn was read in ${formatPercent(motion.camera)} of the frames`;
@@ -314,7 +356,7 @@ export function motionView(motion: Motion | null): MotionView | null {
   };
 }
 
-/** The what-if table: the accuracy each change would add. */
+/** The what-if table: the accuracy each change would add, in the core's order; empty with none. */
 export function whatIfTable(whatIfs: WhatIf[]): WhatIfTable {
   const lines = whatIfs.map((whatIf) => ({
     what: whatIf.what,

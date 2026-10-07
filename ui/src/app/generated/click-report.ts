@@ -10,16 +10,49 @@ import type { Summary } from './summary';
  * A clicking run's report, as report.json keeps it.
  */
 export interface ClickReport {
+  /**
+   * The recording's name, as the request gave it.
+   */
   video: string;
+  /**
+   * The stats file's name; None for a run without one.
+   */
   stats: string | null;
+  /**
+   * The run's medians and shares (src/summary.rs).
+   */
   summary: Summary;
+  /**
+   * Each check's verdict on the summary (`judge`).
+   */
   issues: Issue[];
+  /**
+   * Each matched kill's measures (src/measure.rs), in kill order.
+   */
   flicks: Measure[];
+  /**
+   * Whether the run clicks or holds the trigger (`click_mode`).
+   */
   mode: 'click' | 'hold';
+  /**
+   * Each matched kill's target path, under its kill number (as text).
+   */
   paths: Record<string, PathPoint[]>;
+  /**
+   * The video's frame rate (frames a second).
+   */
   fps: number;
+  /**
+   * The frame's size, the crosshair's place and the focal length, for the page to turn degrees into pixels.
+   */
   geometry: Geometry;
+  /**
+   * Each track's id (as text) with the frame its target first appeared on (`appeared`).
+   */
   appeared: Record<string, number>;
+  /**
+   * Where the detector marks the crosshair as a target (degrees), if it does (`crosshair_spots`).
+   */
   crosshair: CrosshairSpot[];
   /**
    * The user's run marks as given ({start, end, length}: the service's RunMarks).

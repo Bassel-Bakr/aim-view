@@ -8,11 +8,14 @@ The _u8in file takes the raw bytes instead: "rgb" uint8 (N, H, W, 3) and "fixed"
 for N frames at once (N is free: a browser runs several frames in one call).
 The _embed file takes the raw bytes and gives "dets" float32 (1, 100, 5): the 100 best peaks as cx, cy, w, h, score,
 best first; keep the rows over the threshold.
-A detection at cell (i, j) with score > threshold: cx = (j + reg0) * 4, cy = (i + reg1) * 4, w = exp(reg2), h = exp(reg3).
+A detection at cell (i, j) with score > threshold: cx = (j + reg0) * 4, cy = (i + reg1) * 4, w = exp(reg2),
+h = exp(reg3).
 Last, the model's settings file detector_<name>.json (calibrate.py: its scores on the reference model's scale and its
 threshold there; written only when the file does not exist yet), with the numbers behind it in
 python/model/reports/calibration_<name>.json. Then check the model with python/model/contract.py <name>.
 Usage: python python/model/export.py test_out/vod_model/runs/small/best.pt [--out python/model/exports]
+       [--data <dataset>] [--val <dataset> ...]   (--data: the int8 calibration's and the threshold's val split;
+       --val: the score map's datasets, calibrate.VAL by default)
        python python/model/export.py <checkpoint> --u8in [--out DIR]   (the _u8in file only, checked against the
        fp32 file beside it frame by frame and in a batch)
 """
@@ -32,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import net  # noqa: E402
 
 HEIGHT_PX, WIDTH_PX = 720, 1280         # the frame the graphs are traced with
-OPSET = 17
+OPSET = 17                              # the ONNX operator set the graphs use
 PEAK_WINDOW = 3                         # cells: the 3 x 3 peak finding
 EMBED_TOP = 100                         # the _embed graph's boxes, best first
 TRACE_FRAMES = 2                        # the _u8in graph is traced with 2 frames: no axis fixed to one frame
@@ -43,16 +46,22 @@ SAME_IN_BATCH = 1e-4                    # a frame in a batch gives what it gives
 CHECK_THRESHOLD = 0.3                   # the embed and fp16 checks' threshold
 CALIBRATION_CROPS = 64                  # validation crops the int8 quantization is calibrated on
 KB = 1024
+# the float graphs' free axes: the input's height and width, and the outputs' (a quarter of them)
 SPATIAL_AXES = {2: "h", 3: "w"}
 CELL_AXES = {2: "h4", 3: "w4"}
 
 
 class Exported(nn.Module):
+    """The network with the decoding's first steps inside: the "score" and "reg" outputs of the module's docstring."""
+
     def __init__(self, model):
+        """model: a net.Detector, its weights loaded."""
         super().__init__()
         self.model = model
 
     def forward(self, frames):
+        """(score, reg) for the input (N, 4, H, W): the sigmoid of the heatmap where it is a 3 x 3 peak (else 0), and
+        the offset and size channels."""
         out = self.model(frames)
         heat = torch.sigmoid(out[:, 0:1])
         score = heat * (heat == F.max_pool2d(heat, PEAK_WINDOW, 1, 1)).float()
@@ -60,11 +69,15 @@ class Exported(nn.Module):
 
 
 class Exported16(nn.Module):
+    """Exported with the network in half precision and the decoding in fp32."""
+
     def __init__(self, model):
+        """model: a net.Detector, which this turns to half precision in place (pass a copy)."""
         super().__init__()
         self.model = model.half()
 
     def forward(self, frames):
+        """Exported's outputs, the network run in fp16 on the fp32 input."""
         out = self.model(frames.half()).float()
         heat = torch.sigmoid(out[:, 0:1])
         score = heat * (heat == F.max_pool2d(heat, PEAK_WINDOW, 1, 1)).float()
@@ -76,10 +89,12 @@ class ExportedU8(nn.Module):
     passes the decoder's buffer as it is (and a browser uploads 3.7 MB per 720p frame, not 14.7 MB of floats)."""
 
     def __init__(self, model):
+        """model: a net.Detector, its weights loaded."""
         super().__init__()
         self.inner = Exported(model)
 
     def forward(self, rgb, fixed):
+        """Exported's outputs for rgb uint8 (N, H, W, 3) and the fixed map uint8 (N, H, W)."""
         # the fixed map to float before its channel axis: onnxruntime's WebGPU build has no Unsqueeze for uint8, and a
         # node left on the CPU rules out graph capture (the same values either way)
         frames = torch.cat([rgb.permute(0, 3, 1, 2).float() / 255.0, fixed.float()[:, None]], 1)
@@ -91,10 +106,12 @@ class ExportedEmbed(nn.Module):
     (cx, cy, w, h, score), best first, and keeps those over its threshold. No map to scan."""
 
     def __init__(self, model, k=EMBED_TOP):
+        """model: a net.Detector, its weights loaded; k: the boxes the graph gives."""
         super().__init__()
         self.inner, self.k = ExportedU8(model), k
 
     def forward(self, rgb, fixed):
+        """The k highest-scoring cells of one frame as (1, k, 5) boxes: cx, cy, w, h (input px) and score."""
         score, reg = self.inner(rgb, fixed)
         cells_wide = score.shape[3]
         scores, cells = torch.topk(score.flatten(1), self.k, dim=1)                          # (1, K)
@@ -121,6 +138,7 @@ def export_u8in(model, path):
 
 
 def cpu_session(path):
+    """An ONNX Runtime session of the file on the CPU."""
     import onnxruntime as ort
     return ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
 
@@ -147,16 +165,21 @@ def check_u8in(u8, f32):
 
 
 def calibration_reader(data_dir, count=CALIBRATION_CROPS):
+    """The int8 quantization's inputs: `count` crops of the folder, spread over it in name order."""
     from onnxruntime.quantization import CalibrationDataReader
 
     every = sorted(Path(data_dir).glob("*.npz"))
     files = every[::max(1, len(every) // count)][:count]
 
     class Reader(CalibrationDataReader):
+        """Gives quantize_static the crops one at a time as the fp32 graph's input."""
+
         def __init__(self):
+            """Starts at the first crop."""
             self.remaining = iter(files)
 
         def get_next(self):
+            """The next crop as {"x": (1, 4, 256, 256) float32}, or None after the last."""
             file = next(self.remaining, None)
             if file is None:
                 return None
@@ -210,6 +233,7 @@ def export_int8(f32, path, out, name, data):
 
 
 def by_x(detections):
+    """Detections in order of their x, to compare two lists."""
     return detections[np.argsort(detections[:, 0])]
 
 
@@ -245,6 +269,8 @@ def check_parity(model, files):
 
 
 def main():
+    """Writes every export of the checkpoint into --out, checks them against PyTorch and each other, prints their
+    sizes and writes the settings file; with --u8in, writes and checks the _u8in file alone."""
     parser = argparse.ArgumentParser()
     parser.add_argument("checkpoint")
     parser.add_argument("--out", default="python/model/exports")

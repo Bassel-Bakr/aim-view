@@ -16,6 +16,7 @@ use crate::http::{Api, Call, Reply};
 struct Service(Arc<Library>);
 
 impl Api for Service {
+    /// The call as the service's request, answered by `aimview_service::handle`.
     fn handle(&self, call: &Call) -> Reply {
         let request = ApiRequest {
             method: &call.method,
@@ -28,6 +29,7 @@ impl Api for Service {
         Reply { status: response.status, headers: response.headers, body: response.body }
     }
 
+    /// A new file in the library's uploads folder (`Library::spool`).
     fn spool(&self) -> Result<PathBuf, String> {
         self.0.spool().map_err(|failure| failure.message)
     }
@@ -40,7 +42,7 @@ fn has_ffmpeg(folder: &Path) -> bool {
         .all(|program| folder.join(format!("{program}{}", std::env::consts::EXE_SUFFIX)).is_file())
 }
 
-/// The service's settings: python/server.py's layout in the data folder.
+/// The service's settings: Python's layout in the data folder (python/retired/server.py's).
 fn config(settings: &Settings) -> Config {
     Config {
         data: settings.data.clone(),

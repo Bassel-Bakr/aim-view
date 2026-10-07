@@ -1,3 +1,9 @@
+/**
+ * Desktop mode: the Tauri 2 app (desktop/). In: nothing at load. Out: `MODE`, which picks a service
+ * for each platform/ contract, mostly the server mode's, with the app's own folder dialog and mouse
+ * logger (tauri/). The `desktop` build configuration swaps mode.ts for this file.
+ */
+
 import { withInterceptors, withXhr } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
 import { CropSets } from '../platform/crop-sets';
@@ -23,9 +29,10 @@ import { DesktopMouseLogs } from './tauri/desktop-mouse-logs';
 import { DesktopRecordings } from './tauri/desktop-recordings';
 
 /**
- * The desktop app (Tauri 2, desktop/): the review server's services, answered by the app itself (service/, through desktop/src/protocol.rs),
- * which reads the disk directly and runs the review natively. HttpClient sends with XMLHttpRequest, so an upload
- * reports its progress.
+ * The desktop app (Tauri 2, desktop/): the review server's services, answered by the app itself
+ * (service/, through desktop/src/protocol.rs), which reads the disk directly and runs the review
+ * natively. HttpClient sends with XMLHttpRequest, so an upload reports its progress, and the
+ * `desktopApi` interceptor sends the /api requests to the app.
  */
 export const MODE: Mode = {
   name: 'desktop',

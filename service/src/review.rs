@@ -1,10 +1,12 @@
-//! A recording's review on this computer: ffmpeg decodes the frames, the core converts them to ffmpeg's 720p RGB byte
-//! for byte, the detector runs on the GPU (detector.rs), and the core's review session (aimview::session, which the
-//! browser's workers feed the same way) does the rest: it plans the runs, reads the key frames, tracks each run's
-//! frames, watches the camera's turn and the HUD, and joins the runs. The runs are reviewed at once: one ffmpeg decoder
-//! is the limit, as one browser decoder was. The browser build has only what a review is (`Request`): the page runs it
-//! (library/browser.rs). In: a `Request` (library/reviews.rs, aimview-tool, the track example). Out: the review's
-//! tracks, readings, HUD reading and found areas (`Reviewed`), which library/reviews.rs keeps.
+//! A recording's review on this computer: ffmpeg decodes the frames and the core converts them to ffmpeg's 720p RGB
+//! byte for byte (or, for the videos gpu_frames.rs takes, the GPU does both), the detector runs on the GPU or the CPU
+//! (detector.rs), and the core's review session (aimview::session, which the browser's workers feed the same way) does
+//! the rest: it plans the runs, reads the key frames, tracks each run's frames, watches the camera's turn and the HUD,
+//! and joins the runs. The runs are reviewed at once: one ffmpeg decoder is the limit, as one browser decoder was.
+//! Without a stats file the kills the video alone gives are then checked in the frames round them (`check_kills`). The
+//! browser build has only what a review is (`Request`): the page runs it (library/browser.rs). In: a `Request`
+//! (library/reviews.rs, aimview-tool, the track example). Out: the review's tracks, readings, HUD reading, found areas
+//! and kill check (`Reviewed`), which library/reviews.rs keeps.
 
 use std::path::PathBuf;
 #[cfg(feature = "native")]
@@ -57,37 +59,47 @@ const RGB_BYTES: usize = DST_W * DST_H * 3;
 /// The key frames decoded at once (`key_frames`).
 #[cfg(feature = "native")]
 const KEY_DECODERS: usize = 4;
-/// The batches waiting for the detector, and the frames waiting for the watch, before the decoder waits for them.
+/// The batches waiting for the detector before the decoder waits for them.
 #[cfg(feature = "native")]
 const BATCHES_WAITING: usize = 2;
+/// The frames waiting for the watch before the decoder waits for them.
 #[cfg(feature = "native")]
 const WATCH_FRAMES_WAITING: usize = 8;
 
-/// What to review: the video, the detector model (its _u8in export) and the device it runs on, the frames it takes at
-/// once, the scenario's target count (0: not known), the runs to split the recording into, the part of the video to
-/// track (the user's run window with a margin; None: all of it), the areas it leaves out (the recording's, areas.rs),
-/// a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of the
-/// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), whether the kills
-/// the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
-/// without a stats file, whose report takes its kills from the video), the scenario's kind (None: not known; the
-/// model's at-crosshair rule may name the kinds it is for), and a flag that stops it (`cancel`: the user cancelled the
-/// review; it stops at its next frame with the error CANCELLED; None: it runs to its end).
+/// What to review: the video, the model and its device, how the work is split, and what the review leaves out, keeps
+/// and checks.
 pub struct Request {
+    /// The recording.
     pub video: PathBuf,
+    /// The detector model: its _u8in export.
     pub model: PathBuf,
+    /// The device the detector runs on.
     pub device: Device,
+    /// The frames the detector takes at once.
     pub batch: usize,
+    /// The scenario's target count: how many boxes `keep` takes a frame (0: not known).
     pub cap: usize,
+    /// The runs to split the recording into, each decoded and tracked at once (`parts_at_once`).
     pub runs: usize,
+    /// The part of the video to track: the user's run window with a margin (run_window.rs `tracked`); None: all of it.
     pub window: Option<TimeWindow>,
+    /// The areas the review leaves out (the recording's, areas.rs).
     pub areas: Vec<AreaBox>,
+    /// A folder to keep the review's parts in before they are joined (`keep_part`); None: not kept.
     pub keep_parts: Option<PathBuf>,
     /// Decode and convert on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 AV1 or H.264
     /// MP4s); else, or false, ffmpeg's software decode.
     pub gpu_frames: bool,
+    /// The share of the time the detector may run, 1: all of it; less leaves the GPU to a game beside it (at least
+    /// `MIN_GPU_SHARE`).
     pub gpu_share: f64,
+    /// Whether the kills the video alone gives are checked in the frames round them (the video read again): for a
+    /// recording without a stats file, whose report takes its kills from the video.
     pub kill_check: bool,
+    /// The scenario's kind (None: not known); the model's at-crosshair rule may name the kinds it is for.
     pub kind: Option<aimview::scenario::Kind>,
+    /// Set when the user cancels the review: it stops at its next frame with the error `CANCELLED`. None: it runs to
+    /// its end.
     pub cancel: Option<Arc<AtomicBool>>,
 }
 
@@ -108,10 +120,15 @@ pub const MIN_GPU_SHARE: f64 = 0.05;
 /// found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames then), and
 /// the check of the kills the video alone gives (None: not asked for).
 pub struct Reviewed {
+    /// Each frame's kept boxes and ids, and the view shift (tracks.json).
     pub tracks: Tracks,
+    /// The camera's turn per frame and the countdown bar (readings.json).
     pub readings: VideoReadings,
+    /// What the HUD read; None: no HUD was read.
     pub hud: Option<HudReading>,
+    /// The areas the area finder found in the key frames; None when the recording has too few for it.
     pub found: Option<Found>,
+    /// The evidence for or against each kill the video alone gives; None: not asked for.
     pub kills: Option<Vec<KillEvidence>>,
 }
 
@@ -142,10 +159,10 @@ pub fn frame_bytes(info: &VideoInfo) -> usize {
 /// A machine with at least this many threads reviews a recording in several parts at once (each a decoder and a
 /// detector session of its own).
 const SPLIT_THREADS: usize = 8;
-/// The parts at once: with the GPU's frames the CPU is free, and more detector sessions keep the GPU busy (av1: 10.8 s
-/// in 2 parts, 9.6 s in 4, the GPU's compute 99% busy; test_out/baselines/756b1c5/gpu_frames/); with ffmpeg's, two
-/// software decoders already fill the CPU.
+/// The parts at once with the GPU's frames: the CPU is free, and more detector sessions keep the GPU busy (av1: 10.8 s
+/// in 2 parts, 9.6 s in 4, the GPU's compute 99% busy; test_out/baselines/756b1c5/gpu_frames/).
 const GPU_FRAME_PARTS: usize = 4;
+/// The parts at once with ffmpeg's frames: two software decoders already fill the CPU.
 const FFMPEG_PARTS: usize = 2;
 
 /// How many parts of a recording a review works on at once, on a machine with `threads` threads.
@@ -157,7 +174,8 @@ pub fn parts_at_once(threads: usize, gpu_frames: bool) -> usize {
     }
 }
 
-/// Reviews a recording: its tracks and readings. `on_device` is told where each run's detector runs.
+/// Reviews a recording: its tracks and readings, what the HUD read, the areas found and, when asked, the kill check.
+/// `on_device` is told where each run's detector runs. An error when a stage fails, or `CANCELLED`.
 #[cfg(feature = "native")]
 pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Result<Reviewed, String> {
     let model = model_settings(&req.model)?;
@@ -394,8 +412,11 @@ pub(crate) fn fixed_map(video: &Path, info: &VideoInfo, mut key: impl FnMut(&[u8
 /// A run's part of the review: its tracking's and its watches' parts, and where its detector ran.
 #[cfg(feature = "native")]
 struct RunPart {
+    /// The run's tracking, for the join.
     track: TrackPart,
+    /// The run's camera, countdown and HUD readings, for the join.
     watch: WatchPart,
+    /// Where its detector ran ("DirectML", "CUDA" or "CPU").
     device: &'static str,
 }
 
@@ -403,12 +424,19 @@ struct RunPart {
 /// tracked so far in all runs (for progress), and who is told the progress and the devices.
 #[cfg(feature = "native")]
 struct RunContext<'a> {
+    /// What to review.
     req: &'a Request,
+    /// The core's review session: the runs' plan and their tracking and watching.
     review: &'a Review,
+    /// The fixed map and the HUD's boxes from the key frames.
     keys: &'a KeysRead,
+    /// The video's facts.
     info: &'a VideoInfo,
+    /// The frames tracked so far in all runs.
     done: &'a AtomicUsize,
+    /// Told the progress.
     progress: Progress<'a>,
+    /// Told each run's detector's device.
     on_device: DeviceNote<'a>,
 }
 
@@ -425,7 +453,16 @@ type WatchFrame = (Vec<u8>, Vec<u8>, Vec<u8>);
 /// Where a run's frames come from: ffmpeg's software decode, converted here, or the GPU, which decodes and converts.
 #[cfg(feature = "native")]
 enum FrameSource {
-    Ffmpeg { frames: Frames, convert: Box<Converter>, yuv: Vec<u8> },
+    /// ffmpeg's frames (`frames`), each read into `yuv` and converted to RGB by `convert`.
+    Ffmpeg {
+        /// ffmpeg's decoded frames, in the video's own YUV.
+        frames: Frames,
+        /// The converter from the video's YUV to the review's 1280 x 720 RGB and YUV.
+        convert: Box<Converter>,
+        /// The buffer each frame's YUV is read into, kept from frame to frame.
+        yuv: Vec<u8>,
+    },
+    /// The GPU's frames (gpu_frames.rs), already converted.
     #[cfg(windows)]
     Gpu(crate::gpu_frames::GpuFrames),
 }
@@ -484,7 +521,9 @@ impl FrameSource {
 /// A channel to one of a run's threads, and the buffers that thread sends back to be filled again.
 #[cfg(feature = "native")]
 struct Handoff<T, Spare = Vec<u8>> {
+    /// Sends the thread its work; waits while the channel is full.
     send: SyncSender<T>,
+    /// The buffers the thread is done with.
     spare: Receiver<Spare>,
 }
 

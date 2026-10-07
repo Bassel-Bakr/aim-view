@@ -12,13 +12,37 @@ import type { TimeWindow } from './time-window';
  * parts' boxes are already decoded.
  */
 export interface ReviewSetup {
+  /**
+   * The video's frame rate (frames a second).
+   */
   fps: number;
+  /**
+   * Every frame's time (seconds, from 0, in order).
+   */
   times: number[];
+  /**
+   * The key frames' times (seconds, in order), each one of `times`.
+   */
   keys: number[];
+  /**
+   * The decoded frames' size and colors.
+   */
   format: FrameFormat;
+  /**
+   * The scenario's target count, which `keep` holds each frame's boxes to (0: not known, no limit).
+   */
   cap: number;
+  /**
+   * The areas the review leaves out.
+   */
   areas: AreaBox[];
+  /**
+   * The run window to track (None: the whole video).
+   */
   window: TimeWindow | null;
+  /**
+   * The most runs to split the frames into (0 counts as 1); fewer when a cut would leave a run too short.
+   */
   runs: number;
   /**
    * The scenario's kind (None: not known): the model's at-crosshair rule may name the kinds it is for.

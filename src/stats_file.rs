@@ -8,31 +8,42 @@ use std::collections::HashMap;
 
 /// The "Key:,value" line that says when the challenge started, as a time of day ("%H:%M:%S.%f").
 const CHALLENGE_START: &str = "Challenge Start";
-/// The kill table's columns: each kill's time of day, its shots and its hits.
+/// The kill table's column of each kill's time of day (from 0: the second column, "Timestamp").
 const TIME_COLUMN: usize = 1;
+/// The kill table's column of each kill's shots (the sixth).
 const SHOTS_COLUMN: usize = 5;
+/// The kill table's column of each kill's hits (the seventh).
 const HITS_COLUMN: usize = 6;
-/// The largest hour, minute and second "%H:%M:%S" reads (Python's `strptime` takes 61 seconds, for leap seconds).
+/// The largest hour "%H" reads.
 const MAX_HOUR: i64 = 23;
+/// The largest minute "%M" reads.
 const MAX_MINUTE: i64 = 59;
+/// The largest second "%S" reads: Python's `strptime` takes 61, for leap seconds.
 const MAX_SECOND: i64 = 61;
 /// The digits of "%f", the fraction of a second: a shorter one is padded with zeros on the right.
 const FRACTION_DIGITS: usize = 6;
 /// The longest hour, minute or second "%H", "%M" and "%S" read.
 const MAX_FIELD_DIGITS: usize = 2;
+/// Minutes in an hour, for the time of day in microseconds.
 const MINUTES_PER_HOUR: i64 = 60;
+/// Seconds in a minute, for the time of day in microseconds.
 const SECONDS_PER_MINUTE: i64 = 60;
+/// Microseconds in a second: the times' unit before they become seconds.
 const MICROS_PER_SECOND: i64 = 1_000_000;
 
 /// A stats file: its "Key:,value" lines (a later line wins), and the kill table's rows as cells of text.
 pub struct StatsFile {
+    /// Each "Key:,value" line's value by its key (without the colon), such as "Challenge Start" or "Kills".
     pub meta: HashMap<String, String>,
+    /// The kill table's rows, one a kill in the file's order, each split at its commas.
     pub rows: Vec<Vec<String>>,
 }
 
 /// The kills in a stats file: each one's time in seconds since the challenge started, and the shots it took.
 pub struct StatsKills {
+    /// Each kill's time in seconds since the challenge started, in the file's order.
     pub times: Vec<f64>,
+    /// Each kill's shots, in the same order.
     pub shots: Vec<i64>,
 }
 
@@ -61,7 +72,7 @@ pub(crate) fn lines(text: &str) -> Vec<&str> {
     out
 }
 
-/// A time of day as "%H:%M:%S.%f" reads it, in microseconds since midnight.
+/// A time of day as "%H:%M:%S.%f" reads it, in microseconds since midnight; None when the text is not one.
 fn micros(text: &str) -> Option<i64> {
     let (clock, fraction) = text.split_once('.')?;
     let mut fields = clock.split(':');
@@ -86,6 +97,8 @@ fn micros(text: &str) -> Option<i64> {
 }
 
 impl StatsFile {
+    /// Reads a stats file's text: every "Key:,value" line, and the kill table's rows (the lines after the header that
+    /// start with a digit, up to the first blank line). Never fails: a file with no table gives no rows.
     pub fn parse(text: &str) -> StatsFile {
         let lines = lines(text);
         let mut meta = HashMap::new();
@@ -107,12 +120,12 @@ impl StatsFile {
         StatsFile { meta, rows }
     }
 
-    /// When the challenge started, in microseconds since midnight.
+    /// When the challenge started, in microseconds since midnight; None when the file lacks the line or its time.
     pub fn start_micros(&self) -> Option<i64> {
         micros(self.meta.get(CHALLENGE_START)?)
     }
 
-    /// The shots each kill took (the table's sixth column).
+    /// The shots each kill took (the table's sixth column); an error names the first row without them.
     pub fn shots(&self) -> Result<Vec<i64>, String> {
         self.rows
             .iter()
@@ -125,7 +138,8 @@ impl StatsFile {
         self.rows.iter().map(|row| number(row, HITS_COLUMN)).collect()
     }
 
-    /// Each kill's time since the challenge started, and its shots (review.py: `match`).
+    /// Each kill's time since the challenge started, and its shots (review.py: `match`). An error when the file has no
+    /// Challenge Start time or a row lacks its time or shots.
     pub fn kills(&self) -> Result<StatsKills, String> {
         let start = self.meta.get(CHALLENGE_START).ok_or("no Challenge Start in the stats file")?;
         let start_micros = micros(start).ok_or_else(|| format!("Challenge Start is not a time: {start}"))?;
@@ -149,10 +163,13 @@ fn number(row: &[String], column: usize) -> Option<i64> {
     row.get(column).and_then(|cell| cell.trim().parse().ok())
 }
 
+/// Checks reading a short stats file.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The kill rows stop at the blank line, the "Key:,value" lines are read, and the kills' times count from the
+    /// challenge's start.
     #[test]
     fn reads_the_kill_table() {
         let text = "Kill #,Timestamp,Bot,Weapon,TTK,Shots,Hits\r\n1,16:20:01.5,b,w,0.1s,1,1\r\n\

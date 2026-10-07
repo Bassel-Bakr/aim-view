@@ -8,24 +8,83 @@ import type { TurnBack } from './turn-back';
  * Tracking diagnostics from the target's own motion and the camera's (see the old review's `track_motion`).
  */
 export interface Motion {
+  /**
+   * The share of the run's frames with a camera reading.
+   */
   camera: number;
+  /**
+   * The target's own median speed over the measured frames, degrees a second.
+   */
   target_speed: number | null;
+  /**
+   * The mouse's median speed (the camera's turn) over the measured frames, degrees a second.
+   */
   mouse_speed: number | null;
+  /**
+   * The crosshair's median offset from the target's center line along its motion, degrees (positive: ahead).
+   */
   lag: number | null;
+  /**
+   * That offset as time at the target's speed, the median, ms (positive: ahead).
+   */
   lag_ms: number | null;
+  /**
+   * Of the measured frames off the target, the share with the crosshair ahead of it, past its leading edge.
+   */
   off_ahead: number | null;
+  /**
+   * Of the measured frames off the target, the share with the crosshair behind it.
+   */
   off_behind: number | null;
+  /**
+   * Of the measured frames off the target, the share with the crosshair to its side.
+   */
   off_side: number | null;
+  /**
+   * Overshoots past the target's leading edge, per second of measured time.
+   */
   overshoots: number | null;
+  /**
+   * The median of each overshoot's farthest point past the leading edge, degrees.
+   */
   overshoot_dist: number | null;
+  /**
+   * Swings across the target's middle, per second of steady motion.
+   */
   swings: number | null;
+  /**
+   * How many direction changes of the target were found.
+   */
   reversals: number;
+  /**
+   * The mouse's median reaction to a direction change, ms, over the changes it reacted to within REACTION_WINDOW_S.
+   */
   reaction: number | null;
+  /**
+   * The share of direction changes after which the crosshair went on the old way past the target's edge (by more
+   * than JITTER_DEG) within TURN_WINDOW_S.
+   */
   reversal_overshoot: number | null;
+  /**
+   * How far past the edge those went, the median, degrees.
+   */
   reversal_overshoot_dist: number | null;
+  /**
+   * The tracking in each direction the target moved in.
+   */
   by_direction: MotionDirection[];
+  /**
+   * The median horizontal distance from the nearest target's center line, degrees, over the frames where the
+   * crosshair is within NEAR_RADII of its radii.
+   */
   error_h: number | null;
+  /**
+   * The same, vertical.
+   */
   error_v: number | null;
+  /**
+   * The measured time: frames with the target moving and the crosshair engaged, in seconds.
+   */
   seconds: number;
   /**
    * Each moving frame's offset along the target's motion (positive: ahead of it) and across it, and the target's
@@ -37,9 +96,24 @@ export interface Motion {
    * took to get back on it. Not in Python's review.
    */
   turns_back?: TurnBack[];
+  /**
+   * Why the motion was not read: too little measured time (MIN_MOVING_SHARE, MIN_MOVING_S); None when it was.
+   */
   reason?: string;
+  /**
+   * How many times the crosshair swung across the target's middle to the other side, in steady motion.
+   */
   swing_count?: number;
+  /**
+   * How many times the crosshair turned back toward the target's middle along the motion, in steady motion.
+   */
   corrections?: number;
+  /**
+   * The swings over the corrections: how often a correction went too far; None without corrections.
+   */
   overcorrect?: number | null;
+  /**
+   * What the off-target time went on.
+   */
   frames?: OffFrames;
 }

@@ -6,7 +6,16 @@ import type { Shape } from './shape';
  * and which only hide what is behind them.
  */
 export interface Scene {
+  /**
+   * Every shape on the crop, targets' and occluders'.
+   */
   shapes: Shape[];
+  /**
+   * The groups of shapes joined into one target, each by its shapes' ids.
+   */
   targets: string[][];
+  /**
+   * The ids of the shapes that only hide what is behind them.
+   */
   occluders: string[];
 }

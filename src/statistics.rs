@@ -5,7 +5,7 @@
 //! (measure.rs, matching.rs), the tracking summary (tracking.rs), the HUD's reading (hud.rs) and the mouse log
 //! (mouse.rs).
 
-/// The mean: the values added in order, divided by their count.
+/// The mean: the values added in order, divided by their count. NaN when there are none.
 pub fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
@@ -16,7 +16,7 @@ pub fn pstdev(values: &[f64]) -> f64 {
     (values.iter().map(|value| (value - average) * (value - average)).sum::<f64>() / values.len() as f64).sqrt()
 }
 
-/// The middle value, or the mean of the two middle values.
+/// The middle value, or the mean of the two middle values. Panics when there are none (`med` checks first).
 pub fn median(values: &[f64]) -> f64 {
     let mut sorted = values.to_vec();
     sorted.sort_by(f64::total_cmp);

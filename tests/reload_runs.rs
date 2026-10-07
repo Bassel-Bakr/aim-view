@@ -12,6 +12,7 @@ use aimview::track::Tracks;
 
 /// What separates the scenario's name from the rest in a stats file's name.
 const STATS_NAME_SEPARATOR: &str = " - Challenge - ";
+/// The runs' folders under test_out/reload_runs/.
 const RUNS: [&str; 1] = ["Pasu_Reload_Goated_-_112_-_2026.08.24-02.21.32"];
 
 /// The scenario's file: the user's own, else the workshop's.
@@ -59,6 +60,7 @@ fn check_reloads(run: &str, rules: &AmmoRules, report: &Report) {
     assert!(kills > 0.0 && kills <= summary.kills as f64, "{run}");
 }
 
+/// Each kept run, reviewed with its scenario's ammo rules, passes `check_reloads`; a run without its files is skipped.
 #[test]
 fn forced_reloads_on_real_runs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/reload_runs");

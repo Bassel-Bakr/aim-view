@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 CROP_PX = 256
 BOX_VALUES = 4                      # cx, cy, w, h
 SHEET_COLUMNS, SHEET_ROWS = 8, 6
+# magenta: the contact sheet shows the fixed map's pixels in it
 FIXED_TINT = np.array([255, 0, 255])
 FIXED_KEEP, FIXED_TINT_SHARE = 0.4, 0.6   # a fixed pixel's own color and the tint, mixed
 BOX_COLOR = (0, 255, 0)
@@ -70,6 +71,7 @@ def contact_sheet(files, path):
 
 
 def main():
+    """Prints the leaks and each split's report, writes them to <data>/validation.json, and saves the contact sheet."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", default="test_out/vod_model/data")
     parser.add_argument("--sheet", default="test_out/vod_model/sheet.png")

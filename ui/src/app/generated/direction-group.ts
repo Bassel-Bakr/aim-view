@@ -5,11 +5,33 @@ import type { Direction } from './direction';
  * Flicks of one direction (a 45-degree sector), with the median time each took beyond what its distance predicts.
  */
 export interface DirectionGroup {
+  /**
+   * The direction's name in DIRECTIONS ("right", "up-right", ...).
+   */
   name: Direction;
+  /**
+   * How many flicks went this way.
+   */
   n: number;
+  /**
+   * Their median TTK, seconds.
+   */
   interval: number | null;
+  /**
+   * Their median distance to the target at the start, degrees.
+   */
   distance: number | null;
+  /**
+   * The share of them that underflicked.
+   */
   short: number;
+  /**
+   * The share of them that overflicked.
+   */
   past: number;
+  /**
+   * Their median TTK beyond what Fitts' law, fitted to the run, predicts for their distance (seconds; below 0:
+   * faster); None without a fit.
+   */
   beyond: number | null;
 }

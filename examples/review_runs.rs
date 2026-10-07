@@ -19,6 +19,7 @@ use aimview::local_config::LocalConfig;
 use aimview::review::review_json;
 use serde_json::{Value, json};
 
+/// The roots searched when none is given, from the folder the example runs in (the repo's root).
 const DEFAULT_ROOTS: [&str; 2] = ["test_out/vod_model/eval/video_alone", "test_out/vod_model/data_mined/reviews"];
 
 /// The run folders under `root`, sorted.
@@ -37,6 +38,7 @@ fn run_folders(root: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// A JSON file's value; panics when it cannot be read or is not JSON.
 fn read_json(path: &Path) -> Value {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
@@ -60,6 +62,8 @@ fn request(run: &Path, stats_text: Option<&str>) -> Value {
     })
 }
 
+/// Reviews every run under the roots twice (with its stats file when there is one, and alone) and writes the
+/// outcomes under `<out>`; a run without its stats file is named on standard error.
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let stats_folder = match args.iter().position(|arg| arg == "--stats") {

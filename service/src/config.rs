@@ -1,6 +1,7 @@
 //! What a library needs to know (`Config`): where it keeps its files, the user's folders (the recordings, KovaaK's
 //! stats files and scenarios), the models, the device the detector runs on and where ffmpeg comes from. The desktop app
-//! fills it from its own folders; a server from its command line.
+//! fills it from its own folders; the review server from its settings (server/src/config.rs); aimview-tool from its
+//! options.
 
 use std::path::{Path, PathBuf};
 
@@ -9,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     /// The data folder: everything the library writes is in it, laid out as `layout` says.
     pub data: PathBuf,
+    /// How the library's files are laid out in the data folder.
     pub layout: Layout,
     /// The VODs folder: OBS's recordings, one folder per scenario. None: the folder the user chose in the app
     /// (settings.json), if any.
@@ -21,7 +23,9 @@ pub struct Config {
     /// The models: the detector's _u8in exports (detector_<name>_u8in.onnx) and models.json, which is here or in the
     /// folder above (python/model/exports and python/model).
     pub models: PathBuf,
+    /// The device the detector runs on until the user picks one (settings.json's `device`).
     pub device: Device,
+    /// Where ffmpeg and ffprobe come from.
     pub ffmpeg: Ffmpeg,
     /// Decode and convert the frames on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 AV1 or
     /// H.264 MP4s); else ffmpeg's software decode. On by default: the reviews are the same, byte for byte.
@@ -34,8 +38,8 @@ pub enum Layout {
     /// The desktop app's: the library's files in the data folder, each recording's folder in reviews/, and uploads/,
     /// cutoff/ and mouse/.
     App,
-    /// python/server.py's, with test_out/ as the data folder: the library's files and each recording's folder in
-    /// vod_app/, and vod_uploads/, vod_model/hand/cutoff/ (detector training reads the labels there) and mouse/.
+    /// python/retired/server.py's, with test_out/ as the data folder: the library's files and each recording's folder
+    /// in vod_app/, and vod_uploads/, vod_model/hand/cutoff/ (detector training reads the labels there) and mouse/.
     Python,
 }
 
@@ -49,6 +53,7 @@ pub enum Device {
     DirectMl,
     /// CUDA: an NVIDIA GPU (needs the `cuda` feature).
     Cuda,
+    /// The CPU, through ONNX Runtime's own provider.
     Cpu,
     /// The browser build's: the GPU through WebGPU.
     #[cfg(not(feature = "native"))]
@@ -116,8 +121,7 @@ impl Layout {
 }
 
 impl Device {
-    /// The device's name as the API gives it (python/server.py: "cuda" or "cpu"; the desktop app: "directml").
-    /// A device by its name ("directml", "cuda", "cpu"); none for another name.
+    /// A device by its name ("directml", "cuda", "cpu"; in the browser build "webgpu", "wasm"); none for another name.
     pub fn from_name(name: &str) -> Option<Device> {
         match name {
             "directml" => Some(Device::DirectMl),
@@ -153,6 +157,7 @@ impl Device {
         out
     }
 
+    /// The device's name as the API gives it ("webgpu" or "wasm"; `Auto` is WebGPU).
     #[cfg(not(feature = "native"))]
     pub fn name(self) -> &'static str {
         match self {
@@ -164,6 +169,8 @@ impl Device {
         }
     }
 
+    /// The device's name as the API gives it (python/retired/server.py: "cuda" or "cpu"; the desktop app:
+    /// "directml"). `Auto` is named for the GPU this build would try, else "cpu".
     #[cfg(feature = "native")]
     pub fn name(self) -> &'static str {
         match self {

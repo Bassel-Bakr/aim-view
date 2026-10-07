@@ -37,15 +37,20 @@ struct Decoded {
     name: &'static str,
     /// Its frames' key in test_out/parity/convert/.
     key: &'static str,
+    /// Its width, in pixels.
     width: usize,
+    /// Its height, in pixels.
     height: usize,
     /// Whether its Y spans 0..255.
     full_range: bool,
 }
 
+/// av1 at 2560 x 1440, full range: its size takes the converter's 2:1 shortcut.
 const AV1_2560: Decoded = Decoded { name: "2560", key: "av1_2560_pc", width: 2560, height: 1440, full_range: true };
+/// An h264 recording at 1920 x 1080, limited range: its size goes through swscale's full pipeline.
 const H264_1920: Decoded =
     Decoded { name: "1920", key: "h264_1920_tv", width: 1920, height: 1080, full_range: false };
+/// The recordings the convert and HUD benches run on.
 const DECODED: [Decoded; 2] = [AV1_2560, H264_1920];
 
 /// A decoded frame of `key` (frame 0 or 200), YUV 4:2:0 at its own size.
@@ -58,6 +63,7 @@ fn decoded_frames(bench: &str, key: &str) -> Vec<Vec<u8>> {
     FRAME_NUMBERS.into_iter().filter_map(|number| decoded(bench, key, number)).collect()
 }
 
+/// The fixed map: one key frame's `contrast`, and one key frame added to the map (av1's 25 in turn).
 pub fn fixed(criterion: &mut Criterion) {
     let Some(keys) = inputs::bytes("fixed", AV1_KEYS) else { return };
     let frames: Vec<&[u8]> = keys.chunks_exact(KEY_FRAME_BYTES).collect();
@@ -75,6 +81,7 @@ pub fn fixed(criterion: &mut Criterion) {
     group.finish();
 }
 
+/// A decoded frame converted to 720p RGB24, and its Y plane to 720p luma, at each recording's size.
 pub fn convert(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("convert");
     group.sample_size(FEW_SAMPLES);
@@ -122,6 +129,8 @@ fn camera_watch(group: &mut BenchmarkGroup<WallTime>, dir: &str, left_out: &[boo
     group.bench_function("reading", |bencher| bencher.iter(|| watch.reading(black_box(&watch.shifts[1]), &near)));
 }
 
+/// The camera watch: the tiles left out by the areas and the fixed map, a frame's add and reading on flower, and the
+/// countdown test on an RGB frame.
 pub fn camera(criterion: &mut Criterion) {
     let bench = "camera";
     let dir = "test_out/parity/flower";
@@ -148,6 +157,7 @@ fn hud_keys(recording: &Decoded, y_planes: &[&[u8]]) -> HudKeys {
     watch.keys()
 }
 
+/// The HUD watch: the key frames' pass at 2560 x 1440, and a frame's add at each recording's size.
 pub fn hud(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("hud");
     group.sample_size(FEW_SAMPLES);
@@ -172,6 +182,7 @@ pub fn hud(criterion: &mut Criterion) {
     group.finish();
 }
 
+/// The pop-up watch's look at av1's excluded areas in one frame.
 pub fn popup(criterion: &mut Criterion) {
     let meta: Option<serde_json::Value> = inputs::json("popup", "test_out/parity/av1/meta.json");
     let rgb = inputs::bytes("popup", &format!("{CONVERT}/av1_2560_pc_0_rgb24.raw"));
@@ -185,6 +196,7 @@ pub fn popup(criterion: &mut Criterion) {
     group.finish();
 }
 
+/// The area finder's `finish` on av1's key frames, with KovaaK's box as the HUD watch finds it.
 pub fn areas(criterion: &mut Criterion) {
     let Some(keys) = inputs::bytes("areas", AV1_KEYS) else { return };
     let mut finder = AreaFinder::new();

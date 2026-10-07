@@ -1,7 +1,7 @@
 //! The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults are the
 //! repo's settings (aimview.defaults.json under this computer's aimview.json: aimview::local_config): the repo's
-//! test_out/ as the data folder (python/server.py's layout), the recordings' folder this computer names, KovaaK's
-//! folders under Steam's, and the models in python/model/.
+//! test_out/ as the data folder (Python's layout, python/retired/server.py's), the recordings' folder this computer
+//! names, KovaaK's folders under Steam's, and the models in python/model/.
 //!
 //! In: the flags (clap) and the settings file's text. Out: the `Settings` main.rs runs with, which glue.rs turns into
 //! the review service's `Config`.
@@ -22,7 +22,9 @@ const TOKEN_SYMBOLS: &[u8] = b"-._~";
 /// A setting turned on or off on the command line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Switch {
+    /// Turned on.
     On,
+    /// Turned off.
     Off,
 }
 
@@ -51,12 +53,12 @@ impl Device {
 /// Where ffmpeg comes from.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FfmpegChoice {
-    /// The PATH's
+    /// The PATH's.
     Path,
-    /// The one in this folder (named by the user); when it has none, as `Auto`
+    /// The one in this folder (named by the user); when it has none, as `Auto`.
     Folder(PathBuf),
     /// None named, as KovOBS finds it: the PATH's when it has ffmpeg and ffprobe, else the one in this folder (the data
-    /// folder's), downloaded into it before the first review
+    /// folder's), downloaded into it before the first review.
     Auto(PathBuf),
 }
 
@@ -73,8 +75,8 @@ pub struct Flags {
     /// The port [default: aimview.json's server.port]
     #[arg(long)]
     pub port: Option<u16>,
-    /// The data folder: reviews, uploads and the user's marks, in python/server.py's layout [default: aimview.json's
-    /// data, the repo's test_out]
+    /// The data folder: reviews, uploads and the user's marks, in Python's layout [default: aimview.json's data, the
+    /// repo's test_out]
     #[arg(long, value_name = "FOLDER")]
     pub data: Option<PathBuf>,
     /// The recordings, one folder per scenario; empty (--vods=) for the folder last chosen in the app [default:
@@ -126,35 +128,60 @@ fn any_path(text: &str) -> Result<PathBuf, std::convert::Infallible> {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileSettings {
+    /// As --host.
     pub host: Option<String>,
+    /// As --port.
     pub port: Option<u16>,
+    /// As --data.
     pub data: Option<PathBuf>,
+    /// As --vods; "" for the folder chosen in the app.
     pub vods: Option<PathBuf>,
+    /// As --stats.
     pub stats: Option<PathBuf>,
+    /// As --scenarios, a list.
     pub scenarios: Option<Vec<PathBuf>>,
+    /// As --models.
     pub models: Option<PathBuf>,
+    /// As --device.
     pub device: Option<Device>,
+    /// As --gpu-frames, true or false.
     pub gpu_frames: Option<bool>,
+    /// As --ffmpeg: "path", or a folder.
     pub ffmpeg: Option<PathBuf>,
+    /// As --ui.
     pub ui: Option<PathBuf>,
+    /// As --token; the place for it, since a flag shows in the process list.
     pub token: Option<String>,
+    /// As --dev.
     pub dev: Option<bool>,
 }
 
 /// The settings the server runs with.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
+    /// The host name or address to listen on.
     pub host: String,
+    /// The port to listen on.
     pub port: u16,
+    /// The data folder, in Python's layout.
     pub data: PathBuf,
+    /// The recordings' folder; None: the folder chosen in the app.
     pub vods: Option<PathBuf>,
+    /// KovaaK's stats folder.
     pub stats: PathBuf,
+    /// The folders of scenario files.
     pub scenarios: Vec<PathBuf>,
+    /// The models' folder.
     pub models: PathBuf,
+    /// Where the detector runs.
     pub device: Device,
+    /// Whether the frames are decoded and converted on the GPU where the video allows it.
     pub gpu_frames: bool,
+    /// Where ffmpeg comes from.
     pub ffmpeg: FfmpegChoice,
+    /// The server-mode UI build.
     pub ui: PathBuf,
+    /// The access token; None: no token.
     pub token: Option<String>,
     /// Dev mode: no token (access.rs).
     pub dev: bool,
@@ -296,14 +323,17 @@ pub fn load(flags: Flags) -> Result<(Settings, Option<PathBuf>), String> {
     Ok((resolve(flags, file, &base, Settings::defaults())?, path))
 }
 
+/// The settings: defaults, file, flags.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The flags parsed from `args`, as after the program's name.
     fn flags(args: &[&str]) -> Flags {
         Flags::try_parse_from(std::iter::once("aimview-server").chain(args.iter().copied())).expect("the flags parse")
     }
 
+    /// With no file and no flags the settings are the repo's defaults (127.0.0.1:8770, test_out, no token).
     #[test]
     fn no_file_and_no_flags_give_the_defaults() {
         let settings = resolve(Flags::default(), FileSettings::default(), Path::new(""), Settings::defaults()).unwrap();
@@ -316,6 +346,7 @@ mod tests {
         assert_eq!(settings.token, None);
     }
 
+    /// The file's settings are taken, its relative paths from its folder, and what it leaves out stays the default.
     #[test]
     fn the_file_gives_settings_and_its_relative_paths_start_at_its_folder() {
         let file = parse_file(
@@ -344,6 +375,7 @@ mod tests {
         assert_eq!(settings.stats, Settings::defaults().stats);
     }
 
+    /// Flags win over the file; --vods= is none, ffmpeg's default follows --data, and "PATH" in any case is the PATH.
     #[test]
     fn flags_override_the_file() {
         let file = parse_file("port = 9000\ndevice = \"cpu\"\nscenarios = [\"x\"]\ntoken = \"from-file\"").unwrap();
@@ -368,6 +400,7 @@ mod tests {
         assert_eq!(settings.ffmpeg, FfmpegChoice::Path);
     }
 
+    /// Every device name reads from a flag and from the file, and is the device's `flag`; another name is refused.
     #[test]
     fn every_device_name_parses() {
         for (name, device) in
@@ -380,6 +413,7 @@ mod tests {
         assert!(Flags::try_parse_from(["aimview-server", "--device", "gpu"]).is_err());
     }
 
+    /// GPU frames are on by default and turn off by a flag or the file; a value but on or off is refused.
     #[test]
     fn gpu_frames_are_on_unless_turned_off() {
         assert!(Settings::defaults().gpu_frames);
@@ -388,6 +422,7 @@ mod tests {
         assert!(Flags::try_parse_from(["aimview-server", "--gpu-frames", "maybe"]).is_err());
     }
 
+    /// An unknown or ill-typed setting and a token with a space are refused; an empty token is none.
     #[test]
     fn a_bad_file_or_token_is_refused() {
         assert!(parse_file("prot = 8770").is_err(), "an unknown setting");
@@ -400,6 +435,7 @@ mod tests {
         assert_eq!(settings.token, None);
     }
 
+    /// The URL to open: the host as given, localhost for every address, brackets round an IPv6 address.
     #[test]
     fn the_url_to_open() {
         let mut settings = Settings::defaults();

@@ -35,110 +35,148 @@ use aimview_service::{Answer, Failure};
 
 /// Nanoseconds in a second.
 const NANOS_PER_SECOND: f64 = 1e9;
-/// Seconds in a day, an hour and a minute, and minutes in an hour.
+/// Seconds in a day.
 const SECONDS_PER_DAY: i64 = 86_400;
+/// Seconds in an hour.
 const SECONDS_PER_HOUR: i64 = 3_600;
+/// Seconds in a minute.
 const SECONDS_PER_MINUTE: i64 = 60;
+/// Minutes in an hour.
 const MINUTES_PER_HOUR: i64 = 60;
-/// Howard Hinnant's civil calendar: the days from 0000-03-01 to 1970-01-01, and the days and years in an era (the
-/// Gregorian cycle).
+/// Howard Hinnant's civil calendar: the days from 0000-03-01 to 1970-01-01.
 const DAYS_TO_UNIX_EPOCH: i64 = 719_468;
+/// The days in an era (the Gregorian calendar's 400-year cycle).
 const DAYS_PER_ERA: i64 = 146_097;
+/// The years in an era.
 const YEARS_PER_ERA: i64 = 400;
 /// The busiest rate is counted over this long, seconds.
 const BUSIEST_WINDOW_S: f64 = 0.1;
 /// With this many events or more, a busiest rate at or under THROTTLED_BUSIEST_HZ means Windows throttled the logger
 /// (to about 125 events a second).
 const MIN_EVENTS_FOR_RATE: usize = 200;
+/// The busiest rate, in events a second, at or under which a long enough log was throttled.
 const THROTTLED_BUSIEST_HZ: f64 = 300.0;
 /// The argument that makes the app's executable the logger.
 const CHILD_ARG: &str = "--mouse-log";
-/// The logger process's exit codes: logged, failed, and started without the file to write.
+/// The logger process's exit code when it logged.
 const EXIT_LOGGED: i32 = 0;
+/// The logger process's exit code when it failed.
 const EXIT_FAILED: i32 = 1;
+/// The logger process's exit code when it started without the file to write.
 const EXIT_NO_FILE: i32 = 2;
-/// How long a logger asked to stop may take to write its stop pair before it is killed, and how often it is checked.
+/// How long a logger asked to stop may take to write its stop pair before it is killed.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+/// How often a stopping logger is checked.
 const STOP_POLL: Duration = Duration::from_millis(20);
 /// Digits between the commas of a large number.
 const DIGITS_PER_GROUP: usize = 3;
 
 // ---- Windows ----
 
+/// Windows' calls, constants and structs the logger uses (user32, kernel32, advapi32).
 #[cfg(windows)]
 mod win {
     use std::ffi::c_void;
 
-    /// The raw input message, and PeekMessageW's flag to take a message off the queue.
+    /// The raw input message.
     pub const WM_INPUT: u32 = 0x00FF;
+    /// PeekMessageW's flag to take a message off the queue.
     pub const PM_REMOVE: u32 = 0x0001;
     /// GetRawInputData's command: the whole RAWINPUT.
     pub const RID_INPUT: u32 = 0x1000_0003;
     /// RAWINPUTHEADER's dwType for a mouse.
     pub const RIM_TYPEMOUSE: u32 = 0;
-    /// WM_INPUT's wParam: input while the window is foreground, and while it is not.
+    /// WM_INPUT's wParam for input while the window is foreground.
     pub const RIM_INPUT: usize = 0;
+    /// WM_INPUT's wParam for input while it is not.
     pub const RIM_INPUTSINK: usize = 1;
-    /// RegisterRawInputDevices' flags: stop the device's input, and take it in the background too.
+    /// RegisterRawInputDevices' flag to stop the device's input.
     pub const RIDEV_REMOVE: u32 = 0x0000_0001;
+    /// RegisterRawInputDevices' flag to take the device's input in the background too.
     pub const RIDEV_INPUTSINK: u32 = 0x0000_0100;
     /// GetRawInputDeviceInfoW's command: the device's name.
     pub const RIDI_DEVICENAME: u32 = 0x2000_0007;
-    /// The HID usage page and usage of a mouse (generic desktop controls, mouse).
+    /// The HID usage page of a mouse: generic desktop controls.
     pub const USAGE_PAGE_GENERIC: u16 = 1;
+    /// The HID usage of a mouse on that page.
     pub const USAGE_MOUSE: u16 = 2;
     /// The parent of a message-only window.
     pub const HWND_MESSAGE: isize = -3;
-    /// MsgWaitForMultipleObjectsEx's wake mask (any message) and flag (input already in the queue counts).
+    /// MsgWaitForMultipleObjectsEx's wake mask: any message.
     pub const QS_ALLINPUT: u32 = 0x04FF;
+    /// MsgWaitForMultipleObjectsEx's flag: input already in the queue counts.
     pub const MWMO_INPUTAVAILABLE: u32 = 0x0004;
+    /// SetThreadPriority's highest priority short of time-critical.
     pub const THREAD_PRIORITY_HIGHEST: i32 = 2;
     /// What the raw input calls return when they fail: (UINT)-1.
     pub const FAIL: u32 = u32::MAX;
     /// HKEY_CURRENT_USER, sign-extended as the headers define it.
     pub const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
+    /// The registry's read-only access.
     pub const KEY_READ: u32 = 0x2_0019;
-    /// Registry value types: a string, and a 32-bit number.
+    /// The registry value type of a string.
     pub const REG_SZ: u32 = 1;
+    /// The registry value type of a 32-bit number.
     pub const REG_DWORD: u32 = 4;
     /// CreateProcess's flag for a console program with no console window.
     pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     /// RAWINPUTHEADER's size in the 64-bit layout, which GetRawInputData is told.
     pub const RAW_INPUT_HEADER_BYTES: u32 = 24;
-    /// A mouse's RAWINPUT in the 64-bit layout (RAWINPUTHEADER, then RAWMOUSE): its size in bytes, and where its
-    /// fields start: the header's dwType and hDevice, then RAWMOUSE's usFlags, usButtonFlags, usButtonData, lLastX and
-    /// lLastY.
+    /// A mouse's RAWINPUT in the 64-bit layout (RAWINPUTHEADER, then RAWMOUSE): its size in bytes. The *_AT constants
+    /// after it are where its fields start.
     pub const RAW_INPUT_BYTES: usize = 48;
+    /// The header's dwType.
     pub const TYPE_AT: usize = 0;
+    /// The header's hDevice.
     pub const DEVICE_AT: usize = 8;
+    /// RAWMOUSE's usFlags.
     pub const FLAGS_AT: usize = 24;
+    /// RAWMOUSE's usButtonFlags.
     pub const BUTTON_FLAGS_AT: usize = 28;
+    /// RAWMOUSE's usButtonData.
     pub const BUTTON_DATA_AT: usize = 30;
+    /// RAWMOUSE's lLastX.
     pub const X_AT: usize = 36;
+    /// RAWMOUSE's lLastY.
     pub const Y_AT: usize = 40;
 
+    /// Windows' MSG: a message from the thread's queue.
     #[repr(C)]
     pub struct Msg {
+        /// The window it is for.
         pub hwnd: isize,
+        /// The message's number (WM_INPUT, ...).
         pub message: u32,
+        /// Its first parameter (for WM_INPUT, RIM_INPUT or RIM_INPUTSINK).
         pub wparam: usize,
+        /// Its second parameter (for WM_INPUT, the RAWINPUT's handle).
         pub lparam: isize,
+        /// When it was posted, in ms since the system started.
         pub time: u32,
+        /// The cursor's x then, in screen pixels.
         pub pt_x: i32,
+        /// The cursor's y then, in screen pixels.
         pub pt_y: i32,
+        /// Windows' own.
         pub private: u32,
     }
 
+    /// Windows' RAWINPUTDEVICE: a kind of device to take raw input from.
     #[repr(C)]
     pub struct RawInputDevice {
+        /// The HID usage page.
         pub usage_page: u16,
+        /// The HID usage.
         pub usage: u16,
+        /// RIDEV_* flags.
         pub flags: u32,
+        /// The window that gets the input.
         pub target: isize,
     }
 
     #[link(name = "user32")]
     unsafe extern "system" {
+        /// Makes a window; 0 when it fails.
         #[allow(clippy::too_many_arguments)]
         pub fn CreateWindowExW(
             ex: u32,
@@ -154,29 +192,45 @@ mod win {
             instance: isize,
             param: *mut c_void,
         ) -> isize;
+        /// Destroys a window.
         pub fn DestroyWindow(hwnd: isize) -> i32;
+        /// Asks for (or with RIDEV_REMOVE stops) raw input from kinds of devices; 0 when it fails.
         pub fn RegisterRawInputDevices(devices: *const RawInputDevice, n: u32, size: u32) -> i32;
+        /// A WM_INPUT's RAWINPUT into `data`; FAIL when it fails.
         pub fn GetRawInputData(input: isize, command: u32, data: *mut c_void, size: *mut u32, header: u32) -> u32;
+        /// A raw input device's facts (its name); with no buffer, the size it needs.
         pub fn GetRawInputDeviceInfoW(device: isize, command: u32, data: *mut c_void, size: *mut u32) -> u32;
+        /// Takes the next message from the queue without waiting; 0 when there is none.
         pub fn PeekMessageW(msg: *mut Msg, hwnd: isize, min: u32, max: u32, remove: u32) -> i32;
+        /// Posts a message to a window's queue.
         pub fn PostMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> i32;
+        /// Turns key messages into character messages.
         pub fn TranslateMessage(msg: *const Msg) -> i32;
+        /// Hands a message to its window's procedure.
         pub fn DispatchMessageW(msg: *const Msg) -> isize;
+        /// The default handling of a message.
         pub fn DefWindowProcW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
+        /// Waits for a message, a handle or the time.
         pub fn MsgWaitForMultipleObjectsEx(n: u32, handles: *const isize, ms: u32, mask: u32, flags: u32) -> u32;
     }
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
+        /// The performance counter now, in its ticks.
         pub fn QueryPerformanceCounter(count: *mut i64) -> i32;
+        /// The performance counter's ticks a second.
         pub fn QueryPerformanceFrequency(freq: *mut i64) -> i32;
+        /// A handle for the calling thread.
         pub fn GetCurrentThread() -> isize;
+        /// Sets a thread's priority.
         pub fn SetThreadPriority(thread: isize, priority: i32) -> i32;
     }
 
     #[link(name = "advapi32")]
     unsafe extern "system" {
+        /// Opens a registry key; 0 when it opened.
         pub fn RegOpenKeyExW(key: isize, sub: *const u16, options: u32, sam: u32, out: *mut isize) -> i32;
+        /// A key's `index`-th value: its name, type and data; not 0 when there are no more.
         #[allow(clippy::too_many_arguments)]
         pub fn RegEnumValueW(
             key: isize,
@@ -188,6 +242,7 @@ mod win {
             data: *mut u8,
             data_len: *mut u32,
         ) -> i32;
+        /// Closes a registry key.
         pub fn RegCloseKey(key: isize) -> i32;
     }
 
@@ -197,15 +252,17 @@ mod win {
     }
 }
 
-/// The registry's subkey of HKEY_CURRENT_USER that holds the throttle, and the start of the throttle values' names
-/// (RawMouseThrottleEnabled, RawMouseThrottleForced, RawMouseThrottleDuration, ...).
+/// The registry's subkey of HKEY_CURRENT_USER that holds the throttle.
 #[cfg(windows)]
 const THROTTLE_KEY: &str = r"Control Panel\Mouse";
+/// The start of the throttle values' names (RawMouseThrottleEnabled, RawMouseThrottleForced,
+/// RawMouseThrottleDuration, ...).
 #[cfg(windows)]
 const THROTTLE_VALUE_PREFIX: &str = "RawMouseThrottl";
-/// The buffers a registry value's name (characters) and data (bytes) are read into.
+/// The buffer a registry value's name is read into, in characters.
 #[cfg(windows)]
 const REGISTRY_NAME_CHARS: usize = 256;
+/// The buffer a registry value's data is read into, in bytes.
 #[cfg(windows)]
 const REGISTRY_DATA_BYTES: usize = 1024;
 
@@ -328,20 +385,23 @@ const CLOCK_PAIR_TRIES: usize = 20;
 /// The logger waits at most this long for input before it checks whether to stop, milliseconds.
 #[cfg(windows)]
 const WAIT_MS: u32 = 100;
-/// The records go to the file once this many bytes wait, or this long after the last write, so a killed logger loses
-/// little.
+/// The records go to the file once this many bytes wait, or FLUSH_INTERVAL after the last write, so a killed logger
+/// loses little.
 #[cfg(windows)]
 const FLUSH_BYTES: usize = 1 << 16;
+/// The longest the records wait before they go to the file.
 #[cfg(windows)]
 const FLUSH_INTERVAL: Duration = Duration::from_millis(250);
-/// The bench's rounds of posted messages (the fastest counts), and its RAWINPUT: a move of 3 counts right and 2 up
-/// from a made-up device.
+/// The bench's rounds of posted messages (the fastest counts).
 #[cfg(windows)]
 const BENCH_ROUNDS: usize = 5;
+/// The bench's RAWINPUT: from this made-up device.
 #[cfg(windows)]
 const BENCH_DEVICE_HANDLE: u64 = 0x1234;
+/// The bench's RAWINPUT: a move of 3 counts right.
 #[cfg(windows)]
 const BENCH_X_COUNTS: i32 = 3;
+/// The bench's RAWINPUT: a move of 2 counts up.
 #[cfg(windows)]
 const BENCH_Y_COUNTS: i32 = -2;
 /// Microseconds in a second.
@@ -356,6 +416,7 @@ struct RawBuffer([u8; win::RAW_INPUT_BYTES]);
 /// A message-only window that turns WM_INPUT messages into records in `records`.
 #[cfg(windows)]
 pub struct Logger {
+    /// The message-only window the raw input goes to.
     window: isize,
     /// QueryPerformanceCounter's ticks a second.
     pub qpc_frequency: i64,
@@ -367,11 +428,13 @@ pub struct Logger {
     pub device_names: Vec<String>,
     /// WM_INPUT messages that could not be read.
     pub unread_messages: usize,
+    /// The buffer each WM_INPUT's RAWINPUT is read into.
     raw_input: RawBuffer,
 }
 
 #[cfg(windows)]
 impl Logger {
+    /// A logger with its message-only window made; it takes no input until `register`.
     pub fn new() -> io::Result<Logger> {
         let (class, name) = (win::wide("STATIC"), win::wide("aimview mouse_log"));
         // SAFETY: a message-only window of a system class, with no parameters
@@ -506,6 +569,7 @@ impl Logger {
         unsafe { win::MsgWaitForMultipleObjectsEx(0, std::ptr::null(), timeout_ms, mask, flags) };
     }
 
+    /// Stops the mouse's raw input and destroys the window.
     pub fn close(&mut self) {
         let device = win::RawInputDevice {
             usage_page: win::USAGE_PAGE_GENERIC,
@@ -691,20 +755,28 @@ fn fill_bench_input(raw: &mut [u8; win::RAW_INPUT_BYTES]) {
 
 /// The logger the app runs: its process, its file and when it started (seconds since 1970).
 struct Running {
+    /// The logger's process; closing its standard input stops it.
     child: Child,
+    /// The log it writes.
     file: PathBuf,
+    /// When it started, in seconds since 1970.
     started_s: f64,
 }
 
 /// The switch's state: the logger running, the last log it wrote, and why the last start or stop failed.
 #[derive(Default)]
 struct Switch {
+    /// The logger running; None: the switch is off.
     running: Option<Running>,
+    /// The last finished log's facts (`log_facts_json`).
     last_log: Option<Value>,
+    /// Why the last start or stop failed.
     error: Option<String>,
 }
 
+/// The folder the app keeps its mouse logs in, set once at the app's start.
 static FOLDER: OnceLock<PathBuf> = OnceLock::new();
+/// The switch, made on first use.
 static SWITCH: Mutex<Option<Switch>> = Mutex::new(None);
 
 /// The folder the app keeps its mouse logs in (its data folder's mouse/).
@@ -712,6 +784,7 @@ pub fn set_folder(folder: PathBuf) {
     let _ = FOLDER.set(folder);
 }
 
+/// The mouse logs' folder; a failure when the app has not set it.
 fn log_folder() -> Answer<&'static PathBuf> {
     FOLDER.get().ok_or_else(|| Failure::from("the mouse log folder is not set".to_string()))
 }
@@ -727,6 +800,7 @@ pub fn child_main() -> Option<i32> {
         eprintln!("{CHILD_ARG} needs the file to write");
         return Some(EXIT_NO_FILE);
     };
+    /// Set once standard input closes or says anything.
     static STOP: AtomicBool = AtomicBool::new(false);
     std::thread::spawn(|| {
         let mut byte = [0u8; 1];
@@ -753,6 +827,7 @@ fn log_in_child(out: &str, stop: &AtomicBool) -> i32 {
     }
 }
 
+/// Without Windows there is no logger: the process fails.
 #[cfg(not(windows))]
 fn log_in_child(out: &str, _stop: &AtomicBool) -> i32 {
     eprintln!("the mouse logger needs Windows ({out})");
@@ -884,10 +959,12 @@ fn start_logger(file: &Path) -> Answer<Child> {
     command.spawn().map_err(|error| Failure::from(format!("the logger could not start: {error}")))
 }
 
+/// The logger's stamps, dates, records and speed.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// A stamp has its length, this computer's offset is whole quarter hours, and large numbers get commas.
     #[test]
     fn stamps_and_numbers() {
         let now_s = time_ns() as f64 / NANOS_PER_SECOND;
@@ -897,6 +974,7 @@ mod tests {
         assert_eq!(thousands(8000.0), "8,000");
     }
 
+    /// Days from 1970 give their dates, across leap days and centuries and before 1970.
     #[test]
     fn civil_dates() {
         for (days, date) in [
@@ -913,6 +991,7 @@ mod tests {
         }
     }
 
+    /// A mouse's RAWINPUT gives a device record then an event with its fields; a keyboard's gives none.
     #[cfg(windows)]
     #[test]
     fn a_record_holds_the_raw_inputs_fields() {
@@ -938,6 +1017,7 @@ mod tests {
         assert_eq!(logger.device_names.len(), 1);
     }
 
+    /// The per-event cost is under 60 us, well inside an 8000 Hz mouse's 125 us.
     #[cfg(windows)]
     #[test]
     fn the_logger_keeps_up() {

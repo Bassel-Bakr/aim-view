@@ -6,7 +6,16 @@ import type { LinkFormat } from './link-format';
  * first.
  */
 export interface LinkInfo {
+  /**
+   * The video's title; empty when yt-dlp gives none.
+   */
   title: string;
+  /**
+   * Its length in seconds, when known.
+   */
   duration: number | null;
+  /**
+   * The qualities to choose from, best first.
+   */
   formats: LinkFormat[];
 }

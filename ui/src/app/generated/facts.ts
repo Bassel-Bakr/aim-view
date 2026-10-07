@@ -9,9 +9,25 @@ import type { Kind } from './kind';
  * or look like something else).
  */
 export interface Facts {
+  /**
+   * The kind of run, from the file's tags or, untagged, its weapon and bots.
+   */
   kind: Kind;
+  /**
+   * The run's time limit in seconds (Timelimit); None when the file has none.
+   */
   limit: number | null;
+  /**
+   * The targets alive at once: the bots AddedBots names; None when the line is missing.
+   */
   targets: number | null;
+  /**
+   * The ammo rules of the weapon the player starts with; None when its magazine never runs out.
+   */
   reload: AmmoRules | null;
+  /**
+   * The hitbox every bot shares; None when they differ, it is hidden under a model or has a head, or the file lacks
+   * it.
+   */
   hitbox: Hitbox | null;
 }

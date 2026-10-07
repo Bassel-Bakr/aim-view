@@ -1,3 +1,8 @@
+/**
+ * Which page shows and whether the recordings list is open (`Pages`). In: the URL's ?page=, the
+ * open recording, the screen's width and what this browser kept. Out: the root component's layout.
+ */
+
 import { effect, inject, Service, signal, untracked } from '@angular/core';
 import { Library } from './library';
 import { queryValue, setQuery } from './url-query';
@@ -14,6 +19,7 @@ function narrowQuery(): MediaQueryList | null {
   return width ? matchMedia(`(width <= ${width})`) : null;
 }
 
+/** Whether this browser kept the list's column open (open when it kept nothing). */
 function storedOpen(): boolean {
   try {
     return localStorage.getItem(LIST_KEY) !== 'closed';
@@ -30,12 +36,18 @@ function storedOpen(): boolean {
  */
 @Service()
 export class Pages {
+  /** The open recording, which closes the drawer when one is picked. */
   private readonly library = inject(Library);
+  /** Whether the Crops page shows, not the review page. */
   readonly crops = signal(queryValue('page') === 'crops');
+  /** Whether the screen is narrow (a phone): the list is a drawer. */
   readonly narrow = signal(false);
+  /** Whether the list's column is open on a wide screen. */
   private readonly columnOpen = signal(storedOpen());
+  /** Whether the list's drawer is open on a narrow screen. */
   private readonly drawerOpen = signal(true);
 
+  /** Keeps ?page= in the URL, opens the drawer while no recording is open, follows the width. */
   constructor() {
     effect(() => setQuery({ page: this.crops() ? 'crops' : null }));
     effect(() => {
@@ -54,10 +66,12 @@ export class Pages {
     return this.narrow() ? this.drawerOpen() : this.columnOpen();
   }
 
+  /** Switches between the Crops page and the review page. */
   toggleCrops(): void {
     this.crops.update((open) => !open);
   }
 
+  /** Opens or closes the recordings list; a wide screen's choice is kept across visits. */
   toggleList(): void {
     if (this.narrow()) {
       this.drawerOpen.update((open) => !open);

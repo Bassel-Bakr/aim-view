@@ -30,40 +30,55 @@ from datetime import datetime
 from pathlib import Path
 
 MAGIC, VERSION = b"FFML", 1
+# the file's header and its three kinds of record (the module's docstring gives their fields)
 HEADER = struct.Struct("<4sHHqqq")
 REC = struct.Struct("<qiiHHHH")
 DEV = struct.Struct("<qQII")
 STOP = struct.Struct("<qqq")
+# a record's first field when it is a device or the stop pair: an event's QPC time is never negative
 KIND_DEVICE, KIND_STOP = -1, -2
-MOUSE_MOVE_ABSOLUTE = 0x01
+MOUSE_MOVE_ABSOLUTE = 0x01          # usFlags: the motion is a position, not counts moved
+# usButtonFlags: the left button went down, came up
 RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP = 0x0001, 0x0002
 assert REC.size == DEV.size == STOP.size == 24 and HEADER.size == 32
 
 
 # Raw Input structures, 64-bit layouts.
 class RAWINPUTHEADER(C.Structure):
+    """Windows' RAWINPUTHEADER: the input's type (mouse, keyboard, other) and the device it came from."""
+
     _fields_ = [("dwType", W.DWORD), ("dwSize", W.DWORD), ("hDevice", W.HANDLE), ("wParam", W.WPARAM)]
 
 
 class _BUTTONS(C.Structure):
+    """The two halves of RAWMOUSE's button field: what the buttons and the wheel did, and the wheel's amount."""
+
     _fields_ = [("usButtonFlags", W.USHORT), ("usButtonData", W.USHORT)]
 
 
 class _BUTTONS_UNION(C.Union):
+    """RAWMOUSE's button field, readable whole or as its two halves."""
+
     _fields_ = [("ulButtons", W.ULONG), ("s", _BUTTONS)]
 
 
 class RAWMOUSE(C.Structure):
-    _fields_ = [("usFlags", W.USHORT), ("u", _BUTTONS_UNION), ("ulRawButtons", W.ULONG), ("lLastX", W.LONG),
+    """Windows' RAWMOUSE: one mouse event's flags, buttons and counts moved."""
+
+    _fields_ =[("usFlags", W.USHORT), ("u", _BUTTONS_UNION), ("ulRawButtons", W.ULONG), ("lLastX", W.LONG),
                 ("lLastY", W.LONG), ("ulExtraInformation", W.ULONG)]
 
 
 class RAWINPUT(C.Structure):              # the data union is as large as RAWMOUSE, so only the mouse is declared
+    """Windows' RAWINPUT for a mouse: the header, then the event."""
+
     _fields_ = [("header", RAWINPUTHEADER), ("mouse", RAWMOUSE)]
 
 
 class RAWINPUTDEVICE(C.Structure):
-    _fields_ = [("usUsagePage", W.USHORT), ("usUsage", W.USHORT), ("dwFlags", W.DWORD), ("hwndTarget", W.HWND)]
+    """Windows' RAWINPUTDEVICE: which devices a window asks raw input from, and how."""
+
+    _fields_ =[("usUsagePage", W.USHORT), ("usUsage", W.USHORT), ("dwFlags", W.DWORD), ("hwndTarget", W.HWND)]
 
 
 assert C.sizeof(C.c_void_p) == 8, "needs 64-bit Python"
@@ -113,6 +128,8 @@ class Logger:
     """A message-only window that turns WM_INPUT messages into records in self.out."""
 
     def __init__(self):
+        """Makes the window and the two closures the hot path runs (self.record, self.drain), with every lookup they
+        need bound once. register() then asks for the mouse's raw input."""
         self.u32, self.k32 = u32, k32 = win()
         self.hwnd = u32.CreateWindowExW(0, "STATIC", "flowfix mouse_log", 0, 0, 0, 0, 0, HWND_MESSAGE, None, None,
                                         None)
@@ -122,9 +139,9 @@ class Logger:
         k32.QueryPerformanceFrequency(C.byref(f))
         self.freq = f.value
         self.out = bytearray()
-        self.devices = {}                     # handle -> index
-        self.names = []
-        self.bad = 0
+        self.devices = {}                     # each device's index, by its handle
+        self.names = []                       # each device's name, by its index
+        self.bad = 0                          # WM_INPUT messages whose data could not be read
         msg, raw, size, qpc = W.MSG(), RAWINPUT(), W.UINT(), C.c_int64()
         pmsg, praw, psize, pq = C.byref(msg), C.byref(raw), C.byref(size), C.byref(qpc)
         peek, getraw, now = u32.PeekMessageW, u32.GetRawInputData, k32.QueryPerformanceCounter
@@ -163,7 +180,9 @@ class Logger:
         self.record, self.drain = record, drain
 
     def add_device(self, h):
-        d = self.devices[h] = len(self.devices)
+        """Gives the device with handle `h` the next index, writes its device record, and keeps its name; returns its
+        index."""
+        d =self.devices[h] = len(self.devices)
         self.out.extend(DEV.pack(KIND_DEVICE, h, d, 0))
         name = "(no device handle: injected or synthetic input)"
         n = W.UINT()
@@ -175,11 +194,14 @@ class Logger:
         return d
 
     def register(self):
-        rid = RAWINPUTDEVICE(1, 2, RIDEV_INPUTSINK, self.hwnd)      # usage page 1 (generic desktop), usage 2 (mouse)
+        """Asks Windows for every mouse's raw input, also while another program has focus; raises OSError if it
+        refuses."""
+        rid =RAWINPUTDEVICE(1, 2, RIDEV_INPUTSINK, self.hwnd)      # usage page 1 (generic desktop), usage 2 (mouse)
         if not self.u32.RegisterRawInputDevices(C.byref(rid), 1, C.sizeof(rid)):
             raise OSError(C.get_last_error(), "RegisterRawInputDevices failed")
 
     def qpc(self):
+        """The QueryPerformanceCounter time now, in counts (self.freq a second)."""
         self.k32.QueryPerformanceCounter(self.qpc_ref)
         return self.qpc_val.value
 
@@ -195,9 +217,11 @@ class Logger:
         return best[1], best[2]
 
     def wait(self, ms):
+        """Sleeps until a message is queued or `ms` milliseconds pass."""
         self.u32.MsgWaitForMultipleObjectsEx(0, None, ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
 
     def close(self):
+        """Destroys the window, which ends its raw input."""
         self.u32.DestroyWindow(self.hwnd)
 
 
@@ -265,7 +289,9 @@ def busiest_rate(t, span=0.1):
 
 
 def summary(path, names=None):
-    log = read_log(path)
+    """Prints a log's event count, rates and devices (with `names`, by index), and a warning when it looks throttled;
+    returns the log as read_log gives it."""
+    log =read_log(path)
     n, dur = len(log["t"]), log["duration"]
     peak = busiest_rate(log["t"])
     print(f"mouse_log: {n} events in {dur:.2f} s ({n / dur if dur else 0:.1f} Hz mean, busiest 100 ms "
@@ -280,6 +306,8 @@ def summary(path, names=None):
 
 
 def main():
+    """Logs until Ctrl+C or --seconds, writing every quarter second, then the stop pair, and prints the summary.
+    With --bench, times the per-event path instead."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", help="output file (default test_out/mouse/mouse_<date>_<time>.bin)")
     ap.add_argument("--seconds", type=float, help="stop after this many seconds (default: run until Ctrl+C)")

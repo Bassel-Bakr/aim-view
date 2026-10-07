@@ -57,6 +57,7 @@ def reviewed(lib, video, model, out):
 
 
 def unmatched(boxes, others):
+    """The boxes with no box of `others` within MATCH_PX of their center."""
     return [box for box in boxes if all(math.hypot(box[0] - other[0], box[1] - other[1]) > MATCH_PX
                                         for other in others)]
 
@@ -74,8 +75,9 @@ def run_window(folder, stats, fps, frame_count):
 
 
 def disagreements(frames, reference, window):
-    """Frame: (rule, the box it is about, the boxes that label the crop), for each frame of the run window where the
-    two differ."""
+    """{frame: (rule, the box it is about, the boxes that label the crop)} for each frame of the run window where the
+    two differ. A frame with a missed target is "missed" even when it also has an extra box; the box it is about is
+    the highest scored of its kind."""
     found = {}
     for frame, ref_frame in zip(frames, reference):
         if not window[0] <= frame["i"] <= window[1]:
@@ -124,7 +126,8 @@ def save_crop(path, frame_rgb, fixed, about, labels, i, why, rnd):
 
 
 def crops_of(lib, video, args, rnd):
-    """One recording's crops; returns its manifest row."""
+    """Writes one recording's crops into its split folder and gives its manifest row (with no stem and no crops when
+    it has no run window)."""
     video = Path(video)
     frames = reviewed(lib, video, args.model, args.out)
     reference = reviewed(lib, video, args.reference, args.out)
@@ -152,11 +155,13 @@ def crops_of(lib, video, args, rnd):
 
 
 def videos_of(paths):
+    """Each path that is a file, and the .mp4 files of each folder, in name order."""
     for path in map(Path, paths):
         yield from sorted(path.glob("*.mp4")) if path.is_dir() else [path]
 
 
 def main():
+    """Writes every recording's crops and <out>/manifest.jsonl, and prints the crop count."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("out", type=Path)
     parser.add_argument("model")

@@ -1,53 +1,82 @@
+/**
+ * The model panel's comparison table, worked out from the model list: one column per model, one
+ * row per measure, the best in each row marked. In: the ModelList (/api/models, from models.json).
+ * Out: the model panel's choice table (model-choice/).
+ */
+
 import { Check, Model, ModelList, ModelSpeed } from '../api';
 import { formatNumber } from '../format';
 import { modelName } from '../services/models';
 
 /** A cell's words: its value, and a detail after it. */
 export interface CellText {
+  /** The value, in words. */
   text: string;
+  /** A detail after it; null for none. */
   detail: string | null;
 }
 
 /** A cell of the table. text null: no value. best: the best in its row (said in words too). */
 export interface ModelCell {
+  /** The value, in words; null when the model has none. */
   text: string | null;
+  /** A detail after it; null for none. */
   detail: string | null;
+  /** Whether it is the best in its row. */
   best: boolean;
 }
 
 /** A row: one measure, or one kind of words (prose), for every model. about: what it measures. */
 export interface ModelRow {
+  /** The row's name. */
   label: string;
+  /** What it measures; null when its name says it. */
   about: string | null;
+  /** Whether its cells are sentences, not numbers. */
   prose: boolean;
+  /** One cell per model, in the columns' order. */
   cells: ModelCell[];
 }
 
 /** A model the panel shows, with what its button says. */
 export interface ModelColumn {
+  /** The model's id. */
   name: string;
+  /** Its name in models.json. */
   label: string;
+  /** Its name on its Use button. */
   useLabel: string;
+  /** Its file's size in words ("587.1 KB"). */
   size: string;
+  /** Whether it is models.json's default. */
   isDefault: boolean;
+  /** Whether new reviews use it. */
   inUse: boolean;
+  /** Whether it can run here. */
   available: boolean;
 }
 
 /** The models side by side (one column each), how they were measured, and the older models in a list under them. */
 export interface ModelTable {
+  /** The models side by side, in models.json's order. */
   columns: ModelColumn[];
+  /** The measures, one row each. */
   rows: ModelRow[];
+  /** How the checks and speeds were measured, in words. */
   notes: string;
+  /** The older models, listed under the table. */
   older: ModelColumn[];
+  /** Why a model that is not available cannot run here. */
   unavailable: string;
 }
 
 /** Which way a row's best value lies, or null for a row with no best. */
 export type Better = 'low' | 'high' | null;
 
+/** A cell with no value. */
 const EMPTY: ModelCell = { text: null, detail: null, best: false };
 
+/** A model's column, `chosen` being the model new reviews use. */
 function column(model: Model, chosen: string): ModelColumn {
   return {
     name: model.name,
@@ -60,6 +89,7 @@ function column(model: Model, chosen: string): ModelColumn {
   };
 }
 
+/** A row of sentences, one per model (undefined: an empty cell). */
 function proseRow(label: string, values: (string | undefined)[]): ModelRow {
   return {
     label,
@@ -90,6 +120,7 @@ export function numberRow(
   };
 }
 
+/** A cell's words with no detail. */
 const plain = (text: string): CellText => ({ text, detail: null });
 
 /**

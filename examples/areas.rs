@@ -28,18 +28,25 @@ use serde_json::{Map, Value, json};
 
 /// ffmpeg's output is read through a buffer this big.
 const PIPE_BUFFER_BYTES: usize = 1 << 22;
+/// Milliseconds in a second, for the times printed.
 const MS_PER_S: f64 = 1000.0;
 
 /// A video as ffprobe gives it: its size, whether its Y spans 0..255, and its duration (format=duration).
 struct Video {
+    /// The video file, as Python's results name it.
     path: String,
+    /// Its width, in pixels.
     width: usize,
+    /// Its height, in pixels.
     height: usize,
+    /// Whether its Y spans 0..255 (color_range "pc").
     full_range: bool,
+    /// Its duration in seconds; 0 when ffprobe gives none.
     duration_s: f64,
 }
 
 impl Video {
+    /// The video's facts from ffprobe. Panics when ffprobe cannot run or gives no size.
     fn probe(path: &str) -> Video {
         let out = Command::new("ffprobe")
             .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,color_range"])
@@ -95,10 +102,12 @@ impl Video {
     }
 }
 
+/// A file's bytes; panics with its path when it cannot be read.
 fn read_bytes(path: &str) -> Vec<u8> {
     std::fs::read(path).unwrap_or_else(|error| panic!("{path}: {error}"))
 }
 
+/// A JSON file's value; panics when it cannot be read or is not JSON.
 fn read_json(path: &str) -> Value {
     serde_json::from_slice(&read_bytes(path)).unwrap()
 }
@@ -175,6 +184,7 @@ fn find_and_learn(dir: &str, refs: &str, name: &str, examples: &str) -> Map<Stri
     same
 }
 
+/// Checks each named recording against the reference folder, or with `pure` first, the pure parts.
 fn main() {
     let mut args = std::env::args().skip(1);
     let dir = args.next().expect("a reference folder");
@@ -190,8 +200,11 @@ fn main() {
 /// What the finder reads from a recording: its key frames' count, the frames it is given (each scaled to 1280 x 720
 /// YUV 4:2:0, as the review does), and the HUD watch that saw the key frames.
 struct Frames {
+    /// The recording's key frames.
     keys: usize,
+    /// The frames the finder is given, each 1280 x 720 YUV 4:2:0.
     frames: Vec<Vec<u8>>,
+    /// The HUD watch, which saw every key frame, for KovaaK's session box.
     hud: HudWatch,
 }
 
@@ -225,12 +238,17 @@ fn read_frames(video: &Video, name: &str) -> Frames {
 
 /// What the finder found, KovaaK's box it was given, and its times: per frame added, and for finish.
 struct Finding {
+    /// What `finish` gave: the areas and the maps.
     found: Found,
+    /// KovaaK's session box as the HUD watch found it; None without one.
     session: Option<SessionRows>,
+    /// The mean time to add a frame, in milliseconds.
     add_ms: f64,
+    /// The time `finish` took, in milliseconds.
     finish_ms: f64,
 }
 
+/// Runs the finder over the frames, timing each step.
 fn find(frames: &mut Frames) -> Finding {
     let mut finder = AreaFinder::new();
     let started = Instant::now();

@@ -1,11 +1,12 @@
-//! Each kill matched to the target it killed, and the flick to it (review.py: `match_times`, `_attach_kills`,
-//! `appearances`, `crosshair_spots`).
+//! Each kill matched to the target it killed, and the flick to it (python/retired/review.py: `match_times`,
+//! `_attach_kills`, `appearances`, `crosshair_spots`, `ghosts`).
 //!
 //! In: a run's tracks (src/track.rs) and, from its stats file or HUD, the kill times (src/review.rs). Out: one `Flick`
 //! per kill, with the target's path to the crosshair that src/measure.rs measures, and how the kills matched
 //! (`MatchInfo`, in the report's summary). With kill times, `match_times`; without, `match_video` finds the kills in
-//! the tracks. Both first drop what the detector boxed on the crosshair (`without_crosshair_ends`, `ghosts`), and join
-//! the tracks of a target the tracker lost and found again (`appearances`, `TrackIndex::continued`).
+//! the tracks. Both first drop what the detector boxed on the crosshair (`without_crosshair_boxes`,
+//! `without_crosshair_ends`; the video alone also `ghosts`), and join the tracks of a target the tracker lost and found
+//! again (`appearances`, `TrackIndex::continued`).
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -32,9 +33,10 @@ const AT_CROSSHAIR_DEG: f64 = 0.6;
 const MIN_KILL_TRACK_POINTS: usize = 3;
 /// A track that ends within this many frames of the run's last frame was cut by the recording's end, not killed.
 const END_MARGIN_FRAMES: i64 = 2;
-/// `appearances` joins a track to one that ended up to this long before it starts (seconds), within this distance of
-/// where that one would be (degrees), as `match_times` and the report (src/review.rs) join them.
+/// `appearances` joins a track to one that ended up to this long before it starts (seconds), within JOIN_RADIUS_DEG of
+/// where that one would be, as `match_times` and the report (src/review.rs) join them.
 pub const JOIN_GAP_S: f64 = 0.5;
+/// How near a track must start to where the track it continues would be (degrees), for `appearances`.
 pub const JOIN_RADIUS_DEG: f64 = 1.0;
 /// A track may start up to this many frames before the one it continues ends: a hit target flashes and is picked up
 /// again while its old track still has a frame or two.
@@ -52,11 +54,14 @@ const DEG_PER_SECOND_OFF: f64 = 4.0;
 /// is farther: a big target can be hit at its rim. A target with a box may also be killed with the crosshair within
 /// RIM_DEG of its box: a tall one (a robot) is hit at its head, far from its center.
 const MAX_KILL_DISTANCE_DEG: f64 = 1.5;
+/// How far past a target's blob radius, or past its box's edge, the crosshair may be and still hit it (degrees).
 const RIM_DEG: f64 = 0.25;
 /// A track last seen more than EARLY_FRAMES before the kill costs EARLY_COST_DEG more; one that never leaves a
 /// crosshair spot costs SPOT_COST_DEG more (it is the killed target only when no other track is near).
 const EARLY_FRAMES: i64 = 2;
+/// What a track last seen early costs a kill's choice of target (degrees of distance).
 const EARLY_COST_DEG: f64 = 0.2;
+/// What a track that never leaves a crosshair spot costs a kill's choice of target (degrees of distance).
 const SPOT_COST_DEG: f64 = 1.0;
 /// A target hidden under the crosshair longer than the window is looked for up to this many windows back.
 const HIDDEN_WINDOWS: i64 = 4;
@@ -67,11 +72,14 @@ const CONFIRM_FRAMES: i64 = 2;
 /// The kill times' clock lines a kill up with a track's end within this many frames; the offset is voted from the
 /// first CLOCK_VOTES of each.
 const CLOCK_TOLERANCE_FRAMES: f64 = 2.5;
+/// The kill times and the video's kills the clock's offset is voted from: the first this many of each.
 const CLOCK_VOTES: usize = 40;
 /// `without_ghosts`: a track within GHOST_MAX_DEG of the crosshair that leaves more than GHOST_UNEXPLAINED_SHARE of
 /// the camera's turn unexplained, over a turn of more than GHOST_MIN_TURN_DEG, is the crosshair.
 const GHOST_MAX_DEG: f64 = 0.5;
+/// The share of the camera's turn a track at the crosshair leaves unexplained beyond which it is the crosshair.
 const GHOST_UNEXPLAINED_SHARE: f64 = 0.5;
+/// The camera's turn (degrees) over a track at the crosshair beyond which its staying put says it is the crosshair.
 const GHOST_MIN_TURN_DEG: f64 = 0.3;
 /// A track this short on a crosshair spot is the crosshair: right after a kill it made the dead target look picked
 /// up again.
@@ -82,6 +90,7 @@ const WHOLE_TARGET_DEG: f64 = 3.0;
 const MIN_TYPICAL_TRACKS: usize = 5;
 /// A track of STEADY_TRACK_POINTS or more is steady; RUN_END_TRACKS steady tracks ending within a frame end the run.
 const STEADY_TRACK_POINTS: usize = 5;
+/// The steady tracks that, ending within a frame of each other, say the run ended or restarted: none of them is a kill.
 const RUN_END_TRACKS: usize = 3;
 /// A blob less than this share of the run's typical target is no target (a hit marker, a spark).
 const MIN_TARGET_SHARE: f64 = 0.1;
@@ -89,19 +98,24 @@ const MIN_TARGET_SHARE: f64 = 0.1;
 const SAME_KILL_FRAMES: i64 = 3;
 /// A jump of more than this many times `near` is a false camera turn without a spike (`TrackIndex::repair`).
 const LONG_JUMP_SHARE: f64 = 2.0;
-/// A target missing LONG_GAP_FRAMES or more comes back within LONG_GAP_RADII of its radius and about as big; one
-/// missing SHORT_GAP_FRAMES, within SHORT_GAP_RADII.
+/// A target found again LONG_GAP_FRAMES or more frames after it was last seen comes back within LONG_GAP_RADII of its
+/// radius from where it was, and about as big; one found again SHORT_GAP_FRAMES after, within SHORT_GAP_RADII.
 const LONG_GAP_FRAMES: i64 = 3;
+/// How far from where it was, in its radii, a target found again LONG_GAP_FRAMES or more after may come back.
 const LONG_GAP_RADII: f64 = 0.5;
+/// A target found again this many frames after it was last seen comes back within SHORT_GAP_RADII of where it was.
 const SHORT_GAP_FRAMES: i64 = 2;
+/// How far from where it was, in its radii, a target found again SHORT_GAP_FRAMES after may come back.
 const SHORT_GAP_RADII: f64 = 1.5;
 /// A missing target whose place came out from under the crosshair (beyond OUT_FROM_UNDER_SHARE of `near`) on
 /// SEEN_FRAMES or more frames would have been seen: it died.
 const OUT_FROM_UNDER_SHARE: f64 = 1.5;
+/// The frames a missing target's place must be out from under the crosshair for it to count as dead.
 const SEEN_FRAMES: usize = 2;
-/// A target comes back about as big when its median blob area over SIZE_FRAMES frames is within these shares of its
-/// old one.
+/// A target comes back about as big when its median blob area over SIZE_FRAMES frames is within SAME_SIZE_SHARES of
+/// its old one.
 const SIZE_FRAMES: usize = 3;
+/// The least and most a target's new blob area may be, as shares of its old one, to count as the same target.
 const SAME_SIZE_SHARES: (f64, f64) = (0.5, 2.0);
 
 /// A kill and the flick to it: its number, the frame its target was last seen on and the frame the kill times give,
@@ -109,13 +123,21 @@ const SAME_SIZE_SHARES: (f64, f64) = (0.5, 2.0);
 /// and its median blob area in pixels.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Flick {
+    /// The kill's number in the kill times' order, from 1 (a kill with no target found leaves a gap).
     pub kill_number: usize,
+    /// The frame the target was last seen on, near the kill.
     pub kill_frame: i64,
+    /// The frame the kill times give, on the video's clock; None from the video alone.
     pub stats_frame: Option<i64>,
+    /// Where the flick starts: the kill before's frame, or the target's first appearance when it came later.
     pub start_frame: i64,
+    /// The shots the kill took; None from the video alone.
     pub shots: Option<i64>,
+    /// The target's places from the flick's start to its kill frame.
     pub path: Vec<PathPoint>,
+    /// Whether the target appeared after the flick's start (more than SPAWN_FRAMES after it).
     pub spawned: bool,
+    /// The target's median blob area (pixels); None when its tracks have no areas.
     pub area_px: Option<f64>,
 }
 
@@ -124,9 +146,13 @@ pub struct Flick {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum KillSource {
+    /// The run's stats file.
     Stats,
+    /// KovaaK's HUD, read in the video.
     Hud,
+    /// Aim Lab's HUD, read in the video.
     Aimlab,
+    /// The video alone (`match_video`).
     Video,
 }
 
@@ -135,14 +161,22 @@ pub enum KillSource {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct MatchInfo {
+    /// The kills seen in the video: tracks that end at the crosshair (from the video alone, the kills it found).
     pub kills_video: usize,
+    /// The kills the kill times hold; None from the video alone.
     pub kills_stats: Option<usize>,
+    /// The kills matched to a target.
     pub matched: usize,
+    /// The kills confirmed (`confirmed`); None when not checked.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub confirmed: Option<usize>,
+    /// What to add to a kill time to put it on the video's clock (seconds); None from the video alone, and when there
+    /// were no kill times, or no video kills to place them by.
     pub offset: Option<f64>,
+    /// The video's frame rate (frames a second).
     pub fps: f64,
+    /// Where the kill times came from; `match_times` leaves it None for its caller to set.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub source: Option<KillSource>,
@@ -174,7 +208,9 @@ fn expected_place(place: (f64, f64), turned: &[(f64, f64)], end: i64, frame: i64
 /// A target's own speed (degrees a frame): over the world, with the camera's turn taken out, and on screen.
 #[derive(Clone, Copy)]
 struct OwnSpeed {
+    /// Over the world: the camera's turn taken out.
     world: (f64, f64),
+    /// On screen, as the places moved.
     screen: (f64, f64),
 }
 
@@ -227,13 +263,18 @@ fn chain(track: u32, before: &HashMap<u32, u32>) -> Vec<u32> {
 /// Each track's places, blob areas and box sizes (degrees, in tracks that have them) by frame, with the tracks in the
 /// order they first appear (tracks split off by `repair` come last).
 struct TrackIndex {
+    /// The tracks in the order they first appear; those `repair` splits off come last.
     ids: Vec<u32>,
+    /// Each track's places by frame (degrees from the crosshair).
     places: HashMap<u32, Places>,
+    /// Each track's blob areas by frame (pixels; 0 where the frame has none).
     areas: HashMap<u32, BTreeMap<i64, i64>>,
+    /// Each track's box width and height by frame (degrees), for tracks whose frames have sizes.
     sizes: HashMap<u32, BTreeMap<i64, (f64, f64)>>,
 }
 
 impl TrackIndex {
+    /// The index of a run's frames.
     fn new(frames: &[TrackFrame]) -> TrackIndex {
         let mut index =
             TrackIndex { ids: Vec::new(), places: HashMap::new(), areas: HashMap::new(), sizes: HashMap::new() };
@@ -263,10 +304,12 @@ impl TrackIndex {
         })
     }
 
+    /// The first frame a track was seen on.
     fn first(&self, track: u32) -> i64 {
         *self.places[&track].first_key_value().unwrap().0
     }
 
+    /// The last frame a track was seen on.
     fn last(&self, track: u32) -> i64 {
         *self.places[&track].last_key_value().unwrap().0
     }
@@ -313,20 +356,28 @@ impl TrackIndex {
 /// Tracks that are one target picked up again: appeared (each track with the frame its target first appeared on, in
 /// the order the tracks start) and follows (a track to the track that continues it).
 pub struct Appearances {
+    /// Each track with the frame its target first appeared on (that of the first track in its chain), in the order
+    /// the tracks start.
     pub appeared: Vec<(u32, i64)>,
+    /// Each track that is continued, to the track that continues it.
     pub follows: HashMap<u32, u32>,
 }
 
 /// Where each track starts and ends (frame and place), the tracks in the order they start, and the tracks that end on
 /// each frame.
 struct Spans {
+    /// Each track's first frame and its place there (degrees).
     first: HashMap<u32, (i64, f64, f64)>,
+    /// Each track's last frame and its place there (degrees).
     last: HashMap<u32, (i64, f64, f64)>,
+    /// The tracks in the order they start.
     starts: Vec<u32>,
+    /// The tracks that end on each frame.
     ending: HashMap<i64, Vec<u32>>,
 }
 
 impl Spans {
+    /// The spans of a run's tracks.
     fn new(frames: &[TrackFrame]) -> Spans {
         let (mut first, mut last) = (HashMap::new(), HashMap::new());
         let mut order = Vec::new();
@@ -467,7 +518,9 @@ const RING_DEG: (f64, f64) = (0.2, 0.4);
 /// How many times as densely as the ring's the boxes on the spot lie when the detector marks the crosshair.
 const SPOT_DENSITY: f64 = 5.0;
 /// The fewest boxes on the spot when the detector marks the crosshair: a share of the turning frames, and a number.
+/// This one is the share.
 const SPOT_SHARE: f64 = 0.02;
+/// The fewest boxes on the spot when the detector marks the crosshair, however few frames turn.
 const SPOT_BOXES: f64 = 25.0;
 /// A box has the size of the crosshair's box when its width and height are each within this share of it.
 const SAME_SIZE: f64 = 0.2;
@@ -789,11 +842,17 @@ fn clock_offset(kill_times: &[f64], video_times: &[f64], fps: f64) -> f64 {
 /// What steps 2 and 3 of `match_times` work from: the tracks, the tracks each continues, the tracks on a crosshair
 /// spot, the frame rate, the kill times' offset and the window before a kill (seconds).
 struct Kills<'a> {
+    /// The tracks, indexed.
     index: &'a TrackIndex,
+    /// Each track that continues another, to the track it continues.
     before: &'a HashMap<u32, u32>,
+    /// The tracks that never leave a crosshair spot.
     on_spot: &'a HashSet<u32>,
+    /// The video's frame rate (frames a second).
     fps: f64,
+    /// What to add to a kill time to put it on the video's clock (seconds).
     offset: f64,
+    /// How long before a kill its target is looked for (seconds).
     window: f64,
 }
 
@@ -1003,7 +1062,9 @@ fn keep_marked<T>(values: &mut Vec<T>, keeps: &[bool]) {
 
 /// Where the rest of a track goes when `repair` splits it: on with a track that ended the frame before, or a new one.
 enum Heir {
+    /// The track (its id) that ended the frame before, near where the rest goes on.
     Ended(u32),
+    /// A new track.
     New,
 }
 
@@ -1131,9 +1192,9 @@ impl TrackIndex {
     /// either will do), continues it, unless the target was gone meanwhile. A target hidden under the crosshair stays
     /// there: one whose place came out from under it (`OUT_FROM_UNDER_SHARE` x `near`) on SEEN_FRAMES or more of the
     /// frames it was missing would have been seen, so it died. And a target that comes back is where it was and as
-    /// big: one missing for LONG_GAP_FRAMES or more that comes back more than LONG_GAP_RADII of its radius `radius`
-    /// from that place (SHORT_GAP_FRAMES: SHORT_GAP_RADII), or not as big (`same_size`), is a new target, such as one
-    /// that spawned near the dead one. Returns the track that continues each track.
+    /// big: one found again LONG_GAP_FRAMES or more after it was last seen more than LONG_GAP_RADII of its radius
+    /// `radius` from that place (SHORT_GAP_FRAMES: SHORT_GAP_RADII), or not as big (`same_size`), is a new target, such
+    /// as one that spawned near the dead one. Returns the track that continues each track.
     fn continued(&self, turned: &[(f64, f64)], fps: f64, radius: f64, near: f64) -> HashMap<u32, u32> {
         let gap_frames = round_frame(JOIN_GAP_S * fps).max(1);
         let mut ending: HashMap<i64, Vec<u32>> = HashMap::new();
@@ -1236,9 +1297,13 @@ fn without_spikes(turned: &[(f64, f64)], spike: &[bool]) -> Vec<(f64, f64)> {
 /// A track that may be a video kill: its last frame, its distance from the crosshair there, the track, and its chain
 /// (`chain`).
 struct Candidate {
+    /// The track's last frame.
     end: i64,
+    /// Its distance from the crosshair there (degrees).
     distance: f64,
+    /// The track's id.
     track: u32,
+    /// The track and the tracks it continues, latest first.
     chain: Vec<u32>,
 }
 
@@ -1361,6 +1426,7 @@ pub fn match_video(tracks: &Tracks) -> (Vec<Flick>, MatchInfo) {
     (flicks, info)
 }
 
+/// Checks the kills found from the video alone and matched to kill times, on small made-up runs.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1380,10 +1446,13 @@ mod tests {
         Tracks { fps: 60.0, frames, version: 0 }
     }
 
+    /// The kill frames the video alone finds in the tracks.
     fn kill_frames(tracks: &Tracks) -> Vec<i64> {
         match_video(tracks).0.iter().map(|flick| flick.kill_frame).collect()
     }
 
+    /// A kill whose one-frame false camera turn hands its track to another target still counts, and so does that
+    /// target's own kill.
     #[test]
     fn a_false_turn_at_a_kill_keeps_the_kill() {
         // the target at the crosshair dies on frame 21, and the tracker takes the other target for it, turned there by
@@ -1402,6 +1471,8 @@ mod tests {
         assert_eq!(kill_frames(&tracks(frames)), vec![20, 31]);
     }
 
+    /// A target found again where it hid under the crosshair is the same target; one that spawns beside a dead one is
+    /// a new target, and the dead one's kill counts.
     #[test]
     fn a_target_back_from_under_the_crosshair_is_no_kill_but_one_spawned_beside_it_is() {
         // hidden under the crosshair for 3 frames and found again where it was: one target, killed on frame 40
@@ -1427,6 +1498,7 @@ mod tests {
         assert_eq!(kill_frames(&tracks(frames)), vec![20, 45]);
     }
 
+    /// `appearances` joins the pieces of a target that moves faster on its own than the camera's turn explains.
     #[test]
     fn a_target_that_outruns_the_camera_turn_is_one_track() {
         // the frames' turn is 0, but the target moves 1.3 degrees a frame on its own: one track for 5 frames, then a
@@ -1437,6 +1509,7 @@ mod tests {
         assert_eq!(follows, (1..=7).map(|track| (track, track + 1)).collect());
     }
 
+    /// A kill 1.8 degrees off a target's center matches it when the target is big enough to reach the crosshair.
     #[test]
     fn a_big_target_hit_at_its_rim_is_the_killed_one() {
         // the kill on frame 10, the target 1.8 degrees off: too far for a small blob, not for one 2 degrees in radius
@@ -1449,6 +1522,7 @@ mod tests {
         }
     }
 
+    /// A kill matches a tall target whose box reaches the crosshair, though its center is far below it.
     #[test]
     fn a_tall_target_hit_at_its_head_is_the_killed_one() {
         // the kill on frame 10, a robot's box (1.5 x 5 degrees) centered 2.6 degrees below the crosshair: its blob's
@@ -1469,6 +1543,8 @@ mod tests {
         }
     }
 
+    /// A target's track that runs on over the crosshair's box ends at the target's last box, unless the target is not
+    /// clearly bigger than the crosshair's box and the camera stays still (then the box went with the target).
     #[test]
     fn a_target_handed_to_the_crosshairs_box_ends_where_it_was_last_seen() {
         // the detector boxes the crosshair (0.6 degrees) at the center while the camera turns; a target comes to the

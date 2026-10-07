@@ -1,7 +1,7 @@
-//! A recording's frames from ffmpeg (ffmpeg.rs: the app's own copy), as Python's review decodes them
-//! (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts
-//! them to the same bytes. ffprobe gives the frames' times, the key frames and the colours. In: a video's path. Out:
-//! what the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder (finder.rs).
+//! A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as Python's review decoded
+//! them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core
+//! converts them to the same bytes. ffprobe gives the frames' times, the key frames and the colors. In: a video's path.
+//! Out: what the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder (finder.rs).
 
 use std::io::Read;
 use std::path::Path;
@@ -13,50 +13,75 @@ use serde::Deserialize;
 /// How near a whole number a frame rate is taken as that number (OBS records whole frame rates).
 const WHOLE_RATE_TOLERANCE: f64 = 0.01;
 
-/// What a recording is: its frames' size, rate and colours, every frame's time (from 0 on, in order: the edit list's
+/// What a recording is: its frames' size, rate and colors, every frame's time (from 0 on, in order: the edit list's
 /// pre-roll before 0 is not shown), the key frames' times, its duration as ffprobe gives it, and its earliest frame's
 /// time, the pre-roll's included (Media Foundation counts its times from that frame: gpu_frames.rs), in seconds.
 pub struct VideoInfo {
+    /// The frame's width in pixels.
     pub width: usize,
+    /// The frame's height in pixels.
     pub height: usize,
+    /// The frame rate, a whole number when it is within 0.01 of one (`frame_rate`).
     pub fps: f64,
+    /// The YUV to RGB matrix of the video's color space (BT.601 when it names none the core knows).
     pub matrix: Matrix,
+    /// Whether the YUV is full range (ffprobe's "pc"); else limited range.
     pub full: bool,
+    /// Every frame's time from 0 on, in seconds, in order.
     pub times: Vec<f64>,
+    /// The key frames' times from 0 on, in seconds, in order.
     pub keys: Vec<f64>,
+    /// The duration in seconds, as ffprobe gives it; the last frame's time when it gives none.
     pub duration: f64,
+    /// The earliest frame's time in seconds, the pre-roll's included (negative when there is a pre-roll).
     pub earliest: f64,
     /// ffprobe's name for the video's codec ("av1", "h264", "hevc").
     pub codec: String,
 }
 
+/// ffprobe's JSON answer: the first video stream, its packets and the file's format.
 #[derive(Deserialize)]
 struct Probe {
+    /// The video streams asked for (only the first, v:0).
     streams: Vec<ProbeStream>,
+    /// Every packet of that stream, in file order.
     packets: Vec<ProbePacket>,
+    /// The container's facts; empty when ffprobe gives none.
     #[serde(default)]
     format: ProbeFormat,
 }
 
+/// The container's facts ffprobe gives.
 #[derive(Default, Deserialize)]
 struct ProbeFormat {
+    /// The duration in seconds, as text.
     duration: Option<String>,
 }
 
+/// The video stream's facts ffprobe gives.
 #[derive(Deserialize)]
 struct ProbeStream {
+    /// The codec's name ("av1", "h264", "hevc").
     #[serde(default)]
     codec_name: String,
+    /// The frame's width in pixels.
     width: usize,
+    /// The frame's height in pixels.
     height: usize,
+    /// The frame rate as a fraction ("60/1").
     r_frame_rate: String,
+    /// The color space's name ("bt709"), when the file names one.
     color_space: Option<String>,
+    /// "pc" for full range, "tv" for limited, when the file says.
     color_range: Option<String>,
 }
 
+/// One packet ffprobe lists: one frame.
 #[derive(Deserialize)]
 struct ProbePacket {
+    /// Its time in seconds, as text; negative for the pre-roll.
     pts_time: Option<String>,
+    /// Its flags: "K" marks a key frame.
     flags: Option<String>,
 }
 
@@ -66,6 +91,7 @@ fn tool(name: &str) -> Command {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        /// Windows' process flag for no console window.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
@@ -113,7 +139,8 @@ fn matrix(color_space: Option<&str>) -> Matrix {
     }
 }
 
-/// The recording's frame times, key frames and colours, from its packets (none decoded).
+/// The recording's frame times, key frames and colors, from its packets (none decoded); an error when ffprobe cannot
+/// start or finds no video.
 pub fn probe(video: &Path) -> Result<VideoInfo, String> {
     let out = tool("ffprobe")
         .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags"])
@@ -143,7 +170,9 @@ pub fn probe(video: &Path) -> Result<VideoInfo, String> {
 
 /// A recording's frames from an ffmpeg process, one at a time; the process ends when this is dropped.
 pub struct Frames {
+    /// The ffmpeg process.
     child: Child,
+    /// Its output: the frames' raw yuv420p bytes, one after another.
     out: ChildStdout,
 }
 
@@ -165,6 +194,7 @@ impl Frames {
         Frames::spawn(command.args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]))
     }
 
+    /// Starts the ffmpeg command with its output piped to this reader and its errors dropped.
     fn spawn(command: &mut Command) -> Result<Frames, String> {
         let mut child = command
             .stdout(Stdio::piped())
@@ -196,6 +226,7 @@ impl Frames {
 }
 
 impl Drop for Frames {
+    /// Stops ffmpeg, which may still be decoding frames no one will read.
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();

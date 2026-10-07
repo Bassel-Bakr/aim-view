@@ -1,5 +1,5 @@
-//! The recordings: the list (python/server.py: Library.list), a recording's video from its id and its folder, videos
-//! and stats files added from the user's computer, and each scenario's facts from its scenario file.
+//! The recordings: the list (python/retired/server.py: Library.list), a recording's video from its id and its folder,
+//! videos and stats files added from the user's computer, and each scenario's facts from its scenario file.
 //!
 //! In: the VODs folder (a folder per scenario, files named as KovOBS names them), the uploads folder and the page's
 //! uploads, and KovaaK's scenario folders. Out: the recordings list (/api/vods), each recording's video and folder for
@@ -18,6 +18,7 @@ use super::stats::UPLOAD_SOURCE;
 use super::{Answer, Failure, Library, modified};
 use crate::disk::Entry;
 
+/// The extensions (lower case) of the files the library takes as videos.
 pub(crate) const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];
 /// What an upload's id starts with: "uploads/<its file name in the uploads folder>".
 const UPLOADS_ID: &str = "uploads/";
@@ -25,6 +26,7 @@ const UPLOADS_ID: &str = "uploads/";
 pub(super) const STATS_UPLOADS: &str = "stats";
 /// An upload's body while it arrives (`spool`): ".incoming-<process id>-<number>.part" in the uploads folder.
 const SPOOL_PREFIX: &str = ".incoming-";
+/// The end of a spooled body's name (see `SPOOL_PREFIX`).
 const SPOOL_SUFFIX: &str = ".part";
 /// A link's download folder while it downloads (links.rs): ".link-<process id>-<number>" in the uploads folder.
 const LINK_FOLDER_PREFIX: &str = ".link-";
@@ -90,11 +92,14 @@ const COMPARE_CHUNK_BYTES: usize = 1 << 20;
 
 /// An upload's body: its bytes, or the file it was spooled to as it arrived.
 enum Body<'a> {
+    /// The body in memory.
     Bytes(&'a [u8]),
+    /// The body in a file the HTTP server wrote as it arrived (`Library::spool`).
     Spooled(&'a Path),
 }
 
 impl Body<'_> {
+    /// Its size in bytes (0 when a spooled file cannot be read).
     fn len(&self) -> u64 {
         match self {
             Body::Bytes(bytes) => bytes.len() as u64,
@@ -192,8 +197,8 @@ impl Library {
         Ok(path)
     }
 
-    /// A recording's folder in the data folder (python/server.py: cache_dir), where `Files` keeps its reviews, areas
-    /// and marks: aimview-tool gives it to Python's scripts.
+    /// A recording's folder in the data folder (python/retired/server.py: cache_dir), where `Files` keeps its reviews,
+    /// areas and marks: aimview-tool gives it to Python's scripts.
     pub fn review_dir(&self, id: &str) -> PathBuf {
         crate::store::recording_folder(&self.folders, id)
     }
@@ -235,14 +240,15 @@ impl Library {
         self.facts().get(&scenario).cloned()
     }
 
+    /// A scenario's kind as JSON ("static", "tracking", ...); null when its scenario file was not found.
     fn kind(&self, scenario: &str) -> Value {
         self.facts().get(&scenario.to_lowercase()).map_or(Value::Null, |facts| json!(facts.kind))
     }
 
-    /// The recordings, newest first (python/server.py: Library.list). `quick`: only what each file's name gives (the
-    /// scenario, score and time stamp) and the user's marks, newest first by the stamp, each row marked `quick`: no
-    /// file is read, no stats file paired, no review looked for, so the page lists them at once and asks for the whole
-    /// list after (a VODs folder holds thousands, and in the browser each file read waits on the page).
+    /// The recordings, newest first (python/retired/server.py: Library.list). `quick`: only what each file's name gives
+    /// (the scenario, score and time stamp) and the user's marks, newest first by the stamp, each row marked `quick`:
+    /// no file is read, no stats file paired, no review looked for, so the page lists them at once and asks for the
+    /// whole list after (a VODs folder holds thousands, and in the browser each file read waits on the page).
     pub fn recordings(&self, quick: bool) -> Answer<Value> {
         let not_aim = self.not_aim();
         // the recordings with a folder in the data folder: only they can have a review or a chosen stats file, so the
@@ -367,6 +373,7 @@ impl Library {
     /// A new file in the uploads folder for an upload's body, written as it arrives (the HTTP server does so), which
     /// `upload_file` then moves into place. Its name is not a video's or a stats file's: the list never shows it.
     pub fn spool(&self) -> Answer<PathBuf> {
+        /// The next spool's number in this process.
         static NEXT: AtomicU64 = AtomicU64::new(0);
         crate::disk::create_dir_all(self.uploads()).map_err(|error| error.to_string())?;
         let number = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -404,6 +411,7 @@ impl Library {
     }
 }
 
+/// Uploads: stale bodies removed, a video sent again kept once.
 #[cfg(test)]
 mod tests {
     use crate::config::{Config, Layout};

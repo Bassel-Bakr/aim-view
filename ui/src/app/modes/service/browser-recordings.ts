@@ -1,3 +1,10 @@
+/**
+ * Browser mode's `RecordingSource`. In: the VODs folder the user opens (vods-folder.ts), files they
+ * add, links (browser-links.ts) and the service in the page's /api/vods. Out: the recordings list,
+ * each video as a playable address (remuxed into MP4 in the page when it must be), the folder
+ * action and the top bar's transfers.
+ */
+
 import { computed, inject, Service, signal } from '@angular/core';
 import { CANCELLED, errorMessage, LinkInfo, Recording } from '../../api';
 import { FolderAction, Transfer, VideoState } from '../../platform/recording-source';
@@ -9,6 +16,7 @@ import { KovaakCopy } from './kovaak-copy';
 import { MountedFiles, recordingPath } from './mounted-files';
 import { VodsFolder } from './vods-folder';
 
+/** Milliseconds in a second, for a row's mtime in seconds. */
 const MS_PER_SECOND = 1000;
 /** A remux's progress is shown in whole percents. */
 const PERCENT = 100;
@@ -19,7 +27,10 @@ const COPYING = 'Copying the video into this browser';
 const goneText = (name: string) =>
   `${name} could not be found: it was moved or deleted, or its drive is not connected. `;
 
-/** A time as a file-name stamp (yyyy.mm.dd-hh.mm.ss, local), as a recording named anyhow gets its time. */
+/**
+ * A time as a file-name stamp (yyyy.mm.dd-hh.mm.ss, local), as a recording named anyhow gets its
+ * time.
+ */
 function localStamp(date: Date): string {
   const two = (value: number) => String(value).padStart(2, '0');
   return (
@@ -28,7 +39,10 @@ function localStamp(date: Date): string {
   );
 }
 
-/** A link's recording as listed while its video comes: named as the service names an upload (recordings.rs). */
+/**
+ * A link's recording as listed while its video comes: named as the service names an upload
+ * (recordings.rs).
+ */
 function linkRow(id: string, name: string): Recording {
   const vod = parseVodName(name);
   const titled = vod ? null : parseTitledName(name);
@@ -48,33 +62,44 @@ function linkRow(id: string, name: string): Recording {
 }
 
 /**
- * Browser mode's recordings: the review service in the page lists them (its VODs folder, mounted from the folder the
- * user opened, and its uploads in this browser's storage), as the review server and the desktop app list theirs. The
- * page plays each video from the file itself (a non-MP4 remuxed into one in the browser when it is first opened),
- * opens the VODs folder, and downloads links itself (else through the Aim View server on this computer), then adds
- * them as uploads.
+ * Browser mode's recordings: the review service in the page lists them (its VODs folder, mounted
+ * from the folder the user opened, and its uploads in this browser's storage), as the review
+ * server and the desktop app list theirs. The page plays each video from the file itself (a
+ * non-MP4 remuxed into one in the browser when it is first opened), opens the VODs folder, and
+ * downloads links itself (else through the Aim View server on this computer), then adds them as
+ * uploads.
  */
 @Service()
 export class BrowserRecordings extends ServerRecordings {
+  /** Reads videos from the service's mounts and removes uploads. */
   private readonly files = inject(MountedFiles);
+  /** The VODs folder: its state, and opening or forgetting it. */
   private readonly vods = inject(VodsFolder);
+  /** Brings links' videos into the browser. */
   private readonly fetcher = inject(BrowserLinks);
   /** The links' videos on their way into the browser, by recording id: what cancels each. */
   private readonly fetches = new Map<string, LinkFetch>();
+  /** KovaaK's folders, whose copy into the browser shows in the top bar. */
   private readonly kovaak = inject(KovaakCopy);
   /** The videos opened in the page, by recording id: being remuxed, ready to play, or not. */
   private readonly opened = signal<ReadonlyMap<string, VideoState>>(new Map());
   /** Videos being opened, so each is read once. */
   private readonly opening = new Set<string>();
+  /** The remux under way and its share done, for the top bar; null when none runs. */
   private readonly remuxing = signal<Transfer | null>(null);
   /** Remuxes run one at a time, so two large videos are never in memory at once. */
   private remuxes: Promise<void> = Promise.resolve();
+  /** The address of the Aim View server that downloads links for this browser (the user's). */
   override readonly linkServer = this.fetcher.server;
+  /** Where files the user adds end up, as the upload button and the empty page say. */
   override readonly addedFilesGo = "They are copied into this browser's storage.";
+  /** The list can be cleared: it forgets the folder and the uploads. */
   override readonly clearable = true;
+  /** What the top bar shows: an upload, else a remux, else KovaaK's copy. */
   override readonly transfer = computed<Transfer | null>(
     () => this.sending() ?? this.remuxing() ?? this.kovaak.transfer(),
   );
+  /** Why the list is empty or short: a remembered folder not found, or the service's error. */
   override readonly problem = computed<string | null>(() => {
     const gone = this.vods.state().gone;
     if (gone) return `${goneText(gone)}Open it again with VODs folder when it is back.`;
@@ -83,6 +108,10 @@ export class BrowserRecordings extends ServerRecordings {
       ? `The review service in this page could not list the recordings: ${errorMessage(error)}`
       : null;
   });
+  /**
+   * The top bar's VODs folder button: open a folder, let the browser read the remembered one
+   * again, or (without a folder picker) choose one as files.
+   */
   override readonly folder = computed<FolderAction>(() => {
     const state = this.vods.state();
     return {
@@ -105,12 +134,16 @@ export class BrowserRecordings extends ServerRecordings {
     };
   });
 
+  /** Mounts the VODs folder remembered from a visit before, when the browser still lets it. */
   constructor() {
     super();
     void this.mounted(this.vods.restore());
   }
 
-  /** Lists the recordings again (KovaaK's folders were copied in: their stats files and kinds change). */
+  /**
+   * Lists the recordings again (KovaaK's folders were copied in: their stats files and kinds
+   * change).
+   */
   reload(): void {
     this.list.reload();
   }
@@ -120,19 +153,26 @@ export class BrowserRecordings extends ServerRecordings {
     if (await opening.catch(() => false)) this.list.reload();
   }
 
-  /** A link's video, a video added or opened here; else it is read from the mounts, and null until it is. */
+  /**
+   * A link's video, a video added or opened here; else it is read from the mounts, and null until
+   * it is.
+   */
   override video(id: string): VideoState | null {
     const known = this.links().get(id)?.video ?? this.opened().get(id);
     if (known) return known;
     if (!this.opening.has(id)) {
       this.opening.add(id);
-      // read after this call: what calls video() may be a computed signal, which must not write signals
+      // read after this call: what calls video() may be a computed signal, which must not write
+      // signals
       void Promise.resolve().then(() => this.open(id));
     }
     return null;
   }
 
-  /** Reads a recording's video from the mounts: played as it is when it is an MP4, else once remuxed into one. */
+  /**
+   * Reads a recording's video from the mounts: played as it is when it is an MP4, else once
+   * remuxed into one.
+   */
   private async open(id: string): Promise<void> {
     let video: Blob;
     try {
@@ -155,7 +195,10 @@ export class BrowserRecordings extends ServerRecordings {
     this.remuxes = this.remuxes.then(() => this.remux(id, file));
   }
 
-  /** Remuxes a video into MP4, showing the progress in whole percents (each change redraws what shows it). */
+  /**
+   * Remuxes a video into MP4, showing the progress in whole percents (each change redraws what
+   * shows it). A failed remux leaves the file to play as it is.
+   */
   private async remux(id: string, file: File): Promise<void> {
     const label = `Remuxing ${file.name} into MP4`;
     try {
@@ -178,6 +221,7 @@ export class BrowserRecordings extends ServerRecordings {
     }
   }
 
+  /** Records an opened video's state, in a new map so the signal's readers update. */
   private setOpened(id: string, video: VideoState): void {
     this.opened.update((all) => new Map(all).set(id, video));
   }
@@ -193,13 +237,14 @@ export class BrowserRecordings extends ServerRecordings {
     return sent;
   }
 
+  /** What the link offers, read by the browser or by the link server (BrowserLinks.info). */
   override linkInfo(url: string): Promise<LinkInfo> {
     return this.fetcher.info(url);
   }
 
   /**
-   * Downloads a link's video in the page (else through the Aim View server on this computer), then adds it as an
-   * upload. It is listed at once under the id the upload will have.
+   * Downloads a link's video in the page (else through the Aim View server on this computer), then
+   * adds it as an upload. It is listed at once under the id the upload will have.
    */
   override async addLink(url: string, format: string | null): Promise<string> {
     let id = '';
@@ -227,12 +272,16 @@ export class BrowserRecordings extends ServerRecordings {
     return id;
   }
 
+  /** Stops the link's download; its video then reads as not downloaded ("Cancelled"). */
   override cancelLink(id: string): Promise<void> {
     this.fetches.get(id)?.cancel();
     return Promise.resolve();
   }
 
-  /** A link's video, all here: sent to the service as an upload, then played from the page's own copy. */
+  /**
+   * A link's video, all here: sent to the service as an upload, then played from the page's own
+   * copy.
+   */
   private async addDownloaded(id: string, row: Recording, file: File): Promise<void> {
     this.setLink(id, { row, video: { state: 'downloading', label: COPYING, done: 0, total: 0 } });
     try {
@@ -248,7 +297,10 @@ export class BrowserRecordings extends ServerRecordings {
     }
   }
 
-  /** The id an upload of this name gets (the service's free_name: "name (2).mp4" when the name is taken). */
+  /**
+   * The id an upload of this name gets (the service's free_name: "name (2).mp4" when the name is
+   * taken).
+   */
   private freeUploadId(name: string): string {
     const taken = new Set([
       ...this.recordings().map((recording) => recording.id),
@@ -263,8 +315,9 @@ export class BrowserRecordings extends ServerRecordings {
   }
 
   /**
-   * Empties the list: forgets the VODs folder (the service lists nothing there then), and removes the videos added
-   * here from this browser's storage. The files on this computer stay where they are.
+   * Empties the list: forgets the VODs folder (the service lists nothing there then), and removes
+   * the videos added here from this browser's storage. The files on this computer stay where they
+   * are.
    */
   override async clear(): Promise<void> {
     const uploads = this.recordings()

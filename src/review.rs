@@ -1,8 +1,8 @@
 //! The review of a run (python/retired/review.py: `review`): a clicking run's flicks, or a tracking run's time on the
 //! target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without
-//! a readable HUD, from the video alone. The page, the desktop app and the review server send a request
-//! (`review_json`: the run's tracks, its stats file and what the video read); the report goes back as report.json,
-//! which the run page shows.
+//! a readable HUD, from the video alone. In: a request (`review_json`: the run's tracks, its stats file, what the video
+//! read and the user's run marks), which the service builds in every mode (service/src/report.rs). Out: the report as
+//! JSON (report.json), which the run page shows.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -31,8 +31,9 @@ use crate::tracking::{CameraReading, FaintCut, RunFacts, TrackSummary, countdown
 const KILL_WINDOW_S: f64 = 0.25;
 /// The HUD's kills are on the video's clock already (`match_times`' offset).
 const ON_VIDEO_CLOCK: Option<f64> = Some(0.0);
-/// A recording's name: "<scenario> - <score> - <time>".
+/// The separator between the parts of a recording's name: "<scenario> - <score> - <time>".
 const NAME_SEPARATOR: &str = " - ";
+/// The parts of a recording's name: scenario, score and time.
 const NAME_FIELDS: usize = 3;
 /// A HUD with at most this many hits a kill is a one-hit scenario's: each kill took one hit.
 const ONE_HIT_MAX_HITS_PER_KILL: f64 = 1.2;
@@ -44,6 +45,7 @@ const MAX_CLICK_SHOTS: i64 = 3;
 /// KovaaK's countdown is looked for up to this many seconds past the latest the run can start (the recording's length
 /// less the run's), and over the first `MIN_COUNTDOWN_SEARCH_S` seconds at least.
 const COUNTDOWN_SLACK_S: f64 = 3.0;
+/// The countdown is always looked for over at least this many seconds from the recording's start.
 const MIN_COUNTDOWN_SEARCH_S: f64 = 5.0;
 /// A tracking run's faint scores count the frames under the crosshair too: its bot is there most of the time.
 const TRACKING_FAINT_NEAR_DEG: f64 = 0.0;
@@ -54,10 +56,16 @@ const TRACKING_FAINT_NEAR_DEG: f64 = 0.0;
 #[allow(non_snake_case)]
 #[expect(clippy::min_ident_chars, reason = "W, H and K are the JSON's keys, which the run page reads")]
 pub struct Geometry {
+    /// The frame's width (pixels).
     pub W: usize,
+    /// The frame's height (pixels).
     pub H: usize,
+    /// The crosshair's x (pixels from the left).
     pub CX: f64,
+    /// The crosshair's y (pixels from the top).
     pub CY: f64,
+    /// The focal length (pixels) for a 103 degree horizontal FOV: a place `x` pixels right of the crosshair is
+    /// atan(x / K) to its right.
     pub K: f64,
 }
 
@@ -68,18 +76,29 @@ const FRAME_GEOMETRY: Geometry = Geometry { W, H, CX, CY, K };
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ClickReport"))]
 pub struct Report {
+    /// The recording's name, as the request gave it.
     pub video: String,
+    /// The stats file's name; None for a run without one.
     pub stats: Option<String>,
+    /// The run's medians and shares (src/summary.rs).
     pub summary: Summary,
+    /// Each check's verdict on the summary (`judge`).
     pub issues: Vec<Issue>,
+    /// Each matched kill's measures (src/measure.rs), in kill order.
     pub flicks: Vec<Measure>,
+    /// Whether the run clicks or holds the trigger (`click_mode`).
     #[cfg_attr(feature = "ts", ts(type = r#""click" | "hold""#))]
     pub mode: Mode,
+    /// Each matched kill's target path, under its kill number (as text).
     #[cfg_attr(feature = "ts", ts(as = "BTreeMap<String, Vec<crate::typescript::PathPoint>>"))]
     pub paths: BTreeMap<String, Vec<PathPoint>>,
+    /// The video's frame rate (frames a second).
     pub fps: f64,
+    /// The frame's size, the crosshair's place and the focal length, for the page to turn degrees into pixels.
     pub geometry: Geometry,
+    /// Each track's id (as text) with the frame its target first appeared on (`appeared`).
     pub appeared: BTreeMap<String, i64>,
+    /// Where the detector marks the crosshair as a target (degrees), if it does (`crosshair_spots`).
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::CrosshairSpot>"))]
     pub crosshair: Capped<(f64, f64), SPOTS>,
     /// The user's run marks as given ({start, end, length}: the service's RunMarks).
@@ -93,7 +112,9 @@ pub struct Report {
 
 /// A review's results: the flicks matched to the kills (flicks.json) and the report.
 pub struct Reviewed {
+    /// The flicks matched to the kills, as flicks.json keeps them.
     pub flicks: Vec<Flick>,
+    /// The report, as report.json keeps it.
     pub report: Report,
 }
 
@@ -102,8 +123,20 @@ pub struct Reviewed {
 /// (kill_check.rs; None: not checked).
 #[derive(Clone, Copy)]
 pub enum KillTimes<'a> {
-    Stats { name: &'a str, text: &'a str },
-    Unpaired { hud: Option<&'a HudReading>, checked: Option<&'a [KillEvidence]> },
+    /// The run's stats file: its name (`name`) and its CSV text (`text`).
+    Stats {
+        /// The stats file's name, which holds the scenario and the time the run ended.
+        name: &'a str,
+        /// The stats file's CSV text.
+        text: &'a str,
+    },
+    /// No stats file: what the HUD read (`hud`), and the check of the video's kills (`checked`).
+    Unpaired {
+        /// What the HUD read in the video; None where it did not read.
+        hud: Option<&'a HudReading>,
+        /// The check of the kills the video alone gives, in the frames round them; None when not checked.
+        checked: Option<&'a [KillEvidence]>,
+    },
 }
 
 /// The number a text starts with (digits, then a point and digits), as written; None where it starts with no digit.
@@ -172,11 +205,17 @@ fn hits_per_kill(meta: &HashMap<String, String>) -> Option<i64> {
 /// what the HUD and the file name give), each kill's shots in the run's order, its hits (only from a stats file's kill
 /// table) and the stats file's name.
 struct ClickKills<'a> {
+    /// The flicks matched to the kills.
     flicks: Vec<Flick>,
+    /// How the kills matched: the counts, the clock offset and where the kills came from.
     info: MatchInfo,
+    /// The stats file's "Key:,value" facts by key, or the ones the HUD and the file name give.
     meta: HashMap<String, String>,
+    /// Each kill's shots, in the run's order; empty when nothing gave them (the video alone).
     shots: Vec<i64>,
+    /// Each kill's hits, in the run's order; only a stats file's kill table gives them.
     hits: Option<Vec<i64>>,
+    /// The stats file's name; None without one.
     stats: Option<&'a str>,
 }
 
@@ -441,28 +480,43 @@ fn unpaired_kills(
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TrackReport {
+    /// The recording's name, as the request gave it.
     pub video: String,
+    /// The stats file's name; None for a run without one.
     pub stats: Option<String>,
+    /// The run's summary (src/tracking.rs): time on target, switches, motion and what-ifs among others.
     pub summary: TrackSummary,
+    /// Always empty: the checks are a clicking run's.
     pub issues: Vec<Issue>,
+    /// Always empty: a tracking run has no flicks.
     pub flicks: Vec<Measure>,
+    /// Always `Mode::Track`.
     #[cfg_attr(feature = "ts", ts(type = r#""track""#))]
     pub mode: Mode,
+    /// Always empty: a tracking run has no kill paths.
     #[cfg_attr(feature = "ts", ts(as = "BTreeMap<String, Vec<crate::typescript::PathPoint>>"))]
     pub paths: BTreeMap<String, Vec<PathPoint>>,
+    /// The video's frame rate (frames a second).
     pub fps: f64,
+    /// The frame's size, the crosshair's place and the focal length, for the page to turn degrees into pixels.
     pub geometry: Geometry,
+    /// Always empty.
     pub appeared: BTreeMap<String, i64>,
+    /// Always empty: the crosshair spot is looked for in clicking runs only.
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::CrosshairSpot>"))]
     pub crosshair: Capped<(f64, f64), SPOTS>,
+    /// The user's run marks as given ({start, end, length}: the service's RunMarks).
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub run: Option<serde_json::Value>,
+    /// The run's length the summary measured (seconds): the run window's, else the stats file's, else the scenario's
+    /// time limit; None when none is known.
     pub limit: Option<f64>,
     /// The bots' hitbox its time on target was measured with (None: each target's box), for the page to draw and test
     /// targets the same way.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub hitbox: Option<Hitbox>,
+    /// Kept by an older version of the review (`REVIEW_VERSION`): review again for what it lacks.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub outdated: bool,
@@ -471,7 +525,9 @@ pub struct TrackReport {
 /// What a tracking run reads from its video besides the tracks: per frame the camera's reading, and whether KovaaK's
 /// countdown bar shows.
 pub struct VideoReadings<'a> {
+    /// Per frame, the camera's reading (src/camera.rs).
     pub camera: &'a [CameraReading],
+    /// Per frame, whether KovaaK's countdown bar shows.
     pub countdown: &'a [bool],
 }
 
@@ -479,11 +535,17 @@ pub struct VideoReadings<'a> {
 /// where the kills come from, the frames bots died on, the challenge's start (a frame, where the kills place it) and
 /// the run's length (seconds: the stats file's, else the scenario's time limit).
 struct TrackingKills<'a> {
+    /// The stats file's "Key:,value" facts by key, or the scenario the file name gives.
     meta: HashMap<String, String>,
+    /// The stats file's name; None without one.
     stats: Option<&'a str>,
+    /// Where the kills came from: the stats file, the HUD, or the video (which finds none).
     source: KillSource,
+    /// The frames bots died on.
     deaths: Vec<i64>,
+    /// The frame the challenge starts on, where the stats file's kills place it.
     start: Option<i64>,
+    /// The run's length (seconds): the stats file's, else the scenario's time limit.
     limit: Option<f64>,
 }
 
@@ -537,7 +599,9 @@ fn faint_cut(tracks: &Tracks, faint: Option<FaintSetting>) -> (Cow<'_, Tracks>, 
 /// overrides, and its bots' hitbox (None: the crosshair is on a target within a margin of its box).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TrackScenario {
+    /// The scenario's time limit (seconds); None when not known.
     pub limit: Option<f64>,
+    /// The bots' hitbox; None: each target's box, with a margin.
     pub hitbox: Option<Hitbox>,
 }
 
@@ -624,37 +688,53 @@ pub fn run_window(marks: &serde_json::Value, fps: f64, limit: Option<f64>) -> (O
     }
 }
 
-/// What the page asks the core to review: the tracks, the video's name, the stats file's name and text (empty without
-/// one), what the HUD read, the user's run marks; for a clicking run the ammo rules of the scenario's weapon (null or
-/// missing: its magazine never runs out, or the scenario is not known); for a tracking run also the scenario's time
-/// limit, the video's readings and the user's faint-target cut-off ({on, offset}; null or missing: none).
+/// What the service asks the core to review (service/src/report.rs): the tracks, the video's name, the stats file's
+/// name and text (empty without one), what the HUD read, the user's run marks; for a clicking run the ammo rules of the
+/// scenario's weapon (null or missing: its magazine never runs out, or the scenario is not known); for a tracking run
+/// also the scenario's time limit, the video's readings and the user's faint-target cut-off ({on, offset}; null or
+/// missing: none).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
+    /// The run's tracks (tracks.json).
     pub tracks: Tracks,
+    /// The recording's name: the report gives it, and without a stats file the scenario and the score come from it.
     pub video: String,
+    /// The stats file's name; empty without one.
     #[serde(default)]
     pub stats: String,
+    /// The stats file's text; empty without one, and then the kills come from the HUD or the video alone.
     #[serde(default)]
     pub stats_text: String,
+    /// What the HUD read (hud.json); None where it was not read.
     #[serde(default)]
     pub hud: Option<HudReading>,
+    /// The user's run marks ({start, end, length} in seconds, any of them null); None: no marks.
     #[serde(default)]
     pub run: Option<serde_json::Value>,
+    /// Whether the run is a tracking run; else it is reviewed as a clicking run.
     #[serde(default)]
     pub tracking: bool,
+    /// A tracking run's scenario time limit (seconds), which the stats file's own length overrides.
     #[serde(default)]
     pub limit: Option<f64>,
+    /// A clicking run's ammo rules, when its weapon's magazine runs out.
     #[serde(default)]
     pub reload: Option<AmmoRules>,
+    /// A tracking run's camera reading per frame (readings.json).
     #[serde(default)]
     pub camera: Vec<CameraReading>,
+    /// A tracking run's countdown bar per frame (readings.json).
     #[serde(default)]
     pub countdown: Vec<bool>,
+    /// A tracking run's faint-target cut-off; None: none.
     #[serde(default)]
     pub faint: Option<FaintSetting>,
+    /// A tracking run's bot hitbox; None: each target's box.
     #[serde(default)]
     pub hitbox: Option<Hitbox>,
+    /// For a run without a stats file, the check of the video's kills in the frames round them (kill_check.rs, kept
+    /// as kills.json); None: not checked.
     #[serde(default)]
     pub kill_check: Option<Vec<KillEvidence>>,
 }
@@ -663,7 +743,9 @@ pub struct ReviewRequest {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum AnyReport {
+    /// A clicking run's report.
     Click(Box<Report>),
+    /// A tracking run's report.
     Track(Box<TrackReport>),
 }
 
@@ -671,10 +753,15 @@ pub enum AnyReport {
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Outcome {
+    /// The review's report.
     Report(AnyReport),
+    /// Why the review failed, in words for the user.
     Error(String),
 }
 
+/// Reviews a request: from the stats file when it has one, else from the HUD and the video; as a tracking run or a
+/// clicking run as it says. The report is marked outdated when the tracks come from an older review version. Fails
+/// when the stats file cannot be read or the summary cannot be made.
 fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
     let kills = if request.stats_text.is_empty() {
         KillTimes::Unpaired { hud: request.hud.as_ref(), checked: request.kill_check.as_deref() }
@@ -694,7 +781,8 @@ fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
     }
 }
 
-/// A request (JSON) reviewed, as JSON.
+/// Reviews a request (`ReviewRequest` as JSON) and gives the `Outcome` as JSON: the report, or why there is none
+/// (a request that cannot be read is an error too).
 pub fn review_json(request: &[u8]) -> Vec<u8> {
     let outcome = serde_json::from_slice::<ReviewRequest>(request)
         .map_err(|error| format!("The review request could not be read: {error}"))
@@ -703,6 +791,7 @@ pub fn review_json(request: &[u8]) -> Vec<u8> {
     serde_json::to_vec(&outcome).unwrap_or_default()
 }
 
+/// Checks the run window and the kills and HUD counts it keeps.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -721,6 +810,8 @@ mod tests {
         assert_eq!(window(json!({"start": 9.0, "end": 3.0, "length": 0.0}), None), (Some(540), None));
     }
 
+    /// A clicking run's window: two marks give its ends, a start alone runs to the last frame or for the length given,
+    /// an end alone from the first frame, and a length alone gives none.
     #[test]
     fn a_clicking_runs_window_spans_its_marks() {
         let window = |marks: serde_json::Value| click_window(&marks, 60.0, 1000);
@@ -731,6 +822,7 @@ mod tests {
         assert_eq!(window(json!({"start": null, "end": null, "length": 5.0})), None);
     }
 
+    /// The HUD's kills, hits and shots outside the window are left out, and its totals counted from the rest.
     #[test]
     fn the_hud_counts_only_inside_the_window() {
         let reading = HudReading {
@@ -747,6 +839,8 @@ mod tests {
         assert_eq!(inside.totals, HudFinal { kills: 2, hits: Some(2), shots: Some(2) });
     }
 
+    /// A stats file's kills outside the window are left out: the rest numbered again from 1, with their shots and
+    /// hits, and the Kills, Hit Count and Miss Count counted from them.
     #[test]
     fn a_stats_file_counts_only_the_kills_inside_the_window() {
         let flick = |kill_number: usize, kill_frame: i64| Flick {

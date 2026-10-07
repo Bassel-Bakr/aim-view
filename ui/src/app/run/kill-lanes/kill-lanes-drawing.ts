@@ -1,3 +1,11 @@
+/**
+ * The kill lanes' drawing on their canvas.
+ *
+ * In: the clicking report's kills (their frames and TTKs), the picked kill and the lanes' tokens
+ * (themes/timeline.scss).
+ * Out: the marks and bars drawn on the canvas's 2D context (kill-lanes.ts calls it).
+ */
+
 import { ClickReport, Flick } from '../../api';
 
 /** A kill time over this is drawn in the attention color, in seconds. */
@@ -5,18 +13,30 @@ const LONG_KILL = 1;
 /** The kill time that fills the bars' lane, in seconds: longer ones are cut at the top. */
 const TALLEST_KILL = 2;
 
-/** The lanes' drawing: the kills' marks above, each kill's time as a bar below, both at the kill's moment. */
+/**
+ * The lanes' colors and sizes, read from the tokens: the kills' marks above, each kill's time as a
+ * bar below, both at the kill's moment.
+ */
 export interface LaneStyle {
+  /** A kill's mark. */
   kill: string;
+  /** The picked kill's mark and bar. */
   picked: string;
+  /** A kill's bar at or under a second. */
   quiet: string;
+  /** A kill's bar over a second. */
   long: string;
+  /** The line between the two lanes. */
   grid: string;
+  /** A kill mark's height, in CSS pixels. */
   markHeight: number;
+  /** A TTK bar's width, in CSS pixels. */
   barWidth: number;
+  /** Where the marks' lane ends and the bars' lane begins, in CSS pixels from the top. */
   split: number;
 }
 
+/** Reads the lanes' tokens from the CSS variables in force on `element` (the canvas). */
 export function readStyle(element: Element): LaneStyle {
   const css = getComputedStyle(element);
   const token = (name: string) => css.getPropertyValue(name).trim();
@@ -32,19 +52,20 @@ export function readStyle(element: Element): LaneStyle {
   };
 }
 
-/** A kill's mark is this wide, in pixels; a bar is at least this tall. */
+/** A kill's mark is this wide, in CSS pixels. */
 const MARK_WIDTH = 2;
+/** A bar is at least this tall, in CSS pixels, so the quickest kill still shows. */
 const MIN_BAR = 1;
 
-/** A kill's bar: the picked one apart, a long kill in the attention color. */
+/** A kill's bar color: the picked one apart, a long kill in the attention color. */
 function barColor(kill: Flick, picked: Flick | null, style: LaneStyle): string {
   if (kill === picked) return style.picked;
   return kill.total > LONG_KILL ? style.long : style.quiet;
 }
 
 /**
- * The lanes on their canvas (widthPx by heightPx, the run seconds long): the line between them, and for each kill its
- * mark above and its time as a bar below.
+ * The lanes on their canvas (widthPx by heightPx CSS pixels, the run `seconds` long): the line
+ * between them, and for each kill its mark above and its time as a bar below.
  */
 export function drawKillLanes(
   context: CanvasRenderingContext2D,

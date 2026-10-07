@@ -15,6 +15,7 @@ use crate::library::{Answer, Failure, Library};
 /// How near the log's span a kill of the run must be, in seconds (the reader's own test).
 const KILL_SLACK_S: f64 = 1.0;
 
+/// Windows' time calls, for `utc_offset_at`.
 #[cfg(all(windows, feature = "native"))]
 mod win {
     /// Seconds from 1601 (FILETIME's start) to 1970 (Unix time's).
@@ -22,24 +23,36 @@ mod win {
     /// FILETIME's 100 ns steps in a second.
     pub const FILETIME_STEPS_PER_S: i64 = 10_000_000;
 
-    /// SYSTEMTIME.
+    /// Windows' SYSTEMTIME: a date and time in parts.
     #[repr(C)]
     #[derive(Default)]
     pub struct SystemTime {
+        /// The year, as 2026.
         pub year: u16,
+        /// The month, 1 to 12.
         pub month: u16,
+        /// The day of the week, 0 (Sunday) to 6.
         pub weekday: u16,
+        /// The day of the month, 1 to 31.
         pub day: u16,
+        /// The hour, 0 to 23.
         pub hour: u16,
+        /// The minute, 0 to 59.
         pub minute: u16,
+        /// The second, 0 to 59.
         pub second: u16,
+        /// The millisecond, 0 to 999.
         pub ms: u16,
     }
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
+        /// A FILETIME (100 ns steps since 1601) in parts; 0 when it fails.
         pub fn FileTimeToSystemTime(file_time: *const u64, system_time: *mut SystemTime) -> i32;
+        /// Parts back to a FILETIME; 0 when it fails.
         pub fn SystemTimeToFileTime(system_time: *const SystemTime, file_time: *mut u64) -> i32;
+        /// A UTC time in parts as local time in a time zone (null: the computer's), daylight saving time included; 0
+        /// when it fails.
         pub fn SystemTimeToTzSpecificLocalTime(
             zone: *const std::ffi::c_void,
             utc: *const SystemTime,
@@ -57,7 +70,7 @@ pub fn utc_offset_at(secs: f64) -> i64 {
     #[cfg(unix)]
     {
         unsafe extern "C" {
-            // POSIX's (the libc crate declares it only for Windows)
+            /// Reads the time zone from TZ or the system: POSIX's (the libc crate declares it only for Windows).
             fn tzset();
         }
         let time = secs.floor() as libc::time_t;
@@ -171,10 +184,12 @@ fn span(path: &Path) -> Option<(f64, f64)> {
     reader::log_span(&head, if records > 0 { &last } else { &[] })
 }
 
+/// The UTC offset and the log search.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// This computer's offset now is a whole number of quarter hours.
     #[test]
     fn offsets_are_whole_quarter_hours() {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
@@ -202,6 +217,8 @@ mod tests {
         assert!(out.status.success() && said.contains("1 passed"), "{said}{}", String::from_utf8_lossy(&out.stderr));
     }
 
+    /// Of two logs, the one whose span covers the stats file's kills is read, and all 20 kills match (skipped when
+    /// the self-test's files are not made).
     #[test]
     fn finds_the_log_that_covers_the_run() {
         // the self-test's run (tests/mouse_fixtures.py), beside a log of another time

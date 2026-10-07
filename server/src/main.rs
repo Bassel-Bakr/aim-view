@@ -1,5 +1,5 @@
-//! Aim View's review server: the UI's server-mode build and the review server's API (python/server.py's, served by
-//! the aimview-service crate as the desktop app serves it) over plain HTTP.
+//! Aim View's review server: the UI's server-mode build and the review server's API (python/retired/server.py's,
+//! served by the aimview-service crate as the desktop app serves it) over plain HTTP.
 //!
 //! In: the command line and the settings file (config.rs). Out: the answers on the address it listens on, until
 //! Ctrl+C, and a log of its settings and requests on standard output. Who gets in: access.rs; requests: http.rs; the
@@ -35,6 +35,8 @@ const EXIT_BAD_SETTINGS: u8 = 2;
 /// The exit code for a second Ctrl+C: 128 + SIGINT, as a shell gives a program it interrupts.
 const EXIT_INTERRUPTED: i32 = 130;
 
+/// Reads the settings, serves on a Tokio runtime until Ctrl+C, and exits with 0, 1 on an error, or 2 when the
+/// settings cannot be read.
 fn main() -> ExitCode {
     let (settings, file) = match config::load(config::Flags::parse()) {
         Ok(loaded) => loaded,
@@ -130,7 +132,7 @@ fn print_settings(settings: &Settings, api: &dyn Api, access: &access::Access) {
 }
 
 /// Lists the recordings and KovaaK's stats folder (tens of thousands of files) before the first page asks, as
-/// python/server.py does at its start.
+/// python/retired/server.py did at its start.
 fn list_recordings_early(api: Arc<dyn Api>) {
     tokio::task::spawn_blocking(move || {
         api.handle(&http::Call::get("/api/vods"));

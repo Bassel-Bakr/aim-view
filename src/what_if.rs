@@ -19,12 +19,15 @@ const MIN_TIMES: usize = 4;
 /// A distance group's median flick speed, or its clean kills' median TTK, needs this many of them; a direction needs
 /// this many flicks too.
 const MIN_IN_GROUP: usize = 3;
-/// The edge of the fastest quarter: this quantile of times (the 25th percentile), or of speeds (the 75th).
+/// The edge of the fastest quarter of times: this quantile of them (the 25th percentile).
 const FASTEST_QUARTER_OF_TIMES: f64 = 0.25;
+/// The edge of the fastest quarter of speeds: this quantile of them (the 75th percentile).
 const FASTEST_QUARTER_OF_SPEEDS: f64 = 0.75;
-/// "Keep up your best 10 seconds": the window (seconds), and how long the run must span for it.
+/// "Keep up your best 10 seconds": the window, in seconds.
 const BEST_WINDOW_S: f64 = 10.0;
+/// How long the run must span, from its first flick to its last kill, for the best-window line, in seconds.
 const MIN_RUN_FOR_BEST_S: f64 = 20.0;
+/// Seconds in a minute, for the kills a minute the line's sentence gives.
 const SECONDS_PER_MINUTE: f64 = 60.0;
 /// A direction counts when it holds this share of the flicks (and MIN_IN_GROUP or more).
 const MIN_DIRECTION_SHARE: f64 = 0.05;
@@ -42,8 +45,11 @@ const ONTO_TARGET_PART: usize = 2;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = "ClickWhatIfGroup"))]
 #[serde(rename_all = "lowercase")]
 pub enum Group {
+    /// The time between kills: reaction, confirmation, the run's best stretch, the next target, reloads.
     Pace,
+    /// The flicks: their speed, where they landed, and their direction.
     Flicks,
+    /// The micros and what follows them: their count, their size, misses and slips off the target.
     Micros,
 }
 
@@ -52,10 +58,15 @@ pub enum Group {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ClickWhatIf {
+    /// The part of the run the line is about.
     pub group: Group,
+    /// The line's title, the change to make ("React faster").
     pub what: &'static str,
+    /// The kills the change would add over the run, at the run's own pace.
     pub kills: f64,
+    /// The score those kills would add at the run's points a kill; None when the run gives no score per kill.
     pub score: Option<f64>,
+    /// What the line assumed, in a sentence.
     pub how: String,
 }
 
@@ -63,34 +74,78 @@ pub struct ClickWhatIf {
 #[derive(Clone, Copy, Debug)]
 enum Line {
     /// Each reaction cut to `cut_s`.
-    Reaction { cut_s: f64 },
+    Reaction {
+        /// The reaction time each reaction is cut to, in seconds.
+        cut_s: f64,
+    },
     /// Each confirmation before the click cut to the median, `median_s`.
-    Confirmation { median_s: f64 },
+    Confirmation {
+        /// The run's median confirmation time, in seconds.
+        median_s: f64,
+    },
     /// The best 10 seconds' kills a minute, against the run's.
-    BestTen { best_per_minute: f64, run_per_minute: f64 },
+    BestTen {
+        /// Kills a minute in the run's best 10 seconds.
+        best_per_minute: f64,
+        /// Kills a minute over the whole run.
+        run_per_minute: f64,
+    },
     /// In a hold-fire run, each time from a kill until on the next target cut to `cut_s`.
-    NextTarget { cut_s: f64 },
+    NextTarget {
+        /// The time from a kill until on the next target that each such time is cut to, in seconds.
+        cut_s: f64,
+    },
+    /// Each flick at the speed of the fastest quarter of the flicks of its distance.
     Flick,
     /// The flicks that ended short of the target or past it.
-    Land { missed_flicks: usize },
+    Land {
+        /// How many flicks ended short of the target or past it.
+        missed_flicks: usize,
+    },
     /// The best direction's name (DIRECTIONS).
-    Direction { best: &'static str },
+    Direction {
+        /// The name of the direction the player flicks best in.
+        best: &'static str,
+    },
     /// The median count of micros, and the median settle time (seconds) of the kills with no more.
-    FewerMicros { median_micros: f64, others_settle_s: f64 },
+    FewerMicros {
+        /// The median count of micro corrections a kill.
+        median_micros: f64,
+        /// The median settle time of the kills with no more micros than the median, in seconds.
+        others_settle_s: f64,
+    },
     /// The flicks that landed on the target and were still corrected.
-    SmallerMicros { corrected_flicks: usize },
+    SmallerMicros {
+        /// How many flicks landed on the target and were still corrected.
+        corrected_flicks: usize,
+    },
     /// The time a miss cost, and the points hitting every shot would add on its own, in a scenario whose score is
     /// scaled by accuracy.
-    Miss { per_miss_s: f64, accuracy_points: Option<f64> },
+    Miss {
+        /// The time a miss cost on average, in seconds.
+        per_miss_s: f64,
+        /// The points hitting every shot would add on its own; None where the score is not scaled by accuracy.
+        accuracy_points: Option<f64>,
+    },
+    /// In a hold-fire run, the time off the target after first reaching it, while firing.
     Slip,
     /// The reloads the misses forced, their time, and the points they took off, in a scenario that takes points off
     /// for a reload.
-    Reload { forced_by_misses: i64, seconds: f64, points_back: Option<f64> },
+    Reload {
+        /// How many reloads the misses forced.
+        forced_by_misses: i64,
+        /// The time those reloads took, in seconds.
+        seconds: f64,
+        /// The points those reloads took off; None where the scenario takes no points off for a reload.
+        points_back: Option<f64>,
+    },
 }
 
 /// One line's saving: seconds over the run.
 struct Saving {
+    /// The line, with the numbers its sentence gives.
     line: Line,
+    /// The time the change would save over the run, in seconds.
     seconds: f64,
 }
 
@@ -212,16 +267,19 @@ fn cut_to_fastest_quarter(times_s: &[f64], line: impl FnOnce(f64) -> Line) -> Op
     })
 }
 
+/// Each reaction cut to the edge of the run's fastest quarter of reactions.
 fn reaction(measures: &[Measure]) -> Option<Saving> {
     let reactions_s: Vec<f64> = measures.iter().filter_map(|measure| measure.react).collect();
     cut_to_fastest_quarter(&reactions_s, |cut_s| Line::Reaction { cut_s })
 }
 
+/// Each time from a kill until on the next target cut to the edge of the run's fastest quarter of them.
 fn next_target(measures: &[Measure]) -> Option<Saving> {
     let arrivals_s: Vec<f64> = measures.iter().filter_map(|measure| measure.arrive).collect();
     cut_to_fastest_quarter(&arrivals_s, |cut_s| Line::NextTarget { cut_s })
 }
 
+/// Each confirmation before the click cut to the run's median, with MIN_TIMES confirmations or more.
 fn confirmation(measures: &[Measure]) -> Option<Saving> {
     let confirmations_s: Vec<f64> = measures.iter().filter_map(|measure| measure.still).collect();
     (confirmations_s.len() >= MIN_TIMES).then(|| {
@@ -262,11 +320,14 @@ fn best_ten(measures: &[Measure], fps: f64, kills_per_s: f64, total_s: f64) -> O
 /// A flick's way covered, from its start to where it ended (degrees), and its time (seconds).
 #[derive(Clone, Copy)]
 struct FlickTravel {
+    /// The way the flick covered toward the target, in degrees.
     way_deg: f64,
+    /// The flick's time, in seconds.
     time_s: f64,
 }
 
 impl FlickTravel {
+    /// The flick's mean speed, in degrees a second.
     fn speed_deg_s(self) -> f64 {
         self.way_deg / self.time_s
     }
@@ -318,7 +379,9 @@ fn land(measures: &[Measure], radius_deg: f64) -> Option<Saving> {
 
 /// A flick's speed against the median of its distance group's, and its time (seconds).
 struct RelativeFlick {
+    /// The flick's speed over the median speed of its distance group's flicks.
     relative_speed: f64,
+    /// The flick's time, in seconds.
     time_s: f64,
 }
 
@@ -368,7 +431,9 @@ fn direction(measures: &[Measure]) -> Option<Saving> {
 
 /// A kill's count of micros and its settle time (seconds).
 struct MicroKill {
+    /// The micros (corrections) the kill took, as a float for the median.
     micros: f64,
+    /// The time the micros took, in seconds.
     settle_s: f64,
 }
 
@@ -509,6 +574,7 @@ pub fn click_what_if(
     lines
 }
 
+/// Checks each line on a made-up run worked out by hand.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,10 +641,12 @@ mod tests {
         ]
     }
 
+    /// Asserts the two values are within 1e-9.
     fn close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} against {b}");
     }
 
+    /// `quantile` interpolates between the sorted values as NumPy's default does.
     #[test]
     fn quantiles_as_numpy_gives_them() {
         close(quantile(&[4.0, 1.0, 3.0, 2.0], 0.25), 1.75);
@@ -586,6 +654,7 @@ mod tests {
         close(quantile(&[5.0], 0.25), 5.0);
     }
 
+    /// The reaction, confirmation and next-target lines save the time above their cut.
     #[test]
     fn pace_lines() {
         let measures = run();
@@ -603,6 +672,7 @@ mod tests {
         close(saving.seconds, time_above(&arrivals_s, quantile(&arrivals_s, 0.25)));
     }
 
+    /// The best 10 seconds' rate kept all run saves the time the run spent under it.
     #[test]
     fn the_best_ten_seconds() {
         // 30 kills a second apart, then 10 kills 3 s apart: 10 kills in the best 10 s
@@ -624,6 +694,7 @@ mod tests {
         close(saving.seconds, 20.0);
     }
 
+    /// The flick speed, landing and direction lines on the made-up run.
     #[test]
     fn flick_lines() {
         let measures = run();
@@ -652,6 +723,7 @@ mod tests {
         close(saving.seconds, (0.12 + 0.15 + 0.20 + 0.24) * (1.0 - left / right));
     }
 
+    /// The fewer-micros, smaller-micros, miss and slip lines on the made-up run.
     #[test]
     fn micro_lines() {
         let measures = run();
@@ -670,6 +742,7 @@ mod tests {
         close(slip(&measures).unwrap().seconds, 0.16);
     }
 
+    /// The reload line saves the reloads the misses forced, their time and their points, and says so.
     #[test]
     fn reload_line() {
         use crate::reload::Reloads;

@@ -9,9 +9,9 @@ through --model (the PyTorch export) at BOX_THRESHOLD. A box there is a bar when
 half its area, its center within the bot's width, 0.4 to 2 bot heights higher), its pixels are not the bot's (at most
 BOT_LIKE_SHARE within BOT_COLOR_DIFF of the bot's middle color, and DISTINCT_SHARE of them neither the bot's color nor
 the wall's: a bar's fill, of any color, as KovaaK's lets the player pick it), and it is part of a strip running
-sideways (runs_sideways). A bot's head or a target beside another is the bot's own
-color, so it is never taken (both are on Pasu Switch Wide and mccoyfrozentrack), nor is a small colored target beside
-a bot (the wall is on both its sides).
+sideways (runs_sideways). A bot's head or a target beside another is the bot's own color, so it is never taken (both
+are on Pasu Switch Wide and mccoyfrozentrack), nor is a small colored target beside a bot (the wall is on both its
+sides).
 
 Each bar gives one 256 x 256 crop round it (shifted up to 48 px at random), saved like build_mined.py's: rgb, fixed,
 tmask, boxes (the model's other boxes there, each scoring TARGET_SCORE or more), scores, mined ("false_bar"), fix (the
@@ -44,9 +44,10 @@ import aimview_tools  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 REVIEWS = ROOT / "test_out" / "vod_model" / "data_mined" / "reviews"
-BOX_THRESHOLD = 0.2
-TARGET_SCORE = 0.5
-BAR_AREA_SHARE = 0.5
+BOX_THRESHOLD = 0.2                     # the model's boxes looked at: under the review's threshold, to find the bars
+                                        # it nearly boxes
+TARGET_SCORE = 0.5                      # another box in a crop scoring under this may not be a target: no crop
+BAR_AREA_SHARE = 0.5                    # a bar's box has less than this share of its bot's box's area
 BAR_ABOVE = (0.4, 2.0)                  # the bar's center above the bot's, in bot heights
 BOT_COLOR_DIFF = 40                     # a pixel within this of the bot's middle color (each channel) is the bot's
 BOT_LIKE_SHARE = 0.1                    # a bar has at most this share of the bot's color
@@ -56,7 +57,7 @@ STRIP_SHARE = 0.5                       # else at least this share beside it is 
 MIN_REACH_PX = 3                        # how far beside the box the strip is looked for, at least
 MIN_GAP_PX = 4                          # the wall's color is read at least this far above the box
 CANDIDATE_SPACING_S = 0.25              # frames looked at, at least this far apart
-MAX_CANDIDATES = 40
+MAX_CANDIDATES = 40                     # frames decoded a recording at most, picked at random
 SPACING_S = 0.5                         # crops of a recording, at least this far apart
 
 
@@ -77,8 +78,8 @@ def pixels(rgb, box, inset=0.0):
 
 
 def is_bar(rgb, bar, bot):
-    """A box above a bot whose pixels are neither the bot's color nor the wall's, on a strip running sideways. The
-    fill may be any color, white and gray too: KovaaK's lets the player pick it."""
+    """Whether box `bar` is a health bar over box `bot`: above it, its pixels neither the bot's color nor the wall's,
+    on a strip running sideways. The fill may be any color, white and gray too: KovaaK's lets the player pick it."""
     if not above(bar, bot):
         return False
     color = np.median(pixels(rgb, bot, inset=0.25), 0)
@@ -171,6 +172,8 @@ def crop_of(rgb, boxes, bar_index, rnd):
 
 
 def save(out, name, rgb, fixed, crop, frame, score):
+    """Writes the crop crop_of gave as <out>/<name>.npz, the bar's box as `fix` and its `score` after the targets'
+    scores."""
     x0, y0, targets, scores, fix = crop
     window = (slice(y0, y0 + hand_crops.CROP), slice(x0, x0 + hand_crops.CROP))
     np.savez_compressed(out / f"{name}.npz", rgb=rgb[window].copy(), fixed=fixed[window], tmask=hand_crops.disc_mask(targets),
@@ -180,7 +183,8 @@ def save(out, name, rgb, fixed, crop, frame, score):
 
 
 def recording_crops(job, tracks, detector, out, args):
-    """The crops of one recording; returns how many."""
+    """Writes one recording's crops into its split folder of `out` and gives how many. Only a frame with exactly one
+    bar gives a crop."""
     rnd = random.Random(job["stem"])
     frames = candidates(tracks)
     if not frames:
@@ -208,6 +212,7 @@ def recording_crops(job, tracks, detector, out, args):
 
 
 def main():
+    """Writes the crops of this part's recordings, then the manifest of every recording with crops in --out."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--out", type=Path, default=ROOT / "test_out" / "vod_model" / "data_bars")
     parser.add_argument("--model", default="full_v7")

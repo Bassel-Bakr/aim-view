@@ -48,6 +48,7 @@ pub fn decode(
     out
 }
 
+/// Checks the weaker threshold at the crosshair.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,6 +62,7 @@ mod tests {
         (scores, vec![0f32; 4 * grid_width * grid_height], grid_width, grid_height)
     }
 
+    /// A cell under the model's threshold but over the weaker one is a box at the crosshair and nowhere else.
     #[test]
     fn a_weak_cell_is_a_target_only_at_the_crosshair() {
         let weak = ModelSettings {

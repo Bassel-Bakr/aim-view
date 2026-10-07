@@ -27,10 +27,13 @@ const ROUND_16_16: i64 = 1 << 15;
 
 /// The range adjustment of yuv2rgb.c `ff_yuv2rgb_c_init_tables`: limited ("tv") range luma runs from 16 (black) over
 /// 219 levels and is stretched to 255 (`cy = (cy * 255) / 219`, `oy = 16 << 16`); in full range the chroma weights
-/// shrink by 224 / 255 instead (limited chroma's 224 levels).
+/// shrink by 224 / 255 instead (limited chroma's 224 levels). This one is full range's levels.
 const FULL_LEVELS: i64 = 255;
+/// Limited range luma's levels, from black to white.
 const LIMITED_LUMA_LEVELS: i64 = 219;
+/// Limited range chroma's levels.
 const LIMITED_CHROMA_LEVELS: i64 = 224;
+/// Limited range luma's black.
 const LIMITED_BLACK: i64 = 16;
 
 /// The headroom before and after yuv2rgb.c's y table, in entries (swscale_internal.h).
@@ -39,8 +42,9 @@ const YUVRGB_TABLE_LUMA_HEADROOM: i64 = 512;
 const Y_TABLE_LEN: usize = 1024 + 2 * YUVRGB_TABLE_LUMA_HEADROOM as usize;
 /// The y table's first entry after its headroom is this many luma levels below 0 (yuv2rgb.c: `yb = -(384 << 16) ...`).
 const Y_TABLE_START: i64 = 384;
-/// Where the chroma tables point into the y table after its headroom (yuv2rgb.c's `yoffs`), by range.
+/// Where the chroma tables point into the y table after its headroom (yuv2rgb.c's `yoffs`), in full range.
 const FULL_Y_OFFSET: i64 = 384;
+/// Where the chroma tables point into the y table after its headroom, in limited range.
 const LIMITED_Y_OFFSET: i64 = 326;
 /// A weight times chroma's center, 128, in 16.16: `weight >> 9` (yuv2rgb.c `fill_table`'s `inc >> 9`).
 const CHROMA_CENTER_SHIFT: u32 = 9;
@@ -48,6 +52,7 @@ const CHROMA_CENTER_SHIFT: u32 = 9;
 /// ff_yuv_420_rgb24_ssse3's samples carry 3 extra bits in their 16-bit lanes (`psllw 3`), and its coefficients are the
 /// 16.16 weights shifted up 13 (yuv2rgb.c: `roundToInt16(cy * (1 << 13))`), so its products need no shift back.
 const SSSE3_EXTRA_BITS: u32 = 3;
+/// How far ff_yuv_420_rgb24_ssse3's coefficients are shifted up from the 16.16 weights (`SSSE3_EXTRA_BITS`).
 const SSSE3_COEFF_SHIFT: u32 = 13;
 /// The kernel's U and V offset, chroma's center with the extra bits (yuv2rgb.c: `c->uOffset = 0x0400...`).
 const SSSE3_CHROMA_CENTER: i32 = 128 << SSSE3_EXTRA_BITS;
@@ -57,20 +62,25 @@ const ACROSS_ONE: i64 = 1 << 14;
 /// What a vertical filter's coefficients sum to (`1 << 12`): output.c's kernels blend two rows by shares of it.
 const DOWN_ONE: i64 = 1 << 12;
 /// swscale's filterAlign on x86 (utils.c `sws_init_context`): the coefficients per output are rounded up to a multiple
-/// of these, across and down. The plain C code aligns to 1.
+/// of these, across and down. The plain C code aligns to 1. This one is across.
 const X86_ACROSS_ALIGN: usize = 4;
+/// swscale's filterAlign on x86, down.
 const X86_DOWN_ALIGN: usize = 2;
 /// A step within this of ONE_16_16, between samples at the same place, is unscaled (utils.c `initFilter`).
 const UNSCALED_STEP_TOLERANCE: i64 = 10;
 /// initFilter's `fone`, the raw filters' one, is 1 << 54 made smaller by the downscale's log2, by 8 bits at most.
 const RAW_ONE_BITS: i64 = 54;
+/// The most bits the downscale's log2 takes off `fone`.
 const MAX_RAW_ONE_SHRINK: i64 = 8;
 /// SWS_AREA's coefficient in initFilter: an output's edge is half an output sample (1 << 29 in initFilter's
 /// 1/(1 << 30) of a sample) from its center, and an input's share of it runs from FULL_SHARE (all of the input inside
-/// the output) to 0, in 16.16 steps.
+/// the output) to 0, in 16.16 steps. This one is half an output sample.
 const HALF_OUTPUT: i64 = 1 << 29;
+/// Half of FULL_SHARE: the share falls from FULL_SHARE to 0 over this either side of the output's edge.
 const HALF_SHARE: i64 = 1 << (29 + 16);
+/// FULL_SHARE's bits: a share in units of `raw_one` is the share times `raw_one >> FULL_SHARE_BITS`.
 const FULL_SHARE_BITS: u32 = 30 + 16;
+/// An input's whole share of an output, when all of the input lies inside it.
 const FULL_SHARE: i64 = 1 << FULL_SHARE_BITS;
 /// Taps at a filter's ends are dropped while they add up to less than this share of one (swscale_internal.h).
 const SWS_MAX_REDUCE_CUTOFF: f64 = 0.002;
@@ -83,34 +93,47 @@ const SOURCE_CHROMA_POSITION: i64 = 128;
 const FILTER_SIZE_LIMIT: usize = 16;
 
 /// hScale8To15_c (hscale.c): a sum of 8-bit samples times coefficients that sum to ACROSS_ONE, shifted down to a
-/// 15-bit sample and capped.
+/// 15-bit sample and capped. This one is the shift down.
 const ACROSS_SHIFT: u32 = 7;
+/// The largest 15-bit sample, where hScale8To15_c caps a sum.
 const MAX_15_BIT: i32 = (1 << 15) - 1;
-/// A 15-bit sample back to 8 bits, rounded (output.c's `(buf0[i] + 64) >> 7`, yuv2plane1_8_c's dither of 64).
+/// A 15-bit sample back to 8 bits, rounded (output.c's `(buf0[i] + 64) >> 7`, yuv2plane1_8_c's dither of 64). This
+/// one is the rounding.
 const SAMPLE_15_ROUND: i32 = 64;
+/// The shift from a 15-bit sample down to 8 bits.
 const SAMPLE_15_SHIFT: u32 = 7;
 /// A vertical sum (15-bit samples times coefficients that sum to DOWN_ONE) back to 8 bits: down 19 bits, rounded by
-/// half of that (output.c's `1 << 18` and `128 << 11`, yuv2planeX_8_c's dither `64 << 12`).
+/// half of that (output.c's `1 << 18` and `128 << 11`, yuv2planeX_8_c's dither `64 << 12`). This one is the shift.
 const DOWN_SHIFT: u32 = 19;
+/// A vertical sum's rounding before its shift down: half of 1 << DOWN_SHIFT.
 const DOWN_ROUND: i32 = 1 << 18;
 /// ff_yuv2yuvX (x86/yuv2yuvX.asm) starts each sum at the dither (64) plus 8 per tap after the first, shifted down 4,
-/// and shifts the sum down 3 at the end.
+/// and shifts the sum down 3 at the end. This one is the dither.
 const YUVX_DITHER: i32 = 64;
+/// What ff_yuv2yuvX adds to a sum's start for each tap after the first.
 const YUVX_ROUND_PER_TAP: i32 = 8;
+/// The shift down of ff_yuv2yuvX's start value.
 const YUVX_START_SHIFT: u32 = 4;
+/// The shift down of ff_yuv2yuvX's sum at the end.
 const YUVX_SHIFT: u32 = 3;
 /// swscale falls back to its C kernels for the last two output rows (swscale.c `swscale`: `dstY >= c->dstH - 2`), so
 /// ff_yuv2yuvX writes the luma rows before this, and the chroma rows written with them (one per two luma rows).
 const X86_LUMA_ROWS: usize = DST_H - 2;
+/// The chroma rows ff_yuv2yuvX writes: those written with its luma rows.
 const X86_CHROMA_ROWS: usize = X86_LUMA_ROWS / 2;
 
 /// The color matrices ffmpeg knows (AVColorSpace).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Matrix {
+    /// ITU-R BT.709, the HD matrix.
     Bt709,
+    /// ITU-R BT.601, the SD matrix; also taken for a frame with no matrix tag.
     Bt601,
+    /// The FCC's matrix (FCC 73.682).
     Fcc,
+    /// SMPTE 240M.
     Smpte240m,
+    /// ITU-R BT.2020.
     Bt2020,
 }
 
@@ -181,7 +204,9 @@ fn local_position(subsample_log2: i64, position: i64) -> i64 {
 /// A filter's coefficient and the input sample it weighs, clamped to the line as ffmpeg reads it.
 #[derive(Clone, Copy, Debug)]
 struct Tap {
+    /// The input sample it reads, as its index along the line, clamped to the line.
     input: u32,
+    /// The sample's weight, of the filter's one (ACROSS_ONE or DOWN_ONE).
     coefficient: i32,
 }
 
@@ -190,11 +215,15 @@ struct Tap {
 /// frame size: each output's taps, with the zero coefficients left out.
 #[derive(Clone, Debug)]
 struct Filter {
+    /// Per output, the first input sample it reads (swscale's filterPos).
     first_input: Box<[i64]>,
+    /// Per output, its `size` coefficients in turn, zeros and all (swscale's filter).
     coefficients: Box<[i64]>,
+    /// The coefficients per output (swscale's filterSize).
     size: usize,
     /// Every output's taps in turn: output `i`'s are `taps[tap_starts[i]..tap_starts[i + 1]]`.
     taps: Box<[Tap]>,
+    /// Where each output's taps start in `taps`, then where the last one's end.
     tap_starts: Box<[u32]>,
     /// The input samples in the line.
     input_len: usize,
@@ -206,6 +235,8 @@ fn clamped_input(first: i64, tap: usize, input_len: usize) -> usize {
 }
 
 impl Filter {
+    /// The filter initFilter leaves: per output its first input, its `size` coefficients, and the line's length in
+    /// samples. Panics on a filter whose sums could overflow 32 bits.
     fn new(first_input: Vec<i64>, coefficients: Box<[i64]>, size: usize, input_len: usize) -> Filter {
         assert!(
             size < FILTER_SIZE_LIMIT && coefficients.iter().all(|coefficient| coefficient.abs() <= ACROSS_ONE),
@@ -262,7 +293,9 @@ impl Filter {
 /// The way a filter runs over a plane: across its rows (hScale) or down them (the vertical kernels).
 #[derive(Clone, Copy)]
 enum Direction {
+    /// Along each row: the line is a row's samples.
     Across,
+    /// Down the rows: the line is a column, one sample from each row.
     Down,
 }
 
@@ -270,14 +303,17 @@ enum Direction {
 struct FilterSpec {
     /// The 16.16 step in the input per output sample (swscale's xInc: `scale_step`).
     x_inc: i64,
+    /// The input samples in the line.
     input_len: usize,
+    /// The output samples in the line.
     output_len: usize,
     /// The coefficients per output are rounded up to a multiple of this (swscale's filterAlign).
     align: usize,
     /// What each output's coefficients sum to (swscale's `one`): ACROSS_ONE or DOWN_ONE.
     one: i64,
-    /// Where the first input and output samples sit (swscale's srcPos and dstPos: `local_position`).
+    /// Where the first input sample sits (swscale's srcPos: `local_position`).
     input_position: i64,
+    /// Where the first output sample sits (swscale's dstPos: `local_position`).
     output_position: i64,
     /// Built for ffmpeg's x86 kernels (its default), else for its plain C code.
     x86: bool,
@@ -308,11 +344,14 @@ impl FilterSpec {
 /// A filter before initFilter trims and normalizes it: per output, its first input and its raw coefficients (all
 /// rows the same length, summing to about `raw_one`).
 struct RawFilter {
+    /// Per output, the first input sample it reads.
     first_input: Vec<i64>,
+    /// Per output, its raw coefficients from its first input on.
     rows: Vec<Vec<i64>>,
 }
 
 impl RawFilter {
+    /// An empty raw filter with room for `output_len` outputs.
     fn with_capacity(output_len: usize) -> RawFilter {
         RawFilter { first_input: Vec::with_capacity(output_len), rows: Vec::with_capacity(output_len) }
     }
@@ -354,6 +393,7 @@ fn raw_filter(spec: &FilterSpec, raw_one: i64) -> RawFilter {
 
 /// SWS_AREA when upscaling is bilinear: each output from the two inputs around its center.
 fn bilinear_filter(spec: &FilterSpec, raw_one: i64) -> RawFilter {
+    /// The inputs each output reads: the two around its center.
     const SIZE: i64 = 2;
     // the output's center in the input, in 16.16 (initFilter's xDstInSrc; the positions are in 1/256 of a sample)
     let mut center = ((spec.output_position * spec.x_inc) >> 8) - ((spec.input_position * 0x8000) >> 7);
@@ -585,15 +625,22 @@ type ChromaLine = (i32, i32);
 /// contrast and saturation 1), under its names: `crv` V's weight in red, `cbu` U's in blue, `cgu` and `cgv` U's and V's
 /// in green (negative), `cy` luma's weight, all 16.16; `oy` luma's offset (black).
 struct RangeWeights {
+    /// V's weight in red (16.16).
     crv: i64,
+    /// U's weight in blue (16.16).
     cbu: i64,
+    /// U's weight in green (16.16, negative).
     cgu: i64,
+    /// V's weight in green (16.16, negative).
     cgv: i64,
+    /// Luma's weight (16.16): 1 in full range, 255 / 219 in limited range.
     cy: i64,
+    /// Luma's black (16.16): 0 in full range, 16 in limited range.
     oy: i64,
 }
 
 impl RangeWeights {
+    /// The weights for a matrix and a range (`full_range`: full, else limited).
     fn new(matrix: Matrix, full_range: bool) -> RangeWeights {
         let [crv, cbu, cgu, cgv] = matrix.coefficients();
         let (cgu, cgv) = (-cgu, -cgv);
@@ -612,10 +659,15 @@ impl RangeWeights {
 /// R = y_table[red_v[V] + Y], G = y_table[green_u[U] + green_v[V] + Y], B = y_table[blue_u[U] + Y] (swscale's yuvTable,
 /// table_rV, table_gU, table_gV and table_bU).
 struct RgbTables {
+    /// A level's 8-bit value, by a chroma table's entry plus the luma (swscale's yuvTable).
     y_table: [u8; Y_TABLE_LEN],
+    /// Per V, red's entry into y_table before the luma is added (table_rV).
     red_v: [i64; 256],
+    /// Per U, its part of green's entry into y_table (table_gU).
     green_u: [i64; 256],
+    /// Per U, blue's entry into y_table before the luma is added (table_bU).
     blue_u: [i64; 256],
+    /// Per V, its part of green's entry into y_table (table_gV).
     green_v: [i64; 256],
     /// The same tables as formulas, for code that computes them (the 2:1 rows with SIMD).
     #[cfg_attr(
@@ -630,15 +682,22 @@ struct RgbTables {
 #[derive(Clone, Copy)]
 #[cfg_attr(not(any(target_arch = "x86_64", all(target_arch = "wasm32", target_feature = "simd128"))), allow(dead_code))]
 struct RgbFormula {
+    /// y_table's entry 0 before its shift down (16.16).
     y_base: i32,
+    /// The step from one y_table entry to the next before the shift (16.16: luma's weight, `cy`).
     y_step: i32,
+    /// red_v as a line.
     red_v: ChromaLine,
+    /// green_u as a line.
     green_u: ChromaLine,
+    /// blue_u as a line.
     blue_u: ChromaLine,
+    /// green_v as a line.
     green_v: ChromaLine,
 }
 
 impl RgbTables {
+    /// The tables for a matrix and a range (`full_range`: full, else limited).
     fn new(matrix: Matrix, full_range: bool) -> RgbTables {
         let weights = RangeWeights::new(matrix, full_range);
         let cy = weights.cy;
@@ -706,15 +765,22 @@ fn pmulhw(a: i32, b: i32) -> i32 {
 /// `ff_yuv2rgb_c_init_tables` stores them (roundToInt16), under its names (yCoeff, vrCoeff, ubCoeff, vgCoeff, ugCoeff,
 /// yOffset).
 struct Ssse3Coefficients {
+    /// Luma's weight.
     y_coeff: i32,
+    /// V's weight in red.
     vr_coeff: i32,
+    /// U's weight in blue.
     ub_coeff: i32,
+    /// V's weight in green.
     vg_coeff: i32,
+    /// U's weight in green.
     ug_coeff: i32,
+    /// Luma's black, with the kernel's extra bits.
     y_offset: i32,
 }
 
 impl Ssse3Coefficients {
+    /// The kernel's coefficients for a matrix and a range (`full_range`: full, else limited).
     fn new(matrix: Matrix, full_range: bool) -> Ssse3Coefficients {
         let weights = RangeWeights::new(matrix, full_range);
         let coeff = |weight: i64| round_to_int16(weight << SSSE3_COEFF_SHIFT);
@@ -742,13 +808,17 @@ impl Ssse3Coefficients {
 
 /// A plane's two filters: across its rows and down them.
 struct PlaneFilters {
+    /// The filter along each row.
     across: Filter,
+    /// The filter down the rows.
     down: Filter,
 }
 
 /// The filters swscale builds for a frame size: luma's and chroma's.
 struct Filters {
+    /// The Y plane's filters.
     luma: PlaneFilters,
+    /// The U and V planes' filters, the same for both.
     chroma: PlaneFilters,
 }
 
@@ -784,16 +854,23 @@ impl Filters {
 
 /// Converts a recording's frames: built once per recording (its size and color tags), then one call per frame.
 pub struct Converter {
+    /// The decoded frames' width (pixels).
     width: usize,
+    /// The decoded frames' height (pixels).
     height: usize,
+    /// The tables swscale's C code turns YUV into RGB with.
     rgb_tables: RgbTables,
+    /// The coefficients of ffmpeg's x86 kernel for frames already 1280 x 720.
     ssse3: Ssse3Coefficients,
     /// x86 kernels where ffmpeg uses them (its default); false: the plain C code (`-cpuflags 0`).
     x86: bool,
     /// The 2:1 shortcut is allowed (it gives the same bytes; tests turn it off to compare).
     shortcut: bool,
+    /// The filters to rgb24, built for the first frame that needs them.
     rgb_filters: Option<Filters>,
+    /// The filters to yuv420p (and to the luma alone), built for the first frame that needs them.
     yuv_filters: Option<Filters>,
+    /// The full pipeline's buffers, kept from frame to frame.
     scratch: Scratch,
 }
 
@@ -836,10 +913,12 @@ impl Converter {
         (y_plane, u_plane, &rest[..chroma_width * chroma_height])
     }
 
+    /// Whether the frames are 1280 x 720 already.
     fn is_unscaled(&self) -> bool {
         self.width == DST_W && self.height == DST_H
     }
 
+    /// Whether the frames are exactly 2560 x 1440 and the 2:1 shortcut is allowed.
     fn takes_half_shortcut(&self) -> bool {
         self.shortcut && self.width == 2 * DST_W && self.height == 2 * DST_H
     }
@@ -965,9 +1044,17 @@ impl Converter {
 enum PackedKernel {
     /// yuv2rgb24_1: one luma row, and one chroma row (`chroma_share` 0) or two blended, `chroma_share` (of DOWN_ONE)
     /// of the second.
-    One { chroma_share: i32 },
+    One {
+        /// The second chroma row's share, out of DOWN_ONE; 0 for one chroma row.
+        chroma_share: i32,
+    },
     /// yuv2rgb24_2: two luma rows and two chroma rows, each pair blended by its second row's share.
-    Two { luma_share: i32, chroma_share: i32 },
+    Two {
+        /// The second luma row's share of the blend.
+        luma_share: i32,
+        /// The second chroma row's share of the blend.
+        chroma_share: i32,
+    },
     /// yuv2rgb24_X: every row of the filters, summed.
     Many,
 }
@@ -1001,12 +1088,15 @@ fn blends_two_rows(coefficients: &[i64]) -> bool {
 struct Scratch {
     /// A plane scaled across (15-bit): the Y plane for rgb24, each plane in turn for yuv420p.
     across: Vec<i32>,
-    /// rgb24's U and V planes scaled across.
+    /// rgb24's U plane scaled across (15-bit).
     across_u: Vec<i32>,
+    /// rgb24's V plane scaled across (15-bit).
     across_v: Vec<i32>,
-    /// rgb24's current output row: its 8-bit Y, U and V.
+    /// rgb24's current output row: its 8-bit Y.
     row_y: Vec<u8>,
+    /// rgb24's current output row's 8-bit U, one per two pixels.
     row_u: Vec<u8>,
+    /// rgb24's current output row's 8-bit V, one per two pixels.
     row_v: Vec<u8>,
     /// A row's vertical sums.
     sums: Vec<i32>,
@@ -1101,6 +1191,8 @@ impl Scratch {
 mod lanes {
     use super::{DST_W, RgbTables};
 
+    /// One row of the 2:1 conversion natively: two luma rows (2560 samples each) and a U and a V row (1280 each) into
+    /// a row of RGB24 (3840 bytes); with AVX2 where the CPU has it, else through the tables.
     #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
     pub fn half_row(
         top_luma: &[u8],
@@ -1163,6 +1255,8 @@ mod lanes {
             shuffles
         };
 
+        /// One row of the 2:1 conversion, 32 pixels at a time (`lanes::half_row` takes the same rows). Only for a CPU
+        /// with AVX2.
         #[target_feature(enable = "avx2")]
         pub fn half_row(
             top_luma: &[u8],
@@ -1252,6 +1346,8 @@ mod lanes {
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     use core::arch::wasm32::*;
 
+    /// One row of the 2:1 conversion in the browser, with WebAssembly SIMD, 16 pixels at a time: two luma rows (2560
+    /// samples each) and a U and a V row (1280 each) into a row of RGB24 (3840 bytes).
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     pub fn half_row(
         top_luma: &[u8],
@@ -1343,10 +1439,12 @@ fn mean_2x2(plane: &[u8], width: usize, out: &mut [u8], out_width: usize, out_he
     }
 }
 
+/// Checks the 2:1 rows' formulas and AVX2 code against the tables.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Every matrix, for the checks that cover them all.
     const MATRICES: [Matrix; 5] = [Matrix::Bt709, Matrix::Bt601, Matrix::Fcc, Matrix::Smpte240m, Matrix::Bt2020];
 
     /// The formulas the 2:1 rows with SIMD compute must give every table entry, for every matrix and range.

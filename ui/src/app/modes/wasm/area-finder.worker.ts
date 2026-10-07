@@ -1,14 +1,19 @@
 /// <reference lib="webworker" />
-// The area finder (src/areas.rs) in a worker of its own, after a review or without one (Find areas on a recording not
-// reviewed yet): it reads every key frame, or, when the recording has few, the frames areas_sample picks over it, each
-// decoded and converted as the review's frames are (video-frames.ts, frame-converter.ts), so they are ffmpeg's pixels.
-// KovaaK's session box comes from the key frames' Y planes, as the review's HUD watch finds it (src/hud.rs).
+/**
+ * The area finder (src/areas.rs) in a worker of its own, after a review or without one (Find areas
+ * on a recording not reviewed yet): it reads every key frame, or, when the recording has few, the
+ * frames areas_sample picks over it, each decoded and converted as the review's frames are
+ * (video-frames.ts, frame-converter.ts), so they are ffmpeg's pixels. KovaaK's session box comes
+ * from the key frames' Y planes, as the review's HUD watch finds it (src/hud.rs). In: a
+ * `FinderWork` from page-area-finder.ts. Out: one `FinderReply`, the areas found as JSON.
+ */
 import { FinderReply, FinderWork } from './area-finder-messages';
 import { Core, FRAME_YUV420_BYTES } from './core';
 import { FrameConverter } from './frame-converter';
 import { FrameFormat } from './review-messages';
 import { VideoFrames } from './video-frames';
 
+/** Sends the answer to the page. */
 const say = (reply: FinderReply) => postMessage(reply);
 
 addEventListener('message', (event: MessageEvent<FinderWork>) => {
@@ -18,8 +23,9 @@ addEventListener('message', (event: MessageEvent<FinderWork>) => {
 });
 
 /**
- * The frames the area finder reads (src/areas.rs: sample_frames): null for every key frame, when the recording has
- * enough; else the indexes of frames spread over it.
+ * The frames the area finder reads (src/areas.rs: sample_frames): null for every key frame, when
+ * the recording has enough; else the indexes of frames spread over it. Takes the key frame count,
+ * every frame's time and the duration, in seconds.
  */
 function finderPicks(core: Core, keys: number, times: number[], duration: number): number[] | null {
   const request = JSON.stringify({ keys, times, duration });
@@ -29,6 +35,10 @@ function finderPicks(core: Core, keys: number, times: number[], duration: number
   return Array.isArray(answer) ? (answer as number[]) : null;
 }
 
+/**
+ * Finds the recording's areas: feeds the finder its frames and the HUD watch its key frames, then
+ * says the areas found. Rejects when the video has no frames.
+ */
 async function find(work: FinderWork): Promise<void> {
   const video = await VideoFrames.open(work.file, 'any');
   const { times, keys } = await video.frameTimes();
@@ -37,7 +47,8 @@ async function find(work: FinderWork): Promise<void> {
   const frames = new FrameConverter(core);
   const finder = core.exports.areas_new();
   const yuv720 = core.reserve(FRAME_YUV420_BYTES);
-  // the HUD watch, for the session box: made for the first key frame's size, it reads each key frame's Y plane
+  // the HUD watch, for the session box: made for the first key frame's size, it reads each key
+  // frame's Y plane
   let hud = 0;
   for await (const sample of video.keySamples()) {
     const block = await frames.write(sample);
@@ -50,7 +61,8 @@ async function find(work: FinderWork): Promise<void> {
     core.exports.areas_add(finder, yuv720.ptr);
   }
   if (!hud) throw new Error('The video has no frames');
-  // the frames picked, in order: each decoded once, from the key frame before it on (a frame picked twice is read twice)
+  // the frames picked, in order: each decoded once, from the key frame before it on (a frame
+  // picked twice is read twice)
   for await (const sample of video.samples.samplesAtTimestamps(
     (picks ?? []).map((i) => times[i]),
   )) {

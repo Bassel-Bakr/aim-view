@@ -8,37 +8,117 @@ import type { TrackInfo } from './track-info';
 import type { WhatIf } from './what-if';
 
 /**
- * A tracking run's summary (see the old review's `track_summary`).
+ * A tracking run's summary (see the old review's `track_summary`). Shares of the run count its tracked frames (the
+ * switches between bots left out) unless a field says otherwise.
  */
 export interface TrackSummary {
+  /**
+   * The scenario's name, from the stats file (without one, from the recording's name).
+   */
   scenario: string | null;
+  /**
+   * The stats file's score.
+   */
   score: number | null;
+  /**
+   * The stats file's hits over its hits and misses.
+   */
   accuracy: number | null;
+  /**
+   * The game's average frames a second over the run, from the stats file.
+   */
   fps_avg: number | null;
+  /**
+   * Always `Mode::Track`: the clicking summary's `mode` key, set for a tracking run.
+   */
   mode: Mode;
+  /**
+   * The sensitivity and its scale as the stats file gives them ("None" for a missing scale).
+   */
   sens: string | null;
+  /**
+   * The time on target: the share of the tracked frames with the crosshair on a target.
+   */
   on_target: number | null;
+  /**
+   * The median distance from the nearest target's center line, over tracked frames within NEAR_RADII of its radii,
+   * degrees.
+   */
   error: number | null;
+  /**
+   * Losses (stretches off the target longer than LOSS_S) per second of tracking.
+   */
   lost: number | null;
+  /**
+   * The median loss's length: how long getting back on took, seconds.
+   */
   back: number | null;
+  /**
+   * The longest loss, seconds.
+   */
   longest_off: number | null;
+  /**
+   * Each second's [share on a target, share switching between bots], to 3 decimals.
+   */
   per_second: SecondShares[];
+  /**
+   * The run's first frame; None when no frame has a target.
+   */
   start: number | null;
+  /**
+   * The frame after the run's last one.
+   */
   end: number | null;
+  /**
+   * How many bots died within the run (the switches).
+   */
   bots: number;
   /**
    * Per bot death: [death, back on a target, first frame a target shows].
    */
   switches: Switch[];
+  /**
+   * The median time from a bot's death to the crosshair on the next, seconds.
+   */
   to_next: number | null;
+  /**
+   * The median time from a bot's death until the next one shows, seconds.
+   */
   waiting: number | null;
+  /**
+   * The median time from the next bot showing to the crosshair on it, seconds.
+   */
   onto: number | null;
+  /**
+   * The share of the run's frames spent switching between bots.
+   */
   switching: number | null;
+  /**
+   * The tracking diagnostics from the target's and the camera's motion; none without the camera's readings.
+   */
   motion?: Motion;
+  /**
+   * The what-if estimates, biggest first; none without a run.
+   */
   what_if?: WhatIf[];
+  /**
+   * The faint-target cut-off the tracks went through (src/review.rs fills it in); None when it is off.
+   */
   faint: FaintCut | null;
+  /**
+   * Where the kill times came from.
+   */
   info: TrackInfo;
+  /**
+   * The share of the run's frames on a target, the switches between bots included.
+   */
   on_all?: number;
+  /**
+   * The share of the tracked frames lost in stretches off the target longer than LOSS_S.
+   */
   lost_cost?: number;
+  /**
+   * The share of the tracked frames off the target in shorter slips.
+   */
   slip_cost?: number;
 }

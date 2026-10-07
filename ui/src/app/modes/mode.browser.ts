@@ -1,3 +1,10 @@
+/**
+ * Browser mode: everything runs in the page. In: nothing at load. Out: `MODE`, which picks a
+ * service for each platform/ contract (the browser classes in service/, else the server mode's)
+ * and the `serviceApi` interceptor. The `browser` build configuration swaps mode.ts for this file,
+ * and mode.ts loads it when no configuration swaps it (the tests).
+ */
+
 import { withInterceptors } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
 import { CropSets } from '../platform/crop-sets';
@@ -23,11 +30,12 @@ import { BrowserStatsFiles } from './service/browser-stats-files';
 import { serviceApi } from './service/service-api';
 
 /**
- * Everything in the browser: the review server's services (modes/http/), answered by the review service itself (the
- * same Rust as the server and the desktop app) built as WebAssembly and run in a worker of the page's own
- * (service/service.worker.ts). Its files are kept in this browser; nothing is sent anywhere. Where the page must act,
- * a browser class extends the server's: opening the VODs folder and playing its videos, copying KovaaK's folders in,
- * running the review, the area finder and the cut-off's labels in workers, and downloading links.
+ * Everything in the browser: the review server's services (modes/http/), answered by the review
+ * service itself (the same Rust as the server and the desktop app) built as WebAssembly and run in
+ * a worker of the page's own (service/service.worker.ts). Its files are kept in this browser;
+ * nothing is sent anywhere. Where the page must act, a browser class extends the server's: opening
+ * the VODs folder and playing its videos, copying KovaaK's folders in, running the review, the area
+ * finder and the cut-off's labels in workers, and downloading links.
  */
 export const MODE: Mode = {
   name: 'browser',

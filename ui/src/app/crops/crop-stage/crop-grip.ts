@@ -1,3 +1,10 @@
+/**
+ * What a finger takes hold of on the Crops page's stage, and what dragging it does to the scene.
+ * Points are crop pixels; `scale` is screen pixels per crop pixel, so handles keep their size on
+ * screen at any zoom. In: the draft's scene and selection, and the press's point (crop-stage.ts).
+ * Out: the grip crop-stage.ts keeps for the press, and the scene a drag leaves.
+ */
+
 import { CropBox, CropEntry, Shape } from '../../api';
 import {
   corners,
@@ -25,17 +32,14 @@ import { freePoints, freeSides, movedSide, movedVertex } from '../../shapes/free
 import { changeEach, DraftScene, withChanged } from '../crop-scene';
 
 /**
- * What a finger takes hold of on the Crops page's stage, and what dragging it does to the scene. Points are crop
- * pixels; `scale` is screen pixels per crop pixel, so handles keep their size on screen at any zoom.
- */
-
-/**
- * What a press holds: a selected shape's corner, side, turn handle, face handle or a solid's tumble handle, a shape, a
- * crossed-out box, or none.
+ * What a press holds: a selected shape's corner, side, turn handle, face handle or a solid's
+ * tumble handle, a shape (move), a crossed-out box (uncross), or the wall (draw).
  */
 export type GripKind = 'corner' | 'side' | 'turn' | 'face' | 'tumble' | 'move' | 'uncross' | 'draw';
 
+/** What a press took hold of: which kind of thing, the shape, and which of its parts. */
 export interface CropGrip {
+  /** What it holds. */
   kind: GripKind;
   /** The shape held; null for a crossed-out box or the wall. */
   id: string | null;
@@ -48,25 +52,38 @@ export interface CropGrip {
  * side's opposite side moves with it (Alt, or the tools' Mirror), the shape keeping its middle.
  */
 export interface CropDrag {
+  /** Where the drag began, in crop pixels. */
   start: CropPoint;
+  /** Where the pointer is now, in crop pixels. */
   point: CropPoint;
+  /** Shift is held: the shape's two sides stay equal. */
   even: boolean;
+  /** A side's opposite side moves with it, the shape keeping its middle. */
   mirror: boolean;
 }
 
-/** A selected shape's handles: its corners (a solid box's front ones), its sides, turn and face handles, a solid's tumble. */
+/**
+ * A selected shape's handles: its corners (a 3D box's every vertex), its sides, turn and face
+ * handles, a solid's tumble.
+ */
 export interface ShapeHandles {
+  /** The corner handles, in crop pixels. */
   corners: CropPoint[];
+  /** The side handles: a solid box's faces, a capsule's ends and sides, a flat frame's sides. */
   sides: SideHandle[];
+  /** The turn handle, above the shape. */
   turn: CropPoint;
+  /** The face handle, which pulls out a third face; null where the shape has none. */
   face: CropPoint | null;
+  /** A solid's tumble handle, which turns it in 3D; null for a flat shape. */
   tumble: CropPoint | null;
 }
 
 /** How far the turn and face handles sit from a shape, in screen pixels. */
 const HANDLE_REACH_PX = 22;
-/** How near a mouse must come to a handle to take it, in screen pixels; a finger, which covers more, TOUCH_HIT_PX. */
+/** How near a mouse must come to a handle to take it, in screen pixels. */
 const HANDLE_HIT_PX = 16;
+/** How near a finger must come to a handle to take it, in screen pixels: a finger covers more. */
 const TOUCH_HIT_PX = 30;
 
 /** How near a pointer of a type ('mouse', 'pen', 'touch') must come to a handle to take it, in screen pixels. */

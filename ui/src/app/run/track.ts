@@ -1,9 +1,20 @@
+/**
+ * The geometry the run page draws with: degrees from the crosshair to canvas pixels, the flick on
+ * screen, each target's box and shape, and a tracking run's timeline, frame by frame. In: the
+ * review's report (geometry, hitbox, flicks, summary) and its tracks (tracks.json). Out: the video
+ * overlay, the timeline, the track charts, the faint-target overlay, the player's clock and
+ * FlickFocus.
+ */
+
 import { Flick, Geometry, Hitbox, TrackFrame, TrackReport, Tracks } from '../api';
 
 /** A point on the canvas, in CSS pixels. */
 export type Point = [x: number, y: number];
 
-/** Degrees from the crosshair to canvas pixels, through the camera's projection. */
+/**
+ * Degrees from the crosshair (right and up positive) to canvas pixels, through the camera's
+ * projection; `scale` is canvas CSS pixels per pixel of the frame the geometry describes.
+ */
 export function toPx(geometry: Geometry, xDeg: number, yDeg: number, scale: number): Point {
   const x = geometry.CX + geometry.K * Math.tan((xDeg * Math.PI) / 180);
   const y =
@@ -11,7 +22,9 @@ export function toPx(geometry: Geometry, xDeg: number, yDeg: number, scale: numb
   return [x * scale, y * scale];
 }
 
-/** The flick on screen at a frame: the latest one to have started by then. */
+/**
+ * The flick on screen at a frame: the latest one to have started by then; null before the first.
+ */
 export function flickAt(flicks: Flick[], frame: number): Flick | null {
   let at: Flick | null = null;
   for (const flick of flicks)
@@ -24,17 +37,25 @@ export type TargetShapeKind = 'ellipse' | 'capsule' | 'box';
 
 /** A target's shape on screen, centered on its box: its kind and its half sides in degrees. */
 export interface TargetShape {
+  /** Which outline the target has. */
   kind: TargetShapeKind;
+  /** Half the shape's width, in degrees. */
   halfWidthDeg: number;
+  /** Half the shape's height, in degrees. */
   halfHeightDeg: number;
 }
 
 /** A target's box in degrees, its shape, and how the crosshair stands to it. */
 export interface TargetBox {
+  /** The box's center, in degrees right of the crosshair. */
   x: number;
+  /** The box's center, in degrees up from the crosshair. */
   y: number;
+  /** The box's width, in degrees. */
   widthDeg: number;
+  /** The box's height, in degrees. */
   heightDeg: number;
+  /** The target's outline in the box, from the bots' hitbox. */
   shape: TargetShape;
   /** From the crosshair to the target's center line (a capsule's long axis, a sphere's center). */
   centerLineDeg: number;
@@ -44,14 +65,16 @@ export interface TargetBox {
   outsideDeg: number;
 }
 
-/** A target's box where the model gave no size, and how far past its edge the crosshair still counts as on it. */
+/** A target's width and height where the model gave no size, in degrees. */
 const DEFAULT_SIZE_DEG = 0.6;
+/** How far past a target's edge the crosshair still counts as on it, in degrees. */
 const EDGE_DEG = 0.05;
 
 /**
- * A target's shape from its box and the bots' hitbox (the report's; null: a plain box), sized as the core's on-target
- * test sizes it (src/tracking.rs: `on_box`): the box's side along the hitbox's longer axis, the other side from the
- * hitbox's width over its height, which stays as the bot comes near or goes far.
+ * A target's shape from its box and the bots' hitbox (the report's; null: a plain box), sized as
+ * the core's on-target test sizes it (src/tracking.rs: `on_box`): the box's side along the hitbox's
+ * longer axis, the other side from the hitbox's width over its height, which stays as the bot comes
+ * near or goes far.
  */
 export function targetShape(
   widthDeg: number,
@@ -68,7 +91,10 @@ export function targetShape(
   return { kind, halfWidthDeg, halfHeightDeg };
 }
 
-/** Whether the crosshair (the origin) is on a target at (x, y) of this shape, or within EDGE_DEG of it. */
+/**
+ * Whether the crosshair (the origin) is on a target centered at (x, y) degrees with this shape, or
+ * within EDGE_DEG of it.
+ */
 export function onShape(x: number, y: number, shape: TargetShape): boolean {
   const halfWidth = shape.halfWidthDeg + EDGE_DEG;
   const halfHeight = shape.halfHeightDeg + EDGE_DEG;
@@ -103,32 +129,52 @@ export function nearest(targetBoxes: TargetBox[]): TargetBox | null {
 
 /** A frame of a tracking run, as the timeline's strip shows it. */
 export enum TrackState {
+  /** No bot was found in the frame. */
   NoBot = 0,
+  /** The crosshair is on a bot. */
   On = 1,
+  /** A bot shows, and the crosshair is off it. */
   Off = 2,
+  /** Between a bot's death and the crosshair being back on a target (the summary's switches). */
   Switching = 3,
 }
 
 /**
- * A tracking run, moment by moment: the state of each frame in the run and how far outside the bot's edge the
- * crosshair was (NaN where no bot was seen or the run was switching), the scale's top (cap, degrees) and the frames
- * where bots died. Frames count from start.
+ * A tracking run, moment by moment: the state of each frame in the run and how far outside the
+ * bot's edge the crosshair was (NaN where no bot was seen or the run was switching), the scale's
+ * top (cap, degrees) and the frames where bots died. Frames count from start.
  */
 export interface Timeline {
+  /** The run's first frame in the recording (the summary's start, else 0). */
   start: number;
+  /** How many frames the run has, from start to the run's end. */
   frameCount: number;
+  /** The recording's frames a second. */
   fps: number;
+  /** Each frame's TrackState. */
   state: Int8Array;
+  /**
+   * Each frame's distance from the crosshair to the nearest bot's edge, in degrees: 0 on a bot,
+   * NaN where no bot was seen or the run was switching.
+   */
   outsideDeg: Float32Array;
+  /** The scale's top for the distances, in degrees. */
   capDeg: number;
+  /** The frames where bots died, counted from start. */
   deaths: number[];
 }
 
-/** The scale's top: the 98th percentile of the distances off target, kept between half a degree and 5 degrees. */
+/** The scale's top is this percentile of the distances off target. */
 const CAP_PERCENTILE = 0.98;
+/** The lowest the scale's top goes, in degrees. */
 const MIN_CAP_DEG = 0.5;
+/** The highest the scale's top goes, in degrees. */
 const MAX_CAP_DEG = 5;
 
+/**
+ * A tracking run's timeline from its report and tracks: each frame's state and distance off the
+ * nearest bot, between the summary's start and end (the tracks' end when it has none).
+ */
 export function timeline(report: TrackReport, tracks: Tracks): Timeline {
   const summary = report.summary;
   const start = summary.start ?? 0;
@@ -173,6 +219,7 @@ export function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, '0')}`;
 }
 
+/** Each TrackState in words, in the enum's order. */
 const STATE_TEXT = ['no bot seen', 'on target', 'off target', 'switching after a death'];
 
 /** What the timeline says about a moment, for its tooltip and for screen readers. */

@@ -1,3 +1,9 @@
+/**
+ * The AreaLabels contract: a recording's excluded areas, their kinds, and the area finder. In:
+ * each mode's implementation (modes/mode.*.ts). Out: the run page's Excluded areas editor
+ * (run/areas/).
+ */
+
 import { ResourceRef } from '@angular/core';
 import {
   AreaBox,

@@ -1,3 +1,12 @@
+/**
+ * What the player draws over the video, on its canvas, for one frame.
+ *
+ * In: the review's report and tracks, the fastest-path analysis (fastest-path/path-analysis.ts),
+ * the frame, the canvas's scale and the overlay's tokens (themes/player.scss).
+ * Out: a clicking run's flick ring and paths, or a tracking run's target outlines and label, drawn
+ * on the canvas's 2D context (player.ts calls these).
+ */
+
 import {
   ClickReport,
   Geometry,
@@ -12,25 +21,46 @@ import { FastestOrder } from '../fastest-path/order-solver';
 import { NEW_MS, newCut, PathAnalysis } from '../fastest-path/path-analysis';
 import { boxes, flickAt, nearest, Point, TargetBox, TargetShapeKind, toPx } from '../track';
 
-/** How the overlay draws: its colors, font and line widths, from the player's tokens (themes/player.scss). */
+/**
+ * How the overlay draws: its colors, font and line widths, from the player's tokens
+ * (themes/player.scss).
+ */
 export interface OverlayStyle {
+  /** The labels' and the legend's font (`--overlay-font`). */
   font: string;
+  /** The crosshair's ring on a clicking run. */
   crosshair: string;
+  /** A tracking run's targets other than the one followed. */
   otherTarget: string;
+  /** The ring round a clicking run's target. */
   ring: string;
+  /** The followed target while the crosshair is on it. */
   onTarget: string;
+  /** The followed target, and the dashed line to it, while the crosshair is off it. */
   offTarget: string;
+  /** Behind a label's text. */
   labelBg: string;
+  /** A label's text, and the numbers in the path dots. */
   labelText: string;
+  /** The usual line width, in CSS pixels. */
   line: number;
+  /**
+   * The width of the lines that matter most (the followed target, the flick's ring), in CSS pixels.
+   */
   lineStrong: number;
+  /** The fastest path's color. */
   fastest: string;
+  /** Your path's color. */
   mine: string;
+  /** The font of the numbers in the path dots. */
   orderFont: string;
+  /** The paths' dotted line width, in CSS pixels. */
   pathWidth: number;
+  /** Behind the paths' legend. */
   legendBg: string;
 }
 
+/** Reads the overlay's tokens from the CSS variables in force on `el` (the canvas). */
 export function readOverlayStyle(el: Element): OverlayStyle {
   const css = getComputedStyle(el);
   const token = (name: string) => css.getPropertyValue(name).trim();
@@ -55,16 +85,22 @@ export function readOverlayStyle(el: Element): OverlayStyle {
 
 /** Frames before a flick starts and after its kill that the overlay still shows it. */
 const NEAR_FLICK = 30;
+/** The crosshair's ring on a clicking run, its radius in CSS pixels. */
 const CROSSHAIR_RADIUS = 10;
+/** The dashed line from the crosshair to a target: dash and gap, in CSS pixels. */
 const DASH = [4, 4];
-/** The ring round a clicking run's target, as a share of the target's radius, and its smallest radius in pixels. */
+/** The ring round a clicking run's target, as a multiple of the target's radius. */
 const RING_SCALE = 1.8;
+/** The ring's smallest radius, in CSS pixels, so a far target's ring still shows. */
 const RING_MIN = 6;
-/** A tracked box's gap from the target's edge, and a label's padding, in pixels. */
+/** A tracked box's gap from the target's edge, in CSS pixels. */
 const BOX_PAD = 1.5;
+/** A label's padding, in CSS pixels. */
 const LABEL_PAD = 4;
+/** A label's height, in CSS pixels. */
 const LABEL_HEIGHT = 16;
 
+/** A label: `text` on its background box, whose top left corner is `LABEL_PAD` above the point. */
 function label(
   context: CanvasRenderingContext2D,
   style: OverlayStyle,
@@ -79,6 +115,7 @@ function label(
   context.fillText(text, x + LABEL_PAD, y - LABEL_PAD + LABEL_HEIGHT / 2);
 }
 
+/** A dashed line between two points, in the context's stroke color and width. */
 function dashedLine(context: CanvasRenderingContext2D, [x0, y0]: Point, [x1, y1]: Point): void {
   context.setLineDash(DASH);
   context.beginPath();
@@ -89,8 +126,9 @@ function dashedLine(context: CanvasRenderingContext2D, [x0, y0]: Point, [x1, y1]
 }
 
 /**
- * A clicking run: the crosshair as a faint ring, and the flick's target as a ring with a dashed line from the
- * crosshair and its distance, from just before the flick until just after its kill.
+ * A clicking run: the crosshair as a faint ring, and the flick's target as a ring with a dashed
+ * line from the crosshair and its distance in degrees, from just before the flick until just after
+ * its kill. `scale` is CSS pixels per pixel of the review's frame.
  */
 export function drawClick(
   context: CanvasRenderingContext2D,
@@ -127,9 +165,10 @@ export function drawClick(
 }
 
 /**
- * A tracking run: every target in its bots' hitbox shape (an ellipse for spheres, a capsule, a box; a box without a
- * hitbox), the one the review follows (nearest the crosshair) green while the crosshair is on it and orange with a
- * dashed line and its distance when not; "switching" after a bot's death.
+ * A tracking run: every target in its bots' hitbox shape (an ellipse for spheres, a capsule, a box;
+ * a box without a hitbox), the one the review follows (nearest the crosshair) green while the
+ * crosshair is on it and orange with a dashed line and its distance when not; "switching" after a
+ * bot's death. Nothing outside the run's marked start and end.
  */
 export function drawTrack(
   context: CanvasRenderingContext2D,
@@ -171,7 +210,10 @@ function boxColor(style: OverlayStyle, box: TargetBox, followed: boolean): strin
   return box.inside ? style.onTarget : style.offTarget;
 }
 
-/** Every target in its shape. Returns the followed target's lower right corner, where its label goes. */
+/**
+ * Every target in its shape. Returns the followed target's lower right corner, where its label
+ * goes.
+ */
 function drawBoxes(
   context: CanvasRenderingContext2D,
   geometry: Geometry,
@@ -219,7 +261,9 @@ function strokeShape(
   context.stroke();
 }
 
-/** The followed box's label: switching after a death, on, or how far off its edge the crosshair is. */
+/**
+ * The followed box's label: switching after a death, on, or how far off its edge the crosshair is.
+ */
 function trackLabel(summary: TrackSummary, frame: number, best: TargetBox | null): string {
   if (summary.switches.some(([a, b]) => frame >= a && frame < b)) return 'switching';
   if (!best) return '';
@@ -228,28 +272,43 @@ function trackLabel(summary: TrackSummary, frame: number, best: TargetBox | null
 
 /** Which of the two paths to draw. */
 export interface PathFlags {
+  /** The fastest order through the targets on screen. */
   fastest: boolean;
+  /** The order you killed them in. */
   mine: boolean;
 }
 
 /** A line of the paths' legend: its color and text. */
 interface LegendRow {
+  /** The swatch's color: the path's. */
   color: string;
+  /** The path's predicted time, in words. */
   text: string;
 }
 
-/** The dots along a path: round, small enough to see past, and numbered. */
+/** The numbered dot on each target of a path, its radius in CSS pixels. */
 const DOT_RADIUS = 5;
+/** The path's line: a dash this short with round caps draws dots, about 3 CSS pixels apart. */
 const DOT_DASH = [0.1, 3];
+/** The path line's opacity, so the targets show through. */
 const PATH_ALPHA = 0.7;
+/** The numbered dots' opacity. */
 const DOT_ALPHA = 0.8;
-/** The two paths' numbers sit to either side of a target, so both show on a shared one. */
+/** Your path's numbers sit below left of a target, the fastest's above right: both show on one. */
 const MINE_OFFSET: Point = [-8, 8];
+/** The fastest path's numbers sit above right of a target. */
 const FASTEST_OFFSET: Point = [8, -8];
+/** The legend's margin and padding, in CSS pixels. */
 const LEGEND_X = 6;
+/** The height of a legend line, in CSS pixels. */
 const LEGEND_ROW = 15;
+/** The side of a legend line's color swatch, in CSS pixels. */
 const LEGEND_SWATCH = 7;
 
+/**
+ * A path from the crosshair through the targets in `order`, as a dotted line in `color`, with a
+ * numbered dot on each target, set off from it by the offset (CSS pixels).
+ */
 function path(
   context: CanvasRenderingContext2D,
   report: ClickReport,
@@ -291,9 +350,9 @@ function path(
 }
 
 /**
- * The fastest order through the targets on screen (green), and the order you killed them in (orange), each with its
- * predicted time in a legend. Only during the run: not on the countdown before it, nor after the last kill. Targets new
- * to the screen are left out, as in the path cost.
+ * The fastest order through the targets on screen (green), and the order you killed them in
+ * (orange), each with its predicted time in a legend. Only during the run: not on the countdown
+ * before it, nor after the last kill. Targets new to the screen are left out, as in the path cost.
  */
 export function drawPaths(
   context: CanvasRenderingContext2D,
@@ -330,8 +389,8 @@ export function drawPaths(
 }
 
 /**
- * The targets the paths go through: those on screen that are not new to it. Where only new ones are on screen (one at
- * a time), there is no choice to leave out, so all of them.
+ * The targets the paths go through: those on screen that are not new to it. Where only new ones are
+ * on screen (one at a time), there is no choice to leave out, so all of them.
  */
 function pathTargets(
   report: ClickReport,

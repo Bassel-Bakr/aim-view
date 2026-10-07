@@ -1,3 +1,9 @@
+/**
+ * Remuxes a video into MP4 in the page, with Mediabunny. In: a video file the browser may not play
+ * (MKV, MOV, WebM). Out: the same streams in an MP4 Blob; video-files.ts `toMp4` loads this file
+ * only when a video needs it.
+ */
+
 import {
   ALL_FORMATS,
   BlobSource,
@@ -10,16 +16,25 @@ import {
 } from 'mediabunny';
 
 /**
- * Collects an MP4 writer's output into a Blob, so a large video is not held in one buffer. The writes come in order,
- * except the muxer's last one: it fills in the mdat box's size near the start. So the first chunk stays in memory,
- * open to that write, and every later one becomes a part of the Blob as it comes.
+ * Collects an MP4 writer's output into a Blob, so a large video is not held in one buffer. The
+ * writes come in order, except the muxer's last one: it fills in the mdat box's size near the
+ * start. So the first chunk stays in memory, open to that write, and every later one becomes a
+ * part of the Blob as it comes.
  */
 export class BlobSink {
+  /** The first chunk, kept as bytes so the last write can patch it; null until it comes. */
   private head: Uint8Array<ArrayBuffer> | null = null;
+  /** Every later chunk, in order. */
   private readonly parts: Blob[] = [];
+  /** The byte offset the next in-order chunk starts at: the bytes written so far. */
   private end = 0;
+  /** The stream the MP4 writer (Mediabunny's StreamTarget) writes into. */
   readonly stream = new WritableStream<StreamTargetChunk>({ write: (chunk) => this.write(chunk) });
 
+  /**
+   * Takes one chunk: appended when it starts where the last ended, else written over the head.
+   * Throws for a write at any other place (the muxer never makes one).
+   */
   write({ data, position }: StreamTargetChunk): void {
     if (position === this.end) {
       if (this.head === null) this.head = data.slice();
@@ -32,6 +47,7 @@ export class BlobSink {
     }
   }
 
+  /** Everything written, as one Blob of the given media type; empty when nothing was. */
   blob(type: string): Blob {
     return new Blob(this.head ? [this.head, ...this.parts] : [], {
       type,
@@ -40,8 +56,9 @@ export class BlobSink {
 }
 
 /**
- * A video remuxed into MP4 in the browser: its streams are copied, not encoded again (a stream MP4 cannot hold is
- * encoded, with the browser's own encoder). progress gets the share done, 0 to 1. Rejects when it cannot be done.
+ * A video remuxed into MP4 in the browser: its streams are copied, not encoded again (a stream MP4
+ * cannot hold is encoded, with the browser's own encoder). progress gets the share done, 0 to 1.
+ * Rejects when it cannot be done.
  */
 export async function remuxToMp4(file: Blob, progress: (share: number) => void): Promise<Blob> {
   const sink = new BlobSink();

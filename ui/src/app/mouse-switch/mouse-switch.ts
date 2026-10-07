@@ -1,3 +1,9 @@
+/**
+ * The top bar's mouse logger switch (`MouseSwitch`), where the app logs the mouse itself (the
+ * desktop app). In: the MouseLogs contract's logger state. Out: turning the logger on and off,
+ * and the line that says what it is doing.
+ */
+
 import { Component, computed, inject, signal } from '@angular/core';
 import { errorMessage } from '../api';
 import { formatNumber } from '../format';
@@ -6,10 +12,13 @@ import { MouseLogs } from '../platform/mouse-logs';
 
 /** The switch's line beside it: what the logger is doing or did; failed when it could not. */
 export interface LoggerStatus {
+  /** The words to show. */
   text: string;
+  /** Whether the logger failed, so the line shows as an error. */
   failed: boolean;
 }
 
+/** Milliseconds in a second. */
 const MS_PER_SECOND = 1000;
 /** A logger that cannot start ends at once: the switch looks again this long after starting it. */
 const LOOK_AGAIN_MS = 1500;
@@ -48,15 +57,22 @@ export function loggerStatus(state: MouseLoggerState): LoggerStatus | null {
   styleUrl: './mouse-switch.scss',
 })
 export class MouseSwitch {
+  /** The mode's mouse logs and logger. */
   protected readonly logs = inject(MouseLogs);
+  /** The logger's state; null where the app does not log. */
   protected readonly state = this.logs.logger();
+  /** Whether the switch is being turned. */
   protected readonly busy = signal(false);
+  /** Why the last turn of the switch failed; null when it did not. */
   private readonly failure = signal<string | null>(null);
 
+  /** The logger's state once it has loaded; null before, or where the app does not log. */
   protected readonly current = computed(() =>
     this.state.hasValue() ? (this.state.value() ?? null) : null,
   );
+  /** Whether the logger is running. */
   protected readonly on = computed(() => this.current()?.on ?? false);
+  /** The line beside the switch: a failed turn, else what the logger says. */
   protected readonly status = computed<LoggerStatus | null>(() => {
     const failed = this.failure();
     if (failed) return { text: failed, failed: true };
@@ -70,6 +86,7 @@ export class MouseSwitch {
     return `Logs the raw mouse in the background while you play${where}. ${state?.throttle ?? ''}`;
   });
 
+  /** Turns the logger on or off; a start is checked again LOOK_AGAIN_MS later. */
   protected async toggle(): Promise<void> {
     this.busy.set(true);
     this.failure.set(null);

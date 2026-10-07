@@ -20,7 +20,9 @@ use crate::scenario::AmmoRules;
 /// One kill's forced reloads: how many, and their time in seconds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct KillReloads {
+    /// The reloads this kill's shots waited for.
     pub reloads: i64,
+    /// Their time added up, in seconds.
     pub seconds: f64,
 }
 
@@ -29,8 +31,11 @@ pub struct KillReloads {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Reloads {
+    /// The forced reloads in the run.
     pub count: i64,
+    /// Their time added up, in seconds.
     pub seconds: f64,
+    /// The points they took off: the count times the scenario's loss a reload; None when it takes none.
     pub score_lost: Option<f64>,
 }
 
@@ -38,12 +43,15 @@ pub struct Reloads {
 /// kill's shots cut to its hits; None when the hits are not known).
 #[derive(Clone, Debug)]
 pub struct ReloadCost {
+    /// Each kill's forced reloads, in the run's order.
     pub per_kill: Vec<KillReloads>,
+    /// The run's forced reloads with the shots as taken.
     pub run: Reloads,
+    /// The run's forced reloads had no shot missed; None when the hits are not known.
     pub clean: Option<Reloads>,
 }
 
-/// Each kill's forced reloads, the kills' shots taken in the run's order.
+/// Each kill's forced reloads, from each kill's shots in the run's order (one value a kill).
 pub fn forced_reloads(rules: &AmmoRules, shots: &[i64]) -> Vec<KillReloads> {
     let mut ammo = rules.magazine;
     shots
@@ -84,25 +92,30 @@ pub fn reload_cost(rules: &AmmoRules, shots: &[i64], hits: Option<&[i64]>) -> Re
     ReloadCost { run: totals(rules, &per_kill), per_kill, clean }
 }
 
+/// Checks the forced reloads on short runs worked out by hand.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 1w2ts reload's weapon: 3 rounds, a kill fills it again, half a second to reload.
+    /// 1w2ts reload's weapon: 3 rounds, one a shot, `on_kill` rounds back on a kill, half a second to reload from empty
+    /// (0.4 s from part-used), no points lost.
     fn rules(on_kill: i64) -> AmmoRules {
         AmmoRules { magazine: 3, per_shot: 1, on_kill, from_empty: 0.5, from_partial: 0.4, score_loss: 0.0 }
     }
 
+    /// Each kill's count of forced reloads.
     fn counts(kills: &[KillReloads]) -> Vec<i64> {
         kills.iter().map(|kill| kill.reloads).collect()
     }
 
+    /// When each kill fills the magazine again and none takes more shots than it holds, no shot ever waits.
     #[test]
     fn a_kill_fills_the_magazine() {
         // 3 shots empty it, but the kill on the last one fills it: no reload, ever
         assert_eq!(counts(&forced_reloads(&rules(4), &[3, 3, 1, 2, 3])), vec![0; 5]);
     }
 
+    /// A shot with the magazine empty waits for a reload, counted in that shot's kill.
     #[test]
     fn an_empty_magazine_forces_a_reload() {
         // 4 shots: the 4th waits for a reload; 7 shots: the 4th and the 7th
@@ -115,6 +128,7 @@ mod tests {
         assert_eq!(counts(&kills), vec![1, 0, 1, 0]);
     }
 
+    /// A kill's ammo comes back before the next shot's check, so a kill on the last round forces no reload.
     #[test]
     fn a_kill_on_the_last_round_ends_the_reload() {
         // no ammo back on a kill: the magazine empties on the 3rd kill's shot, and the 4th kill's shot waits for the
@@ -124,6 +138,8 @@ mod tests {
         assert_eq!(counts(&forced_reloads(&one, &[1, 1, 1, 2])), vec![0, 0, 0, 1]);
     }
 
+    /// A reload with ammo left takes the part-used time, each costs the points lost, and the clean count leaves the
+    /// misses out.
     #[test]
     fn part_used_and_points() {
         // 2 ammo a shot from 3: one shot leaves 1, too few for the next: a reload from part-used

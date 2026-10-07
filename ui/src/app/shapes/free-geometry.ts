@@ -1,3 +1,11 @@
+/**
+ * A box whose vertices are placed by hand (Shape.points: a flat box's 4 corners in order round
+ * it, from its top left; a 3D box's 8 in `solidCorners` order), for a target seen in perspective.
+ * Each vertex drags on its own, a side (a 3D box's face) moves its vertices together, and the
+ * outline is what they span, as the core's (src/shapes.rs `outline`). Crop pixels. Out:
+ * shape-geometry.ts and the Crops page's stage.
+ */
+
 import { CropBox, Shape } from '../api';
 import type { CropPoint } from './shape-geometry';
 import {
@@ -12,13 +20,6 @@ import {
   solidCorners,
   solidFaces,
 } from './solid-geometry';
-
-/**
- * A box whose vertices are placed by hand (Shape.points: a flat box's 4 corners in order round it, from its top left;
- * a 3D box's 8 in `solidCorners` order), for a target seen in perspective. Each vertex drags on its own, a side (a 3D
- * box's face) moves its vertices together, and the outline is what they span, as the core's (src/shapes.rs
- * `outline`). Crop pixels.
- */
 
 /** A flat box's sides as its corners' indexes: left, right, top, bottom (as shape-geometry's `flatSides`). */
 const FLAT_SIDES: number[][] = [
@@ -176,15 +177,17 @@ export function freeEdges(points: CropPoint[]): SolidEdge[] {
   });
 }
 
-/** Placed vertices moved, scaled about a point, or turned about the box's middle (degrees, clockwise on screen). */
+/** Placed vertices moved by (dx, dy), crop pixels. */
 export function movedPoints(points: CropPoint[], [dx, dy]: CropPoint): CropPoint[] {
   return points.map(([x, y]) => [x + dx, y + dy]);
 }
 
+/** Placed vertices scaled by a factor about a point. */
 export function scaledPoints(points: CropPoint[], grow: number, [ax, ay]: CropPoint): CropPoint[] {
   return points.map(([x, y]) => [ax + (x - ax) * grow, ay + (y - ay) * grow]);
 }
 
+/** Placed vertices turned about the middle of the box round them (degrees, clockwise on screen). */
 export function turnedPoints(points: CropPoint[], degrees: number): CropPoint[] {
   const [cx, cy] = boxOf(points);
   const turn = (degrees * Math.PI) / 180;

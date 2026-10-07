@@ -4,7 +4,16 @@
  * A kind of area: its id never changes; its name and what it is can.
  */
 export interface AreaKind {
+  /**
+   * The kind's id, which saved areas and examples hold ("session_stats").
+   */
   id: string;
+  /**
+   * The name the page shows.
+   */
   name: string;
+  /**
+   * What it is, in a few words.
+   */
   about: string;
 }

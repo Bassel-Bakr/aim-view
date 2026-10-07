@@ -1,3 +1,12 @@
+/**
+ * A clicking run's numbers, in words for the page.
+ *
+ * In: the clicking summary, flicks and checks the core works out (src/summary.rs `Summary`,
+ * `Issue`; src/matching.rs `Flick`), and the fastest-path summary.
+ * Out: the number cards for the run or a kill, the headline tiles, the source note, the
+ * by-distance and by-direction rows, the TTK by distance bars and the what-if table.
+ */
+
 import {
   ClickSummary,
   ClickWhatIf,
@@ -23,25 +32,38 @@ import {
 import { median } from '../median';
 import { micro, microSplit } from './budget';
 
-/** A number card: its value, what it is, and a line under it. title: more about the value, on hover. */
+/**
+ * A number card: its value, what it is, and a line under it. title: more about the value, on
+ * hover.
+ */
 export interface Stat {
+  /** What the number is. */
   label: string;
+  /** The number, formatted. */
   value: string;
+  /** A line under the number: the run's median beside a kill's, or a note; '' for none. */
   detail: string;
+  /** More about the value, on hover; the value itself when absent. */
   title?: string;
 }
 
 /** The run's picks against the fastest order, for its cards: null while the tracks load. */
 export interface PathSummary {
+  /** The share of picks with a choice that were the fastest; null when no pick had a choice. */
   share: number | null;
+  /** The time the picks lost in all, in seconds. */
   total: number;
   /** More shots (kills without a stats file) the best picks would have given, at the run's pace. */
   extra: number;
 }
 
+/** A path card's value while the tracks load. */
 const LOADING = '…';
 
-/** Kills a minute, from the first flick's start to the last kill; null with fewer than two kills. */
+/**
+ * Kills a minute, from the first flick's start to the last kill; null with fewer than two kills (or
+ * no time between them).
+ */
 export function killsPerMinute(flicks: Flick[], fps: number): number | null {
   if (flicks.length < 2) return null;
   const seconds = (flicks[flicks.length - 1].kill_frame - flicks[0].start_frame) / fps;
@@ -54,8 +76,8 @@ function runMedian(flicks: Flick[], measure: (m: Flick) => number | null): numbe
 }
 
 /**
- * The run's forced reloads: how many, their time, and its share of the run (from the first flick to the last kill).
- * Reloads the player chose don't show in the stats.
+ * The run's forced reloads: how many, their time, and its share of the run (from the first flick to
+ * the last kill). Reloads the player chose don't show in the stats.
  */
 function reloadsCard(reloads: Reloads, flicks: Flick[], fps: number): Stat {
   const span =
@@ -83,8 +105,9 @@ function reloadCard(flick: Flick): Stat {
 }
 
 /**
- * The whole run's cards: the score and kills, then the times and speeds, then the path; sixteen, as many as a kill
- * has, so the rows stay put when a kill is picked. In a scenario whose magazine runs out, both add the reloads.
+ * The whole run's cards: the score and kills, then the times and speeds, then the path; sixteen, as
+ * many as a kill has, so the rows stay put when a kill is picked. In a scenario whose magazine runs
+ * out, both add the reloads.
  */
 export function runStats(
   summary: ClickSummary,
@@ -130,7 +153,10 @@ export function runStats(
   ];
 }
 
-/** One kill's cards, each with the run's median under it where there is one. */
+/**
+ * One kill's cards, each with the run's median under it where there is one. `pathCost` is the
+ * kill's Pathing card value, already in words.
+ */
 export function killStats(
   flick: Flick,
   summary: ClickSummary,
@@ -212,22 +238,31 @@ export function sourceNote(summary: ClickSummary): string {
 }
 
 /**
- * A headline tile: a number, what it is, a line under it, whether the review flags it, whether the line is good news
- * (a better score than the run before), and what it means.
+ * A headline tile: a number, what it is, a line under it, whether the review flags it, whether the
+ * line is good news (a better score than the run before), and what it means.
  */
 export interface HeadlineTile {
+  /** What the number is. */
   label: string;
+  /** The number, formatted. */
   value: string;
+  /** The line under the number; on the score's tile, the change from the run before. */
   note: string;
+  /** The review flags the tile's check: work on this. */
   attention: boolean;
+  /** The note is good news: a better score than the run before. */
   good: boolean;
+  /** What the number means, on hover; '' for a clicking run's tiles. */
   why: string;
 }
 
-/** The checks behind the headline numbers (review.py's issue numbers). */
+/** The Accuracy tile's check: the misses' share of the shots (review.py's issue number). */
 const ISSUE_MISSES = 39;
+/** The Confirmation tile's check: the wait before the click against the TTK (review.py's issue). */
 const ISSUE_WAITING = 36;
+/** The Reaction tile's check: the median reaction after a kill (review.py's issue number). */
 const ISSUE_START = 1;
+/** The Median TTK tile's check: the last third's TTK against the first's (review.py's issue). */
 const ISSUE_PACE = 49;
 
 /** The run in six numbers, above the video; a tile is flagged when the review flags its check. */
@@ -282,15 +317,22 @@ export function runHeadline(
   ];
 }
 
-/** A bar of the kill time by distance: the band, its median kill, how often it stopped short, and its length. */
+/**
+ * A bar of the kill time by distance: the band, its median kill, how often it stopped short, and
+ * its length.
+ */
 export interface DistanceBar {
+  /** The band's distances, "10–20°", or "60°+" for the widest. */
   band: string;
+  /** The band's median TTK. */
   kill: string;
+  /** The band's share of underflicks. */
   short: string;
   /** The median kill against the slowest band's, 0 to 1. */
   share: number;
 }
 
+/** The TTK by distance bars beside the video, one per band, as long as its median TTK. */
 export function distanceBars(bands: DistanceBand[]): DistanceBar[] {
   const longest = Math.max(...bands.map((b) => b.interval ?? 0));
   return distanceRows(bands).map((row, i) => ({
@@ -301,7 +343,10 @@ export function distanceBars(bands: DistanceBand[]): DistanceBar[] {
   }));
 }
 
-/** The checks, those to look at first (the core's, and the page's own Pathing check, which has no issue number). */
+/**
+ * The checks, those that need attention first, each group in its own order (the core's, and the
+ * page's own Pathing check, which has no issue number).
+ */
 export function sortedIssues(issues: Omit<Issue, 'issue'>[]): Omit<Issue, 'issue'>[] {
   return [...issues].sort(
     (a, b) => Number(b.flag === 'attention') - Number(a.flag === 'attention'),
@@ -310,18 +355,26 @@ export function sortedIssues(issues: Omit<Issue, 'issue'>[]): Omit<Issue, 'issue
 
 /** A row of the by-distance table, as shown. */
 export interface DistanceRow {
+  /** The band's distances, "10–20°", or "60° and over" for the widest. */
   band: string;
+  /** How many flicks the band has. */
   flicks: number;
+  /** The band's median TTK. */
   kill: string;
+  /** The band's median reaction. */
   reaction: string;
+  /** The band's share of underflicks. */
   short: string;
+  /** The band's share of overflicks. */
   past: string;
+  /** The band's median confirmation. */
   still: string;
 }
 
 /** The widest band ends at 90°: it reads "60° and over". */
 const OPEN_BAND = 90;
 
+/** The by-distance table's rows, one per band. */
 export function distanceRows(bands: DistanceBand[]): DistanceRow[] {
   return bands.map((b) => ({
     band: b.hi === OPEN_BAND ? `${b.lo}° and over` : `${b.lo}–${b.hi}°`,
@@ -336,15 +389,23 @@ export function distanceRows(bands: DistanceBand[]): DistanceRow[] {
 
 /** A row of the by-direction table, as shown. */
 export interface DirectionRow {
+  /** The direction, an arrow and its name. */
   toward: string;
+  /** How many flicks went this way. */
   flicks: number;
+  /** Their median TTK. */
   kill: string;
+  /** Their median distance. */
   distance: string;
+  /** Their median time beyond what the distance predicts, signed. */
   beyond: string;
+  /** Their share of underflicks. */
   short: string;
+  /** Their share of overflicks. */
   past: string;
 }
 
+/** The by-direction table's rows, one per direction (a 45-degree sector). */
 export function directionRows(bands: DirectionBand[]): DirectionRow[] {
   return bands.map((b) => ({
     toward: `${DIRECTION_ARROWS[b.name]} ${b.name}`,
@@ -373,9 +434,9 @@ function plus(gain: number): string {
 }
 
 /**
- * The what-if table: the extra kills each change would give, and the extra score where it is known, under Pace, Flicks
- * and Micros, each group biggest first. A group with no lines is left out, and so is the table on reports that lack
- * the lines (older cores).
+ * The what-if table: the extra kills each change would give, and the extra score where it is known,
+ * under Pace, Flicks and Micros, each group biggest first. A group with no lines is left out, and
+ * so is the table on reports that lack the lines (older cores).
  */
 export function clickWhatIf(whatIfs: ClickWhatIf[] | undefined): WhatIfTable {
   const lines = whatIfs ?? [];

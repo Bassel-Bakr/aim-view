@@ -1,3 +1,9 @@
+/**
+ * The Crops page (`Crops`, ?page=crops): picking a check folder and set, the crop on show with its
+ * verdict buttons, and the answers' export and import. In: the CropDraft state. Out: the page;
+ * the stage (crop-stage/) and the tools (crop-tools/) are its parts.
+ */
+
 import { Component, computed, inject, signal } from '@angular/core';
 import { CropAnswers, CropPage, CropSet, CropVerdict } from '../api';
 import { Button } from '../controls/button';
@@ -34,16 +40,23 @@ const SUGGESTION_WORDS = {
   styleUrl: './crops.scss',
 })
 export class Crops {
+  /** The page's state: the folder and set open, the crop on show, its answer and the fix. */
   protected readonly draft = inject(CropDraft);
+  /** The app's page state (services/pages.ts); neither this class nor its template reads it. */
   protected readonly pages = inject(Pages);
+  /** Whether the user can add a check folder from this computer (browser mode). */
   protected readonly canAddFolder = inject(CropSets).addFolder !== null;
+  /** What an add, export or import is doing, or did; null before the first. */
   protected readonly working = signal<CropNote | null>(null);
+  /** Every check folder; empty until they arrive. */
   protected readonly folders = computed<CropPage[]>(() =>
     this.draft.pages.hasValue() ? (this.draft.pages.value() ?? []) : [],
   );
+  /** The open check folder's sets, one tab each. */
   protected readonly folderSets = computed<CropSet[]>(
     () => this.folders().find((page) => page.page === this.draft.folder())?.sets ?? [],
   );
+  /** The share of the open set's crops answered, in percent. */
   protected readonly checkedShare = computed(() => {
     const count = this.draft.list().length;
     return count ? (100 * this.draft.answered()) / count : 0;
@@ -60,16 +73,19 @@ export class Crops {
       : "The model's shapes. Is every target found, and only targets?";
   });
 
+  /** Turns Skip checked on or off: after an answer, the next unchecked crop, or the next. */
   protected toggleSkipChecked(): void {
     this.draft.skipChecked.update((on) => !on);
   }
 
+  /** Opens the check folder chosen in the list, at its first set with crops left to check. */
   protected openFolder(select: HTMLSelectElement): void {
     const page = this.folders().find((one) => one.page === select.value);
     const first = page?.sets.find((set) => set.answered < set.count) ?? page?.sets[0];
     if (page && first) this.draft.open(page.page, first.set);
   }
 
+  /** Copies the check folder the user chose into this browser and opens it. */
   protected async addFolder(input: HTMLInputElement): Promise<void> {
     const files = [...(input.files ?? [])];
     input.value = '';
@@ -97,6 +113,7 @@ export class Crops {
     });
   }
 
+  /** Imports a file of answers into the open check folder; a crop's newer answer wins. */
   protected async importAnswers(input: HTMLInputElement): Promise<void> {
     const [file] = input.files ?? [];
     input.value = '';

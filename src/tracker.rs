@@ -17,14 +17,18 @@ use crate::track::{Mask, RawBox, Spot, TrackFrame, keep, link, reopen};
 pub struct Tracker {
     /// The detector model's settings, for decoding its maps.
     model: ModelSettings,
-    /// The excluded areas, as shares of the frame [x0, y0, x1, y1], and the pixels they leave.
+    /// The excluded areas, as shares of the frame [x0, y0, x1, y1].
     areas: Box<[[f64; 4]]>,
+    /// The pixels the excluded areas leave, where boxes count while every area is excluded.
     mask: Mask,
     /// The scenario's target count, when it is known.
     cap: Option<usize>,
+    /// Watches each excluded area for when it shows, so the frames where a pop-up is off get their boxes back.
     watch: AreaWatch,
-    /// Each frame's boxes as the detector gave them, and the targets kept of them.
+    /// Each frame's boxes as the detector gave them.
     raw: Vec<Vec<RawBox>>,
+    /// Each frame's targets kept of its boxes, every area excluded (`reopen` adds back the ones under a pop-up that
+    /// is off).
     frames: Vec<Vec<Spot>>,
 }
 
@@ -32,7 +36,9 @@ pub struct Tracker {
 /// the other runs' (`Tracker::add_part`).
 #[derive(Serialize, Deserialize)]
 pub struct TrackPart {
+    /// Each of the run's frames' boxes as the detector gave them.
     raw: Vec<Vec<RawBox>>,
+    /// The run's area watch, which knows the frame it started at.
     watch: AreaWatch,
 }
 
@@ -99,8 +105,8 @@ impl Tracker {
     }
 
     /// The next run's part, after the frames the tracker has: each frame's boxes kept or dropped as `push_boxes`
-    /// does, and its looks after the ones before. A part that starts later (a review from part way in) has empty frames
-    /// before it. Returns the frames the part added.
+    /// does, and its area watch joined after the one before. A part that starts later (a review from part way in) has
+    /// empty frames before it. Returns the frames the part added.
     pub fn add_part(&mut self, part: TrackPart) -> usize {
         while self.raw.len() < part.watch.from() {
             self.push_boxes(&[]);
@@ -112,7 +118,8 @@ impl Tracker {
         part.raw.len()
     }
 
-    /// The frames linked: tracks.json's `frames`.
+    /// The frames linked: tracks.json's `frames`. First each frame gets back the boxes under a pop-up that was not
+    /// showing then.
     pub fn finish(mut self) -> Box<[TrackFrame]> {
         let shows = self.watch.showing();
         reopen(&self.raw, &mut self.frames, &self.areas, &shows, self.cap);
@@ -120,6 +127,7 @@ impl Tracker {
     }
 }
 
+/// Checks joining run parts and decoding with a settings file.
 #[cfg(test)]
 mod tests {
     use super::*;

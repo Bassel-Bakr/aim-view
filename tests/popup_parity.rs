@@ -1,7 +1,7 @@
 //! `popup::AreaWatch` against Python's `AreaWatch` on real recordings with a pop-up area: every frame decoded by ffmpeg
-//! as review.rgb_frames does (scale=1280:720:flags=area, rgb24), and the per-frame decisions compared with Python's
-//! (meta.json's `showing`). Fixtures from python/retired/tests/fixtures.py (with --areas). Decodes whole recordings, so
-//! it runs on request: cargo test --release --test popup_parity -- --ignored
+//! as python/retired/review.py's `rgb_frames` does (scale=1280:720:flags=area, rgb24), and the per-frame decisions
+//! compared with Python's (meta.json's `showing`). Fixtures from python/retired/tests/fixtures.py (with --areas).
+//! Decodes whole recordings, so it runs on request: cargo test --release --test popup_parity -- --ignored
 
 use std::io::Read;
 use std::path::Path;
@@ -53,6 +53,7 @@ fn check_fixture(dir: &Path, meta: &Value, showing: &[Value]) {
     }
 }
 
+/// Every fixture with a pop-up area: the same areas are pop-ups, excluded in the same frames as Python's.
 #[test]
 #[ignore = "decodes whole recordings with ffmpeg (about a minute each)"]
 fn area_watch_matches_python() {

@@ -1,5 +1,5 @@
-"""Adds a set of crops to a crop-check page folder (README.md): each crop as a PNG under crops/, its entry in crops.json,
-its tab in sets.json, and the page itself (index.html, copied from beside this script).
+"""Adds a set of crops to a crop-check page folder (README.md): each crop as a PNG under crops/, its entry in
+crops.json, its tab in sets.json, and the page itself (index.html, copied from beside this script).
 
 Usage: python python/model/crop_check/make_page.py <page folder> <set> <source> [--title TITLE] [--crossed-out NOTE]
        [--no-learn]
@@ -26,11 +26,13 @@ import numpy as np
 from PIL import Image
 
 HERE = Path(__file__).parent
+# the Artifact tool's limits: files in one publish, and files in one version of a page
 PUBLISH_LIMIT = 255
 VERSION_LIMIT = 511
 
 
 def rounded(boxes):
+    """The boxes as lists of plain floats rounded to 0.1 px, for JSON."""
     return [[round(float(value), 1) for value in box] for box in boxes]
 
 
@@ -77,6 +79,8 @@ def from_folder(set_name, folder):
 
 
 def main():
+    """Writes the set's PNGs, crops.json, sets.json and index.html into the page folder, a publish_<set>_<n>.json per
+    batch of files the Artifact tool takes, and prints how to publish them."""
     parser = argparse.ArgumentParser(description="Adds a set of crops to a crop-check page folder (README.md).")
     parser.add_argument("page", type=Path)
     parser.add_argument("set_name", metavar="set")

@@ -15,14 +15,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
-MAXBOX = 40
-MAXIGNORE = 8
+MAXBOX = 40                     # boxes kept per crop; a batch pads each crop's boxes to this
+MAXIGNORE = 8                   # ignore boxes kept per crop, padded the same way
 SAME_TARGET_PX = 1.5            # the labeller can report one target twice: two labels this close are one
 CROP_PX = 256
 MASK_BYTES = CROP_PX * CROP_PX // 8         # a 0/1 map, 8 pixels a byte
-PACK_VERSION = 1
+PACK_VERSION = 1                # in each pack's stamp: a change to the layout makes every pack again
 BUILD_CHUNK = 256               # the crops a packing worker decodes and writes at once
-BUILD_WORKERS = 8
+BUILD_WORKERS = 8               # packing processes at most (fewer on a machine with fewer cores)
 PREFETCH = 3                    # the batches read ahead of the GPU
 # threads reading a batch's RGB rows: 64 rows take 1.8 ms on 8 threads, 5.8 ms on one, and 35 to 45 ms through a
 # memory map (a page fault at a time)
@@ -30,7 +30,7 @@ READ_THREADS = 8
 RGB_BYTES = CROP_PX * CROP_PX * 3
 SMALL = ("fixed", "tmask", "boxes", "counts", "ignore")     # kept in memory: about 1.2 GB for 68,000 crops
 _READERS = threading.local()                                # each reading thread's open pack files
-_POOL = []
+_POOL = []                                                  # the reading threads' pool, made on first use
 
 
 def layout(count):
@@ -113,6 +113,7 @@ def read_rows(job):
 
 
 def reading_pool():
+    """The READ_THREADS threads that read RGB rows, shared by every pack and made once."""
     if not _POOL:
         _POOL.append(ThreadPoolExecutor(READ_THREADS))
     return _POOL[0]
@@ -123,6 +124,8 @@ class CropPack:
     time, the rest in memory."""
 
     def __init__(self, folder):
+        """Opens the pack of the folder's crops (<folder>.pack beside it), making it first when it is missing or
+        stale. A folder without crops gets no pack."""
         folder = Path(folder)
         self.files = sorted(folder.glob("*.npz"))
         self.rows = {file: row for row, file in enumerate(self.files)}
@@ -144,6 +147,8 @@ class PackedCrops:
     batch at a time from their packs."""
 
     def __init__(self, folders, repeat=(), times=1):
+        """repeat: the name prefixes (a crop name's first 10 characters) whose crops come `times` times in all, or a
+        dict of prefix to times."""
         self.packs = [CropPack(folder) for folder in folders]
         where = {file: (k, row) for k, pack in enumerate(self.packs) for file, row in pack.rows.items()}
         files = sorted(where)
@@ -153,6 +158,7 @@ class PackedCrops:
         self.row_of = np.array([where[file][1] for file in files], np.int64)
 
     def __len__(self):
+        """The crop count, repeats included."""
         return len(self.row_of)
 
     def batch(self, indices):
@@ -178,22 +184,29 @@ class PackLoader:
     ahead on a thread (pinned with pin_memory) while the GPU works on the batch before."""
 
     def __init__(self, dataset, batch, sampler=None, drop_last=False, pin_memory=False):
+        """The arguments as DataLoader takes them: the PackedCrops, the batch size, and an optional sampler."""
         self.dataset, self.batch, self.sampler = dataset, batch, sampler
         self.drop_last, self.pin_memory = drop_last, pin_memory
 
     def __len__(self):
+        """The batch count, the short last one included unless drop_last."""
         count = len(self.sampler) if self.sampler is not None else len(self.dataset)
         return count // self.batch if self.drop_last else -(-count // self.batch)
 
     def chunks(self):
+        """The crop indices of each batch, in order (the sampler draws its order once, here)."""
         order = list(self.sampler) if self.sampler is not None else list(range(len(self.dataset)))
         return [order[start:start + self.batch] for start in range(0, len(order), self.batch)
                 if not self.drop_last or start + self.batch <= len(order)]
 
     def __iter__(self):
+        """Yields each batch as the reading thread hands it over, PREFETCH at most waiting. An error on that thread
+        is raised here; leaving the loop early stops the thread."""
         ready, stop = queue.Queue(PREFETCH), threading.Event()
 
         def read():
+            """The reading thread: puts each batch in the queue, then None at the end, or the error that stopped
+            it."""
             try:
                 for chunk in self.chunks():
                     if stop.is_set():

@@ -1,3 +1,8 @@
+/**
+ * The recordings list (`Recordings`): a filter, kind chips and a virtual list of rows. In: the
+ * Library (every recording and the open one). Out: the open recording, which the run page shows.
+ */
+
 import {
   CdkFixedSizeVirtualScroll,
   CdkVirtualForOf,
@@ -20,16 +25,22 @@ import { KIND_LABELS } from '../format';
 import { Library } from '../services/library';
 import { StampPipe } from '../stamp-pipe';
 
+/** Which recordings the list shows: one scenario kind, or all. */
 export type KindFilter = Kind | 'all';
 
 /** A filter chip: a kind of run, with how many recordings it holds. */
 export interface KindChip {
+  /** The kind it filters on. */
   key: KindFilter;
+  /** Its words. */
   label: string;
+  /** How many recordings it holds. */
   count: number;
 }
 
+/** The order of the kind chips, after All. */
 const KIND_ORDER: Kind[] = ['static', 'dynamic', 'switching', 'tracking'];
+/** How many rows Page Up and Page Down move the selection. */
 const PAGE = 10;
 /** A row's height when the token cannot be read (tests): the token's value (themes/recordings.scss). */
 const ROW_HEIGHT = 54;
@@ -64,18 +75,27 @@ function rowHeight(): number {
   styleUrl: './recordings.scss',
 })
 export class Recordings {
+  /** The recordings, the open one, and where they come from. */
   protected readonly library = inject(Library);
+  /** The list's virtual scroll; undefined while the list is empty. */
   private readonly viewport = viewChild(CdkVirtualScrollViewport);
+  /** The filter's text box. */
   private readonly search = viewChild.required<ElementRef<HTMLInputElement>>('q');
+  /** Each scenario kind's name, for the rows' badges. */
   protected readonly kindLabels = KIND_LABELS;
   /** Every row's height (the virtual scroll lays the rows out by it). */
   protected readonly rowHeight = rowHeight();
+  /** A row's identity for the virtual scroll: its recording's id. */
   protected readonly byId = (_index: number, recording: Recording): string => recording.id;
+  /** The filter's text: rows whose scenario holds it show. */
   protected readonly query = signal('');
+  /** The kind chip picked. */
   protected readonly kind = signal<KindFilter>('all');
 
+  /** Every recording, newest first. */
   private readonly all = this.library.all;
 
+  /** All, then a chip for each kind some recording has, with its count. */
   protected readonly chips = computed<KindChip[]>(() => {
     const all = this.all();
     const kinds = KIND_ORDER.map((kind): KindChip => ({
@@ -86,6 +106,7 @@ export class Recordings {
     return [{ key: 'all', label: 'All', count: all.length }, ...kinds];
   });
 
+  /** The recordings the filter and the chip let through, in the list's order. */
   protected readonly shown = computed<Recording[]>(() => {
     const search = this.query().trim().toLowerCase();
     const kind = this.kind();
@@ -96,6 +117,7 @@ export class Recordings {
     );
   });
 
+  /** The open recording's row element id (aria-activedescendant); null when it is not shown. */
   protected readonly activeId = computed<string | null>(() => {
     const i = this.shown().findIndex((recording) => recording.id === this.library.selectedId());
     return i < 0 ? null : `rec-${i}`;
@@ -107,6 +129,7 @@ export class Recordings {
     void this.library.source.clear();
   }
 
+  /** Keeps the open recording's row in view after each render. */
   constructor() {
     // the selected row in view, scrolled the least: a row out of view is not in the page to scroll into view
     afterRenderEffect(() => {
@@ -122,11 +145,13 @@ export class Recordings {
     });
   }
 
+  /** A click on the list: the row under it opens (one listener for every row). */
   protected selectRow(event: MouseEvent): void {
     const row = (event.target as HTMLElement).closest<HTMLElement>('[role=option]');
     if (row) this.library.selectedId.set(this.shown()[Number(row.dataset['i'])].id);
   }
 
+  /** The arrow keys, Page Up, Page Down, Home and End open another row of the list. */
   protected moveSelection(event: KeyboardEvent): void {
     const list = this.shown();
     const at = list.findIndex((recording) => recording.id === this.library.selectedId());

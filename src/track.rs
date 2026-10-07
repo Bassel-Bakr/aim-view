@@ -15,10 +15,15 @@ use crate::python::{hypot, numpy_mean, round};
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[expect(clippy::min_ident_chars, reason = "the JSON's keys, which a run's part carries between workers")]
 pub struct RawBox {
+    /// The box's center x, in pixels of the 1280 x 720 frame.
     pub cx: f32,
+    /// The box's center y, in pixels from the frame's top.
     pub cy: f32,
+    /// The box's width, in pixels.
     pub w: f32,
+    /// The box's height, in pixels.
     pub h: f32,
+    /// How sure the detector is, from 0 to 1, on the reference model's scale.
     pub score: f32,
 }
 
@@ -59,6 +64,7 @@ const EXTRA_SCORE: f32 = 0.5;
 /// pi / 4 in float32: a box's area in pixels is the ellipse inside it, worked out in float32 as NumPy does.
 const QUARTER_PI: f32 = (std::f64::consts::PI / 4.0) as f32;
 
+/// How far a box's center is from the crosshair, in degrees.
 fn from_crosshair(raw: &RawBox) -> f64 {
     let (x, y) = to_deg(raw.cx as f64, raw.cy as f64);
     hypot(x, y)
@@ -104,8 +110,11 @@ fn spot_of(raw: &RawBox) -> Spot {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[expect(clippy::min_ident_chars, reason = "`w` and `h` match RawBox's; the parity tests and the benches set them")]
 pub struct ModelBox {
+    /// The box's width, in degrees: the horizontal angle between its left and right edges.
     pub w: f64,
+    /// The box's height, in degrees: the vertical angle between its top-left and bottom-right corners.
     pub h: f64,
+    /// How sure the detector is, from 0 to 1, on the reference model's scale.
     pub score: f64,
 }
 
@@ -113,15 +122,21 @@ pub struct ModelBox {
 /// from the detector model its box and score. The hand-written detector gives no box.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Spot {
+    /// Degrees right of the crosshair (left is negative).
     pub x: f64,
+    /// Degrees above the crosshair (below is negative).
     pub y: f64,
+    /// The target's area in pixels of the 1280 x 720 frame: the ellipse inside its box, rounded.
     pub area: i64,
+    /// The detector model's box and score; None from the old Python review's hand-written detector, which gave no
+    /// boxes (old tracks.json files, the parity fixtures).
     pub model: Option<ModelBox>,
 }
 
-/// The excluded areas a frame's targets are kept from, as shares of the frame, with the pop-ups among them: for each
-/// area, None when it is excluded all the time, else whether it is excluded in each frame (popup::AreaWatch).
-/// Frames where a pop-up is off are kept again with only the areas still on (python/retired/review.py: `reopen`).
+/// Keeps the targets again in each frame where a pop-up is off, with only the areas still on
+/// (python/retired/review.py: `reopen`). `raw` is each frame's boxes; `kept` each frame's targets with every area
+/// excluded, changed in place; `areas` the excluded areas as shares of the frame; `shows`, for each area, None when it
+/// is excluded all the time, else whether it is excluded in each frame (popup::AreaWatch).
 pub fn reopen(
     raw: &[Vec<RawBox>],
     kept: &mut [Vec<Spot>],
@@ -159,22 +174,30 @@ pub type TrackPoint = (u32, f64, f64);
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[expect(clippy::min_ident_chars, reason = "tracks.json's keys, which the UI, the workers and saved tracks read")]
 pub struct TrackFrame {
+    /// The frame's index in the recording, from 0.
     pub i: usize,
+    /// How far the view moved since the frame before, x and y in degrees ((0, 0) when no shift was found).
     #[cfg_attr(feature = "ts", ts(as = "crate::typescript::ViewShift"))]
     pub shift: (f64, f64),
+    /// The frame's targets: each one's track id and place (degrees from the crosshair, 4 decimals).
     #[cfg_attr(feature = "ts", ts(as = "Vec<crate::typescript::TrackPoint>"))]
     pub t: Vec<TrackPoint>,
+    /// Each target's area in pixels, in the order of `t`.
     pub a: Vec<i64>,
+    /// Each target's box width and height in degrees (3 decimals), in the order of `t`; None when the detector model
+    /// gave no boxes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::TargetSize>>", optional))]
     pub wh: Option<Vec<(f64, f64)>>,
+    /// Each target's score (3 decimals), in the order of `t`; None when the detector model gave no boxes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub s: Option<Vec<f64>>,
 }
 
-/// The decimals tracks.json keeps: a target's place (degrees), and its box's size (degrees) and score.
+/// The decimals tracks.json keeps of a target's place (degrees).
 const PLACE_DECIMALS: usize = 4;
+/// The decimals tracks.json keeps of a target's box size (degrees) and score.
 const BOX_DECIMALS: usize = 3;
 
 /// The review's version: one more each time what a review keeps changes (the tracks, the camera's readings, the HUD's),
@@ -186,12 +209,16 @@ pub const REVIEW_VERSION: u32 = 3;
 /// (0 where it is not given: Python's, and the browser's and the desktop app's before version 2).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tracks {
+    /// The recording's frame rate, in frames a second.
     pub fps: f64,
+    /// Every frame's targets, in the recording's order.
     pub frames: Vec<TrackFrame>,
+    /// The `REVIEW_VERSION` that made the tracks; 0, and left out of the JSON, where it is not known.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub version: u32,
 }
 
+/// Whether the version is 0, which tracks.json leaves out.
 fn is_zero(version: &u32) -> bool {
     *version == 0
 }
@@ -199,7 +226,9 @@ fn is_zero(version: &u32) -> bool {
 /// A target matched to a track, as the next frame sees it.
 #[derive(Clone, Copy)]
 struct Tracked {
+    /// The track's id: the order tracks started in, from 0.
     id: u32,
+    /// Where the target is in this frame.
     spot: Spot,
 }
 
@@ -259,9 +288,9 @@ pub fn view_shift_between(before: &[(f64, f64)], after: &[(f64, f64)]) -> Option
     Some((numpy_mean(&xs), numpy_mean(&ys)))
 }
 
-/// How far the view's shift must jump in one frame (degrees), and how many times the shifts either side, to be a
-/// spike (`spikes`).
+/// How far the view's shift must jump in one frame to be a spike (`spikes`), in degrees.
 const SPIKE_DEG: f64 = 1.0;
+/// How many times the larger of the shifts either side a spike must be.
 const SPIKE_RATIO: f64 = 3.0;
 
 /// Which frames' shifts are spikes: more than `SPIKE_DEG` degrees and `SPIKE_RATIO` times the shifts either side. A
@@ -329,10 +358,14 @@ fn linked(prev: &[Tracked], now: &[Spot], shift: (f64, f64)) -> usize {
 /// The frames tracked once with the view's shift each one has against the frame before as it was tracked: those
 /// shifts, and the tracks of the frame before each frame.
 struct FoundShifts {
+    /// Each frame's view shift against the frame before, x and y in degrees.
     shifts: Box<[(f64, f64)]>,
+    /// Each frame's tracks of the frame before it, as tracked with the shifts found (empty for the first frame).
     before: Box<[Box<[Tracked]>]>,
 }
 
+/// Tracks the frames once, each with the view's shift found against the frame before (no shift when either frame has
+/// no targets or none is found).
 fn found_shifts(frames: &[Vec<Spot>]) -> FoundShifts {
     let mut shifts = Vec::with_capacity(frames.len());
     let mut before = Vec::with_capacity(frames.len());

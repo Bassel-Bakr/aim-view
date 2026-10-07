@@ -1,31 +1,42 @@
-// Whether two JSON files, or every JSON file in two folders, hold the same values once keys in the first are renamed:
-// the check that a change to a format moved only names (a new baseline after a rename, BENCH.md).
-//
-//   bun scripts/same-json.ts <old file or folder> <new file or folder> [path=name ...]
-//
-// A path leads to a key, with [] for every element of an array: flicks[].n=kill_number, or [].dir=direction_deg in a
-// list. Numbers must be equal exactly, and both sides must have the same keys. It prints every difference and exits
-// with 1 when there is one.
+/**
+ * Whether two JSON files, or every JSON file in two folders, hold the same values once keys in the
+ * first are renamed: the check that a change to a format moved only names (a new baseline after a
+ * rename, BENCH.md).
+ *
+ *   bun scripts/same-json.ts <old file or folder> <new file or folder> [path=name ...]
+ *
+ * A path leads to a key, with [] for every element of an array: flicks[].n=kill_number, or
+ * [].dir=direction_deg in a list. Numbers must be equal exactly, and both sides must have the same
+ * keys. It prints every difference and exits with 1 when there is one.
+ */
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+/** Any JSON value. */
 type Json = null | boolean | number | string | Json[] | JsonObject;
 
+/** A JSON object. */
 interface JsonObject {
+  /** Its values by key. */
   [key: string]: Json;
 }
 
+/** One rename the command line asks for: the path to a key, and the key's new name. */
 interface Rename {
+  /** The path's steps, split at the dots ("flicks[]", "n"). */
   steps: string[];
+  /** The key's new name. */
   name: string;
 }
 
+/** A rename from its command-line form, path=name; throws on any other text. */
 function parseRename(text: string): Rename {
   const [path, name] = text.split('=');
   if (!path || !name) throw new Error(`not path=name: ${text}`);
   return { steps: path.split('.'), name };
 }
 
+/** Whether a JSON value is an object (not null, not an array). */
 function isObject(value: Json): value is JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -76,6 +87,7 @@ function jsonFiles(root: string): string[] {
     .sort();
 }
 
+/** Compares the two sides, printing what differs; exits 0 when the same, 1 when not, 2 on usage. */
 async function main(): Promise<number> {
   const [oldRoot, newRoot, ...renameTexts] = process.argv.slice(2);
   if (!oldRoot || !newRoot) {

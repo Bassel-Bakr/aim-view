@@ -55,6 +55,7 @@ fn spots(tracks: &Tracks) -> Vec<Vec<Spot>> {
         .collect()
 }
 
+/// `keep` over av1's every frame, and `link` over av1's targets and the two cluttered runs'.
 pub fn track(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("track");
     group.sample_size(FEWEST_SAMPLES).sampling_mode(SamplingMode::Flat);

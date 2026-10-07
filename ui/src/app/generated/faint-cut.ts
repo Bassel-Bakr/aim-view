@@ -4,7 +4,16 @@
  * The user's faint-target cut-off, when on: its offset, the score it cuts at, and how many tracks it left out.
  */
 export interface FaintCut {
+  /**
+   * How far below the recording's level a track may score before it is cut (faint.json's offset, src/faint.rs).
+   */
   offset: number;
+  /**
+   * The score it cut at, to 3 decimals; None without scores, when nothing is cut.
+   */
   cut: number | null;
+  /**
+   * How many tracks it left out.
+   */
   tracks: number;
 }

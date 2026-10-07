@@ -7,14 +7,44 @@ import type { CropPreset } from './crop-preset';
  * that mined it, the model's boxes ([cx, cy, w, h], crop pixels) and scores, and the boxes it starts crossed out.
  */
 export interface CropEntry {
+  /**
+   * The crop's id, made from its set and file, which names its picture (crops/<id>.png) and its answer file.
+   */
   id: string;
+  /**
+   * The set it belongs to (its tab on the page).
+   */
   set: string;
+  /**
+   * Its file in the training data, relative to the set's source (as train/a.npz).
+   */
   file: string;
+  /**
+   * The recording's folder it came from; empty when not known.
+   */
   folder: string;
+  /**
+   * The recording's scenario kind; empty when not known.
+   */
   kind: string;
+  /**
+   * Why it was picked.
+   */
   why: string[];
+  /**
+   * The rule that mined it, when one did.
+   */
   rule: string | null;
+  /**
+   * The model's boxes, [cx, cy, w, h] in crop pixels.
+   */
   boxes: CropBox[];
+  /**
+   * The boxes' scores, 0 to 1, in the boxes' order.
+   */
   scores: number[];
+  /**
+   * The boxes it starts with crossed out.
+   */
   preset?: CropPreset;
 }

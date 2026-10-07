@@ -4,7 +4,16 @@
  * One what-if estimate: how much of the run's time on target one change would add (a share of the run).
  */
 export interface WhatIf {
+  /**
+   * The change, as the run page's heading ("Don't slip").
+   */
   what: string;
+  /**
+   * The time on target it would add, as a share of the run.
+   */
   gain: number;
+  /**
+   * How the gain is worked out, in a sentence.
+   */
   how: string;
 }

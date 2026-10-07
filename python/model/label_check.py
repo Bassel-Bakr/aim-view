@@ -9,7 +9,8 @@ On the page: click a target's center to add a box (drag to size it), click a box
 save and go on, "Skip" to leave a crop out. Saved to test_out/vod_model/checked.jsonl, one line per crop:
 {"file": ..., "boxes": [[cx, cy, w, h], ...], "verdict": "correct" | "skip" | "unsure", "auto": [...], "model": [...]}.
 "skip" means no target in the crop; "unsure" leaves the crop out.
-Usage: python python/model/label_check.py [--n 400] [--port 8773]   then open http://127.0.0.1:8773/
+Usage: python python/model/label_check.py [--n 400] [--port 8773] [--data <dataset>] [--out <checked.jsonl>]
+       then open http://127.0.0.1:8773/
 """
 import argparse
 import base64
@@ -34,7 +35,8 @@ NEAR_CROSSHAIR_PX = 12              # a label this close to the fixed map's midd
 
 
 def disagreement(labels, found):
-    """The labels the model's boxes miss (nearest box too far, or taken) and the boxes no label took."""
+    """(how many labels the model's boxes miss, how many boxes no label took). A label is missed when its nearest box
+    is too far (MATCH_MIN_PX, or half its larger side) or another label took that box."""
     used, missed = set(), 0
     for label in labels:
         distances = [np.hypot(box[0] - label[0], box[1] - label[1]) for box in found]
@@ -80,6 +82,8 @@ def pick(count, seed=1):
     return order[:count], dict(disagree=len(disagree), near=len(near), other=len(other))
 
 
+# the page: the crop at 3 times its size with your boxes and the model's, the buttons, and the script that asks
+# /api/next for each crop and posts each answer to /api/save
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Check the labels</title>
 <style>
 body { font: 14px/1.4 "Segoe UI", system-ui, sans-serif; background: #121211; color: #fff; margin: 18px; }
@@ -144,12 +148,17 @@ next();
 
 
 class Handler(BaseHTTPRequestHandler):
+    """Serves the page and its two API routes. The queue is shared by every request, so main fills it once."""
+
+    # the crops to check, as pick gives them; each crop's reason, by its path; the next crop's place in the queue
     queue, why, pos = [], {}, 0
 
     def log_message(self, message_format, *args):
+        """Logs nothing, where the default prints a line per request."""
         pass
 
     def send(self, body, kind="application/json", code=200):
+        """Sends `body` (text or bytes) as `kind` with the HTTP status `code`."""
         data = body.encode() if isinstance(body, str) else body
         self.send_response(code)
         self.send_header("Content-Type", kind)
@@ -158,10 +167,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def checked(self):
+        """How many crops the out file holds checks of, from this session and earlier ones."""
         return sum(1 for line in OUT.read_text(encoding="utf-8").splitlines() if line.strip()) if OUT.exists() else 0
 
     def next_crop(self):
-        """The next crop to check, as the page reads it."""
+        """The next crop to check as JSON for the page (its file, place, PNG, reason, the labels and the model's boxes),
+    or {"done": true} when the queue is through."""
         handler = type(self)
         if handler.pos >= len(handler.queue):
             return json.dumps(dict(done=True, checked=self.checked()))
@@ -177,6 +188,7 @@ class Handler(BaseHTTPRequestHandler):
             model=[[round(float(value), 2) for value in box[:4]] for box in model]))
 
     def do_GET(self):
+        """/: the page; /api/next: the next crop; any other path: 404."""
         if self.path == "/":
             return self.send(PAGE, "text/html; charset=utf-8")
         if self.path == "/api/next":
@@ -184,6 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send(json.dumps(dict(error="not found")), code=404)
 
     def do_POST(self):
+        """/api/save: appends the page's check to the out file and moves to the next crop; any other path: 404."""
         if self.path != "/api/save":
             return self.send(json.dumps(dict(error="not found")), code=404)
         check = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -195,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    """Picks the crops (crops already in the out file left out), gives each its reason, and serves the page until
+    stopped."""
     global DATA, OUT
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=400)

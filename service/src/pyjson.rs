@@ -1,4 +1,5 @@
-//! JSON as python/server.py reads and writes it, so the files the app keeps are the review server's, byte for byte.
+//! JSON as python/retired/server.py read and wrote it, so the files the app keeps are the review server's, byte for
+//! byte.
 //!
 //! In: the kept JSON items (store.rs: areas and found areas, area kinds and examples, cut-offs, labelling lists) and
 //! the page's bodies. Out: values for the library (areas.rs, faint.rs, finder.rs, labels.rs) and those items kept
@@ -168,23 +169,29 @@ fn exponent_notation(digits: &str, exponent: i32) -> String {
 
 /// serde_json's writer, with Python's separators, indent and escapes.
 struct Python {
+    /// Whether to write with `indent=1`: each item on a line of its own, one space a level.
     indent: bool,
+    /// How many arrays and objects the writer is inside.
     depth: usize,
+    /// Whether the array or object being written has an item yet (an empty one closes on the same line).
     has_value: bool,
 }
 
 impl Python {
+    /// A new line, indented one space a level.
     fn newline<W: ?Sized + io::Write>(&self, writer: &mut W) -> io::Result<()> {
         writer.write_all(b"\n")?;
         writer.write_all(" ".repeat(self.depth).as_bytes())
     }
 
+    /// Opens an array or an object with `bracket`, one level deeper.
     fn open<W: ?Sized + io::Write>(&mut self, writer: &mut W, bracket: &[u8]) -> io::Result<()> {
         self.depth += 1;
         self.has_value = false;
         writer.write_all(bracket)
     }
 
+    /// Closes an array or an object with `bracket`, on a new line when indented and it has items.
     fn close<W: ?Sized + io::Write>(&mut self, writer: &mut W, bracket: &[u8]) -> io::Result<()> {
         self.depth -= 1;
         if self.indent && self.has_value {
@@ -194,6 +201,7 @@ impl Python {
         writer.write_all(bracket)
     }
 
+    /// What comes before an item: ", " between items, or with indent "," and a new line.
     fn item<W: ?Sized + io::Write>(&mut self, writer: &mut W, first: bool) -> io::Result<()> {
         match (first, self.indent) {
             (true, false) => Ok(()),
@@ -209,14 +217,17 @@ impl Python {
 }
 
 impl Formatter for Python {
+    /// A float as Python's `repr` writes it.
     fn write_f64<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
         writer.write_all(float_repr(value).as_bytes())
     }
 
+    /// A 32-bit float, widened, as Python's `repr` writes it.
     fn write_f32<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: f32) -> io::Result<()> {
         self.write_f64(writer, value as f64)
     }
 
+    /// Text with every character beyond ASCII (and DEL) as \u escapes, as `ensure_ascii` writes it.
     fn write_string_fragment<W: ?Sized + io::Write>(&mut self, writer: &mut W, fragment: &str) -> io::Result<()> {
         for character in fragment.chars() {
             if character.is_ascii() && character != '\x7f' {
@@ -231,6 +242,7 @@ impl Formatter for Python {
         Ok(())
     }
 
+    /// An escaped character as Python writes it: its short escapes, other control characters as \u00XX.
     fn write_char_escape<W: ?Sized + io::Write>(&mut self, writer: &mut W, escape: CharEscape) -> io::Result<()> {
         let escaped: &[u8] = match escape {
             CharEscape::Quote => b"\\\"",
@@ -246,50 +258,61 @@ impl Formatter for Python {
         writer.write_all(escaped)
     }
 
+    /// "[", one level deeper.
     fn begin_array<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         self.open(writer, b"[")
     }
 
+    /// "]", on a new line when indented and the array has items.
     fn end_array<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         self.close(writer, b"]")
     }
 
+    /// What comes before an item (`item`).
     fn begin_array_value<W: ?Sized + io::Write>(&mut self, writer: &mut W, first: bool) -> io::Result<()> {
         self.item(writer, first)
     }
 
+    /// Notes that the array has an item.
     fn end_array_value<W: ?Sized + io::Write>(&mut self, _writer: &mut W) -> io::Result<()> {
         self.has_value = true;
         Ok(())
     }
 
+    /// "{", one level deeper.
     fn begin_object<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         self.open(writer, b"{")
     }
 
+    /// "}", on a new line when indented and the object has items.
     fn end_object<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         self.close(writer, b"}")
     }
 
+    /// What comes before a key (`item`).
     fn begin_object_key<W: ?Sized + io::Write>(&mut self, writer: &mut W, first: bool) -> io::Result<()> {
         self.item(writer, first)
     }
 
+    /// ": " between a key and its value, as Python writes it.
     fn begin_object_value<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         writer.write_all(b": ")
     }
 
+    /// Notes that the object has an item.
     fn end_object_value<W: ?Sized + io::Write>(&mut self, _writer: &mut W) -> io::Result<()> {
         self.has_value = true;
         Ok(())
     }
 }
 
+/// Python's JSON, read and written.
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
+    /// Floats are written as Python's `repr` writes them, in plain and exponent notation.
     #[test]
     fn floats_as_python_writes_them() {
         for (x, written) in [
@@ -308,6 +331,7 @@ mod tests {
         }
     }
 
+    /// Values are written with Python's separators, `indent=1` and \u escapes.
     #[test]
     fn json_as_python_writes_it() {
         let value = json!([[0.5, 1, "Webcam"], {"a": null, "b": [true]}]);
@@ -317,6 +341,7 @@ mod tests {
         assert_eq!(String::from_utf8(to_vec(&json!([{"id": "x"}]), true)).unwrap(), "[\n {\n  \"id\": \"x\"\n }\n]");
     }
 
+    /// Numbers read to the nearest f64 (integers stay integers), and digits inside strings stay text.
     #[test]
     fn numbers_read_exactly() {
         let text = br#"[0.11423910861614354, 1, -2.5e-7, "a \" 1.5", {"k": 0.1}]"#;

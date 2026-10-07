@@ -11,6 +11,7 @@ use common::{FRAME_PIXELS, fixed_map, fixture_dirs};
 /// The bytes of one yuv420p key frame: the Y plane, then U and V at a quarter of its size each.
 const YUV_FRAME_BYTES: usize = FRAME_PIXELS * 3 / 2;
 
+/// Every fixture's fixed map, from its key frames, equals Python's pixel for pixel.
 #[test]
 fn fixed_map_matches_python() {
     let dirs = fixture_dirs(&["keys.yuv"]);

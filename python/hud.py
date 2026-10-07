@@ -2,11 +2,14 @@
 Damage, SPM and Avg TTK. It is optional in KovaaK's, but most players show it. When a run has no stats file, it gives
 the kill times (the Kill Count changes 0 to 2 frames after each kill) and the shots, hits and misses.
 
-The theme can recolour it, so nothing assumes a colour: each frame's text is told from the box behind it by contrast,
+The theme can recolor it, so nothing assumes a color: each frame's text is told from the box behind it by contrast,
 and the digits are learned from the recording itself. The Kill Count goes up one kill at a time, so its last digit
 cycles 0 to 9: the order of the glyph shapes gives the digits' order, and the shape on the units place when the tens
 place changes is 0. No font file is needed. If the box is missing or reads inconsistently, read() returns None and the
-review falls back to finding kills in the video alone (review.match_video).
+review falls back to finding kills in the video alone. read_aimlab() reads Aim Lab's HUD the same way.
+
+The review reads the HUD with the core's port of this (src/hud.rs); areas.py uses layout() and the box constants. The
+frames come from ffmpeg. Usage: python python/hud.py <video> prints what read() finds.
 """
 import collections
 import subprocess
@@ -16,15 +19,17 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-BOX = (0, 0, 900 / 2560, 330 / 1440)      # where the box can be, as shares of the frame (x0, y0, x1, y1); it grows to fit
-BW, BH = 900, 330                          # its widest number. The region is scaled to this (2560 x 1440 pixels)
+# where the box can be, as shares of the frame (x0, y0, x1, y1): it grows to fit its widest number
+BOX = (0, 0, 900 / 2560, 330 / 1440)
+BW, BH = 900, 330                          # the region is scaled to this: its size in a 2560 x 1440 frame (px)
 SEED = (49, 100, 57, 108)                  # a patch inside the box's left edge, between the header and Kill Count
 GW, GH = 16, 24                            # glyphs are compared at this size
-SAME = 0.97                                # glyphs this alike (cosine of their grey images) are the same shape
+SAME = 0.97                                # glyphs this alike (cosine of their gray images) are the same shape
 
 
 def _frames(video, keyframes=False, box=BOX, size=(BW, BH), scaler="area"):
-    """A region of every frame (or of the key frames), grey, scaled to size; by default KovaaK's box region."""
+    """A region of every frame (or of the key frames), gray, scaled to size, one (height, width) uint8 array at a
+    time; by default KovaaK's box region. `box` is in shares of the frame (x0, y0, x1, y1)."""
     (x0, y0, x1, y1), (BW, BH) = box, size
     vf = f"crop=iw*{x1 - x0}:ih*{y1 - y0}:iw*{x0}:ih*{y0},scale={BW}:{BH}:flags={scaler},format=gray"
     p = subprocess.Popen(["ffmpeg", "-v", "error"] + (["-skip_frame", "nokey"] if keyframes else []) + ["-i", str(video)] +
@@ -70,8 +75,9 @@ def _spans(mask, min_len=1):
 
 
 def layout(video):
-    """The box's text rows from the key frames: (rows, x0, x1) with rows as (y0, y1), or None without a box. The
-    median over key frames keeps the box and its labels and washes out the moving scene and the changing numbers."""
+    """The box's text rows from the key frames: (rows, x0, x1, starts) with rows as (y0, y1) and starts each row's
+    value column (the compact HUD) or None, in the scaled region's pixels; None without a box. The median over key
+    frames keeps the box and its labels and washes out the moving scene and the changing numbers."""
     keys = list(_frames(video, keyframes=True))
     if len(keys) < 3:
         return None
@@ -124,8 +130,8 @@ def _label_end(ink):
 
 def _value_glyphs(band, start=None):
     """The value's glyphs in one row: the rightmost group of ink columns, cut from the label by a wide gap (or, given
-    start, the first group from there on). Each glyph is cropped to its ink and scaled to GW x GH (grey), with its
-    height share (to tell commas and dots)."""
+    start, the first group from there on). Each glyph is (image, height share, left column): cropped to its ink and
+    scaled to GW x GH (gray), its height share telling commas and dots."""
     ink = _ink(band)
     d = np.abs(band.astype(np.float32) - np.median(band))
     strength = np.clip(d / max(25.0, float(np.percentile(d, 99.5))), 0, 1).astype(np.float32)
@@ -152,8 +158,8 @@ def _value_glyphs(band, start=None):
             if group[0][0] - c[1] > 0.07 * band.shape[1]:    # the gap between the label and the value
                 break
             group.insert(0, c)
-    # small, blurred text (a smaller HUD, a re-encoded upload) joins neighbouring digits. A digit is at most 0.9 times as
-    # wide as it is tall, so a wider glyph is split at its thinnest columns, one piece per 0.6 of its height
+    # small, blurred text (a smaller HUD, a re-encoded upload) joins neighboring digits. A digit is at most 0.9 times
+    # as wide as it is tall, so a wider glyph is split at its thinnest columns, one piece per 0.6 of its height
     split = []
     for a, b in group:
         ys = np.where(ink[:, a:b].any(1))[0]
@@ -174,8 +180,8 @@ def _value_glyphs(band, start=None):
     for a, b in group:
         ys = np.where(ink[:, a:b].any(1))[0]
         g = strength[ys.min():ys.max() + 1, a:b]
-        img = np.asarray(Image.fromarray(g).resize((GW, GH), Image.BILINEAR))   # grey: small blurred digits differ
-        out.append((img, (ys.max() - ys.min() + 1) / h, a))                       # in grey more than in black and white
+        img = np.asarray(Image.fromarray(g).resize((GW, GH), Image.BILINEAR))   # gray: small blurred digits differ
+        out.append((img, (ys.max() - ys.min() + 1) / h, a))                       # in gray more than in black and white
     return out
 
 
@@ -183,9 +189,12 @@ class _Shapes:
     """Glyph shapes seen so far; a glyph joins the most alike shape, or starts a new one."""
 
     def __init__(self, same=SAME):
+        """same: the cosine likeness at or over which a glyph is a known shape."""
         self.shapes, self.count, self.same = [], [], same
 
     def id(self, g, learn=True):
+        """The index of the shape glyph `g` (a GW x GH gray image) is: the most alike known shape, else a new one, or
+        -1 when not learning."""
         best = None
         v = g.ravel() / max(1e-6, float(np.linalg.norm(g)))
         for k, s in enumerate(self.shapes):
@@ -222,7 +231,8 @@ def _learn_digits(runs):
     zero, succ = collections.Counter(), collections.Counter()
     for (a, _, _), (b, _, _) in zip(runs, runs[1:]):
         if len(b) == len(a) and a[:-1] != b[:-1] or len(b) == len(a) + 1:
-            zero[b[-1]] += 1                                   # the tens place changed (or a digit was added): b ends in 0
+            # the tens place changed (or a digit was added): b ends in 0
+            zero[b[-1]] += 1
         if len(b) >= len(a):
             succ[(a[-1], b[-1])] += 1                          # usually one more kill: the last digit's next shape
     if not zero:
@@ -288,8 +298,9 @@ def _count(kill_g, acc_g, same, need):
 
 def read(video, progress=None):
     """The HUD over the whole recording: dict(kills=[frame, ...] one entry per kill, shots=[frame, ...] one per shot,
-    hits=[frame, ...] one per hit, final=dict(kills, hits, shots), checked=share of steps that were +1 kill), or None
-    when there is no readable box."""
+    hits=[frame, ...] one per hit, final=dict(kills, hits, shots), checked=share of steps that were +1 kill,
+    start=the Kill Count's first value, digits=how many shapes read as digits), or None when there is no readable
+    box. `progress(stage, frame, 0)` is called every 600 frames when given."""
     lay = layout(video)
     if lay is None:
         return None
@@ -366,8 +377,8 @@ def read(video, progress=None):
                 start=values[0][0], digits=len(digits))
 
 
-# ---- Aim Lab ----------------------------------------------------------------------------------------------------------
-# Aim Lab shows three boxes at the top centre: POINTS, TIME and ACCURACY. A hit adds points and a miss takes some off,
+# ---- Aim Lab ----------------------------------------------------------------------------------------------------
+# Aim Lab shows three boxes at the top center: POINTS, TIME and ACCURACY. A hit adds points and a miss takes some off,
 # so the POINTS number gives every hit and miss. The digits are learned from the TIME box, which counts down one second
 # at a time (read backwards it counts up, as the Kill Count does). Shares of a 16:9 frame:
 AIM_BAND = (0.30, 40 / 720, 0.565, 63 / 720)      # the value line of the POINTS and TIME boxes
@@ -376,7 +387,8 @@ AIM_POINTS, AIM_TIME = (26, 356), (368, 656)      # the two values' columns in t
 
 
 def _aim_glyphs(band, cols):
-    """The white value's glyphs in one box: (grey image GW x GH, height share, width share), colons left out."""
+    """The white value's glyphs in one box (columns `cols` of the band): (gray image GW x GH, height share, width
+    share), colons left out; none when the box has no bright text."""
     b = band[:, cols[0]:cols[1]].astype(np.float32)
     d = b - np.median(b)
     top = float(np.percentile(d, 99.5))
@@ -396,8 +408,9 @@ def _aim_glyphs(band, cols):
 
 
 def read_aimlab(video, progress=None):
-    """Aim Lab's HUD: dict(kills=[frame, ...], hits, shots, final, checked, game="aimlab") as read() gives, with every
-    hit counted as a kill (one-hit targets; review.py checks that against the video), or None."""
+    """Aim Lab's HUD: dict(kills=[frame, ...], hits, shots, final, checked, game="aimlab", points=the last POINTS
+    reading) as read() gives, with every hit counted as a kill (one-hit targets), or None when the TIME box's digits
+    are not learned or the POINTS changes do not read as hits and misses."""
     pts_g, time_g = [], []
     for i, f in enumerate(_frames(video, box=AIM_BAND, size=AIM_SIZE, scaler="bicubic")):
         pts_g.append(_aim_glyphs(f, AIM_POINTS))

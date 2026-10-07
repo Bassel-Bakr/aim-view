@@ -1,15 +1,16 @@
-//! Aim View's review service: the review server's API (python/server.py) over a library of recordings, with the review
-//! run natively (ffmpeg's frames, the core, and the detector on the GPU). The desktop app (desktop/) and the HTTP
-//! server (server/) serve it: each opens a `Library` from a `Config` and answers requests with `api::handle`. Python's
-//! scripts use the library and the native review through aimview-tool (src/bin/aimview-tool.rs).
+//! Aim View's review service: the review server's API (python/retired/server.py's) over a library of recordings, with
+//! the review run natively (ffmpeg's frames, the core, and the detector on the GPU). The desktop app (desktop/) and the
+//! HTTP server (server/) serve it: each opens a `Library` from a `Config` and answers requests with `api::handle`.
+//! Python's scripts use the library and the native review through aimview-tool (src/bin/aimview-tool.rs).
 //!
 //! config.rs: what a library needs to know. api.rs: the API's routes. library/: the recordings, their stats files, the
 //! settings and models, the reviews and their reports. areas.rs, finder.rs: the areas a review leaves out and the area
 //! finder. faint.rs: the faint-target cut-off. labels.rs: the labelling queues. crops.rs: the check folders of
 //! detector crops and their answers (the Crops page). mouse.rs: the mouse logs' measures.
-//! review.rs, detector.rs, video.rs, ffmpeg.rs: the native review. report.rs: the report the core works out.
-//! run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them. ytdlp.rs: yt-dlp, for
-//! recordings added from a link. disk.rs: the file system and the clock.
+//! review.rs, detector.rs, video.rs, ffmpeg.rs, gpu_frames.rs: the native review. report.rs: the report the core works
+//! out. run_window.rs: the user's run window. pyjson.rs, npz.rs: files as Python writes them. ytdlp.rs: yt-dlp, for
+//! recordings added from a link. store.rs: where the library keeps what it keeps. disk.rs: the file system and the
+//! clock.
 //!
 //! The `native` feature (on by default) builds what needs this computer: ONNX Runtime, ffmpeg, yt-dlp, threads and the
 //! time zone. Without it the service is built for the browser (browser-service/, WebAssembly): its files are the

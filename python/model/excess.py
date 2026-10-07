@@ -41,10 +41,14 @@ def in_play_area(box):
 
 
 def column_name(model):
+    """A model's name for its column: its folder's name for a run's best.pt, else the file's name without .pt."""
     return Path(model).parent.name if Path(model).name == "best.pt" else Path(model).stem
 
 
 def main():
+    """Prints a row per VOD: its scenario's target count, then per model the share of sampled frames with more
+    detections in the play area than that, and the mean number of extra detections a frame (0 on a frame within the
+    count). A VOD whose scenario has no target count gets a line that says so."""
     parser = argparse.ArgumentParser()
     parser.add_argument("models", nargs="+")
     parser.add_argument("--vods", nargs="+", required=True)

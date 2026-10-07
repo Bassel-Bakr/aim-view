@@ -5,10 +5,28 @@
  * suggestions, and how many crops it has and how many are answered.
  */
 export interface CropSet {
+  /**
+   * The set's name, as the crops name it.
+   */
   set: string;
+  /**
+   * Its tab's title: sets.json's, else the name.
+   */
   title: string;
+  /**
+   * The note shown over a crop with a crossed-out box.
+   */
   crossedOut: string | null;
+  /**
+   * Whether its answers teach the page's suggestions (true unless sets.json says no).
+   */
   learn: boolean;
+  /**
+   * Its crops.
+   */
   count: number;
+  /**
+   * Its crops with an answer.
+   */
   answered: number;
 }

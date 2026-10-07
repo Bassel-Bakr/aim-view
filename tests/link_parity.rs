@@ -23,6 +23,7 @@ fn spot(row: &Value) -> Spot {
     }
 }
 
+/// Every fixture's linked frames equal Python's, frame for frame.
 #[test]
 fn link_matches_python() {
     let dirs = fixture_dirs(&["dets.json", "frames.json"]);

@@ -10,16 +10,19 @@
 use crate::geometry::{H, W};
 use crate::scipy::{Edge, uniform_filter};
 
-/// How far a spot differs from the wall behind it: brightness difference + 2 x colour difference.
+/// A pixel stands out in a key frame when its `contrast` (brightness difference + 2 x color difference from the wall
+/// behind it, in 8-bit levels) is more than this.
 pub const DIFF: f32 = 30.0;
 /// A pixel is fixed when it stands out in at least this share of the key frames.
 pub const SHARE: f64 = 0.8;
-/// The colour difference counts this many times the brightness difference.
+/// The color difference counts this many times the brightness difference.
 const COLOUR_WEIGHT: f32 = 2.0;
-/// The wall's blocks: 4 x 4 pixels of the frame, which are 4 x 4 pixels of Y and 2 x 2 of U and V at half size.
+/// The wall's blocks: 4 x 4 pixels of the frame, which are 4 x 4 pixels of Y and 2 x 2 of U and V at half size. This
+/// is the block's side in Y pixels.
 const BLOCK_PX: usize = 4;
+/// The same block's side in U and V pixels, which are half size.
 const CHROMA_BLOCK_PX: usize = 2;
-/// The colour planes of YUV 4:2:0 are half the frame's width and height.
+/// The color planes of YUV 4:2:0 are half the frame's width and height.
 const CHROMA_SCALE: usize = 2;
 /// The wall is blurred over this many blocks a side.
 const WALL_BLUR_BLOCKS: usize = 5;
@@ -44,8 +47,8 @@ fn walls(plane: &[u8], width: usize, height: usize, block: usize) -> Vec<f32> {
     uniform_filter(&small, blocks_high, blocks_wide, WALL_BLUR_BLOCKS, Edge::Nearest)
 }
 
-/// How far every pixel of a 1280 x 720 YUV 4:2:0 frame differs from the wall behind it, in any colour:
-/// |Y - wall| + 2 x (|U - wall| + |V - wall|), the colour planes at half size.
+/// How far every pixel of a 1280 x 720 YUV 4:2:0 frame differs from the wall behind it, in any color:
+/// |Y - wall| + 2 x (|U - wall| + |V - wall|), the color planes at half size. Gives one value a pixel, row by row.
 pub fn contrast(yuv: &[u8]) -> Vec<f32> {
     let (luma, chroma) = yuv.split_at(W * H);
     let (u_plane, v_plane) = chroma.split_at(W * H / (CHROMA_SCALE * CHROMA_SCALE));
@@ -73,23 +76,26 @@ pub fn contrast(yuv: &[u8]) -> Vec<f32> {
 /// Counts, per pixel, the key frames it stands out in.
 #[derive(Clone, Debug)]
 pub struct FixedMap {
+    /// Per pixel of the 1280 x 720 frame, row by row: the key frames it stood out in.
     counts: Box<[u16; W * H]>,
+    /// The key frames added so far.
     frames: usize,
 }
 
 impl Default for FixedMap {
+    /// A map with no key frames added.
     fn default() -> Self {
         FixedMap { counts: vec![0; W * H].try_into().unwrap(), frames: 0 }
     }
 }
 
 impl FixedMap {
-    /// One key frame, YUV 4:2:0 at 1280 x 720.
+    /// Counts one key frame, YUV 4:2:0 at 1280 x 720.
     pub fn add(&mut self, yuv: &[u8]) {
         self.add_contrast(&contrast(yuv));
     }
 
-    /// One key frame's `contrast`, when the caller needs it for something else too.
+    /// Counts one key frame from its `contrast`, when the caller needs the contrast for something else too.
     pub fn add_contrast(&mut self, contrast: &[f32]) {
         for (count, &difference) in self.counts.iter_mut().zip(contrast) {
             *count += (difference > DIFF) as u16;

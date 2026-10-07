@@ -1,9 +1,17 @@
+/**
+ * The FaintCutoffs contract: each recording's faint-target cut-off, submitting it as detector
+ * labels, and the cut-off queue. In: each mode's implementation (modes/mode.*.ts). Out: the
+ * FaintCutoff and FaintQueue services (services/).
+ */
+
 import { ResourceRef, Signal } from '@angular/core';
 import { FaintChoice, FaintSetting, Job } from '../api';
 
 /** The cut-off labels kept here: how many crops, from how many recordings. */
 export interface CutoffLabelsCount {
+  /** How many label crops are kept. */
   crops: number;
+  /** How many recordings they come from. */
   recordings: number;
 }
 
@@ -13,6 +21,7 @@ export interface CutoffLabelsCount {
  * test_out/vod_model/hand/cutoff/.
  */
 export interface CutoffLabelsStore {
+  /** How many labels are kept, kept up to date. */
   readonly count: Signal<CutoffLabelsCount>;
   /** The name it downloads as. */
   readonly fileName: string;

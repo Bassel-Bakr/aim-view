@@ -5,6 +5,12 @@ import type { CropSet } from './crop-set';
  * A check folder (the page names it by its folder's name) and its sets.
  */
 export interface CropPage {
+  /**
+   * The check folder's name.
+   */
   page: string;
+  /**
+   * Its sets, in the order their first crops come in crops.json.
+   */
   sets: CropSet[];
 }

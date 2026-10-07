@@ -6,6 +6,12 @@
  * least 2 frames) to show the braking. `flick_end` is the index of the flick's last frame.
  */
 export interface SpeedCurve {
+  /**
+   * The speed in each frame from the flick's start, degrees a second, to one decimal.
+   */
   speeds: number[];
+  /**
+   * The index in `speeds` of the main flick's last frame; the values after it show the braking.
+   */
   flick_end: number;
 }

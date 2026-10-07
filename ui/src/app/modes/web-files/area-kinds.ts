@@ -1,6 +1,16 @@
+/**
+ * The kinds an excluded area can be, and KovOBS's default layout, as the review service has them
+ * (service/src/areas.rs). In: areas and kind edits. Out: kind ids for the areas
+ * (server-area-labels.ts), the built-in kinds (browser-labelling.ts), and the checks the specs'
+ * fake review server answers with (area-labels.spec.ts).
+ */
+
 import { AreaBox, AreaKind, KindEdit } from '../../api';
 
-/** The kinds an area can be before the user adds any (python/review.py: EXCLUDE_KINDS; server.py: KIND_ABOUT). */
+/**
+ * The kinds an area can be before the user adds any (python/retired/review.py: EXCLUDE_KINDS;
+ * server.py: KIND_ABOUT; service/src/areas.rs: BUILT_IN).
+ */
 const BUILT_IN: readonly KindEdit[] = [
   {
     id: null,
@@ -26,7 +36,10 @@ const BUILT_IN: readonly KindEdit[] = [
 /** The kind an area has when it says none, or one that is not known. */
 export const OTHER = 'other';
 
-/** A kind's id made from its name, as python/server.py makes it (`_slug`). */
+/**
+ * A kind's id made from its name, as python/retired/server.py made it (`_slug`): lower case, each
+ * run of other characters one underscore; "type" when nothing is left.
+ */
 export function slug(name: string): string {
   return (
     name
@@ -51,8 +64,8 @@ export function builtInKinds(): AreaKind[] {
 }
 
 /**
- * A kind's id from its id or its name (areas from before kinds had ids held names; KovOBS's layout still does), or
- * from its name's slug (a built-in kind the user renamed); unknown: "other".
+ * A kind's id from its id or its name (areas from before kinds had ids held names; KovOBS's layout
+ * still does), or from its name's slug (a built-in kind the user renamed); unknown: "other".
  */
 export function kindId(value: string, kinds: readonly AreaKind[]): string {
   if (kinds.some((kind) => kind.id === value)) return value;
@@ -68,7 +81,10 @@ export function withKindIds(boxes: readonly AreaBox[], kinds: readonly AreaKind[
   return boxes.map(([x0, y0, x1, y1, kind]) => [x0, y0, x1, y1, kindId(kind ?? OTHER, kinds)]);
 }
 
-/** The KovOBS overlay at 1280 x 720 (python/review.py: OVERLAY and OVERLAY_KINDS; src/geometry.rs: OVERLAY). */
+/**
+ * The KovOBS overlay's boxes in pixels of a 1280 x 720 frame, each with its kind's id
+ * (python/retired/review.py: OVERLAY and OVERLAY_KINDS; src/geometry.rs: OVERLAY).
+ */
 const OVERLAY: readonly AreaBox[] = [
   [0, 0, 205, 150, 'session_stats'],
   [590, 0, 690, 60, 'timer'],
@@ -80,12 +96,18 @@ const OVERLAY: readonly AreaBox[] = [
   [0, 700, 60, 720, 'version'],
 ];
 
-/** KovOBS's layout: the areas excluded by default, as shares of the frame (OVERLAY_SHARES: each bound divided once). */
+/**
+ * KovOBS's layout: the areas excluded by default, as shares of the frame (OVERLAY_SHARES: each
+ * bound divided once).
+ */
 export function kovobsLayout(): AreaBox[] {
   return OVERLAY.map(([x0, y0, x1, y1, kind]) => [x0 / 1280, y0 / 720, x1 / 1280, y1 / 720, kind]);
 }
 
-/** Whether a list of areas is one the review can use: each inside the frame, with its start before its end. */
+/**
+ * Whether a list of areas is one the review can use: each inside the frame, with its start before
+ * its end.
+ */
 export function validAreas(boxes: unknown): boxes is AreaBox[] {
   return (
     Array.isArray(boxes) &&
@@ -106,7 +128,11 @@ export function validAreas(boxes: unknown): boxes is AreaBox[] {
   );
 }
 
-/** A kind's new name and description, checked as python/server.py checks them (`save_kind`). Throws when not valid. */
+/**
+ * The kinds after an edit: a new kind added (id null), or a kind's new name and description,
+ * checked as python/retired/server.py checked them (`save_kind`): the name up to 40 characters,
+ * the description up to 200, no two kinds of one name. Throws when not valid.
+ */
 export function editKinds(kinds: readonly AreaKind[], edit: KindEdit): AreaKind[] {
   const name = edit.name.trim().slice(0, 40);
   const about = edit.about.trim().slice(0, 200);

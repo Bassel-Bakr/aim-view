@@ -1,4 +1,5 @@
-"""Re-flows the Rust comment paragraphs that have a line over the width (120, the repo's hand-formatted limit), in place.
+"""Re-flows the Rust comment paragraphs that have a line over the width (120, the repo's hand-formatted limit), in
+place.
 
 Usage: python scripts/wrap_comments.py [--width 120] [--containing TEXT] <file.rs> ...
 
@@ -11,8 +12,11 @@ import argparse
 import re
 from pathlib import Path
 
+# a comment line: its indent, its marker and its text (None when the line holds only the marker)
 COMMENT = re.compile(r"^(\s*)(//!|///|//)(?: (.*))?$")
+# a comment's text that starts a list item, a code fence or a table row
 LIST_OR_CODE = re.compile(r"^(- |\* |\d+\. |```|\|)")
+# a word that Markdown would read as a list item or a heading at the start of a line
 MARKER_WORD = re.compile(r"^([*+\->#]|\d+\.)$")
 
 
@@ -30,6 +34,8 @@ def paragraphs(lines):
 
 
 def reflow(lines, first, last, width):
+    """The paragraph from line `first` to `last`, its words laid out again in lines of at most `width` characters with
+    its indent and marker. A word that would start a line as a list item or heading takes the word before it along."""
     indent, marker = COMMENT.match(lines[first]).group(1, 2)
     words = " ".join(COMMENT.match(line).group(3) for line in lines[first:last + 1]).split()
     start = f"{indent}{marker}"
@@ -48,6 +54,7 @@ def reflow(lines, first, last, width):
 
 
 def main():
+    """Re-flows each file's long paragraphs in place, then prints the paragraphs and lines it left over the width."""
     parser = argparse.ArgumentParser(description="Re-flows Rust comment paragraphs that run over the width.")
     parser.add_argument("--width", type=int, default=120)
     parser.add_argument("--containing", default="")

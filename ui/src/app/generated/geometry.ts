@@ -4,9 +4,25 @@
  * The frame's size and the crosshair's place (pixels), and the focal length (pixels) the degrees come from.
  */
 export interface Geometry {
+  /**
+   * The frame's width (pixels).
+   */
   W: number;
+  /**
+   * The frame's height (pixels).
+   */
   H: number;
+  /**
+   * The crosshair's x (pixels from the left).
+   */
   CX: number;
+  /**
+   * The crosshair's y (pixels from the top).
+   */
   CY: number;
+  /**
+   * The focal length (pixels) for a 103 degree horizontal FOV: a place `x` pixels right of the crosshair is
+   * atan(x / K) to its right.
+   */
   K: number;
 }

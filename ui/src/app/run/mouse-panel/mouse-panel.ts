@@ -1,3 +1,10 @@
+/**
+ * The run page's mouse panel: the run measured from the raw mouse log. In: the recording's measures
+ * from the mode's mouse logs (MouseLogs: the core's src/mouse.rs), and a log the user adds. Out:
+ * cards with each measure's median, a table of the kills, and notes on the log and the reader's
+ * settings.
+ */
+
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { Button } from '../../controls/button';
 import { errorMessage, Recording } from '../../api';
@@ -9,38 +16,56 @@ import { MouseLogs } from '../../platform/mouse-logs';
 
 /** How the panel names a measure, what it means, and how its values are written. */
 export interface MeasureLabel {
+  /** The measure's name on its card and column. */
   label: string;
+  /** What it means, for the tooltip. */
   why: string;
+  /** A value in words, with its unit. */
   write: (v: number) => string;
 }
 
 /** A measure's card: its median, its label, its p10 and p90, and what it means. */
 export interface MouseCard {
+  /** The measure the card shows. */
   key: MouseMeasureKey;
+  /** The median, in words. */
   value: string;
+  /** The measure's name. */
   label: string;
+  /** The 10th and 90th percentiles, in words. */
   detail: string;
+  /** What it means, and how many kills the median is of. */
   why: string;
 }
 
 /** One kill's row in the table of kills. */
 export interface MouseKillRow {
+  /** The kill's number in the run. */
   killNumber: number;
+  /** The click's local time, to the millisecond ("12:34:56.789"). */
   at: string;
+  /** Each measure in words, in KILL_COLUMNS' order, then the micros. */
   cells: string[];
 }
 
 /** What the last action did; failed when it could not be done. */
 export interface MouseMessage {
+  /** What happened, in words. */
   text: string;
+  /** The action failed. */
   failed: boolean;
 }
 
+/** Milliseconds in words, whole: "183 ms". */
 const ms = (value: number) => `${Math.round(value)} ms`;
+/** Degrees a second in words. */
 const speed = (value: number) => formatSpeed(value);
+/** Degrees in words, to one decimal. */
 const degrees = (value: number) => formatDegrees(value, 1);
+/** A cell with no value. */
 const NONE = '–';
 
+/** Each measure the reader gives: its name, its meaning and how its values are written. */
 export const MEASURES: Record<MouseMeasureKey, MeasureLabel> = {
   reaction_ms: {
     label: 'Reaction',
@@ -86,7 +111,10 @@ const KILL_COLUMNS: readonly MouseMeasureKey[] = [
   'dist_deg',
 ];
 
-/** The table's columns: the kill, its click's time, then each measure and the micros, their meaning on hover. */
+/**
+ * The table's columns: the kill, its click's time, then each measure and the micros, their meaning
+ * on hover.
+ */
 const TABLE_COLUMNS: readonly DataColumn<MouseKillRow>[] = [
   { id: 'kill', header: 'Kill', text: (row) => String(row.killNumber), rowHeader: true },
   { id: 'at', header: 'Click at', text: (row) => row.at },
@@ -130,7 +158,10 @@ export function mouseKillRows(run: MouseRun): MouseKillRow[] {
   }));
 }
 
-/** Where the numbers come from: the log, the kills matched with clicks, the misses, and the event rate. */
+/**
+ * Where the numbers come from: the log, the kills matched with clicks, the misses, and the event
+ * rate.
+ */
 export function mouseSource(file: string | null, run: MouseRun): string {
   const misses = run.misses_s.length;
   const rate = run.log.median_interval
@@ -156,9 +187,9 @@ export function mouseNotes(run: MouseRun): string {
 }
 
 /**
- * The open recording's run measured from the raw mouse log (src/mouse.rs, python/mouse_read.py): each flick's start,
- * stop and peak speed, and how long the crosshair sat still before each click. Where the browser reads the logs, the
- * user adds the log here; the desktop app finds its own.
+ * The open recording's run measured from the raw mouse log (src/mouse.rs, python/mouse_read.py):
+ * each flick's start, stop and peak speed, and how long the crosshair sat still before each click.
+ * Where the browser reads the logs, the user adds the log here; the desktop app finds its own.
  */
 @Component({
   imports: [Button, DataTable],
@@ -167,29 +198,40 @@ export function mouseNotes(run: MouseRun): string {
   styleUrl: './mouse-panel.scss',
 })
 export class MousePanel {
+  /** The open recording. */
   readonly recording = input.required<Recording>();
+  /** The mode's mouse logs: the measures, adding and forgetting a log. */
   protected readonly logs = inject(MouseLogs);
+  /** The recording's run measured from its log, as the mode reads it. */
   protected readonly measures = this.logs.measures(() => this.recording().id);
+  /** Whether a log is being added or forgotten. */
   protected readonly busy = signal(false);
+  /** What the last action did; null before one, or after Read again. */
   protected readonly message = signal<MouseMessage | null>(null);
+  /** The kills table's columns. */
   protected readonly columns = TABLE_COLUMNS;
 
+  /** The measures once read; null while they load, when reading failed, or with no log. */
   protected readonly shown = computed(() =>
     this.measures.hasValue() ? (this.measures.value() ?? null) : null,
   );
+  /** The run's measures; null when there are none (the measures' error says why). */
   protected readonly run = computed(() => this.shown()?.run ?? null);
   /** The panel shows where the mode can have a log at all. */
   protected readonly visible = computed(
     () => this.logs.adds || this.logs.logs || this.shown() !== null,
   );
+  /** A card for each measure the kills have. */
   protected readonly cards = computed(() => {
     const run = this.run();
     return run ? mouseCards(run) : [];
   });
+  /** A row for each kill. */
   protected readonly rows = computed(() => {
     const run = this.run();
     return run ? mouseKillRows(run) : [];
   });
+  /** Where the numbers come from, in words; empty without measures. */
   protected readonly source = computed(() => {
     const run = this.run();
     return run ? mouseSource(this.shown()?.file ?? null, run) : '';
@@ -198,11 +240,16 @@ export class MousePanel {
   protected readonly gapMs = computed(() =>
     Math.round((this.run()?.log.median_interval ?? 0) * 1000),
   );
+  /** The kinds of kill counted and the reader's settings, in words; empty without measures. */
   protected readonly notes = computed(() => {
     const run = this.run();
     return run ? mouseNotes(run) : '';
   });
 
+  /**
+   * Reads the log file the user picked and keeps it with the recording, then reads the measures
+   * again; a log that cannot be read or does not cover the run shows why.
+   */
   protected async addLog(input: HTMLInputElement): Promise<void> {
     const file = input.files?.[0];
     input.value = '';
@@ -219,6 +266,7 @@ export class MousePanel {
     }
   }
 
+  /** Forgets the log added for the recording; the file on this computer stays as it is. */
   protected async forgetLog(): Promise<void> {
     this.busy.set(true);
     try {
@@ -233,6 +281,9 @@ export class MousePanel {
     }
   }
 
+  /**
+   * Reads the measures again, where the app logs the mouse itself and may have logged more since.
+   */
   protected readAgain(): void {
     this.message.set(null);
     this.measures.reload();

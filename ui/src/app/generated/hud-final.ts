@@ -5,7 +5,17 @@
  * Accuracy line was not read).
  */
 export interface HudFinal {
+  /**
+   * The kills counted.
+   */
   kills: number;
+  /**
+   * The hits (in KovaaK's, with the hits of the kills the Accuracy line had not shown yet); None where the Accuracy
+   * line was not read.
+   */
   hits: number | null;
+  /**
+   * The shots, those kills' shots added likewise; None where the Accuracy line was not read.
+   */
   shots: number | null;
 }

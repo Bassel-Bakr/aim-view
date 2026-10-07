@@ -1,3 +1,12 @@
+/**
+ * Editing a crop's shapes with the pointer: where a shape's corners and handles are, what a drag
+ * does to it, and its outline on a canvas. What a shape covers and hides is the core's
+ * (src/shapes.rs, through CoreModule.shapesVisible): these are only the handles a finger takes.
+ * Coordinates are crop pixels; an angle is in degrees, clockwise on screen. A solid shape's
+ * geometry is solid-geometry.ts's, a box placed by hand free-geometry.ts's.
+ * Out: the Crops page (crop-scene.ts, crop-stage/).
+ */
+
 import { CropBox, FaceOffset, Shape } from '../api';
 import {
   onSolid,
@@ -17,13 +26,6 @@ import {
   withPoints,
 } from './free-geometry';
 
-/**
- * Editing a crop's shapes with the pointer: where a shape's corners and handles are, what a drag does to it, and its
- * outline on a canvas. What a shape covers and hides is the core's (src/shapes.rs, through CoreModule.shapesVisible):
- * these are only the handles a finger takes. Coordinates are crop pixels; an angle is in degrees, clockwise on
- * screen.
- */
-
 /** A point on a crop, in its pixels. */
 export type CropPoint = [x: number, y: number];
 
@@ -33,6 +35,7 @@ type OwnPoint = [along: number, across: number];
 /** A shape's smallest side when resized, in crop pixels. */
 export const MIN_SIDE_PX = 2;
 
+/** Degrees as radians. */
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 
 /** A point of a shape's own frame, on the crop. */

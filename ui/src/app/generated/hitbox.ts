@@ -6,6 +6,12 @@ import type { HitboxKind } from './hitbox-kind';
  * sides change with the bot's distance and the ratio stays, so a box's side along the longer axis gives the other.
  */
 export interface Hitbox {
+  /**
+   * The hitbox's shape (MainBBType).
+   */
   kind: HitboxKind;
+  /**
+   * Its width over its height: 2 x MainBBRadius over MainBBHeight.
+   */
   widthToHeight: number;
 }

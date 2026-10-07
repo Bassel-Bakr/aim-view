@@ -1,3 +1,11 @@
+/**
+ * The headline tiles above a run's video.
+ *
+ * In: the tiles run.ts works out from the report (report/click-stats.ts `runHeadline` for a
+ * clicking run, the first cards of report/track-stats.ts `trackStats` for a tracking run).
+ * Out: one tile each, its label, value and note, tinted when it needs attention or is good news.
+ */
+
 import { Component, input } from '@angular/core';
 import { HeadlineTile } from '../report/click-stats';
 
@@ -8,5 +16,6 @@ import { HeadlineTile } from '../report/click-stats';
   styleUrl: './headline.scss',
 })
 export class Headline {
+  /** The tiles to show, in order; the template tracks them by label. */
   readonly tiles = input.required<HeadlineTile[]>();
 }

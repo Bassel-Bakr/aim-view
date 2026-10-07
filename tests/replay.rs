@@ -27,8 +27,11 @@ use common::{Diff, compare, read as read_json};
 
 /// The byte-compare's baseline: move it with BENCH.md's.
 const NATIVE: &str = "test_out/baselines/34134a5/native";
+/// The kept parts, one folder a video.
 const PARTS: &str = "test_out/baselines/parts";
+/// av1: a clicking run (KovaaK's, 2560 x 1440 AV1).
 const AV1: &str = "1wall 2targets xsmall - valorant - 558.46 - 2026.10.01-16.23.04";
+/// flower: a tracking run.
 const FLOWER: &str = "Flower Easier - 4801 - 2026.09.20-02.33.56";
 
 /// The byte-compare's cases (test_out/baselines/native_compare.py): the video, its stats file (None: the review
@@ -39,12 +42,14 @@ const CASES: [(&str, Option<&str>, &str); 3] = [
     (FLOWER, Some("test_out/parity/flower/review/stats.csv"), ""),
 ];
 
+/// The outputs compared, in the order `join` and `report` give them.
 const FILES: [&str; 4] = ["tracks.json", "readings.json", "hud.json", "report.json"];
 /// How much of a video's name the test prints.
 const SHORT_NAME_BYTES: usize = 20;
 /// How many differences a differing file prints.
 const SHOWN_DIFFERENCES: usize = 10;
 
+/// A JSON file read as `T`; panics with its path when it cannot be read or parsed.
 fn read<T: DeserializeOwned>(path: &Path) -> T {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
@@ -92,6 +97,8 @@ fn report(outputs: &[Vec<u8>; 3], video: &str, stats: Option<&Path>) -> Vec<u8> 
     serde_json::to_vec(&outcome["report"]).unwrap()
 }
 
+/// Each case's replayed tracks, readings, HUD reading and report equal the native review's byte for byte (or, with
+/// REPLAY_WRITE, are written as a new baseline).
 #[test]
 fn replayed_reviews_equal_the_native_ones() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

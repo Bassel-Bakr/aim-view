@@ -1,3 +1,10 @@
+/**
+ * The excluded areas editor's bar above the video. In: the editor's state (AreaDraft: areas, kinds,
+ * note, busy) and whether a review runs. Out: the user's choices to the editor: a kind for the
+ * selected area, a new or renamed kind, Remove, Find areas, Detect fresh, KovOBS's layout, Clear,
+ * Save and Cancel; and "Not an aim trainer" to the labelling queue.
+ */
+
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { AreaKind, Recording } from '../../../api';
 import { Button } from '../../../controls/button';
@@ -11,12 +18,14 @@ const ADD_KIND = '__add';
 
 /** The kind form: a new kind (kind null), or a kind to rename. */
 export interface KindFormState {
+  /** The kind to rename; null for a new one. */
   kind: AreaKind | null;
 }
 
 /**
- * The excluded areas editor's bar, above the video while the areas are edited over it: what to do, where the areas
- * come from, the selected area's kind (and the user's own kinds), and the editor's actions.
+ * The excluded areas editor's bar, above the video while the areas are edited over it: what to do,
+ * where the areas come from, the selected area's kind (and the user's own kinds), and the editor's
+ * actions.
  */
 @Component({
   selector: 'app-area-bar',
@@ -25,9 +34,13 @@ export interface KindFormState {
   styleUrl: './area-bar.scss',
 })
 export class AreaBar {
+  /** The recording whose areas are edited, for its "Not an aim trainer" switch. */
   readonly recording = input.required<Recording>();
+  /** The editor's state and actions. */
   protected readonly draft = inject(AreaDraft);
+  /** The open recording's review: Save waits while it runs. */
   protected readonly review = inject(Review);
+  /** The kind select's value for "Add a type", for the template. */
   protected readonly addKind = ADD_KIND;
   /** The kind form, when it is open. */
   protected readonly kindForm = signal<KindFormState | null>(null);
@@ -60,6 +73,7 @@ export class AreaBar {
     if (kind) this.kindForm.set({ kind });
   }
 
+  /** Closes the kind form. */
   protected closeKindForm(): void {
     this.kindForm.set(null);
   }

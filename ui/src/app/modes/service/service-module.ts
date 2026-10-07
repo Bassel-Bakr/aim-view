@@ -1,50 +1,86 @@
 /// <reference lib="webworker" />
+/**
+ * Loads and calls the review service built as WebAssembly (browser-service/), in its worker. In:
+ * the module's address, the worker's file system calls (mounts.ts), the service's config and each
+ * request. Out: the service's answers, its file system calls awaited through Binaryen's Asyncify.
+ */
 import { ServiceAnswer } from './service-messages';
 
-/** Asyncify's states (Binaryen) besides running (0): unwinding the stack for an async call, rewinding it after one. */
+/** Asyncify's state (Binaryen) while it unwinds the stack for an async call (0 is running). */
 const UNWINDING = 1;
+/** Asyncify's state while it rewinds the stack after one. */
 const REWINDING = 2;
-/** The space Asyncify saves the stack in while an async call runs. */
+/** The space Asyncify saves the stack in while an async call runs, in bytes (1 MiB). */
 const STACK_BYTES = 1 << 20;
 /** A u32 in the module's memory, as the blocks and Asyncify's data hold them (little-endian). */
 const U32_BYTES = 4;
-/** A block's header: two u32s (a result block's code and length; Asyncify's data's start and end). */
+/**
+ * A block's header: two u32s (a result block's code and length; Asyncify's data's start and
+ * end).
+ */
 const HEADER_BYTES = 2 * U32_BYTES;
 /** A file system call's code when it failed for another reason than the ones the contract names. */
 const FS_OTHER = 3;
+/** Milliseconds in a second, for Date's times. */
 const MS_PER_SECOND = 1000;
+/** Seconds in a minute, for the time zone offset Date gives in minutes. */
 const SECONDS_PER_MINUTE = 60;
 
 /**
- * The service's exports (browser-service/): its memory and allocator, the two calls (service_open, service_handle;
- * each answers a result block it allocated), and Asyncify's controls (wasm-opt --asyncify).
+ * The service's exports (browser-service/): its memory and allocator, the two calls (service_open,
+ * service_handle; each answers a result block it allocated), and Asyncify's controls (wasm-opt
+ * --asyncify).
  */
 export interface ServiceExports {
+  /** The module's memory, which every pointer is an offset into; it can grow. */
   memory: WebAssembly.Memory;
+  /** Reserves len bytes; gives their offset. */
   alloc(len: number): number;
+  /** Frees what one alloc call reserved. */
   dealloc(ptr: number, len: number): void;
+  /** Opens the service's library with the config (JSON); gives a block of [code, len, why]. */
   service_open(config: number, len: number): number;
+  /** Answers one request (its JSON and body); gives a block of [status, type, body]. */
   service_handle(req: number, reqLen: number, body: number, bodyLen: number): number;
+  /** Starts unwinding the stack into the Asyncify data at data. */
   asyncify_start_unwind(data: number): void;
+  /** Ends the unwinding, once the export has returned. */
   asyncify_stop_unwind(): void;
+  /** Starts rewinding the stack from the Asyncify data, before the export is called again. */
   asyncify_start_rewind(data: number): void;
+  /** Ends the rewinding, once the call that unwound is reached again. */
   asyncify_stop_rewind(): void;
+  /** Asyncify's state: 0 running, `UNWINDING` or `REWINDING`. */
   asyncify_get_state(): number;
 }
 
-/** What a file system call gives back: its code (0 ok, 1 not found, 2 exists or not empty, 3 other) and bytes. */
+/**
+ * What a file system call gives back: its code (0 ok, 1 not found, 2 exists or not empty, 3 other)
+ * and bytes.
+ */
 export interface FsResult {
+  /** 0 ok, 1 not found, 2 exists or not empty, 3 other. */
   code: number;
+  /** What the call gives: a file's bytes, a listing, or why it failed. */
   bytes: Uint8Array;
 }
 
-/** The host's file system call: the op, the path and the argument's bytes (copied out of the module's memory). */
+/**
+ * The host's file system call: the op, the path and the argument's bytes (copied out of the
+ * module's memory).
+ */
 export type HostFs = (op: number, path: string, arg: Uint8Array) => Promise<FsResult>;
 
-/** The request service_handle takes: its method and path, and for an upload the file its body was written to. */
+/**
+ * The request service_handle takes: its method and path, and for an upload the file its body was
+ * written to.
+ */
 export interface HandleRequest {
+  /** GET or POST. */
   method: string;
+  /** The path with its query (/api/...). */
   path: string;
+  /** The mounted path the upload's body was written to, which the service moves in place. */
   upload?: string;
 }
 
@@ -52,24 +88,34 @@ export interface HandleRequest {
 export class OpenFailed extends Error {}
 
 /**
- * The service as WebAssembly (browser-service/), with its file system calls answered by `fs`. The module waits for
- * them with Binaryen's Asyncify: host_fs starts the call and unwinds the stack; the export's caller awaits the call,
- * rewinds the stack and calls the export again, which then takes the answer. One call runs at a time.
+ * The service as WebAssembly (browser-service/), with its file system calls answered by `fs`. The
+ * module waits for them with Binaryen's Asyncify: host_fs starts the call and unwinds the stack;
+ * the export's caller awaits the call, rewinds the stack and calls the export again, which then
+ * takes the answer. One call runs at a time.
  */
 export class ServiceModule {
+  /** The instance's exports. */
   private readonly exports: ServiceExports;
   /** The Asyncify data: the stack's save space, with its start and end in front. */
   private readonly data: number;
-  /** The file system call under way while the stack is unwound, and its answer once in (a result block). */
+  /**
+   * The file system call under way while the stack is unwound, and its answer once in (a result
+   * block).
+   */
   private pending: Promise<FsResult> | null = null;
+  /** The result block host_fs gives when the stack is rewound; 0 when none waits. */
   private answer = 0;
 
+  /** Keeps the instance's exports and reserves the Asyncify data. */
   private constructor(instance: WebAssembly.Instance) {
     this.exports = instance.exports as unknown as ServiceExports;
     this.data = this.exports.alloc(HEADER_BYTES + STACK_BYTES);
   }
 
-  /** Loads the module from `url`, its file system calls answered by `fs`. */
+  /**
+   * Loads the module from `url`, its file system calls answered by `fs`. Rejects when it cannot be
+   * fetched.
+   */
   static async load(url: string, fs: HostFs): Promise<ServiceModule> {
     let module: ServiceModule | null = null;
     const imports: WebAssembly.Imports = {
@@ -103,7 +149,7 @@ export class ServiceModule {
     if (code !== 0) throw new OpenFailed(why || 'The service could not open its library');
   }
 
-  /** One request, answered by api::handle. */
+  /** One request, answered by api::handle (service/src/api.rs). */
   async handle(request: HandleRequest, body: Uint8Array): Promise<ServiceAnswer> {
     const req = new TextEncoder().encode(JSON.stringify(request));
     const block = await this.withBytes([req, body], ([requestPtr, bodyPtr]) =>
@@ -121,8 +167,8 @@ export class ServiceModule {
   }
 
   /**
-   * Copies the inputs into the module's memory, runs the call (through Asyncify), and frees them; an empty input is
-   * passed as no bytes at 0.
+   * Copies the inputs into the module's memory, runs the call (through Asyncify), and frees them;
+   * an empty input is passed as no bytes at 0.
    */
   private async withBytes(inputs: Uint8Array[], call: (ptrs: number[]) => number): Promise<number> {
     const ptrs = inputs.map((input) => {
@@ -140,7 +186,10 @@ export class ServiceModule {
     }
   }
 
-  /** Runs an export, waiting for each file system call it makes: unwound, awaited, rewound, called again. */
+  /**
+   * Runs an export, waiting for each file system call it makes: unwound, awaited, rewound, called
+   * again. Gives what the export finally returns.
+   */
   private async run(call: () => number): Promise<number> {
     let out = call();
     while (this.exports.asyncify_get_state() === UNWINDING) {
@@ -154,7 +203,10 @@ export class ServiceModule {
     return out;
   }
 
-  /** host_fs: starts the call and unwinds the stack; called again while rewinding, it gives the answer. */
+  /**
+   * host_fs: starts the call and unwinds the stack; called again while rewinding, it gives the
+   * answer.
+   */
   private hostFs(
     fs: HostFs,
     op: number,
@@ -193,10 +245,12 @@ export class ServiceModule {
     return block;
   }
 
+  /** A DataView of the module's memory, fresh each time (the memory can grow). */
   private view(): DataView {
     return new DataView(this.exports.memory.buffer);
   }
 
+  /** len bytes of the module's memory at ptr, a fresh view each time. */
   private bytes(ptr: number, len: number): Uint8Array {
     return new Uint8Array(this.exports.memory.buffer, ptr, len);
   }

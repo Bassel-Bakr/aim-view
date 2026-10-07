@@ -1,7 +1,9 @@
 //! Aim View's desktop app: the Angular app (ui/, its desktop build) in a Tauri 2 window. The window's server-mode
 //! services talk to the app itself (protocol.rs: the review server's API over the `api` protocol), which the review
 //! service answers (service/: the library in the app's data folder, and the review run natively). The app adds the
-//! folder dialog and the raw mouse logger (mouse.rs).
+//! folder dialog and the raw mouse logger (mouse.rs). In: Tauri's folders for the app (its data, local data and
+//! resource folders) and the window's requests. Out: the window, the library's files in the data folder, ffmpeg in
+//! the local data folder, and the mouse logs.
 
 pub mod mouse;
 pub mod protocol;
