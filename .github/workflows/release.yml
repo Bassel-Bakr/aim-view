@@ -5,7 +5,7 @@
 # only (scripts/stamp-version.ts), and the three builds become one GitHub release tagged vX.Y.Z:
 #  - aim-view-browser-<version>.zip: browser mode, a static site (ui/dist/browser/browser) with the models, no data
 #  - aim-view-server-<version>.zip: aimview-server for Windows (DirectML), its server-mode UI, the models, the VC++
-#    runtime, and start-server.cmd
+#    runtime, aimview-server.toml (its paths start at its folder) and start-server.cmd
 #  - Aim View_<version>_x64-setup.exe: the desktop app's installer (Tauri, NSIS)
 # A newer push cancels a run still going, so a burst of commits makes one release.
 name: Release
@@ -130,7 +130,19 @@ jobs:
           foreach ($dll in 'msvcp140.dll', 'msvcp140_1.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
             Copy-Item (Join-Path $crt.FullName $dll) $dir
           }
-          Set-Content "$dir\start-server.cmd" '@"%~dp0aimview-server.exe" --ui "%~dp0ui" --models "%~dp0models" %*' -Encoding ascii
+          # the settings file the server reads from its own folder: its paths start there (the defaults are the
+          # repo's, on the machine that built it); the user adds the recordings' folder and, for the network, a token
+          Set-Content "$dir\aimview-server.toml" -Encoding ascii -Value @(
+            '# Aim View''s review server: aimview-server --help lists every setting. Open http://127.0.0.1:8770/.',
+            "ui = 'ui'",
+            "models = 'models'",
+            "data = 'data'",
+            '# the recordings (one folder per scenario), and for other devices on the network a host and a token:',
+            "# vods = 'E:\OBS\KovOBS'",
+            "# host = '0.0.0.0'",
+            "# token = 'a-long-random-string'"
+          )
+          Set-Content "$dir\start-server.cmd" '@cd /d "%~dp0" && aimview-server.exe %*' -Encoding ascii
           Compress-Archive -Path "$dir\*" -DestinationPath "$dir.zip"
       - uses: actions/upload-artifact@v4
         with:
