@@ -95,6 +95,13 @@ impl Library {
             return Err(Failure::bad("the review: its tracks have no frames"));
         }
         let job = self.jobs.lock().map_err(|_| "the jobs are broken".to_string())?.get(id).cloned();
+        // a review the user cancelled keeps nothing, even when the page finished it before it heard
+        if let Some(job) = &job
+            && let Ok(state) = job.lock()
+            && state.cancelled()
+        {
+            return Ok(json!(*state));
+        }
         let job = job.filter(|job| job.lock().is_ok_and(|state| state.running()));
         let job_model = job.as_ref().and_then(|job| job.lock().ok().map(|state| state.model.clone()));
         let model = review.model.or(job_model).unwrap_or_else(|| self.model());

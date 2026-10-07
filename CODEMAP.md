@@ -1046,7 +1046,7 @@ results), run.json (run_window.rs) and the answers.
 
 - `Job` (struct): A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded
   ("DirectML", "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error.
-- `Library` methods: `shown`, `job`, `analyse`, `marks`, `set_marks`, `tracks`, `report`.
+- `Library` methods: `shown`, `job`, `analyse`, `cancel`, `marks`, `set_marks`, `tracks`, `report`.
 
 ## service/src/library/settings.rs
 
@@ -1122,8 +1122,9 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
   areas.rs), a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of
   the time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), whether the kills
   the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
-  without a stats file, whose report takes its kills from the video), and the scenario's kind (None: not known; the
-  model's at-crosshair rule may name the kinds it is for).
+  without a stats file, whose report takes its kills from the video), the scenario's kind (None: not known; the model's
+  at-crosshair rule may name the kinds it is for), and a flag that stops it (`cancel`: the user cancelled the review; it
+  stops at its next frame with the error CANCELLED; None: it runs to its end).
 - `Reviewed` (struct): A review's tracks, the video's readings, what the HUD read (None: no HUD was read), the areas the
   area finder found in the key frames it read (None when the recording has too few for it: areas.rs reads its frames
   then), and the check of the kills the video alone gives (None: not asked for).
@@ -1132,7 +1133,7 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
 - `DeviceNote` (type): Told the device each run's detector runs on ("DirectML", "CUDA" or "CPU") once it has loaded:
   with `Device::Auto` the CPU when the GPU could not start it.
 - Functions: `add_device`, `frame_bytes`, `parts_at_once`, `review`.
-- Constants: `MIN_GPU_SHARE`.
+- Constants: `CANCELLED`, `MIN_GPU_SHARE`.
 
 ## service/src/run_window.rs
 
@@ -1457,7 +1458,7 @@ SECONDS: a wait, for work the library does in the background (the area finder le
 The detector alone, as the native review runs it (service/src/detector.rs): a model's _u8in export on frames of noise,
 `batch` a call, in one session or several at once (a review runs one a part), with the time a frame. For comparing
 models, batch sizes and devices without decoding a video. cargo run -p aimview-service --release --example
-detector_speed -- <model _u8in.onnx> [batch] [frames] [sessions]
+detector_speed -- <model _u8in.onnx> [batch] [frames] [sessions] [device: auto, directml, cuda or cpu]
 
 ## service/examples/frames_check.rs
 

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -101,16 +101,20 @@ fn download_link(
     spec: &str,
     folder: &Path,
     dest: &Path,
+    cancel: &Arc<AtomicBool>,
     progress: &dyn Fn(&str, usize, usize),
 ) -> Result<(), String> {
     let program = ytdlp::ensure(tools, |megabytes, of| progress("yt-dlp", megabytes, of))?;
     crate::ffmpeg::ensure(|megabytes, of| progress("ffmpeg", megabytes, of))?;
+    if cancel.load(Ordering::Relaxed) {
+        return Err(crate::review::CANCELLED.into());
+    }
     progress("downloading", 0, 1);
     std::fs::create_dir_all(folder).map_err(|error| format!("the download's folder could not be made: {error}"))?;
     // the review's ffmpeg merges the parts; a bare name is the PATH's, which yt-dlp finds itself
     let ffmpeg = crate::ffmpeg::program("ffmpeg");
     let ffmpeg = ffmpeg.parent().is_some_and(|parent| !parent.as_os_str().is_empty()).then_some(ffmpeg.as_path());
-    let file = ytdlp::download(program.as_path(), url, spec, folder, ffmpeg, |done, total| {
+    let file = ytdlp::download(program.as_path(), url, spec, folder, ffmpeg, cancel, |done, total| {
         progress("downloading", done, total);
     })?;
     place(&file, dest)
@@ -188,12 +192,15 @@ impl Library {
         let (library, started) = (self.clone(), Instant::now());
         std::thread::spawn(move || {
             let Download { url, spec, folder, dest, id, job } = download;
+            let cancel = job.lock().map(|job| job.cancel.clone()).unwrap_or_default();
             let progress = |stage: &str, done: usize, total: usize| {
-                if let Ok(mut job) = job.lock() {
+                if let Ok(mut job) = job.lock()
+                    && job.running()
+                {
                     (job.stage, job.done, job.total) = (stage.into(), done, total);
                 }
             };
-            let outcome = download_link(&library.tools(), &url, &spec, &folder, &dest, &progress);
+            let outcome = download_link(&library.tools(), &url, &spec, &folder, &dest, &cancel, &progress);
             let _ = std::fs::remove_dir_all(&folder);
             library.end_download(&id, &job, outcome, seconds_since(started));
         });
@@ -209,6 +216,9 @@ impl Library {
                 {
                     jobs.remove(id);
                 }
+            }
+            Err(_) if job.lock().is_ok_and(|job| job.cancelled()) => {
+                println!("the download of {id} was cancelled");
             }
             Err(error) => {
                 println!("the download of {id} failed: {error}");

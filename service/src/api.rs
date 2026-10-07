@@ -209,6 +209,7 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/device" => library.use_device(&route.query("name").unwrap_or_default()),
         "/api/batch" => library.use_batch(&route.query("n").unwrap_or_default()),
         "/api/analyse" => id().and_then(|id| library.analyse(&id, route.flag("again"))),
+        "/api/cancel" => id().and_then(|id| library.cancel(&id)),
         "/api/run" => id().and_then(|id| library.set_marks(&id, &route.body())),
         "/api/stats" => id().and_then(|id| library.set_stats(&id, &route.body())),
         "/api/upload" => upload(library, route),

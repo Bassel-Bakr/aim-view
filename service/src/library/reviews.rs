@@ -6,6 +6,7 @@
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use aimview::areas::Found;
@@ -14,7 +15,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{Answer, Library, modified, read_json, write_json};
-use crate::review::{Request, TimeWindow};
+use crate::review::{CANCELLED, Request, TimeWindow};
 use crate::run_window::{RunMarks, covers};
 
 /// The bytes at the end of an old tracks.json (python/server.py's, kept in the recording's own folder) read for the
@@ -28,7 +29,7 @@ const TENTHS_PER_SECOND: f64 = 10.0;
 /// A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded ("DirectML",
 /// "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error. A link's download
 /// (links.rs) is a job too, marked `link`: its stage is "downloading" (megabytes), or "ffmpeg" or "yt-dlp" while they
-/// are fetched.
+/// are fetched. A job the user cancels ends as "cancelled".
 #[derive(Clone, Serialize)]
 pub struct Job {
     pub(super) stage: String,
@@ -43,6 +44,9 @@ pub struct Job {
     pub(super) device: Option<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) link: bool,
+    /// Set when the user cancels the job: the review's and the download's loops look at it.
+    #[serde(skip)]
+    pub(super) cancel: Arc<AtomicBool>,
     /// The browser build's: what the page is to review (browser.rs: `review_json`), until it reports progress.
     #[cfg(not(feature = "native"))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,6 +64,7 @@ impl Job {
             model: model.into(),
             device: None,
             link: false,
+            cancel: Arc::new(AtomicBool::new(false)),
             #[cfg(not(feature = "native"))]
             review: None,
         }
@@ -71,9 +76,14 @@ impl Job {
         Job { link: true, ..Job::new("downloading", "") }
     }
 
-    /// Whether the job is still at work (not done, and not failed).
+    /// Whether the job is still at work (not done, failed or cancelled).
     pub(super) fn running(&self) -> bool {
-        self.stage != "done" && self.stage != "error"
+        self.stage != "done" && self.stage != "error" && self.stage != CANCELLED
+    }
+
+    /// Whether the user cancelled it.
+    pub(super) fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
     }
 }
 
@@ -194,6 +204,8 @@ impl Library {
         let job = Job { review: Some(super::browser::review_json(&request, &model)), ..Job::new("starting", &model) };
         #[cfg(feature = "native")]
         let job = Job::new("starting", &model);
+        #[cfg(feature = "native")]
+        let request = Request { cancel: Some(job.cancel.clone()), ..request };
         let job = Arc::new(Mutex::new(job));
         jobs.insert(id.to_string(), job.clone());
         drop(jobs);
@@ -201,6 +213,24 @@ impl Library {
         #[cfg(feature = "native")]
         self.run_review(id, request, job, model);
         Ok(first)
+    }
+
+    /// Cancels the recording's job (a review, or a link's download) while it runs: its stage "cancelled" at once,
+    /// the review or download stopping at its next frame or line, keeping nothing (the review on show stays). In the
+    /// browser build the page that runs the review sees the stage and stops its workers. Answers the job.
+    pub fn cancel(&self, id: &str) -> Answer<Value> {
+        let job = self.jobs.lock().map_err(|_| "the jobs are broken".to_string())?.get(id).cloned();
+        let Some(job) = job else { return Ok(json!({ "stage": "none" })) };
+        let mut state = job.lock().map_err(|_| "the job is broken".to_string())?;
+        if state.running() {
+            state.cancel.store(true, Ordering::Relaxed);
+            state.stage = CANCELLED.into();
+            #[cfg(not(feature = "native"))]
+            {
+                state.review = None;
+            }
+        }
+        Ok(json!(*state))
     }
 
     /// What a new review of the recording by `model` takes: the scenario's target count, the runs to split it into,
@@ -227,6 +257,7 @@ impl Library {
             // without a stats file the report takes the kills from the video: check them in the frames round them
             kill_check: self.stats_path(id).is_none(),
             kind: facts.map(|facts| facts.kind),
+            cancel: None,
         })
     }
 
@@ -239,7 +270,9 @@ impl Library {
         let id = id.to_string();
         std::thread::spawn(move || {
             let progress = |stage: &str, done: usize, total: usize| {
-                if let Ok(mut job) = job.lock() {
+                if let Ok(mut job) = job.lock()
+                    && job.running()
+                {
                     (job.stage, job.done, job.total) = (stage.into(), done, total);
                 }
             };
@@ -250,7 +283,11 @@ impl Library {
             };
             let reviewed = crate::ffmpeg::ensure(|megabytes, of| progress("ffmpeg", megabytes, of))
                 .and_then(|()| review(&request, &progress, &on_device));
+            let cancelled = || job.lock().is_ok_and(|job| job.cancelled());
             let outcome = reviewed.and_then(|reviewed| {
+                if cancelled() {
+                    return Err(CANCELLED.into());
+                }
                 let files = ReviewFiles {
                     tracks: &reviewed.tracks,
                     readings: &reviewed.readings,
@@ -262,6 +299,11 @@ impl Library {
             if let Ok(mut job) = job.lock() {
                 // one line in the log for each review: the model, the device it ran on, and the time or the error
                 let on = job.device.as_ref().map_or(String::new(), |device| format!(" on {device}"));
+                if job.cancelled() {
+                    println!("the review of {id} was cancelled ({model}{on})");
+                    job.stage = CANCELLED.into();
+                    return;
+                }
                 match outcome {
                     Ok(()) => {
                         (job.stage, job.done, job.total) = ("done".into(), 1, 1);
@@ -320,5 +362,28 @@ impl Library {
         let Some(mut report) = worked_out else { return Ok(Value::Null) };
         report["review_model"] = json!(model);
         Ok(report)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, Layout};
+
+    /// A running job, cancelled: its stage "cancelled" at once, no longer running, and its flag set for the review's
+    /// loops; a recording with no job answers "none".
+    #[test]
+    fn a_cancelled_job_stays_cancelled() {
+        let dir = std::env::temp_dir().join(format!("aimview-cancel-{}", std::process::id()));
+        let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
+        let job = Arc::new(Mutex::new(Job::new("tracking", "large_v13e4")));
+        library.jobs.lock().unwrap().insert("a.mp4".into(), job.clone());
+        let answer = library.cancel("a.mp4").unwrap();
+        assert_eq!(answer["stage"], CANCELLED);
+        let state = job.lock().unwrap();
+        assert!(state.cancelled() && !state.running());
+        drop(state);
+        assert_eq!(library.cancel("b.mp4").unwrap()["stage"], "none");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -8,8 +8,10 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStderr, ChildStdout, Command, Stdio};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use ffmpeg_sidecar::download::{FfmpegDownloadProgressEvent, download_ffmpeg_package_with_progress};
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,8 @@ const PROGRESS_TEMPLATE: &str = concat!(
 );
 /// A byte count shifted right by this many bits is in megabytes (MiB), as progress is told.
 const MEGABYTE_SHIFT: u32 = 20;
+/// How often a download looks whether the user cancelled it, in milliseconds (a stalled download prints nothing).
+const CANCEL_LOOK_MS: u64 = 200;
 /// The video codecs by their names' starts in yt-dlp's formats ("avc1.640028"), and their names as people know them.
 const CODEC_NAMES: [(&str, &str); 10] = [
     ("av01", "AV1"),
@@ -370,12 +374,14 @@ struct DownloadPart {
 
 /// Downloads `url` in the format `spec` into `folder` as video.mp4 (merged, or remuxed, with the ffmpeg at
 /// `ffmpeg`, None: the PATH's). `progress` hears the megabytes done, of how many (each part's total, once known).
+/// Setting `cancel` stops it (yt-dlp and the ffmpeg it runs), with the error CANCELLED.
 pub fn download(
     program: &Path,
     url: &str,
     spec: &str,
     folder: &Path,
     ffmpeg: Option<&Path>,
+    cancel: &Arc<AtomicBool>,
     progress: impl Fn(usize, usize),
 ) -> Result<PathBuf, String> {
     let mut child = download_command(program, url, spec, folder, ffmpeg)
@@ -384,11 +390,18 @@ pub fn download(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("yt-dlp could not start: {error}"))?;
+    let over = Arc::new(AtomicBool::new(false));
+    let stopper = stop_when_cancelled(child.id(), cancel.clone(), over.clone());
     // its errors are read beside its progress, so neither pipe fills up
     let errors = read_in_background(child.stderr.take());
     follow_progress(child.stdout.take().ok_or("yt-dlp gave no output")?, progress);
     let status = child.wait().map_err(|error| error.to_string())?;
+    over.store(true, Ordering::Relaxed);
+    let _ = stopper.join();
     let stderr = errors.join().unwrap_or_default();
+    if cancel.load(Ordering::Relaxed) {
+        return Err(crate::review::CANCELLED.into());
+    }
     if !status.success() {
         return Err(failed(&stderr));
     }
@@ -413,6 +426,29 @@ fn download_command(program: &Path, url: &str, spec: &str, folder: &Path, ffmpeg
     }
     download.arg("-o").arg(folder.join(OUTPUT_TEMPLATE)).args(["--", url]);
     download
+}
+
+/// Stops a download's yt-dlp (process `pid`) and the ffmpeg it runs when `cancel` is set, looking every
+/// CANCEL_LOOK_MS until `over`.
+fn stop_when_cancelled(pid: u32, cancel: Arc<AtomicBool>, over: Arc<AtomicBool>) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        while !over.load(Ordering::Relaxed) {
+            if cancel.load(Ordering::Relaxed) {
+                kill_tree(pid);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(CANCEL_LOOK_MS));
+        }
+    })
+}
+
+/// Ends a process and the processes it started (yt-dlp's ffmpeg).
+fn kill_tree(pid: u32) {
+    let pid = pid.to_string();
+    #[cfg(windows)]
+    let _ = command(Path::new("taskkill")).args(["/PID", &pid, "/T", "/F"]).status();
+    #[cfg(not(windows))]
+    let _ = Command::new("pkill").args(["-TERM", "-P", &pid]).status().and(Command::new("kill").args([&pid]).status());
 }
 
 /// A pipe's bytes, read to its end on a thread of their own.

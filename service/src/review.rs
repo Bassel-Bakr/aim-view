@@ -9,6 +9,8 @@
 use std::path::PathBuf;
 #[cfg(feature = "native")]
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 #[cfg(feature = "native")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "native")]
@@ -27,7 +29,9 @@ use aimview::convert::{Converter, DST_H, DST_W};
 #[cfg(feature = "native")]
 use aimview::fixed::FixedMap;
 use aimview::hud::HudReading;
-use aimview::kill_check::{KillCheck, KillEvidence};
+#[cfg(feature = "native")]
+use aimview::kill_check::KillCheck;
+use aimview::kill_check::KillEvidence;
 #[cfg(feature = "native")]
 use aimview::session::{
     FrameFormat, FrameRange, Joined, KeysRead, LEAST_RUN, NextFrame, Review, Run, RunTracking, Setup, WatchPart,
@@ -65,8 +69,9 @@ const WATCH_FRAMES_WAITING: usize = 8;
 /// a folder to keep the review's parts in before they are joined (`keep_parts`; None: not kept), the share of the
 /// time the detector may run (`gpu_share`, 1: all of it; less leaves the GPU to a game beside it), whether the kills
 /// the video alone gives are checked in the frames round them (`kill_check`: the video read again; for a recording
-/// without a stats file, whose report takes its kills from the video), and the scenario's kind (None: not known; the
-/// model's at-crosshair rule may name the kinds it is for).
+/// without a stats file, whose report takes its kills from the video), the scenario's kind (None: not known; the
+/// model's at-crosshair rule may name the kinds it is for), and a flag that stops it (`cancel`: the user cancelled the
+/// review; it stops at its next frame with the error CANCELLED; None: it runs to its end).
 pub struct Request {
     pub video: PathBuf,
     pub model: PathBuf,
@@ -83,6 +88,16 @@ pub struct Request {
     pub gpu_share: f64,
     pub kill_check: bool,
     pub kind: Option<aimview::scenario::Kind>,
+    pub cancel: Option<Arc<AtomicBool>>,
+}
+
+/// The error a review stops with when its request's `cancel` is set, and the stage of a job the user cancelled.
+pub const CANCELLED: &str = "cancelled";
+
+/// Whether the review was cancelled (`Request::cancel`).
+#[cfg(feature = "native")]
+fn cancelled(cancel: Option<&AtomicBool>) -> bool {
+    cancel.is_some_and(|flag| flag.load(Ordering::Relaxed))
 }
 
 /// The least share of the time a review's detector may run (`Request::gpu_share`): below it a review would barely
@@ -174,6 +189,9 @@ pub fn review(req: &Request, progress: Progress, on_device: DeviceNote) -> Resul
         let failed = || Err("a run of the review failed".into());
         running.into_iter().map(|running| running.join().unwrap_or_else(|_| failed())).collect()
     });
+    if cancelled(req.cancel.as_deref()) {
+        return Err(CANCELLED.into());
+    }
     progress("linking", total, total);
     let joined = join_runs(req, &review, &keys, parts)?;
     let found = finding.join().map_err(|_| "the area finder failed")?;
@@ -227,6 +245,9 @@ fn check_part(
     let mut frames = FrameSource::open(req, info, from, Some(last + 1 - part.first), 0)?;
     let mut rgb = vec![0u8; RGB_BYTES];
     for frame in part.first..=last {
+        if cancelled(req.cancel.as_deref()) {
+            return Err(CANCELLED.into());
+        }
         if !frames.next_into(&mut rgb, &mut [], None)? {
             return Err(format!("the kill check's frames ended at frame {frame} where it needs {last}"));
         }
@@ -492,7 +513,7 @@ fn review_run(context: &RunContext, run: usize) -> Result<RunPart, String> {
         let watching = scope.spawn(move || watch_run(review, run, keys, watch_frames, &spare_watch));
         let to_detector = Handoff { send: to_detector, spare: spare_rgb_back };
         let to_watch = Handoff { send: to_watch, spare: spare_watch_back };
-        let decoded = decode_run(&mut frames, info, batch, tracking, &to_detector, &to_watch);
+        let decoded = decode_run(&mut frames, info, batch, tracking, (&to_detector, &to_watch), req.cancel.as_deref());
         drop(to_detector);
         drop(to_watch);
         let detected = detecting.join().unwrap_or_else(|_| Err("the detector failed".into()));
@@ -514,8 +535,8 @@ fn decode_run(
     info: &VideoInfo,
     batch: usize,
     tracking: &Mutex<RunTracking>,
-    to_detector: &Handoff<Batch>,
-    to_watch: &Handoff<WatchFrame, WatchFrame>,
+    (to_detector, to_watch): (&Handoff<Batch>, &Handoff<WatchFrame, WatchFrame>),
+    cancel: Option<&AtomicBool>,
 ) -> Result<(), String> {
     let stopped = || "the detector stopped".to_string();
     let rows = countdown_bytes();
@@ -524,6 +545,9 @@ fn decode_run(
     let mut waiting = vec![0u8; batch * RGB_BYTES];
     let mut count = 0;
     loop {
+        if cancelled(cancel) {
+            return Err(CANCELLED.into());
+        }
         // the frame's Y plane, 720p luma and countdown rows go straight into buffers the watch gave back
         let (mut plane, mut small, mut countdown) =
             to_watch.spare.try_recv().unwrap_or_else(|_| (vec![0u8; luma_bytes], Vec::new(), vec![0u8; rows.len()]));

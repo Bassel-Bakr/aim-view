@@ -56,6 +56,7 @@ fn request(args: &[String], parts: Option<PathBuf>) -> Request {
         gpu_share: 1.0,
         kill_check: false,
         kind: None,
+        cancel: None,
     }
 }
 
