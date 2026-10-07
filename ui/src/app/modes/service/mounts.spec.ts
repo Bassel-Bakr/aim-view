@@ -275,17 +275,19 @@ describe('Mounts over KovaaK files', () => {
     mounts.set('kovaak', new KovaakMount(new PackStore(handle(packRoot)), olderMount));
   });
 
-  it('copies into packs, reads them back, and copies again only what changed', async () => {
-    const files = [chosen('stats/a.csv', 'alpha', 1000), chosen('stats/b.csv', 'beta', 2000)];
-    const progress: number[][] = [];
-    const record = (done: number, total: number) => progress.push([done, total]);
-    expect(await mounts.copyIn('/kovaak', files, runNow, record)).toEqual({ copied: 2 });
-    expect(progress).toEqual([
-      [0, 2],
-      [2, 2],
-    ]);
+  /** Packs as an earlier version wrote them: one pack of a.csv and b.csv, and its index. */
+  async function writePacks(): Promise<void> {
+    const packs = new DirMount(handle(packRoot), true);
+    await packs.write(['0.pack'], encode('alphabeta'));
+    const files = { 'stats/a.csv': [0, 0, 5, 1000], 'stats/b.csv': [0, 5, 4, 2000] };
+    await packs.write(['index.json'], encode(JSON.stringify({ next: 1, files })));
+  }
+
+  it('reads the packs an earlier version kept, and the older copies under them', async () => {
+    await writePacks();
     expect(await (await mounts.file('/kovaak/stats/b.csv')).text()).toBe('beta');
     expect((await mounts.file('/kovaak/stats/b.csv')).lastModified).toBe(2000);
+    expect(await (await mounts.file('/kovaak/stats/old.csv')).text()).toBe('older');
     const entries: DirEntry[] = await mounts.list('/kovaak/stats', 0);
     expect(entries).toEqual([
       ['a.csv', false, 5, 1],
@@ -295,24 +297,14 @@ describe('Mounts over KovaaK files', () => {
     expect(
       JSON.parse(decode(await mounts.host(METADATA, '/kovaak/stats/a.csv', encode('')))),
     ).toEqual({ dir: false, len: 5, modified: 1 });
-    expect(await mounts.copyIn('/kovaak', files, runNow, record)).toEqual({ copied: 0 });
-    const changed = [files[0], chosen('stats/b.csv', 'beta2', 2000)];
-    expect(await mounts.copyIn('/kovaak', changed, runNow, record)).toEqual({ copied: 1 });
-    expect(await (await mounts.file('/kovaak/stats/b.csv')).text()).toBe('beta2');
+    expect((await mounts.host(READ, '/kovaak/stats/none.csv', encode(''))).code).toBe(1);
+    expect((await mounts.host(LIST, '/kovaak/none', encode(''))).code).toBe(1);
+    expect((await mounts.host(WRITE, '/kovaak/stats/a.csv', encode('x'))).code).toBe(3);
   });
 
-  it('reads the packs again from their index, and the older copies under them', async () => {
-    await mounts.copyIn('/kovaak', [chosen('stats/a.csv', 'alpha', 1000)], runNow, () => undefined);
-    const again = new Mounts();
-    again.set(
-      'kovaak',
-      new KovaakMount(new PackStore(handle(packRoot)), new DirMount(handle(older), true)),
-    );
-    expect(await (await again.file('/kovaak/stats/a.csv')).text()).toBe('alpha');
-    expect(await (await again.file('/kovaak/stats/old.csv')).text()).toBe('older');
-    expect((await again.host(READ, '/kovaak/stats/none.csv', encode(''))).code).toBe(1);
-    expect((await again.host(LIST, '/kovaak/none', encode(''))).code).toBe(1);
-    expect((await again.host(WRITE, '/kovaak/stats/a.csv', encode('x'))).code).toBe(3);
+  it('copies nothing into /kovaak: the service keeps what it needs of the files', async () => {
+    const files = [chosen('stats/a.csv', 'alpha', 1000)];
+    await expect(mounts.copyIn('/kovaak', files, runNow, () => undefined)).rejects.toThrow();
   });
 });
 

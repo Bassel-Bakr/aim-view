@@ -15,25 +15,47 @@ use flate2::write::GzEncoder;
 use crate::config::Folders;
 use crate::library::slug;
 use crate::sql::{Sql, SqlValue};
-use crate::store::{DETECTOR_KEY, Files, IdList, Item, MODELS, Mark, OLD_TRACKS_TAIL_BYTES, Part, ReviewBy, Store};
+use crate::store::{
+    DETECTOR_KEY, Files, IdList, Item, Kovaak, MODELS, Mark, OLD_TRACKS_TAIL_BYTES, Part, ReviewBy, ScenarioRow,
+    StatsRow, StatsRun, Store,
+};
 
 /// The database's file in the data folder.
 pub const DATABASE_FILE: &str = "aimview.sqlite3";
 
-/// The layout of the tables below, kept in the database's `user_version`; 0 is a new database.
-const SCHEMA_VERSION: i64 = 1;
+/// The layout of the tables below, kept in the database's `user_version`; 0 is a new database. 1 had the first four
+/// tables in the plural (marks, reviews, cutoff_crops) and no KovaaK tables.
+const SCHEMA_VERSION: i64 = 2;
 
-/// The tables. `library`: the library's own items by their file names (settings, area kinds and examples, the lists,
-/// the cut-off's rows). `marks`: each recording's marks by its folder name (its slug) and the mark's file name.
-/// `reviews`: each review's parts, gzip-compressed, by slug, model ("" for the old review) and the part's file name.
-/// `cutoff_crops`: the cut-off labels' crops by their file (train/<name>.npz). `changed` is seconds since 1970.
-const SCHEMA: &str = "
+/// The tables of what the library keeps. `library`: the library's own items by their file names (settings, area
+/// kinds and examples, the lists, the cut-off's rows). `mark`: each recording's marks by its folder name (its slug)
+/// and the mark's file name. `review`: each review's parts, gzip-compressed, by slug, model ("" for the old review)
+/// and the part's file name. `cutoff_crop`: the cut-off labels' crops by their file (train/<name>.npz). `changed` is
+/// seconds since 1970.
+const LIBRARY_TABLES: &str = "
 CREATE TABLE library (name TEXT PRIMARY KEY, bytes BLOB NOT NULL, changed REAL NOT NULL);
-CREATE TABLE marks (recording TEXT NOT NULL, mark TEXT NOT NULL, bytes BLOB NOT NULL, changed REAL NOT NULL,
+CREATE TABLE mark (recording TEXT NOT NULL, mark TEXT NOT NULL, bytes BLOB NOT NULL, changed REAL NOT NULL,
   PRIMARY KEY (recording, mark));
-CREATE TABLE reviews (recording TEXT NOT NULL, model TEXT NOT NULL, part TEXT NOT NULL, bytes BLOB NOT NULL,
+CREATE TABLE review (recording TEXT NOT NULL, model TEXT NOT NULL, part TEXT NOT NULL, bytes BLOB NOT NULL,
   changed REAL NOT NULL, PRIMARY KEY (recording, model, part));
-CREATE TABLE cutoff_crops (file TEXT PRIMARY KEY, bytes BLOB NOT NULL, changed REAL NOT NULL);
+CREATE TABLE cutoff_crop (file TEXT PRIMARY KEY, bytes BLOB NOT NULL, changed REAL NOT NULL);
+";
+
+/// The tables of KovaaK's files in the browser build (store.rs: `Kovaak`; empty natively, which reads the folders).
+/// `stats_file`: each stats file's size and time of change, its run (no score: none), and its whole text
+/// gzip-compressed only once a recording used it. `scenario`: each scenario file's facts as JSON, by its path in
+/// /kovaak (scenarios/... or workshop/...).
+const KOVAAK_TABLES: &str = "
+CREATE TABLE stats_file (name TEXT PRIMARY KEY, size INTEGER NOT NULL, modified REAL NOT NULL, score REAL,
+  kills REAL, accuracy REAL, csv BLOB);
+CREATE TABLE scenario (path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified REAL NOT NULL, facts TEXT NOT NULL);
+";
+
+/// Layout 1 to 2: the tables in the singular, and KovaaK's tables added.
+const FROM_LAYOUT_1: &str = "
+ALTER TABLE marks RENAME TO mark;
+ALTER TABLE reviews RENAME TO review;
+ALTER TABLE cutoff_crops RENAME TO cutoff_crop;
 ";
 
 /// The model column of the old review (python/retired/server.py's, kept before reviews were kept per model): no
@@ -84,7 +106,7 @@ impl Row {
     fn of(item: Item<'_>) -> Row {
         match item {
             Item::Mark(id, mark) => Row {
-                table: "marks",
+                table: "mark",
                 columns: &["recording", "mark"],
                 key: vec![text(&slug(id)), text(mark.file_name())],
                 compressed: false,
@@ -95,10 +117,10 @@ impl Row {
                     ReviewBy::Old => OLD_REVIEW_MODEL,
                 };
                 let key = vec![text(&slug(id)), text(model), text(part.file_name())];
-                Row { table: "reviews", columns: &["recording", "model", "part"], key, compressed: true }
+                Row { table: "review", columns: &["recording", "model", "part"], key, compressed: true }
             }
             Item::CutoffCrop(file) => {
-                Row { table: "cutoff_crops", columns: &["file"], key: vec![text(file)], compressed: false }
+                Row { table: "cutoff_crop", columns: &["file"], key: vec![text(file)], compressed: false }
             }
             _ => Row { table: "library", columns: &["name"], key: vec![text(item.file_name())], compressed: false },
         }
@@ -124,7 +146,6 @@ fn decompress(bytes: &[u8]) -> io::Result<Vec<u8>> {
     GzDecoder::new(bytes).read_to_end(&mut out)?;
     Ok(out)
 }
-
 
 /// A row's column as bytes; empty when it is not bytes or text.
 fn bytes_of(value: SqlValue) -> Vec<u8> {
@@ -175,25 +196,25 @@ impl Database {
     }
 
     /// The database `sql` reaches, named `place` in messages; on its first opening the tables are made and what
-    /// `folders` hold is imported, all in one transaction. Fails on a database a newer version made.
+    /// `folders` hold is imported, and one an older version made is brought to this layout, each in one transaction.
+    /// Fails on a database a newer version made.
     pub fn open(mut sql: Box<dyn Sql>, place: String, folders: &Folders) -> io::Result<Database> {
         let version =
             match sql.query("PRAGMA user_version", &[])?.into_iter().next().and_then(|row| row.into_iter().next()) {
                 Some(SqlValue::Integer(version)) => version,
                 _ => 0,
             };
-        if version > SCHEMA_VERSION {
-            return Err(io::Error::other(format!("{place}: made by a newer Aim View (layout {version})")));
-        }
-        if version == 0 {
-            sql.batch("BEGIN IMMEDIATE")?;
-            let made = sql.batch(SCHEMA).and_then(|()| import(&mut *sql, folders));
-            let done = made.and_then(|()| sql.batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}; COMMIT")));
-            if let Err(error) = done {
-                let _ = sql.batch("ROLLBACK");
-                return Err(error);
-            }
-        }
+        let made = match version {
+            0 => in_transaction(&mut *sql, |sql| {
+                sql.batch(LIBRARY_TABLES)?;
+                sql.batch(KOVAAK_TABLES)?;
+                import(sql, folders)
+            }),
+            1 => in_transaction(&mut *sql, |sql| sql.batch(&format!("{FROM_LAYOUT_1}{KOVAAK_TABLES}"))),
+            SCHEMA_VERSION => Ok(()),
+            _ => Err(io::Error::other(format!("{place}: made by a newer Aim View (layout {version})"))),
+        };
+        made?;
         Ok(Database { sql: Mutex::new(sql), place })
     }
 
@@ -236,11 +257,21 @@ impl Database {
 
     /// Each recording's slug, with the bytes of its found and saved areas when it has both.
     fn areas_pairs(&self) -> io::Result<Vec<Vec<SqlValue>>> {
-        let statement = "SELECT found.recording, found.bytes, saved.bytes FROM marks AS found JOIN marks AS saved \
+        let statement = "SELECT found.recording, found.bytes, saved.bytes FROM mark AS found JOIN mark AS saved \
                          ON saved.recording = found.recording AND found.mark = ?1 AND saved.mark = ?2";
         let values = [text(Mark::FoundAreas.file_name()), text(Mark::SavedAreas.file_name())];
         self.sql().query(statement, &values)
     }
+}
+
+/// Runs `work` in one transaction that ends by setting the layout to this version; nothing is kept when it fails.
+fn in_transaction(sql: &mut dyn Sql, work: impl FnOnce(&mut dyn Sql) -> io::Result<()>) -> io::Result<()> {
+    sql.batch("BEGIN IMMEDIATE")?;
+    let done = work(sql).and_then(|()| sql.batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}; COMMIT")));
+    if done.is_err() {
+        let _ = sql.batch("ROLLBACK");
+    }
+    done
 }
 
 /// Copies what the data folder's files hold into the database's tables (`Files`' layout, read from disk): the
@@ -269,7 +300,7 @@ fn import(sql: &mut dyn Sql, folders: &Folders) -> io::Result<()> {
         let dir = folder.path();
         for mark in MARKS {
             let row = Row {
-                table: "marks",
+                table: "mark",
                 columns: &["recording", "mark"],
                 key: vec![text(&recording), text(mark.file_name())],
                 compressed: false,
@@ -285,7 +316,7 @@ fn import(sql: &mut dyn Sql, folders: &Folders) -> io::Result<()> {
         for (model, review) in reviews {
             for part in PARTS {
                 let key = vec![text(&recording), text(&model), text(part.file_name())];
-                let row = Row { table: "reviews", columns: &["recording", "model", "part"], key, compressed: true };
+                let row = Row { table: "review", columns: &["recording", "model", "part"], key, compressed: true };
                 copy(row, review.join(part.file_name()))?;
             }
         }
@@ -353,14 +384,14 @@ impl Store for Database {
 
     /// Whether any review of the recording has its tracks.
     fn reviewed(&self, id: &str) -> bool {
-        let statement = "SELECT 1 FROM reviews WHERE recording = ?1 AND part = ?2 LIMIT 1";
+        let statement = "SELECT 1 FROM review WHERE recording = ?1 AND part = ?2 LIMIT 1";
         let values = [text(&slug(id)), text(Part::Tracks.file_name())];
         self.sql().query(statement, &values).is_ok_and(|rows| !rows.is_empty())
     }
 
     /// The models whose review of the recording has its tracks, in a folder listing's order.
     fn models(&self, id: &str) -> Vec<String> {
-        let statement = "SELECT model FROM reviews WHERE recording = ?1 AND part = ?2 AND model <> ?3";
+        let statement = "SELECT model FROM review WHERE recording = ?1 AND part = ?2 AND model <> ?3";
         let values = [text(&slug(id)), text(Part::Tracks.file_name()), text(OLD_REVIEW_MODEL)];
         let rows = self.sql().query(statement, &values).unwrap_or_default();
         let mut models: Vec<String> = rows.into_iter().filter_map(|row| row.into_iter().next()).map(text_of).collect();
@@ -379,7 +410,7 @@ impl Store for Database {
 
     /// The slugs with a mark or a review.
     fn kept(&self) -> HashSet<String> {
-        let statement = "SELECT recording FROM marks UNION SELECT recording FROM reviews";
+        let statement = "SELECT recording FROM mark UNION SELECT recording FROM review";
         let rows = self.sql().query(statement, &[]).unwrap_or_default();
         rows.into_iter().filter_map(|row| row.into_iter().next()).map(text_of).collect()
     }
@@ -399,6 +430,149 @@ impl Store for Database {
         }
         out.sort_by_cached_key(|(recording, ..)| listing_key(recording));
         out
+    }
+
+    /// The browser build keeps KovaaK's files here; natively the library reads their folders.
+    fn kovaak(&self) -> Option<&dyn Kovaak> {
+        if cfg!(feature = "native") { None } else { Some(self) }
+    }
+}
+
+/// A number or none, as a statement's value.
+fn real(value: Option<f64>) -> SqlValue {
+    value.map_or(SqlValue::Null, SqlValue::Real)
+}
+
+/// A row's column as a number; None when it is null.
+fn real_of(value: &SqlValue) -> Option<f64> {
+    match value {
+        SqlValue::Real(number) => Some(*number),
+        SqlValue::Integer(number) => Some(*number as f64),
+        _ => None,
+    }
+}
+
+/// A row's column as a count; 0 when it is not a whole number.
+fn count_of(value: &SqlValue) -> u64 {
+    match value {
+        SqlValue::Integer(number) => u64::try_from(*number).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+impl Database {
+    /// Runs `statement` once per row's values, all in one transaction, while no one else uses the connection.
+    fn insert_all(&self, statement: &str, rows: impl Iterator<Item = Vec<SqlValue>>) -> io::Result<()> {
+        let mut sql = self.sql();
+        sql.batch("BEGIN IMMEDIATE")?;
+        let mut done = Ok(());
+        for values in rows {
+            done = sql.execute(statement, &values).map(|_| ());
+            if done.is_err() {
+                break;
+            }
+        }
+        match done {
+            Ok(()) => sql.batch("COMMIT"),
+            Err(error) => {
+                let _ = sql.batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+}
+
+impl Kovaak for Database {
+    /// The `stats_file` table, its text left out.
+    fn stats_files(&self) -> io::Result<Vec<StatsRow>> {
+        let rows = self.sql().query("SELECT name, size, modified, score, kills, accuracy FROM stats_file", &[])?;
+        Ok(rows
+            .into_iter()
+            .map(|row| StatsRow {
+                name: text_of(row[0].clone()),
+                size: count_of(&row[1]),
+                modified: real_of(&row[2]).unwrap_or(0.0),
+                run: real_of(&row[3]).map(|score| StatsRun {
+                    score,
+                    kills: real_of(&row[4]),
+                    accuracy: real_of(&row[5]),
+                }),
+            })
+            .collect())
+    }
+
+    /// An upsert per row in one transaction; the kept text stays only when the size and time are the same.
+    fn add_stats_files(&self, rows: &[StatsRow]) -> io::Result<()> {
+        let statement = "INSERT INTO stats_file (name, size, modified, score, kills, accuracy) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (name) DO UPDATE SET \
+                         csv = CASE WHEN size = excluded.size AND modified = excluded.modified THEN csv END, \
+                         size = excluded.size, modified = excluded.modified, score = excluded.score, \
+                         kills = excluded.kills, accuracy = excluded.accuracy";
+        self.insert_all(
+            statement,
+            rows.iter().map(|row| {
+                let run = row.run.as_ref();
+                vec![
+                    text(&row.name),
+                    SqlValue::Integer(i64::try_from(row.size).unwrap_or(i64::MAX)),
+                    SqlValue::Real(row.modified),
+                    real(run.map(|run| run.score)),
+                    real(run.and_then(|run| run.kills)),
+                    real(run.and_then(|run| run.accuracy)),
+                ]
+            }),
+        )
+    }
+
+    /// The kept text, decompressed.
+    fn stats_csv(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        let rows = self.sql().query("SELECT csv FROM stats_file WHERE name = ?1", &[text(name)])?;
+        match rows.into_iter().next().and_then(|row| row.into_iter().next()) {
+            Some(SqlValue::Blob(bytes)) => decompress(&bytes).map(Some),
+            _ => Ok(None),
+        }
+    }
+
+    /// The text compressed into the file's row.
+    fn keep_stats_csv(&self, name: &str, csv: &[u8]) -> io::Result<()> {
+        let statement = "UPDATE stats_file SET csv = ?1 WHERE name = ?2";
+        self.sql().execute(statement, &[SqlValue::Blob(compress(csv)?), text(name)]).map(|_| ())
+    }
+
+    /// The `scenario` table, the user's scenarios first; a row whose facts do not read is left out.
+    fn scenarios(&self) -> io::Result<Vec<ScenarioRow>> {
+        let statement = "SELECT path, size, modified, facts FROM scenario \
+                         ORDER BY path LIKE 'workshop/%', path";
+        let rows = self.sql().query(statement, &[])?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                Some(ScenarioRow {
+                    path: text_of(row[0].clone()),
+                    size: count_of(&row[1]),
+                    modified: real_of(&row[2]).unwrap_or(0.0),
+                    facts: serde_json::from_str(&text_of(row[3].clone())).ok()?,
+                })
+            })
+            .collect())
+    }
+
+    /// An upsert per row in one transaction.
+    fn add_scenarios(&self, rows: &[ScenarioRow]) -> io::Result<()> {
+        let statement = "INSERT INTO scenario (path, size, modified, facts) VALUES (?1, ?2, ?3, ?4) \
+                         ON CONFLICT (path) DO UPDATE SET size = excluded.size, modified = excluded.modified, \
+                         facts = excluded.facts";
+        let mut values = Vec::with_capacity(rows.len());
+        for row in rows {
+            let facts = serde_json::to_string(&row.facts).map_err(io::Error::other)?;
+            values.push(vec![
+                text(&row.path),
+                SqlValue::Integer(i64::try_from(row.size).unwrap_or(i64::MAX)),
+                SqlValue::Real(row.modified),
+                SqlValue::Text(facts),
+            ]);
+        }
+        self.insert_all(statement, values.into_iter())
     }
 }
 
@@ -516,5 +690,65 @@ mod tests {
         let mut names = vec!["b", "_a", "A", "a_b", "ab", "Zz", "\u{e9}", "\u{e4}_x"];
         names.sort_by_cached_key(|name| listing_key(name));
         assert_eq!(names, ["A", "ab", "a_b", "b", "Zz", "_a", "\u{e4}_x", "\u{e9}"]);
+    }
+
+    /// A database layout 1 made (the tables in the plural) opens with what it kept, its tables renamed and KovaaK's
+    /// added, without importing the files again.
+    #[test]
+    fn layout_1_is_brought_up_to_date() {
+        let data = data_folder("layout1");
+        let path = data.join(DATABASE_FILE);
+        let mut old = crate::sql::Sqlite::open(&path).unwrap();
+        old.batch(
+            "CREATE TABLE library (name TEXT PRIMARY KEY, bytes BLOB NOT NULL, changed REAL NOT NULL);
+             CREATE TABLE marks (recording TEXT NOT NULL, mark TEXT NOT NULL, bytes BLOB NOT NULL,
+               changed REAL NOT NULL, PRIMARY KEY (recording, mark));
+             CREATE TABLE reviews (recording TEXT NOT NULL, model TEXT NOT NULL, part TEXT NOT NULL,
+               bytes BLOB NOT NULL, changed REAL NOT NULL, PRIMARY KEY (recording, model, part));
+             CREATE TABLE cutoff_crops (file TEXT PRIMARY KEY, bytes BLOB NOT NULL, changed REAL NOT NULL);
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        let mark = [text(SLUG), text("run.json"), SqlValue::Blob(b"{\"start\":1}".to_vec()), SqlValue::Real(1.0)];
+        old.execute("INSERT INTO marks VALUES (?1, ?2, ?3, ?4)", &mark).unwrap();
+        drop(old);
+        let database = open(&data);
+        assert_eq!(database.read(Item::Mark(ID, Mark::RunWindow)).unwrap().unwrap(), b"{\"start\":1}");
+        assert!(!database.has(Item::Settings), "the files were not imported a second time");
+        assert!(database.stats_files().unwrap().is_empty());
+        drop(database);
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// KovaaK's tables: rows are replaced by name, a stats file's kept text goes when the file changes, and the
+    /// user's scenarios come before the workshop's.
+    #[test]
+    fn keeps_kovaak_files_by_name() {
+        let data = data_folder("kovaak");
+        let database = open(&data);
+        let run = StatsRun { score: 100.0, kills: Some(10.0), accuracy: Some(0.5) };
+        let row = |name: &str, size: u64, run: Option<StatsRun>| StatsRow { name: name.into(), size, modified: 7.0, run };
+        database.add_stats_files(&[row("a.csv", 10, Some(run.clone())), row("b.csv", 20, None)]).unwrap();
+        database.keep_stats_csv("a.csv", b"Score:,100\n").unwrap();
+        database.add_stats_files(&[row("a.csv", 10, Some(run.clone()))]).unwrap();
+        assert_eq!(database.stats_csv("a.csv").unwrap().unwrap(), b"Score:,100\n", "the same file keeps its text");
+        database.add_stats_files(&[row("a.csv", 11, Some(run.clone()))]).unwrap();
+        assert!(database.stats_csv("a.csv").unwrap().is_none(), "a changed file loses its text");
+        let mut rows = database.stats_files().unwrap();
+        rows.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(rows, [row("a.csv", 11, Some(run)), row("b.csv", 20, None)]);
+        let facts = |limit: f64| aimview::scenario::Facts {
+            kind: aimview::scenario::Kind::Static,
+            limit: Some(limit),
+            targets: None,
+            reload: None,
+            hitbox: None,
+        };
+        let scenario = |path: &str, limit: f64| ScenarioRow { path: path.into(), size: 1, modified: 2.0, facts: facts(limit) };
+        database.add_scenarios(&[scenario("workshop/1/x.sce", 30.0), scenario("scenarios/x.sce", 60.0)]).unwrap();
+        let paths: Vec<String> = database.scenarios().unwrap().into_iter().map(|row| row.path).collect();
+        assert_eq!(paths, ["scenarios/x.sce", "workshop/1/x.sce"]);
+        drop(database);
+        let _ = std::fs::remove_dir_all(&data);
     }
 }

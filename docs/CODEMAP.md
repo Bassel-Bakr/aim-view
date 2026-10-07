@@ -122,7 +122,7 @@ rust-analyzer's call hierarchy.
   of recordings, with the review run natively (ffmpeg's frames, the core, and the detector on the GPU).
 - `service/src/library/browser.rs`: The browser build's own routes (api.rs): the page runs the review and the area
   finder itself and sends what they give, which is kept as the native review keeps it; it adds raw mouse logs, chooses
-  the VODs folder (a folder it mounted) and says when it copied new KovaaK files.
+  the VODs folder (a folder it mounted) and sends KovaaK's files the user chose, read once.
 - `service/src/library/links.rs`: Recordings added from a link: a video's page on a site yt-dlp reads (YouTube, Twitch,
   Medal, Streamable...) or a video file's address.
 - `service/src/library/mod.rs`: The library: the user's recordings (the VODs folder and the uploads), KovaaK's stats
@@ -1036,10 +1036,12 @@ scripts use the library and the native review through aimview-tool (src/bin/aimv
 
 The browser build's own routes (api.rs): the page runs the review and the area finder itself and sends what they give,
 which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it mounted) and
-says when it copied new KovaaK files. In: /api/job (POST), /api/reviewed, /api/found, /api/mouse_log, /api/folder and
-/api/kovaak. Out: the reviews, found areas, mouse logs and settings kept, and the jobs' state.
+sends KovaaK's files the user chose, read once. In: /api/job (POST), /api/reviewed, /api/found, /api/mouse_log,
+/api/folder, /api/kovaak and /api/kovaak_files. Out: the reviews, found areas, mouse logs, settings and KovaaK's runs
+and scenario facts kept, and the jobs' state.
 
-- `Library` methods: `choose_vods`, `page_progress`, `review_done`, `keep_found`, `keep_mouse_log`, `kovaak_changed`.
+- `Library` methods: `choose_vods`, `page_progress`, `review_done`, `keep_found`, `keep_mouse_log`, `kovaak_files`,
+  `add_kovaak_files`, `kovaak_changed`.
 
 ## service/src/library/links.rs
 
@@ -1220,6 +1222,14 @@ kept for each recording.
   were kept per model.
 - `Item` (enum): One thing the library keeps. Methods: `file_name`.
 - `Store` (trait): Where the library keeps what it keeps (see the module's comment).
+- `StatsRun` (struct): A run as its stats file's footer gives it: KovaaK's score, the kills when the file gives them,
+  and hits over shots (0 to 1) when it gives both.
+- `StatsRow` (struct): A stats file of KovaaK's as the browser keeps it: its name, size and time of change (to tell a
+  changed file), and its run (None: the file has no score).
+- `ScenarioRow` (struct): A scenario file of KovaaK's as the browser keeps it: its path in /kovaak (scenarios/<name>.sce
+  or workshop/<item>/<name>.sce), its size and time of change, and its facts.
+- `Kovaak` (trait): KovaaK's files as the browser keeps them (see `Store::kovaak`): every stats file's run, the whole
+  text only of those a recording used, and every scenario's facts.
 - `Files` (struct): The store as the files in the data folder (disk.rs), laid out as the layout's folders say: today's
   files, byte for byte. Methods: `new`, `path`.
 - Functions: `recording_folder`, `folder_parts`.

@@ -17,9 +17,9 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   The page's storage only answers asynchronously, so `bun run assets` puts the service's WebAssembly through Binaryen's
   Asyncify (`wasm-opt`), which lets those calls wait in every browser (JSPI would leave out iOS before 27). So every
   mode uses the server mode's services (`modes/http/`). Where the page itself must act, a mode's class extends the
-  server's. Browser mode does the VODs folder picker and its videos, copying KovaaK's folders in, the review, the area
-  finder and the cut-off's labels in workers, and link downloads (`modes/service/browser-*.ts`). Desktop mode does its
-  folder dialog and mouse logger (`modes/tauri/`).
+  server's. Browser mode does the VODs folder picker and its videos, reading KovaaK's folders in once, the review, the
+  area finder and the cut-off's labels in workers, and link downloads (`modes/service/browser-*.ts`). Desktop mode
+  does its folder dialog and mouse logger (`modes/tauri/`).
 - **Contracts.** Features and `services/` inject only the contracts in `ui/src/app/platform/` (`RecordingSource`,
   `StatsFiles`, `ReviewEngine`, `ModelCatalog` and the others), never `/api` or a mode's class. The implementations are
   in `ui/src/app/modes/`, in folders named for what they wrap (`http/` the API, `service/` the service in the page,

@@ -28,18 +28,19 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   model panel, upload and the stats file panel, and the three modes. Browser mode runs the review service in the page
   (see "Three modes, one app, one backend"); it keeps its data folder in the browser's private file system (OPFS
   `aimview/data`, the app's layout; since 2026-10-07 what the library keeps is in one SQLite database there,
-  docs/storage-design.md, and the files hold the videos, mouse logs and crop folders) and KovaaK's files in
-  `aimview/kovaak`, and reads the VODs folder and the models
+  docs/storage-design.md, and the files hold the videos, mouse logs and crop folders), and reads the VODs folder and
+  the models
   where they are (`modes/service/mounts.ts`). Files added are uploads, as in server mode (a video that is not an MP4
   is remuxed into one with Mediabunny first, streams copied). The user opens a folder of recordings (VODs folder:
   Chrome's folder picker, remembered across visits, mounted at /vods; a recording's id is its path there, and a
   non-MP4 one is remuxed in the page when it is first opened), and Clear list forgets the folder and the uploads.
   KovaaK's folders are chosen as files (Chrome's picker refuses folders under Program Files): with Stats folder in the
   top bar, in the stats file panel, or on the run page when the review needs them. FPSAimTrainer gives the stats and
-  the user's scenarios, workshop\content\824270 the workshop's. The page copies them into the browser (choosing the
-  folder again copies only new or changed files), and the service reads them as the review server reads KovaaK's
-  folders: the stats folder lets each run find its stats file by name and time, and the scenario folders give each
-  scenario's kind, time limit and target count. What the old browser mode kept in IndexedDB is moved into the
+  the user's scenarios, workshop\content\824270 the workshop's. The page reads each file once and sends it to the
+  service (choosing the folder again sends only new or changed files), which keeps each stats file's run and each
+  scenario's facts in its database, and a stats file's whole text only when a recording pairs with it
+  (docs/storage-design.md): each run finds its stats file by name and time, and each scenario gives its kind, time
+  limit and target count. What the old browser mode kept in IndexedDB is moved into the
   service once (`modes/service/browser-data-move.ts`).
   From a link (beside Upload; `RecordingSource.linkInfo`, `addLink`): the service downloads it with yt-dlp
   (service/src/ytdlp.rs, library/links.rs; /api/link/formats, /api/link, job stage `downloading`); browser mode

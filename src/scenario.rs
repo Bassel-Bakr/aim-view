@@ -26,7 +26,7 @@ pub enum Kind {
 /// A scenario's facts: its kind, its time limit in seconds, its targets alive at once (one per bot added), the
 /// player's weapon's ammo rules (none when its magazine never runs out) and the bots' hitbox (none when the bots differ
 /// or look like something else).
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Facts {
     /// The kind of run, from the file's tags or, untagged, its weapon and bots.

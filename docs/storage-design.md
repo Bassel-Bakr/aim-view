@@ -29,21 +29,32 @@ The Python layout (`test_out/`, the training workbench) stays on files: Python's
 `area_examples.jsonl`, crop-check folders and `checked.jsonl`. So the library gets one storage interface with two
 backends: files (today's code, for the Python layout) and SQLite (the app's layout).
 
-## Schema, version 1
+## Schema, version 2
 
-`PRAGMA user_version = 1`. Times are seconds since 1970 (REAL). Step 2 keeps what store.rs's `Item`s name, one row
-each, so the database gives back the bytes `Files` would (service/src/database.rs):
+`PRAGMA user_version = 2`. Times are seconds since 1970 (REAL). Table names are singular. The first four tables keep
+what store.rs's `Item`s name, one row each, so the database gives back the bytes `Files` would
+(service/src/database.rs). Version 1 had them in the plural and no KovaaK tables; opening one renames them and adds
+those.
 
 | Table | Columns | Holds |
 | --- | --- | --- |
 | `library` | `name TEXT PRIMARY KEY, bytes BLOB, changed REAL` | the library's own items by file name: settings.json, area_kinds.json, area_examples.jsonl, exclude_uploads.json, the three id lists, the cut-off's checked.jsonl |
-| `marks` | `recording TEXT, mark TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, mark)` | each recording's marks by its folder name (slug) and the mark's file name: run.json, stats.json, faint.json, exclude.json, areas.json, areas_maps.npz |
-| `reviews` | `recording TEXT, model TEXT, part TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, model, part)` | each review's parts (tracks, readings, hud, kills), gzip-compressed; `model` is "" for the old review |
-| `cutoff_crops` | `file TEXT PRIMARY KEY, bytes BLOB, changed REAL` | the cut-off labels' crops by their file (train/<name>.npz) |
+| `mark` | `recording TEXT, mark TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, mark)` | each recording's marks by its folder name (slug) and the mark's file name: run.json, stats.json, faint.json, exclude.json, areas.json, areas_maps.npz |
+| `review` | `recording TEXT, model TEXT, part TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, model, part)` | each review's parts (tracks, readings, hud, kills), gzip-compressed; `model` is "" for the old review |
+| `cutoff_crop` | `file TEXT PRIMARY KEY, bytes BLOB, changed REAL` | the cut-off labels' crops by their file (train/<name>.npz) |
+| `stats_file` | `name TEXT PRIMARY KEY, size INTEGER, modified REAL, score REAL, kills REAL, accuracy REAL, csv BLOB` | browser mode only: each of KovaaK's stats files once read, its run (no score: null), and its whole text gzip-compressed only when one of the user's recordings pairs with it |
+| `scenario` | `path TEXT PRIMARY KEY, size INTEGER, modified REAL, facts TEXT` | browser mode only: each scenario file's facts (kind, time limit, targets, ammo, hitbox) as JSON, by its path in /kovaak |
 
 Text Python keeps as text is kept with Windows' line ends, as `Files` writes it. Models and recordings are listed in a
 Windows folder's order (NTFS: by upper case), as `Files` read them. The proposal's wider tables (a recording's path,
-size and scenario; stats files and scenarios in the browser; mouse logs) come with the steps that need them.
+size and scenario; mouse logs) come with the steps that need them.
+
+KovaaK's files in browser mode are read once, not copied (2026-10-07): the page sends each file new or changed since
+it last sent it (kovaak-batch.ts, POST /api/kovaak_files in batches of up to 1,000 files or 8 MB); the service keeps
+its run or facts in one transaction a batch, and the whole text of a stats file a recording pairs with (by its name's
+scenario and time, within 5 s). A stats file picked by hand is kept when a visit that chose the folder reads it;
+otherwise its report asks for the folder again. The packs the earlier version copied (72,083 files, 401 MB) are sent
+once in the background (kovaak-move.ts) and removed. Natively the service reads KovaaK's folders as before.
 
 Reviews are one row per part, not a row per frame: 6,000 frames of several boxes each would make millions of rows,
 slower to write and to read, and the core reads the whole review at once anyway. On the desktop and the server the
@@ -130,9 +141,11 @@ Each ends in a check, and each is committed on its own.
    review seeded as files, imported on the first opening, answered every route as the native files did (tracks,
    report, run, stats, exclude, faint, job, mouse; find_areas differs only by the other recordings each has);
    writes (a run window, the 327 KB examples, the area types) read back after a reload; the lock passed both ways
-   between two tabs. Not moved yet: the cut-off labels the page keeps in IndexedDB, and KovaaK's copies (files, as
-   step 2's schema leaves `stats_files` and `scenarios` for later). A new review made in the browser was not run
-   (the pane was not drawing).
+   between two tabs. Not moved yet: the cut-off labels the page keeps in IndexedDB. A new review made in the browser
+   was not run (the pane was not drawing). KovaaK's files were moved later the same day (version 2, above): checked in
+   the built-in browser with 40 of the user's stats files and a scenario sent as a batch, the history equal to
+   native's for those 40 runs, the pairing, the scenario's kind, the paired text kept across a reload, and a layout-1
+   database and the old copies moved on opening.
 4. **The data panel** and **the export zip**, on the interface.
 
 ## Open questions

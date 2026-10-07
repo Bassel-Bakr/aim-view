@@ -2,14 +2,16 @@
 /**
  * The review service (service/, built for the browser as browser-service/) in a worker of the
  * page's own: browser mode answers the same API as the review server and the desktop app with it.
- * The service's files are mounted as the contract says (mounts.ts): /data and /kovaak in the
- * browser's private file system, /vods the VODs folder the user opened, /models the models beside
+ * The service's files are mounted as the contract says (mounts.ts): /data in the browser's private
+ * file system, /kovaak the KovaaK files the user chose this visit, /vods the VODs folder the user
+ * opened, /models the models beside
  * the app. What the service keeps is in its database (service-database.ts: SQLite in this worker,
  * held by one tab at a time). One request runs at a time, in the order asked. In: `ServiceTask`s from
  * service-host.ts. Out: `ServiceReply`s, each with its task's id.
  */
 import { moveBrowserData } from './browser-data-move';
-import { DirMount, FilesMount, FsError, HttpMount, KovaakMount, Mounts, PackStore } from './mounts';
+import { moveKovaakCopies } from './kovaak-move';
+import { DirMount, FilesMount, FsError, HttpMount, KovaakMount, Mounts } from './mounts';
 import {
   FilesAsk,
   FilesResult,
@@ -167,10 +169,8 @@ async function fillShipped(dataUrl: string): Promise<void> {
 async function start(task: ServiceStart): Promise<ServiceModule> {
   try {
     mounts.set('data', new DirMount(privateFolder('data'), true));
-    kovaak = new KovaakMount(
-      new PackStore(privateFolder('kovaak-packs')),
-      new DirMount(privateFolder('kovaak'), false),
-    );
+    // the files the user chooses this visit; what the service needs of them it keeps in its database
+    kovaak = new KovaakMount(null, null);
     mounts.set('kovaak', kovaak);
     mounts.set('models', new HttpMount(task.modelsUrl));
     const folder = await rememberedFolder().catch(() => null);
@@ -196,6 +196,10 @@ async function start(task: ServiceStart): Promise<ServiceModule> {
     };
     await moveBrowserData(send).catch((error: unknown) =>
       console.warn('Moving browser data:', error),
+    );
+    // after the start, in the queue's turn: the requests asked meanwhile are answered between batches
+    void moveKovaakCopies((method, path, body) => inTurn(() => send(method, path, body))).catch(
+      (error: unknown) => console.warn("Moving KovaaK's copies:", error),
     );
     return module;
   } catch (error) {

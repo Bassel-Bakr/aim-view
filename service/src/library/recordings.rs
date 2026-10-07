@@ -209,6 +209,14 @@ impl Library {
         if let Some(facts) = cached.as_ref() {
             return facts.clone();
         }
+        // the browser keeps each scenario file's facts instead of the files
+        if let Some(kovaak) = self.store().kovaak() {
+            let stem = |path: &str| Path::new(path).file_stem().map(|stem| stem.to_string_lossy().to_lowercase());
+            let rows = kovaak.scenarios().unwrap_or_default();
+            let by_name = Arc::new(rows.into_iter().filter_map(|row| Some((stem(&row.path)?, row.facts))).collect());
+            *cached = Some(Arc::clone(&by_name));
+            return by_name;
+        }
         let mut files: Vec<PathBuf> = Vec::new();
         for folder in &self.config.scenarios {
             push_scenario_files(folder, &mut files);

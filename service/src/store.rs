@@ -161,6 +161,69 @@ pub trait Store: Send + Sync {
     /// The recordings with both found and saved areas, leaving out the slugs in `skip`: each one's slug and the bytes
     /// of its found and saved areas.
     fn labelled(&self, skip: &BTreeSet<String>) -> Vec<(String, Vec<u8>, Vec<u8>)>;
+    /// What this store keeps of KovaaK's files in place of reading their folders: only the browser build's database
+    /// does (the page cannot keep a folder under Program Files, so it reads the files once and the service keeps what
+    /// it needs); None everywhere else.
+    fn kovaak(&self) -> Option<&dyn Kovaak> {
+        None
+    }
+}
+
+/// A run as its stats file's footer gives it: KovaaK's score, the kills when the file gives them, and hits over shots
+/// (0 to 1) when it gives both.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatsRun {
+    /// KovaaK's score.
+    pub score: f64,
+    /// The kills; None when the file does not give them.
+    pub kills: Option<f64>,
+    /// Hits over shots, 0 to 1; None without hits and misses.
+    pub accuracy: Option<f64>,
+}
+
+/// A stats file of KovaaK's as the browser keeps it: its name, size and time of change (to tell a changed file), and
+/// its run (None: the file has no score).
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatsRow {
+    /// Its file name in the stats folder.
+    pub name: String,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Its time of change in seconds since 1970.
+    pub modified: f64,
+    /// Its run; None when it has no score.
+    pub run: Option<StatsRun>,
+}
+
+/// A scenario file of KovaaK's as the browser keeps it: its path in /kovaak (scenarios/<name>.sce or
+/// workshop/<item>/<name>.sce), its size and time of change, and its facts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScenarioRow {
+    /// Its path in /kovaak.
+    pub path: String,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Its time of change in seconds since 1970.
+    pub modified: f64,
+    /// What the review needs of it.
+    pub facts: aimview::scenario::Facts,
+}
+
+/// KovaaK's files as the browser keeps them (see `Store::kovaak`): every stats file's run, the whole text only of
+/// those a recording used, and every scenario's facts.
+pub trait Kovaak {
+    /// Every stats file kept.
+    fn stats_files(&self) -> io::Result<Vec<StatsRow>>;
+    /// Keeps the rows, in one go, in place of those of the same names; a file that changed loses its kept text.
+    fn add_stats_files(&self, rows: &[StatsRow]) -> io::Result<()>;
+    /// A stats file's whole text when it is kept.
+    fn stats_csv(&self, name: &str) -> io::Result<Option<Vec<u8>>>;
+    /// Keeps a stats file's whole text (once a recording used it), when the file is kept.
+    fn keep_stats_csv(&self, name: &str, csv: &[u8]) -> io::Result<()>;
+    /// Every scenario file kept, the user's scenarios before the workshop's, each by path.
+    fn scenarios(&self) -> io::Result<Vec<ScenarioRow>>;
+    /// Keeps the rows, in one go, in place of those of the same paths.
+    fn add_scenarios(&self, rows: &[ScenarioRow]) -> io::Result<()>;
 }
 
 /// The bytes at the end of an old tracks.json (python/retired/server.py's, kept in the recording's own folder) read for

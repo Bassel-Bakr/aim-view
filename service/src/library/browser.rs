@@ -1,7 +1,8 @@
 //! The browser build's own routes (api.rs): the page runs the review and the area finder itself and sends what they
 //! give, which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it
-//! mounted) and says when it copied new KovaaK files. In: /api/job (POST), /api/reviewed, /api/found, /api/mouse_log,
-//! /api/folder and /api/kovaak. Out: the reviews, found areas, mouse logs and settings kept, and the jobs' state.
+//! mounted) and sends KovaaK's files the user chose, read once. In: /api/job (POST), /api/reviewed, /api/found,
+//! /api/mouse_log, /api/folder, /api/kovaak and /api/kovaak_files. Out: the reviews, found areas, mouse logs, settings
+//! and KovaaK's runs and scenario facts kept, and the jobs' state.
 
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,57 @@ use super::names::free_name;
 use super::reviews::{Job, ReviewFiles, keep_review, to_tenths};
 use super::{Answer, Failure, Library};
 use crate::review::Request;
+use crate::store::{ScenarioRow, StatsRow};
+
+/// Where a stats file is in /kovaak (POST /api/kovaak_files).
+const STATS_PREFIX: &str = "stats/";
+/// Where scenario files are in /kovaak: the user's, and the workshop's (one folder per item).
+const SCENARIO_PREFIXES: [&str; 2] = ["scenarios/", "workshop/"];
+/// A u32's bytes in a batch.
+const U32_BYTES: usize = 4;
+/// An f64's bytes in a batch.
+const F64_BYTES: usize = 8;
+
+/// One file of a batch the page sends (POST /api/kovaak_files).
+struct BatchFile<'a> {
+    /// Its path in /kovaak (stats/<name>, scenarios/<name>.sce, workshop/<item>/<name>.sce).
+    path: &'a str,
+    /// Its time of change in seconds since 1970.
+    modified: f64,
+    /// Its bytes.
+    bytes: &'a [u8],
+}
+
+/// A batch's files: each [u32 path length][path, UTF-8][f64 time of change][u32 length][bytes], little-endian; a
+/// batch that ends early or names a path that is not UTF-8 is refused (400).
+fn batch_files(body: &[u8]) -> Answer<Vec<BatchFile<'_>>> {
+    let mut rest = body;
+    let mut files = Vec::new();
+    while !rest.is_empty() {
+        let path_len = take_u32(&mut rest)?;
+        let path =
+            std::str::from_utf8(take(&mut rest, path_len)?).map_err(|_| Failure::bad("a path that is not UTF-8"))?;
+        let modified = f64::from_le_bytes(take(&mut rest, F64_BYTES)?.try_into().unwrap_or_default());
+        let len = take_u32(&mut rest)?;
+        files.push(BatchFile { path, modified, bytes: take(&mut rest, len)? });
+    }
+    Ok(files)
+}
+
+/// The first `len` bytes of `rest`, which then starts after them; a batch that ends early is refused (400).
+fn take<'a>(rest: &mut &'a [u8], len: usize) -> Answer<&'a [u8]> {
+    if rest.len() < len {
+        return Err(Failure::bad("the batch of KovaaK's files ends early"));
+    }
+    let (part, after) = rest.split_at(len);
+    *rest = after;
+    Ok(part)
+}
+
+/// A little-endian u32 from the start of `rest` (see `take`).
+fn take_u32(rest: &mut &[u8]) -> Answer<usize> {
+    Ok(u32::from_le_bytes(take(rest, U32_BYTES)?.try_into().unwrap_or_default()) as usize)
+}
 
 /// A review the page ran (POST /api/reviewed): the files the native review writes, the area finder's find in the key
 /// frames, its time (seconds) and device ("WebGPU", "WebAssembly"), and the model it ran (else the job's).
@@ -169,6 +221,50 @@ impl Library {
         path = free_name(path);
         crate::disk::write(&path, body).map_err(|error| format!("{}: {error}", path.display()))?;
         Ok(json!({ "saved": path.file_name().map(|file| file.to_string_lossy().into_owned()) }))
+    }
+
+    /// GET /api/kovaak_files: what the browser keeps of KovaaK's files, for the page to send only the new or changed
+    /// ones: {stats: [[name, size, time]], scenarios: [[path, size, time]]} (times in seconds since 1970).
+    pub fn kovaak_files(&self) -> Answer<Value> {
+        let kovaak =
+            self.store().kovaak().ok_or_else(|| Failure::from("KovaaK's files are not kept here".to_string()))?;
+        let stats = kovaak.stats_files().map_err(|error| error.to_string())?;
+        let scenarios = kovaak.scenarios().map_err(|error| error.to_string())?;
+        Ok(json!({
+            "stats": stats.iter().map(|row| json!([row.name, row.size, row.modified])).collect::<Vec<_>>(),
+            "scenarios": scenarios.iter().map(|row| json!([row.path, row.size, row.modified])).collect::<Vec<_>>(),
+        }))
+    }
+
+    /// POST /api/kovaak_files: a batch of KovaaK's files the user chose, read once (`batch_files`): each stats file's
+    /// run and each scenario file's facts are kept, each kind in one transaction, and both are read again when next
+    /// needed; the whole text is kept too of each stats file one of the user's recordings pairs with (by name and
+    /// time), so its report needs the folder no more. Other paths are left out. Answers how many of each it kept.
+    pub fn add_kovaak_files(&self, body: &[u8]) -> Answer<Value> {
+        let kovaak =
+            self.store().kovaak().ok_or_else(|| Failure::from("KovaaK's files are not kept here".to_string()))?;
+        let (mut stats, mut scenarios, mut texts) = (Vec::new(), Vec::new(), Vec::new());
+        let recorded = self.recorded_runs();
+        for file in batch_files(body)? {
+            let size = file.bytes.len() as u64;
+            if let Some(name) = file.path.strip_prefix(STATS_PREFIX) {
+                let run = super::stats::run_of_file(file.bytes);
+                stats.push(StatsRow { name: name.to_string(), size, modified: file.modified, run });
+                if Library::pairs_with(&recorded, name) {
+                    texts.push((name, file.bytes));
+                }
+            } else if SCENARIO_PREFIXES.iter().any(|prefix| file.path.starts_with(prefix)) {
+                let facts = aimview::scenario::facts(&aimview::scenario::text_of(file.bytes));
+                scenarios.push(ScenarioRow { path: file.path.to_string(), size, modified: file.modified, facts });
+            }
+        }
+        kovaak.add_stats_files(&stats).map_err(|error| error.to_string())?;
+        for (name, text) in texts {
+            kovaak.keep_stats_csv(name, text).map_err(|error| error.to_string())?;
+        }
+        kovaak.add_scenarios(&scenarios).map_err(|error| error.to_string())?;
+        self.kovaak_changed()?;
+        Ok(json!({ "stats": stats.len(), "scenarios": scenarios.len() }))
     }
 
     /// POST /api/kovaak?changed=1: the page copied new KovaaK files, so the stats files and the scenarios are read

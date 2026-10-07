@@ -92,7 +92,9 @@ fn main() {
     std::fs::write(out.join("tracks.json"), serde_json::to_vec(&reviewed.tracks).unwrap()).unwrap();
     std::fs::write(out.join("readings.json"), serde_json::to_vec(&reviewed.readings).unwrap()).unwrap();
     std::fs::write(out.join("hud.json"), serde_json::to_vec(&reviewed.hud).unwrap()).unwrap();
-    let stats = args.get(STATS_ARG).map(Path::new);
+    let stats_path = args.get(STATS_ARG).map(Path::new);
+    let stats_text = stats_path.map(|path| std::fs::read(path).unwrap_or_else(|error| panic!("{error}")));
+    let stats = stats_path.zip(stats_text.as_deref());
     let parts = aimview_service::store::folder_parts(&out);
     match aimview_service::report::work_out(parts, &request.video, stats, None, None, None) {
         Ok(Some(report)) => {

@@ -104,7 +104,7 @@ impl Library {
     /// when the recording has no stats file or no log covers its run.
     pub fn mouse_measures(&self, id: &str) -> Answer<Value> {
         let Some(stats_path) = self.stats_path(id) else { return Ok(Value::Null) };
-        measures_in(&self.folders().mouse, &stats_path)
+        measures_in(&self.folders().mouse, &stats_path, &self.stats_bytes(&stats_path)?)
     }
 }
 
@@ -131,10 +131,11 @@ fn logs_newest_first(dir: &Path) -> Vec<PathBuf> {
     logs
 }
 
-/// The measures of a stats file's run from the newest log in `dir` that covers it (see `Library::mouse_measures`).
-pub fn measures_in(dir: &Path, stats_path: &Path) -> Answer<Value> {
+/// The measures of a stats file's run (its path and text) from the newest log in `dir` that covers it (see
+/// `Library::mouse_measures`).
+pub fn measures_in(dir: &Path, stats_path: &Path, stats_bytes: &[u8]) -> Answer<Value> {
     let stats_name = file_name(stats_path).unwrap_or_default();
-    let text = String::from_utf8_lossy(&read_named(stats_path)?).into_owned();
+    let text = String::from_utf8_lossy(stats_bytes).into_owned();
     let mut first_error = None;
     for path in logs_newest_first(dir) {
         let Some((log_start, log_end)) = span(&path) else { continue };
@@ -236,7 +237,7 @@ mod tests {
         let start_ns = i64::from_le_bytes(log[24..32].try_into().unwrap());
         other[24..32].copy_from_slice(&(start_ns - 7_200_000_000_000).to_le_bytes());
         std::fs::write(dir.join("mouse_2026-09-30_04-54-21.bin"), &other).unwrap();
-        let found = measures_in(&dir, &stats);
+        let found = measures_in(&dir, &stats, &std::fs::read(&stats).unwrap());
         for name in ["mouse_2026-09-30_04-54-20.bin", "mouse_2026-09-30_04-54-21.bin"] {
             std::fs::remove_file(dir.join(name)).unwrap();
         }

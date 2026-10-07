@@ -482,6 +482,11 @@ fn review_window(line: &Line) -> Result<Option<TimeWindow>, Failure> {
     Ok(Some(TimeWindow { start: at(&window[0])?, end: at(&window[1])? }))
 }
 
+/// A stats file's text, or a failure that names it.
+fn stats_text(path: &Path) -> Result<Vec<u8>, Failure> {
+    std::fs::read(path).map_err(|error| Failure::from(format!("{}: {error}", path.display())))
+}
+
 /// The video reviewed as the app reviews a recording (python-bindings' `review_video`, retired): the files in --out,
 /// the report worked out from them unless --no-report.
 fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
@@ -535,7 +540,9 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         None
     } else {
         let parts = aimview_service::store::folder_parts(&out);
-        aimview_service::report::work_out(parts, &request.video, stats.as_deref(), None, facts.as_ref(), None)?
+        let text = stats.as_deref().map(stats_text).transpose()?;
+        let stats = stats.as_deref().zip(text.as_deref());
+        aimview_service::report::work_out(parts, &request.video, stats, None, facts.as_ref(), None)?
     };
     if let Some(report) = &report {
         write("report", serde_json::to_vec(report))?;

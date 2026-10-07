@@ -423,38 +423,13 @@ interface PackIndex {
   files: Record<string, PackedFile>;
 }
 
-/** A pack holds at most this many bytes (32 MiB), or PACK_FILES files. */
-const PACK_BYTES = 32 << 20;
-/** A pack holds at most this many files. */
-const PACK_FILES = 4000;
 /** The packs' index file's name. */
 const PACK_INDEX = 'index.json';
 
 /**
- * Bytes written into a file of a folder, replacing it (the worker's sync access handle: one open,
- * one flush).
- */
-async function writeWhole(
-  dir: FileSystemDirectoryHandle,
-  name: string,
-  parts: Uint8Array[],
-): Promise<void> {
-  const out = await (await dir.getFileHandle(name, { create: true })).createSyncAccessHandle();
-  try {
-    out.truncate(0);
-    let at = 0;
-    for (const part of parts) at += out.write(part, { at });
-    out.flush();
-  } finally {
-    out.close();
-  }
-}
-
-/**
- * Copies kept in a few large files (packs) and an index (index.json), read-only to the service:
- * thousands of small files are written far faster this way than one file each (a file each took
- * 100 ms or more on a busy machine). A file copied again goes into a new pack; its old copy stays
- * in its pack, unread.
+ * The copies of KovaaK's files an earlier version kept in a few large files (packs) and an index
+ * (index.json), read only to move them into the service's database once (kovaak-move.ts). A file
+ * copied again went into a new pack; its old copy stays in its pack, unread.
  */
 export class PackStore {
   /** The index, once read (empty when there is none yet). */
@@ -518,55 +493,6 @@ export class PackStore {
         })
       : null;
   }
-
-  /**
-   * Copies the files new or changed (size or time) since the last copy into new packs; each pack's
-   * files are read first, then the pack and the index are written in one turn of the worker's
-   * queue. Resolves to how many it copied.
-   */
-  async copy(
-    files: readonly ChosenFile[],
-    turn: <T>(step: () => Promise<T>) => Promise<T>,
-    progress: Progress,
-  ): Promise<CopyDone> {
-    const index = await this.read();
-    const fresh = files.filter(({ path, file }) => {
-      const kept = index.files[path];
-      if (!kept) return true;
-      const [, , len, modified] = kept;
-      return len !== file.size || modified !== file.lastModified;
-    });
-    let done = 0;
-    while (done < fresh.length) {
-      progress(done, fresh.length);
-      const batch: ChosenFile[] = [];
-      let bytes = 0;
-      for (const chosen of fresh.slice(done)) {
-        if (batch.length && (batch.length >= PACK_FILES || bytes + chosen.file.size > PACK_BYTES))
-          break;
-        batch.push(chosen);
-        bytes += chosen.file.size;
-      }
-      const parts = await Promise.all(
-        batch.map(async (chosen) => new Uint8Array(await chosen.file.arrayBuffer())),
-      );
-      await turn(async () => {
-        const dir = await this.root;
-        const pack = index.next++;
-        await writeWhole(dir, `${pack}.pack`, parts);
-        let at = 0;
-        batch.forEach(({ path, file }, partIndex) => {
-          index.files[path] = [pack, at, parts[partIndex].length, file.lastModified];
-          at += parts[partIndex].length;
-        });
-        await writeWhole(dir, PACK_INDEX, [new TextEncoder().encode(JSON.stringify(index))]);
-        this.tree = treeOf(index.files);
-      });
-      done += batch.length;
-    }
-    progress(fresh.length, fresh.length);
-    return { copied: fresh.length };
-  }
 }
 
 /** Each folder's entries by name, from the files' paths: a file's place, or null for a folder. */
@@ -586,9 +512,9 @@ function treeOf(files: Record<string, PackedFile>): Map<string, Map<string, Pack
 
 /**
  * KovaaK's files (/kovaak), read-only to the service: the files the user chose this visit, read
- * where they are at once; under them the copies this browser keeps for later visits, in packs;
- * under those the copies an earlier version kept one file each. A file is read from the first of
- * them that has it, and a folder lists them all.
+ * where they are. Under them, only to move them once (kovaak-move.ts), the copies an earlier
+ * version kept: in packs, and under those one file each. A file is read from the first of them
+ * that has it, and a folder lists them all.
  */
 export class KovaakMount implements MountFs {
   /** The service never writes KovaaK's files. */
@@ -596,13 +522,13 @@ export class KovaakMount implements MountFs {
   /** The files chosen this visit; null until the user chooses some. */
   private chosen: FilesMount | null = null;
 
-  /** The packs the copies go into, over the copies an earlier version kept a file each. */
+  /** The copies an earlier version kept in packs, over those it kept a file each; null: none. */
   constructor(
-    readonly packs: PackStore,
-    private readonly older: DirMount,
+    readonly packs: PackStore | null,
+    private readonly older: DirMount | null,
   ) {}
 
-  /** The files chosen this visit, shown at once over the kept copies. */
+  /** The files chosen this visit, shown at once over any older copies. */
   show(files: readonly ChosenFile[]): void {
     this.chosen = new FilesMount(files);
   }
@@ -939,7 +865,7 @@ export class Mounts {
 
   /**
    * Copies files into a folder, below it at their paths: only those new or changed (size or time)
-   * since the last copy, by its index (copied.json in the folder; /kovaak itself goes into packs).
+   * since the last copy, by its index (copied.json in the folder; never /kovaak, kovaak-batch.ts).
    * `turn` runs each step in the worker's queue, so the service's requests are answered between
    * them. Resolves to how many it copied.
    */
@@ -950,8 +876,8 @@ export class Mounts {
     progress: Progress,
   ): Promise<CopyDone> {
     const place = this.place(dir);
-    if (place.fs instanceof KovaakMount && !place.names.length)
-      return place.fs.packs.copy(files, turn, progress);
+    if (place.fs instanceof KovaakMount)
+      throw new Error("KovaaK's files are not copied: the service keeps what it needs of them");
     const indexPath = `${dir}/${COPIED}`;
     const index = await turn(async (): Promise<CopiedIndex> => {
       try {

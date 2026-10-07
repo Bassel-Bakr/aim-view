@@ -7,8 +7,9 @@
 //! The browser build (no `native` feature) answers the same routes, but for these: the page runs the review
 //! (/api/analyse answers what to review; /api/job and /api/reviewed take its progress and its end), the area finder
 //! (/api/find_areas answers 409 until /api/found takes what it found) and the cut-off's labels, and downloads links
-//! (501); it chooses the VODs folder (/api/folder), adds raw mouse logs (/api/mouse_log) and says when it copied new
-//! KovaaK files (/api/kovaak); it plays the videos itself (/video is not served).
+//! (501); it chooses the VODs folder (/api/folder), adds raw mouse logs (/api/mouse_log), sends KovaaK's files the user
+//! chose, read once (/api/kovaak_files, and GET for what is kept), and says when they changed (/api/kovaak); it plays
+//! the videos itself (/video is not served).
 
 #[cfg(feature = "native")]
 use std::io::{Read, Seek, SeekFrom};
@@ -205,6 +206,8 @@ fn get_answer(library: &Library, route: &Route) -> Answer<Value> {
             scenario.and_then(|scenario| library.history(&scenario))
         }
         "/api/mouse" => id().and_then(|id| library.mouse_measures(&id)),
+        #[cfg(not(feature = "native"))]
+        "/api/kovaak_files" => library.kovaak_files(),
         "/api/info" => Ok(json!({ "detector": library.model(), "device": library.config().device.name() })),
         "/api/exclude" => {
             let kovobs = route.query("layout").as_deref() == Some("kovobs");
@@ -269,6 +272,8 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/mouse_log" => library.keep_mouse_log(&route.query("name").unwrap_or_default(), body),
         #[cfg(not(feature = "native"))]
         "/api/kovaak" if route.flag("changed") => library.kovaak_changed(),
+        #[cfg(not(feature = "native"))]
+        "/api/kovaak_files" => library.add_kovaak_files(body),
         path => Err(Failure::missing(format!("not found: {path}"))),
     }
 }

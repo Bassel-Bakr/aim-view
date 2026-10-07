@@ -18,13 +18,14 @@ fn file_name(path: &Path) -> Option<String> {
     path.file_name().map(|name| name.to_string_lossy().into_owned())
 }
 
-/// The report of the review of `video` whose parts `parts` gives, with its stats file when it has one, the user's run
+/// The report of the review of `video` whose parts `parts` gives, with its stats file (its path and text) when it has
+/// one, the user's run
 /// marks, the scenario's facts and the user's faint-target cut-off (faint.json: {on, offset}); None when the review has
 /// no tracks.
 pub fn work_out(
     parts: impl Fn(Part) -> Option<Vec<u8>>,
     video: &Path,
-    stats: Option<&Path>,
+    stats: Option<(&Path, &[u8])>,
     run: Option<RunMarks>,
     facts: Option<&Facts>,
     faint: Option<Value>,
@@ -36,18 +37,12 @@ pub fn work_out(
     let hud = read(Part::Hud).unwrap_or(Value::Null);
     // the check of the kills the video alone gives (null or missing: not checked)
     let kill_check = read(Part::Kills).unwrap_or(Value::Null);
-    let stats_text = match stats {
-        Some(path) => {
-            let bytes = crate::disk::read(path).map_err(|error| error.to_string())?;
-            String::from_utf8_lossy(&bytes).into_owned()
-        }
-        None => String::new(),
-    };
+    let stats_text = stats.map_or_else(String::new, |(_, bytes)| String::from_utf8_lossy(bytes).into_owned());
     let request = json!({
         "tracks": tracks,
         "statsText": stats_text,
         "video": file_name(video),
-        "stats": stats.and_then(file_name).unwrap_or_default(),
+        "stats": stats.and_then(|(path, _)| file_name(path)).unwrap_or_default(),
         "hud": hud,
         "run": run.filter(RunMarks::is_set),
         "tracking": facts.is_some_and(|facts| facts.kind == Kind::Tracking),

@@ -21,7 +21,7 @@ use super::recordings::{STATS_UPLOADS, is_upload};
 use super::reviews::Job;
 use super::{Answer, Failure, Library, keep_json, modified, read_kept};
 use crate::disk::Instant;
-use crate::store::{Item, Mark};
+use crate::store::{Item, Mark, StatsRun};
 
 /// Stats files offered to pair with a recording.
 const CANDIDATES: usize = 40;
@@ -94,6 +94,41 @@ fn number(meta: &HashMap<String, String>, key: &str) -> Option<f64> {
     meta.get(key)?.trim().parse().ok().filter(|value: &f64| value.is_finite())
 }
 
+/// The run a stats file's "Key:,value" lines give; None when they hold no score.
+fn run_of_meta(meta: &HashMap<String, String>) -> Option<StatsRun> {
+    let (hits, misses) = (number(meta, "Hit Count"), number(meta, "Miss Count"));
+    let accuracy = match (hits, misses) {
+        (Some(hits), Some(misses)) if hits + misses > 0.0 => Some(hits / (hits + misses)),
+        _ => None,
+    };
+    Some(StatsRun { score: number(meta, "Score")?, kills: number(meta, "Kills"), accuracy })
+}
+
+/// The "Key:,value" lines of a stats file's end (`bytes`, from byte `from` on): the first line is cut unless the file
+/// starts there.
+fn footer_meta(bytes: &[u8], from: u64) -> HashMap<String, String> {
+    let text = String::from_utf8_lossy(bytes);
+    let tail = if from > 0 { text.split_once('\n').map_or("", |(_, rest)| rest) } else { &text };
+    StatsFile::parse(tail).meta
+}
+
+/// The run of a stats file read whole (`bytes`): from its last few kB, else the whole file when they hold no score.
+/// The browser build's page sends KovaaK's files whole (browser.rs).
+#[cfg(any(test, not(feature = "native")))]
+pub(crate) fn run_of_file(bytes: &[u8]) -> Option<StatsRun> {
+    let from = bytes.len().saturating_sub(FOOTER_BYTES as usize);
+    let meta = footer_meta(&bytes[from..], from as u64);
+    if from > 0 && !meta.contains_key("Score") {
+        return run_of_meta(&StatsFile::parse(&String::from_utf8_lossy(bytes)).meta);
+    }
+    run_of_meta(&meta)
+}
+
+/// A past run from a stats file's run and its name's time stamp.
+fn past(stamp: &str, run: StatsRun) -> PastRun {
+    PastRun { stamp: stamp.to_string(), score: run.score, kills: run.kills, accuracy: run.accuracy }
+}
+
 /// A stats file's run, read from its last few kB (the whole file when they hold no score). None when it has no score.
 fn past_run(path: &Path, stamp: &str) -> Option<PastRun> {
     let mut file = crate::disk::File::open(path).ok()?;
@@ -101,19 +136,11 @@ fn past_run(path: &Path, stamp: &str) -> Option<PastRun> {
     let mut bytes = Vec::new();
     file.seek(SeekFrom::Start(from)).ok()?;
     file.read_to_end(&mut bytes).ok()?;
-    let text = String::from_utf8_lossy(&bytes);
-    // the first line is cut unless the file starts there
-    let tail = if from > 0 { text.split_once('\n').map_or("", |(_, rest)| rest) } else { &text };
-    let mut meta = StatsFile::parse(tail).meta;
+    let mut meta = footer_meta(&bytes, from);
     if from > 0 && !meta.contains_key("Score") {
         meta = StatsFile::parse(&String::from_utf8_lossy(&crate::disk::read(path).ok()?)).meta;
     }
-    let (hits, misses) = (number(&meta, "Hit Count"), number(&meta, "Miss Count"));
-    let accuracy = match (hits, misses) {
-        (Some(hits), Some(misses)) if hits + misses > 0.0 => Some(hits / (hits + misses)),
-        _ => None,
-    };
-    Some(PastRun { stamp: stamp.to_string(), score: number(&meta, "Score")?, kills: number(&meta, "Kills"), accuracy })
+    Some(past(stamp, run_of_meta(&meta)?))
 }
 
 /// The run of a stats file in `folder`.
@@ -202,9 +229,19 @@ impl Library {
         use_index(&index.by_scenario)
     }
 
-    /// KovaaK's stats folder, listed: its stats files by scenario name.
+    /// KovaaK's stats folder, listed: its stats files by scenario name. In the browser, the stats files it keeps
+    /// (store.rs: `Kovaak`).
     fn list_stats(&self) -> HashMap<String, Vec<StatsEntry>> {
         let mut by_scenario: HashMap<String, Vec<StatsEntry>> = HashMap::new();
+        if let Some(kovaak) = self.store().kovaak() {
+            for row in kovaak.stats_files().unwrap_or_default() {
+                let Some((scenario, stamp)) = parse_stats_name(&row.name) else { continue };
+                let end_s = stamp_seconds(&stamp).unwrap_or(0.0);
+                let entry = StatsEntry { end_s, name: row.name, stamp, modified: row.modified };
+                by_scenario.entry(scenario).or_default().push(entry);
+            }
+            return by_scenario;
+        }
         for entry in crate::disk::read_dir(self.stats_folder()).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some((scenario, stamp)) = parse_stats_name(&name) else { continue };
@@ -250,6 +287,17 @@ impl Library {
     pub fn history(&self, scenario: &str) -> Answer<Value> {
         let mut files: Vec<StatsEntry> = self.with_stats(|index| index.get(scenario).cloned().unwrap_or_default());
         files.sort_by(|a, b| a.end_s.total_cmp(&b.end_s).then(a.name.cmp(&b.name)));
+        if let Some(kovaak) = self.store().kovaak() {
+            let runs: HashMap<String, StatsRun> = kovaak
+                .stats_files()
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .filter_map(|row| Some((row.name, row.run?)))
+                .collect();
+            let past_runs: Vec<PastRun> =
+                files.iter().filter_map(|file| Some(past(&file.stamp, runs.get(&file.name)?.clone()))).collect();
+            return Ok(serde_json::to_value(past_runs).map_err(|error| error.to_string())?);
+        }
         if !cfg!(feature = "native") {
             let folder = self.stats_folder();
             for file in &mut files {
@@ -272,6 +320,68 @@ impl Library {
         }
         let past_runs: Vec<PastRun> = runs.into_iter().flatten().flatten().collect();
         Ok(serde_json::to_value(past_runs).map_err(|error| error.to_string())?)
+    }
+
+    /// The runs the user's recordings hold, by scenario: each one's end (seconds, see `stamp_seconds`), from their
+    /// names alone (the quick list).
+    #[cfg(not(feature = "native"))]
+    pub(super) fn recorded_runs(&self) -> HashMap<String, Vec<f64>> {
+        let mut out: HashMap<String, Vec<f64>> = HashMap::new();
+        if let Ok(Value::Array(rows)) = self.recordings(true) {
+            for row in rows {
+                let (Some(scenario), Some(stamp)) = (row["scenario"].as_str(), row["stamp"].as_str()) else { continue };
+                if let Some(end_s) = stamp_seconds(stamp) {
+                    out.entry(scenario.to_string()).or_default().push(end_s);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether one of the runs `runs` (see `recorded_runs`) pairs with the stats file `name` by scenario and time
+    /// (`stats_for`'s rule).
+    #[cfg(not(feature = "native"))]
+    pub(super) fn pairs_with(runs: &HashMap<String, Vec<f64>>, name: &str) -> bool {
+        let Some((scenario, stamp)) = parse_stats_name(name) else { return false };
+        let Some(end_s) = stamp_seconds(&stamp) else { return false };
+        runs.get(&scenario).is_some_and(|ends| ends.iter().any(|end| (end - end_s).abs() <= NEAR_S))
+    }
+
+    /// Whether a stats file is there: one of KovaaK's the browser keeps, or a file.
+    fn stats_exists(&self, path: &Path) -> bool {
+        match self.kept_stats_name(path) {
+            Some(name) => self.with_stats(|index| {
+                let scenario = parse_stats_name(name).map(|(scenario, _)| scenario).unwrap_or_default();
+                index.get(&scenario).is_some_and(|entries| entries.iter().any(|entry| entry.name == name))
+            }),
+            None => crate::disk::is_file(path),
+        }
+    }
+
+    /// The name of a stats file in KovaaK's stats folder when the store keeps KovaaK's stats files (the browser); else
+    /// None.
+    fn kept_stats_name<'a>(&self, path: &'a Path) -> Option<&'a str> {
+        self.store().kovaak()?;
+        if path.parent() != Some(self.stats_folder().as_path()) {
+            return None;
+        }
+        path.file_name()?.to_str()
+    }
+
+    /// A stats file's whole text. One of KovaaK's in the browser comes from what is kept, else from the files the
+    /// user chose this visit, and is then kept for the visits after (a recording uses it); a failure says to choose
+    /// the stats folder again.
+    pub(crate) fn stats_bytes(&self, path: &Path) -> Answer<Vec<u8>> {
+        let read = || crate::disk::read(path).map_err(|error| Failure::from(format!("{}: {error}", path.display())));
+        let (Some(name), Some(kovaak)) = (self.kept_stats_name(path), self.store().kovaak()) else { return read() };
+        if let Some(csv) = kovaak.stats_csv(name).map_err(|error| error.to_string())? {
+            return Ok(csv);
+        }
+        let bytes = crate::disk::read(path).map_err(|_| {
+            Failure::missing(format!("{name} is not kept in this browser: choose KovaaK's stats folder again"))
+        })?;
+        kovaak.keep_stats_csv(name, &bytes).map_err(|error| error.to_string())?;
+        Ok(bytes)
     }
 
     /// The user's choice of stats file for the recording (stats.json); None when none is kept.
@@ -305,7 +415,7 @@ impl Library {
     pub(super) fn stats_with(&self, pick: Option<Pick>, id: &str, video: &Path) -> Option<PathBuf> {
         if let Some(pick) = pick {
             let picked = pick.file.and_then(|file| self.stats_file(&file, &pick.source).ok());
-            return picked.filter(|path| crate::disk::is_file(path));
+            return picked.filter(|path| self.stats_exists(path));
         }
         let beside = video.with_extension("csv");
         if is_upload(id) && crate::disk::is_file(&beside) {
@@ -373,7 +483,7 @@ impl Library {
             let file = body["file"].as_str().map(str::to_string);
             let source = body["source"].as_str().unwrap_or(KOVAAK_SOURCE).to_string();
             if let Some(name) = &file
-                && !crate::disk::is_file(self.stats_file(name, &source)?)
+                && !self.stats_exists(&self.stats_file(name, &source)?)
             {
                 return Err(Failure::missing(name.clone()));
             }
@@ -412,6 +522,12 @@ mod tests {
         assert_eq!((early.score, early.kills, early.accuracy), (5.0, None, None));
         std::fs::write(dir.join("none.csv"), "Kills:,1\n").unwrap();
         assert!(past_run(&dir.join("none.csv"), "s").is_none());
+        // the browser's page sends each file whole: the same runs come from its bytes
+        for name in ["long.csv", "early.csv", "none.csv"] {
+            let path = dir.join(name);
+            let from_bytes = run_of_file(&std::fs::read(&path).unwrap()).map(|run| past("s", run));
+            assert_eq!(serde_json::to_value(from_bytes).unwrap(), serde_json::to_value(past_run(&path, "s")).unwrap());
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,14 +1,15 @@
 /**
  * KovaaK's folders in browser mode. In: the files of a folder the user chooses (FPSAimTrainer, the
  * workshop's 824270, or each folder). Out: the stats and scenario files shown to the service at
- * /kovaak at once, then copied into this browser (the service's /kovaak) for later visits, and
- * which folders the copy holds.
+ * /kovaak for this visit and sent to it once (it keeps what it needs of each), and which folders it
+ * keeps files of.
  */
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Transfer } from '../../platform/recording-source';
+import { freshFiles, KovaakKept, sendBatches } from './kovaak-batch';
 import { MountedFiles } from './mounted-files';
 import { ChosenFile } from './service-messages';
 
@@ -20,9 +21,6 @@ export type FolderRole = 'stats' | 'scenarios' | 'workshop';
 
 /** Every folder role, in the order the page names them. */
 export const FOLDER_ROLES: readonly FolderRole[] = ['stats', 'scenarios', 'workshop'];
-
-/** Where KovaaK's files are copied (the contract's /kovaak). */
-const KOVAAK = '/kovaak';
 
 /**
  * Where each of KovaaK's files chosen as a folder goes in /kovaak, by what its path makes it: a
@@ -49,44 +47,49 @@ function kovaakFiles(files: readonly File[]): ChosenFile[] {
 
 /**
  * KovaaK's folders, chosen by the user as files (a folder input: Chrome's folder picker refuses
- * folders under Program Files, where KovaaK's is). The review service reads them where they are at
- * once, for this visit (/kovaak shows them over the copies kept), and reads them again (POST
- * /api/kovaak?changed=1): each run finds its stats file, each scenario its kind, time limit and
- * target count. Then, in the background, the page copies the files new or changed since the last
- * copy into this browser for later visits, a few large packs rather than a file each.
+ * folders under Program Files, where KovaaK's is). The review service reads them where they are for
+ * this visit (/kovaak shows them), and each file new or changed since it was last sent is read once
+ * and sent to the service (kovaak-batch.ts), which keeps each stats file's run and each scenario's
+ * facts in its database, not the files: each run finds its stats file, each scenario its kind, time
+ * limit and target count, on later visits too. A stats file's whole text is kept only once a
+ * recording uses it.
  */
 @Service()
 export class KovaakCopy {
-  /** Shows the chosen files to the service, copies them in, and lists what is kept. */
+  /** Shows the chosen files to the service for this visit. */
   private readonly files = inject(MountedFiles);
-  /** Tells the service to read KovaaK's folders again. */
+  /** Asks the service what it keeps and sends it the files. */
   private readonly http = inject(HttpClient);
-  /** The folders copied into this browser (any of their files); null until they are looked at. */
+  /** The folders the service keeps files of; null until it is asked. */
   readonly found = signal<ReadonlySet<FolderRole> | null>(null);
-  /** The copy under way, for the top bar. */
+  /** The sending under way, for the top bar. */
   readonly transfer = signal<Transfer | null>(null);
 
-  /** Looks at once for the folders a visit before copied in. */
+  /** Asks at once which folders the service keeps files of. */
   constructor() {
     void this.look();
   }
 
-  /** Sets `found`: the folders with files in this browser (one that cannot be listed has none). */
+  /** What the service keeps of KovaaK's files; nothing when it cannot be asked. */
+  private async kept(): Promise<KovaakKept> {
+    const asked = this.http.get<KovaakKept>('/api/kovaak_files');
+    return firstValueFrom(asked).catch((): KovaakKept => ({ stats: [], scenarios: [] }));
+  }
+
+  /** Sets `found`: the folders the service keeps any file of. */
   private async look(): Promise<void> {
-    const has = await Promise.all(
-      FOLDER_ROLES.map((role) =>
-        this.files.list(`${KOVAAK}/${role}`, 1).then(
-          (entries) => entries.length > 0,
-          () => false,
-        ),
-      ),
-    );
-    this.found.set(new Set(FOLDER_ROLES.filter((_role, index) => has[index])));
+    const kept = await this.kept();
+    const has: Record<FolderRole, boolean> = {
+      stats: kept.stats.length > 0,
+      scenarios: kept.scenarios.some(([path]) => path.startsWith('scenarios/')),
+      workshop: kept.scenarios.some(([path]) => path.startsWith('workshop/')),
+    };
+    this.found.set(new Set(FOLDER_ROLES.filter((role) => has[role])));
   }
 
   /**
-   * Has the service read the folders chosen as files at once, then copies them into this browser
-   * in the background (the top bar follows the copy; nothing waits for it). Rejects when the files
+   * Shows the folders chosen as files to the service for this visit, then sends it the files new or
+   * changed since they were last sent, each read once (the top bar follows). Rejects when the files
    * hold no stats or scenario file of KovaaK's.
    */
   async copy(files: readonly File[]): Promise<void> {
@@ -94,24 +97,20 @@ export class KovaakCopy {
     if (!chosen.length)
       throw new Error("No stats or scenario files of KovaaK's in the folder chosen");
     await this.files.showKovaak(chosen);
-    await firstValueFrom(this.http.post('/api/kovaak', null, { params: { changed: '1' } }));
+    await this.send(chosen);
     await this.look();
-    void this.keep(chosen);
   }
 
-  /**
-   * Copies the files chosen into this browser for later visits (only those new or changed since the
-   * last copy). A failed copy is only logged: this visit already reads the files where they are.
-   */
-  private async keep(chosen: ChosenFile[]): Promise<void> {
-    const label = "Keeping KovaaK's files in this browser for later visits";
+  /** Sends the files the service does not keep as they are now, in batches. */
+  private async send(chosen: ChosenFile[]): Promise<void> {
+    const fresh = freshFiles(chosen, await this.kept());
+    const label = "Reading KovaaK's files into this browser";
     this.transfer.set({ label, share: null });
     try {
-      await this.files.copyIn(KOVAAK, chosen, (done, total) =>
+      const post = (body: Uint8Array) => firstValueFrom(this.http.post('/api/kovaak_files', body));
+      await sendBatches(fresh, post, (done, total) =>
         this.transfer.set({ label, share: total ? done / total : null, count: { done, total } }),
       );
-    } catch (error) {
-      console.warn("KovaaK's files were not kept in this browser:", error);
     } finally {
       this.transfer.set(null);
     }

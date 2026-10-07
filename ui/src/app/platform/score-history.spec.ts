@@ -30,13 +30,14 @@ const AIR: PastRun[] = [
 ];
 
 /**
- * A review server that knows the runs of Air only; in browser mode the page copies KovaaK's stats folder into its review
- * service first (/files/kovaak), which then reads it again (/api/kovaak).
+ * A review server that knows the runs of Air only; in browser mode the page first shows KovaaK's stats folder to its
+ * review service (/files/kovaak) and sends it the files it does not keep yet (/api/kovaak_files), once each.
  */
 const ROUTES: ApiRoutes = {
   '/api/history': (req: HttpRequest<unknown>) => (req.params.get('scenario') === 'Air' ? AIR : []),
-  '/files/kovaak': { copied: FILES.length },
-  '/api/kovaak': { changed: true },
+  '/files/kovaak': null,
+  '/api/kovaak_files': (req: HttpRequest<unknown>) =>
+    req.method === 'POST' ? { stats: FILES.length, scenarios: 0 } : { stats: [], scenarios: [] },
 };
 
 /** A file as a folder input gives it: its path below the folder chosen. */

@@ -351,11 +351,13 @@ impl Library {
         let video = self.resolve(id)?;
         let (model, by) = self.shown(id);
         let stats = self.stats_of(id, &video);
+        let stats_text = stats.as_deref().map(|path| self.stats_bytes(path)).transpose()?;
         let facts = self.facts_of(&video);
         let run = Some(RunMarks::read(self.store(), id));
         let faint = Some(self.faint(id));
         let parts = |part: Part| self.review_part(id, &by, part);
-        let worked_out = crate::report::work_out(parts, &video, stats.as_deref(), run, facts.as_ref(), faint)?;
+        let stats = stats.as_deref().zip(stats_text.as_deref());
+        let worked_out = crate::report::work_out(parts, &video, stats, run, facts.as_ref(), faint)?;
         let Some(mut report) = worked_out else { return Ok(Value::Null) };
         report["review_model"] = json!(model);
         Ok(report)
