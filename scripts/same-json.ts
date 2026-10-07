@@ -1,7 +1,7 @@
 /**
  * Whether two JSON files, or every JSON file in two folders, hold the same values once keys in the
  * first are renamed: the check that a change to a format moved only names (a new baseline after a
- * rename, BENCH.md).
+ * rename, docs/BENCH.md).
  *
  *   bun scripts/same-json.ts <old file or folder> <new file or folder> [path=name ...]
  *

@@ -2,7 +2,7 @@
  * Builds the UI for one mode or several (`bun run build`, `bun run build:<mode>`): the shared assets once
  * (ui-assets.ts --release: the core and the browser's service as WebAssembly, the models), then each mode's Angular
  * build (angular.json: production plus the mode's configuration), all at once when there are several, each in its
- * own process. Each step's time goes in the costs log (scripts/costs.ts, COSTS.md).
+ * own process. Each step's time goes in the costs log (scripts/costs.ts, docs/COSTS.md).
  * In: the modes asked for. Out: ui/generated/ and ui/dist/<mode>/.
  * Usage: bun scripts/build.ts [browser] [server] [desktop] [--one-at-a-time] [--data]   (no mode: all three)
  */

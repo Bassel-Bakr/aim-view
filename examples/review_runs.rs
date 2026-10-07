@@ -1,6 +1,6 @@
 //! Reviews every kept run again and writes its reports: the check that a change after the tracking (matching,
 //! measures, the report) moved nothing it should not. Run it before and after the change into two folders, then
-//! compare them with `bun scripts/same-json.ts <before> <after> [path=name ...]` (BENCH.md, Correctness).
+//! compare them with `bun scripts/same-json.ts <before> <after> [path=name ...]` (docs/BENCH.md, Correctness).
 //!
 //!   cargo run --profile quick --example review_runs -- <out> [<root> ...] [--stats <KovaaK's stats folder>]
 //!

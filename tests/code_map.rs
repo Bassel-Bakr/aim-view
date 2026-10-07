@@ -1,6 +1,6 @@
-//! The code map (CODEMAP.md), built from the Rust sources so a reader finds where a thing lives with one read or one
+//! The code map (docs/CODEMAP.md), built from the Rust sources so a reader finds where a thing lives with one read or one
 //! search instead of opening files: each file's header comment, then its public types with the first sentence of
-//! their doc, their methods, and the file's functions and constants by name. The test fails when CODEMAP.md is out of
+//! their doc, their methods, and the file's functions and constants by name. The test fails when docs/CODEMAP.md is out of
 //! date; `CODE_MAP_WRITE=1 cargo test --profile quick --test code_map` writes it again.
 
 use std::env;
@@ -21,8 +21,8 @@ const FOLDERS: [&str; 10] = [
     "benches",
 ];
 /// The map's file, at the repository's root.
-const MAP_FILE: &str = "CODEMAP.md";
-/// Set to write CODEMAP.md instead of comparing with it.
+const MAP_FILE: &str = "docs/CODEMAP.md";
+/// Set to write docs/CODEMAP.md instead of comparing with it.
 const WRITE_VAR: &str = "CODE_MAP_WRITE";
 /// The map's line width, as the hand-formatted sources'.
 const WIDTH: usize = 120;
@@ -342,20 +342,20 @@ fn code_map(root: &Path) -> String {
     out
 }
 
-/// CODEMAP.md equals the map built from the sources now (or, with CODE_MAP_WRITE set, is written again).
+/// docs/CODEMAP.md equals the map built from the sources now (or, with CODE_MAP_WRITE set, is written again).
 #[test]
 fn the_code_map_is_current() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let map = code_map(root);
     let path = root.join(MAP_FILE);
     if env::var_os(WRITE_VAR).is_some() {
-        fs::write(&path, &map).expect("CODEMAP.md writes");
+        fs::write(&path, &map).expect("docs/CODEMAP.md writes");
         return;
     }
     let kept = fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
     assert!(
         kept == map,
-        "CODEMAP.md is out of date: run `CODE_MAP_WRITE=1 cargo test --profile quick --test code_map`, then read its diff"
+        "docs/CODEMAP.md is out of date: run `CODE_MAP_WRITE=1 cargo test --profile quick --test code_map`, then read its diff"
     );
 }
 

@@ -27,7 +27,7 @@ default = ["native"]
 native = ["dep:ort", "dep:ffmpeg-sidecar", "dep:libc", "dep:windows"]
 # the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
 cuda = ["native", "ort/cuda"]
-# the track example counts every allocation by where it was made (dhat), into dhat-heap.json: HOT_PATHS.md
+# the track example counts every allocation by where it was made (dhat), into dhat-heap.json: docs/HOT_PATHS.md
 dhat-heap = ["dep:dhat"]
 # `bun run types`: the TypeScript types of the JSON the UI reads, made from these structs and the core's (ts-rs)
 ts = ["dep:ts-rs", "aimview/ts"]

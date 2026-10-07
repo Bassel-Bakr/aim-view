@@ -10,5 +10,5 @@ user's yes first.
 Hand sub-tasks to the agent at their level, in the background, so nothing waits on them: `scout` (haiku, low) for a
 search across many files or a big log, `runner` (haiku, low) for a known slow command, `mechanic` (sonnet, medium) for
 a clear rule applied over many files, `builder` (high) for a settled piece of a feature with its test. Keep a lookup of
-one or two files here, and keep judgment (design, causes, results) here. A command `COSTS.md` puts over 30 s runs in the
+one or two files here, and keep judgment (design, causes, results) here. A command `docs/COSTS.md` puts over 30 s runs in the
 background.

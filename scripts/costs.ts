@@ -1,12 +1,12 @@
 /**
- * What the project's commands cost, kept so no one runs a command again only to learn how long it takes (COSTS.md).
+ * What the project's commands cost, kept so no one runs a command again only to learn how long it takes (docs/COSTS.md).
  * The build scripts time their own steps with `step`; `bun scripts/costs.ts run <name> [--config a=b,c=d] --
  * <command ...>` times any other command. Each timing is one JSON line in costs.jsonl in the data folder
  * (aimview.json's data), with the configuration it ran in (a cargo profile, the modes built, a model, a device, the
- * frames at once...): the same step costs differently in each. Every timing rewrites COSTS.md's measured table from
+ * frames at once...): the same step costs differently in each. Every timing rewrites docs/COSTS.md's measured table from
  * that log: each step and configuration's latest time, its median over its last runs, and how many runs there were.
  * `bun run costs` rewrites it by hand.
- * In: the steps and commands timed, and the log. Out: the log, and COSTS.md's measured table.
+ * In: the steps and commands timed, and the log. Out: the log, and docs/COSTS.md's measured table.
  */
 import { $ } from 'bun';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,8 +16,8 @@ import { ROOT, folder } from './local-config';
 /** The log of every timing, one JSON line each. */
 const LOG = join(folder('data'), 'costs.jsonl');
 /** The notes the measured table is written into, between its two markers. */
-const COSTS = join(ROOT, 'COSTS.md');
-/** The marker before the measured table in COSTS.md. */
+const COSTS = join(ROOT, 'docs/COSTS.md');
+/** The marker before the measured table in docs/COSTS.md. */
 const START = '<!-- costs:start -->';
 /** The marker after it. */
 const END = '<!-- costs:end -->';
@@ -31,7 +31,7 @@ export type Configuration = Record<string, string>;
 
 /** One timing: the step, its configuration, its seconds, whether it worked, and the commit it ran at. */
 interface Timing {
-  /** The step's name, as COSTS.md lists it. */
+  /** The step's name, as docs/COSTS.md lists it. */
   step: string;
   /** What it ran with; empty when nothing about it changes its cost. */
   config: Configuration;
@@ -63,7 +63,7 @@ function configText(config: Configuration): string {
   return settings.length ? settings.join(', ') : '-';
 }
 
-/** Adds a timing to the log, says it on the console, and brings COSTS.md's table up to date. */
+/** Adds a timing to the log, says it on the console, and brings docs/COSTS.md's table up to date. */
 async function record(step: string, config: Configuration, seconds: number, ok: boolean): Promise<void> {
   const [commit, changed] = await checkout();
   const at = new Date().toISOString();
@@ -118,12 +118,12 @@ function table(): string {
   return [head, '| --- | --- | --- | --- | --- | --- |', ...rows].join('\n');
 }
 
-/** Rewrites the measured table in COSTS.md from the log. */
+/** Rewrites the measured table in docs/COSTS.md from the log. */
 function writeTable(): void {
   const text = readFileSync(COSTS, 'utf8');
   const [before, rest] = text.split(START);
   const after = rest?.split(END)[1];
-  if (after === undefined) throw new Error(`COSTS.md has no ${START} ... ${END} markers`);
+  if (after === undefined) throw new Error(`docs/COSTS.md has no ${START} ... ${END} markers`);
   writeFileSync(COSTS, `${before}${START}\n${table()}\n${END}${after}`);
 }
 

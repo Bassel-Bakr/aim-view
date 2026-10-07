@@ -189,8 +189,8 @@ rust-analyzer's call hierarchy.
   reading (camera.json), and the countdown-teal counts (teal.json, checked in the browser).
 - `tests/camera_same.rs`: The camera watch's tile shifts (src/camera.rs) against the ones it gave before, to the bit, on
   the parity cases' frame pairs: a change made for speed must not change a reading.
-- `tests/code_map.rs`: The code map (CODEMAP.md), built from the Rust sources so a reader finds where a thing lives with
-  one read or one search instead of opening files: each file's header comment, then its public types with the first
+- `tests/code_map.rs`: The code map (docs/CODEMAP.md), built from the Rust sources so a reader finds where a thing lives
+  with one read or one search instead of opening files: each file's header comment, then its public types with the first
   sentence of their doc, their methods, and the file's functions and constants by name.
 - `tests/common/mod.rs`: What the parity tests share: the frozen fixtures in test_out/parity
   (python/retired/tests/fixtures.py made them), reading their JSON, excluded areas, gray frames and tracking inputs, and
@@ -269,8 +269,8 @@ rust-analyzer's call hierarchy.
   conversion to 720p, the camera watch, the HUD watch and the pop-up areas' watch.
 - `benches/hot_paths/inputs.rs`: Where the benches' inputs are: the parity fixtures (test_out/parity/, from
   python/retired/tests/fixtures.py) and the native review's kept outputs (test_out/baselines/4b7ddc4/native/).
-- `benches/hot_paths/main.rs`: The review's hot paths (HOT_PATHS.md) timed with criterion, on real recordings' inputs
-  kept in test_out/ (ignored by git; BENCH.md, "Function benchmarks").
+- `benches/hot_paths/main.rs`: The review's hot paths (docs/HOT_PATHS.md) timed with criterion, on real recordings'
+  inputs kept in test_out/ (ignored by git; docs/BENCH.md, "Function benchmarks").
 - `benches/hot_paths/review.rs`: The review's last steps, from the joined tracks: the kills matched in the tracks, each
   flick measured, and the report worked out (the service's report request).
 - `benches/hot_paths/tracks.rs`: The track step after the detector: each frame's boxes kept or dropped (`keep`), then
@@ -1338,9 +1338,9 @@ pairs: a change made for speed must not change a reading. AIMVIEW_KEEP_SHIFTS=1 
 
 ## tests/code_map.rs
 
-The code map (CODEMAP.md), built from the Rust sources so a reader finds where a thing lives with one read or one search
-instead of opening files: each file's header comment, then its public types with the first sentence of their doc, their
-methods, and the file's functions and constants by name. The test fails when CODEMAP.md is out of date;
+The code map (docs/CODEMAP.md), built from the Rust sources so a reader finds where a thing lives with one read or one
+search instead of opening files: each file's header comment, then its public types with the first sentence of their doc,
+their methods, and the file's functions and constants by name. The test fails when docs/CODEMAP.md is out of date;
 `CODE_MAP_WRITE=1 cargo test --profile quick --test code_map` writes it again.
 
 ## tests/common/mod.rs
@@ -1429,7 +1429,7 @@ The review after the detector, replayed from the parts the native review kept, w
 (the detector's boxes, the pop-up areas' looks) and watch part (the camera's tile shifts, the countdown, the HUD's
 glyphs) joined as the review joins them (keep, the pop-ups, link, the camera's readings, the HUD's reading), then the
 report worked out as the service does (matching, measures, summary, checks). Every output must equal the native
-review's, byte for byte: the byte-compare's baseline (BENCH.md, Correctness; `NATIVE`/<video>/: tracks.json,
+review's, byte for byte: the byte-compare's baseline (docs/BENCH.md, Correctness; `NATIVE`/<video>/: tracks.json,
 readings.json, hud.json, report.json; no_stats/ without the stats file). A change after the detector is checked here in
 about a second a video, not with a whole review. The parts are in test_out/baselines/parts/<video>/, kept once by the
 track example's `--parts` (service/examples/track.rs; saved.txt there): setup.json, fixed.bin, run<k>_track.json,
@@ -1491,7 +1491,7 @@ app: `cargo run --profile quick --example review -- <request.json>`.
 
 Reviews every kept run again and writes its reports: the check that a change after the tracking (matching, measures, the
 report) moved nothing it should not. Run it before and after the change into two folders, then compare them with `bun
-scripts/same-json.ts <before> <after> [path=name ...]` (BENCH.md, Correctness).
+scripts/same-json.ts <before> <after> [path=name ...]` (docs/BENCH.md, Correctness).
 
 ## service/examples/api.rs
 
@@ -1562,9 +1562,9 @@ native review's kept outputs (test_out/baselines/4b7ddc4/native/).
 
 ## benches/hot_paths/main.rs
 
-The review's hot paths (HOT_PATHS.md) timed with criterion, on real recordings' inputs kept in test_out/ (ignored by
-git; BENCH.md, "Function benchmarks"). A bench whose input is missing is skipped with a message. `cargo bench -- <name>`
-runs the benches whose name holds <name> (`cargo bench -- track/link`).
+The review's hot paths (docs/HOT_PATHS.md) timed with criterion, on real recordings' inputs kept in test_out/ (ignored
+by git; docs/BENCH.md, "Function benchmarks"). A bench whose input is missing is skipped with a message. `cargo bench --
+<name>` runs the benches whose name holds <name> (`cargo bench -- track/link`).
 
 - Constants: `FEW_SAMPLES`, `FEWEST_SAMPLES`.
 

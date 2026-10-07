@@ -1,5 +1,5 @@
-//! The review's hot paths (HOT_PATHS.md) timed with criterion, on real recordings' inputs kept in test_out/ (ignored
-//! by git; BENCH.md, "Function benchmarks"). A bench whose input is missing is skipped with a message.
+//! The review's hot paths (docs/HOT_PATHS.md) timed with criterion, on real recordings' inputs kept in test_out/ (ignored
+//! by git; docs/BENCH.md, "Function benchmarks"). A bench whose input is missing is skipped with a message.
 //! `cargo bench -- <name>` runs the benches whose name holds <name> (`cargo bench -- track/link`).
 
 use std::time::Duration;

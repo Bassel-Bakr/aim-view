@@ -668,7 +668,7 @@ and large_v11's 141) and kept the robots (Smoothbot 45 flicks against 46). Expor
 **large_v13e4** (2026-10-06, "large_v12 and large_v13" above), threshold 0.3, and on tracking runs weaker boxes at the
 crosshair (its settings' `at_crosshair`: tracking's gap to the stats files 0.062 to 0.048). 148,709 parameters; 587.1
 KB as fp32 ONNX. large_v11 was the best before it, and full_v8_s3 (80,765 parameters, 324.4 KB) before that; full_v8_s3
-is the fastest model listed (BENCH.md). small_v13 left the picker on 2026-10-05 (the user's call).
+is the fastest model listed (docs/BENCH.md). small_v13 left the picker on 2026-10-05 (the user's call).
 
 - To embed (KovOBS, the browser, any language): `python/model/exports/detector_large_v13e4_embed.onnx`. Raw RGB bytes
   and the fixed map in, the 100 best boxes out.

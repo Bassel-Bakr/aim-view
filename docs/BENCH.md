@@ -65,7 +65,7 @@ Measured from 2026-10-02 to 2026-10-04, before 4b7ddc4. Remeasure only for a cha
 
 ## Function benchmarks
 
-The hot paths (`HOT_PATHS.md`) timed one function at a time with criterion, on real inputs: the parity fixtures
+The hot paths (`docs/HOT_PATHS.md`) timed one function at a time with criterion, on real inputs: the parity fixtures
 (`test_out/parity/`) and the native review's kept outputs (`test_out/baselines/4b7ddc4/native/`). The code is in
 `benches/hot_paths/`. A bench whose input is missing is skipped with a message. The whole suite takes about 80 s
 (each bench 0.5 s of warm-up and 2 s of samples), after a build of about 2 minutes (the release profile, with LTO).

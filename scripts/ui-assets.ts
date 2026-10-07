@@ -12,7 +12,7 @@
  * Only what changed is redone: one cargo run builds the core and the service together (their links
  * overlap), cargo rebuilds only after a Rust change, wasm-opt runs only when the service's module or
  * its options changed (its stamp in cargo's target folder), and a file is written only when its
- * bytes differ. Each step's time goes in the costs log (scripts/costs.ts, COSTS.md). The models and
+ * bytes differ. Each step's time goes in the costs log (scripts/costs.ts, docs/COSTS.md). The models and
  * the data come from the settings' folders (aimview.json: models, data).
  *
  * The area finder data names the user's recordings, so a build meant for others leaves it out: it

@@ -105,9 +105,9 @@ bun run lint:ui                  # ESLint
 python python/model/test_model.py
 ```
 
-[AGENTS.md](AGENTS.md) holds the project's rules and every command. [GLOSSARY.md](GLOSSARY.md) names the domain words,
-[python/README.md](python/README.md) explains how the review works, [BENCH.md](BENCH.md) lists the benchmarks and
-their baselines, and [HOT_PATHS.md](HOT_PATHS.md) shows where a review spends its time.
+[AGENTS.md](AGENTS.md) holds the project's rules and every command. [docs/GLOSSARY.md](docs/GLOSSARY.md) names the domain words,
+[python/README.md](python/README.md) explains how the review works, [docs/BENCH.md](docs/BENCH.md) lists the benchmarks and
+their baselines, and [docs/HOT_PATHS.md](docs/HOT_PATHS.md) shows where a review spends its time.
 
 ## License
 

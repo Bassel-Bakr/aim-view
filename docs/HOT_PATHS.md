@@ -2,11 +2,11 @@
 
 Where a review spends its time, stage by stage, with how often each stage runs and what it costs. Check this before
 optimizing anything, and update a row when a change or a measurement moves it. The benchmarks that time these, and
-their baselines, are in `BENCH.md`.
+their baselines, are in `docs/BENCH.md`.
 
 The numbers are for av1 (2560x1440, about 6,000 frames at 60 fps, 25 key frames) unless a row says otherwise. A name
 in backticks after a number is its criterion bench (`cargo bench --bench hot_paths -- <name>`): medians at 9cbcbf7,
-or at 5a66b5c for matching and the report (BENCH.md, "Function benchmarks"; runs differ by up to about 10%). Numbers
+or at 5a66b5c for matching and the report (docs/BENCH.md, "Function benchmarks"; runs differ by up to about 10%). Numbers
 marked "survey" come from a scratch bench at 9eef1f4 run while another build was going (about ±30%).
 
 ## Profiling a whole review

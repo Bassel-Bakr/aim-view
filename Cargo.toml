@@ -45,7 +45,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
 
 [dev-dependencies]
-# `cargo bench`: the hot paths' benches (benches/hot_paths/; BENCH.md, "Function benchmarks")
+# `cargo bench`: the hot paths' benches (benches/hot_paths/; docs/BENCH.md, "Function benchmarks")
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "rayon"] }
 
 [[bench]]
@@ -74,7 +74,7 @@ codegen-units = 16
 incremental = true
 
 # `cargo flamegraph --profile profiling` and the heap profile (service's `dhat-heap` feature): release with its
-# symbols, so a profile names each function (HOT_PATHS.md)
+# symbols, so a profile names each function (docs/HOT_PATHS.md)
 [profile.profiling]
 inherits = "release"
 debug = true

@@ -13,7 +13,7 @@ python/aimview_tools.py: the model's _u8in export, see eval_vods.u8in, and the a
 are cached per model name in test_out/vod_model/eval/moving_<name>_native.pkl.
 Usage: python python/model/eval_moving.py name=model [name=model ...] [--reports <folder>]
 --reports also writes the core's whole report of each run to <folder>/<name>/<video>.json: run it before and after a
-change to the core's tracking or clicking review and compare the folders (`diff -rq`; BENCH.md).
+change to the core's tracking or clicking review and compare the folders (`diff -rq`; docs/BENCH.md).
 """
 import glob
 import json

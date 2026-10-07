@@ -2,7 +2,7 @@
 //! part (the detector's boxes, the pop-up areas' looks) and watch part (the camera's tile shifts, the countdown, the
 //! HUD's glyphs) joined as the review joins them (keep, the pop-ups, link, the camera's readings, the HUD's reading),
 //! then the report worked out as the service does (matching, measures, summary, checks). Every output must equal the
-//! native review's, byte for byte: the byte-compare's baseline (BENCH.md, Correctness; `NATIVE`/<video>/: tracks.json,
+//! native review's, byte for byte: the byte-compare's baseline (docs/BENCH.md, Correctness; `NATIVE`/<video>/: tracks.json,
 //! readings.json, hud.json, report.json; no_stats/ without the stats file). A change after the detector is checked
 //! here in about a second a video, not with a whole review. The parts are in test_out/baselines/parts/<video>/, kept
 //! once by the track example's `--parts` (service/examples/track.rs; saved.txt there): setup.json, fixed.bin,
@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 mod common;
 use common::{Diff, compare, read as read_json};
 
-/// The byte-compare's baseline: move it with BENCH.md's.
+/// The byte-compare's baseline: move it with docs/BENCH.md's.
 const NATIVE: &str = "test_out/baselines/34134a5/native";
 /// The kept parts, one folder a video.
 const PARTS: &str = "test_out/baselines/parts";
@@ -109,7 +109,7 @@ fn replayed_reviews_equal_the_native_ones() {
         let dir = root.join(NATIVE).join(video);
         let parts = root.join(PARTS).join(video);
         if !parts.join("setup.json").exists() {
-            eprintln!("no {}: run the track example with --parts (BENCH.md, Correctness)", parts.display());
+            eprintln!("no {}: run the track example with --parts (docs/BENCH.md, Correctness)", parts.display());
             continue;
         }
         let [tracks, readings, hud] = join(&parts);
