@@ -269,10 +269,15 @@ export type JobStage =
   | 'downloading'
   | 'yt-dlp'
   | 'done'
-  | 'error';
+  | 'error'
+  | 'cancelled';
+
+/** The error a review or a download the user cancelled stops with (the service's job stage too). */
+export const CANCELLED = 'cancelled';
 
 /**
- * A review in progress, or its end (/api/job). A link's download is a job too (link): its stage is downloading
+ * A review in progress, or its end (/api/job). The user can cancel one (/api/cancel): it ends as cancelled, keeping
+ * nothing. A link's download is a job too (link): its stage is downloading
  * (megabytes done of total), or ffmpeg or yt-dlp while the server fetches them; it is gone (none) once the video is in.
  */
 export interface Job {

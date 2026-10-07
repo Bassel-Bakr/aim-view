@@ -114,15 +114,20 @@ export class ServerRecordings implements RecordingSource {
     return added.id;
   }
 
-  /** Follows a link's download until the video is in (its job is gone) or it failed. */
+  async cancelLink(id: string): Promise<void> {
+    await firstValueFrom(this.http.post<Job>('/api/cancel', null, { params: { id } }));
+  }
+
+  /** Follows a link's download until the video is in (its job is gone), it failed, or it was cancelled. */
   private async followLink(id: string): Promise<void> {
     const link = this.links().get(id);
     if (!link) return;
     try {
       for (;;) {
         const job = await firstValueFrom(this.http.get<Job>('/api/job', { params: { id } }));
-        if (job.stage === 'error') {
-          this.setLink(id, { ...link, video: { state: 'not-downloaded', error: job.error ?? '' } });
+        if (job.stage === 'error' || job.stage === 'cancelled') {
+          const error = job.stage === 'cancelled' ? 'Cancelled' : (job.error ?? '');
+          this.setLink(id, { ...link, video: { state: 'not-downloaded', error } });
           return;
         }
         if (job.stage === 'none' || !job.link) break;

@@ -115,6 +115,9 @@ export abstract class RecordingSource {
    * downloading until it is in.
    */
   abstract addLink(url: string, format: string | null): Promise<string>;
+
+  /** Cancels a link's download while it runs: the recording is left not downloaded ("Cancelled"). */
+  abstract cancelLink(id: string): Promise<void>;
   /** Changes a recording's row after a change made elsewhere (it was reviewed, it has a stats file). */
   abstract patch(id: string, change: Partial<Recording>): void;
   /** Empties the list, and forgets the recordings folder: the files themselves stay where they are. */

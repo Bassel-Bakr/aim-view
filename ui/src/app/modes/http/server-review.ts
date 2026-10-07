@@ -61,6 +61,12 @@ export class ServerReview implements ReviewEngine {
     return firstValueFrom(this.http.get<Job>('/api/job', { params: { id } })).then(reviewOnly);
   }
 
+  cancel(id: string): Promise<Job> {
+    return firstValueFrom(this.http.post<Job>('/api/cancel', null, { params: { id } })).then(
+      reviewOnly,
+    );
+  }
+
   /** The window the server keeps (run.json): all three null when none is marked. */
   marks(id: () => string | undefined): HttpResourceRef<RunMarks | null | undefined> {
     return httpResource<RunMarks | null>(

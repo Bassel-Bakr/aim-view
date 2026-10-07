@@ -1,7 +1,7 @@
 import { HttpClient, HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { effect, inject, Service, signal } from '@angular/core';
-import { filter, firstValueFrom, lastValueFrom, tap } from 'rxjs';
-import { Job, JobStage, LinkAdded, LinkInfo } from '../../api';
+import { filter, firstValueFrom, fromEvent, lastValueFrom, takeUntil, tap } from 'rxjs';
+import { CANCELLED, Job, JobStage, LinkAdded, LinkInfo } from '../../api';
 
 /** Where the browser keeps the address of the server that downloads links for it. */
 const SERVER_KEY = 'link-server';
@@ -23,10 +23,14 @@ const SERVER_STAGES: Partial<Record<JobStage, string>> = {
 /** Hears how far a link's video has come: what is being done, and the megabytes done of total (0: not known). */
 export type LinkProgress = (label: string, done: number, total: number) => void;
 
-/** A link's video on its way into this browser: its file name, and the file once all of it is here. */
+/**
+ * A link's video on its way into this browser: its file name, the file once all of it is here, and what stops it (the
+ * file then fails with CANCELLED).
+ */
 export interface LinkFetch {
   name: string;
   file: Promise<File>;
+  cancel: () => void;
 }
 
 const megabytes = (bytes: number) => Math.floor(bytes / 2 ** 20);
@@ -82,12 +86,14 @@ export class BrowserLinks {
 
   /** Starts bringing the link's video into the browser, in the chosen quality where the server downloads it. */
   async start(url: string, format: string | null, progress: LinkProgress): Promise<LinkFetch> {
+    const stop = new AbortController();
+    const cancel = () => stop.abort();
     if (await this.readsItself(url)) {
       const name = fileName(url);
-      return { name, file: this.download(url, name, progress) };
+      return { name, file: this.download(url, name, progress, stop.signal), cancel };
     }
     const added = await this.ask<LinkAdded>('/api/link', { url, format });
-    return { name: added.saved, file: this.copy(added, progress) };
+    return { name: added.saved, file: this.copy(added, progress, stop.signal), cancel };
   }
 
   /**
@@ -106,27 +112,39 @@ export class BrowserLinks {
     return reads;
   }
 
-  /** Downloads a video file in the browser. */
-  private async download(url: string, name: string, progress: LinkProgress): Promise<File> {
+  /** Downloads a video file in the browser, until `stop` is aborted. */
+  private async download(
+    url: string,
+    name: string,
+    progress: LinkProgress,
+    stop: AbortSignal,
+  ): Promise<File> {
     const done = await lastValueFrom(
       this.http.get(url, { responseType: 'blob', observe: 'events', reportProgress: true }).pipe(
+        takeUntil(fromEvent(stop, 'abort')),
         tap((event) => {
           if (event.type === HttpEventType.DownloadProgress)
             progress(DOWNLOADING, megabytes(event.loaded), megabytes(event.total ?? 0));
         }),
         filter((event): event is HttpResponse<Blob> => event.type === HttpEventType.Response),
       ),
+      { defaultValue: null },
     );
+    if (!done) throw new Error(CANCELLED);
     const body = done.body ?? new Blob();
     return new File([body], name, { type: body.type || 'video/mp4' });
   }
 
-  /** Follows the server's download until the video is in, then copies it into the browser a range at a time. */
-  private async copy(added: LinkAdded, progress: LinkProgress): Promise<File> {
-    await this.downloaded(added, progress);
+  /**
+   * Follows the server's download until the video is in, then copies it into the browser a range at a time; stopped
+   * (and the server's download cancelled) when `stop` is aborted.
+   */
+  private async copy(added: LinkAdded, progress: LinkProgress, stop: AbortSignal): Promise<File> {
+    await this.downloaded(added, progress, stop);
     const parts: Blob[] = [];
     let at = 0;
     for (;;) {
+      if (stop.aborted) throw new Error(CANCELLED);
       const answer = await this.range(added.id, at);
       const size = Number(/\/(\d+)$/.exec(answer.headers.get('content-range') ?? '')?.[1] ?? 0);
       const body = answer.body ?? new Blob();
@@ -138,9 +156,17 @@ export class BrowserLinks {
     return new File(parts, added.saved, { type: 'video/mp4' });
   }
 
-  /** Waits for the server's download of a link, showing how far it is. */
-  private async downloaded(added: LinkAdded, progress: LinkProgress): Promise<void> {
+  /** Waits for the server's download of a link, showing how far it is; cancels it there when `stop` is aborted. */
+  private async downloaded(
+    added: LinkAdded,
+    progress: LinkProgress,
+    stop: AbortSignal,
+  ): Promise<void> {
     for (;;) {
+      if (stop.aborted) {
+        await this.ask<Job>('/api/cancel', {}, { id: added.id }).catch(() => undefined);
+        throw new Error(CANCELLED);
+      }
       const job = await this.ask<Job>('/api/job', undefined, { id: added.id });
       if (job.stage === 'error') throw new Error(job.error ?? 'the download failed');
       if (job.stage === 'none' || !job.link) return;
@@ -165,11 +191,13 @@ export class BrowserLinks {
     });
   }
 
-  /** Asks the server: with a body, a POST; without, a GET. */
+  /** Asks the server: with a body, a POST; without, a GET; either with `params` in its query. */
   private ask<T>(path: string, body?: object, params?: Record<string, string>): Promise<T> {
     const url = `${this.base()}${path}`;
     const sent =
-      body === undefined ? this.http.get<T>(url, { params }) : this.http.post<T>(url, body);
+      body === undefined
+        ? this.http.get<T>(url, { params })
+        : this.http.post<T>(url, body, { params });
     return firstValueFrom(sent).catch((error: unknown) => {
       throw this.plain(error);
     });

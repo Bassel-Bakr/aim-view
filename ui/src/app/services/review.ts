@@ -14,7 +14,9 @@ export class Review {
   private readonly engine = inject(ReviewEngine);
   private readonly library = inject(Library);
   readonly job = signal<Job>({ stage: 'none' });
-  readonly running = computed(() => !['none', 'done', 'error'].includes(this.job().stage));
+  readonly running = computed(
+    () => !['none', 'done', 'error', 'cancelled'].includes(this.job().stage),
+  );
   /** Why the open recording cannot be reviewed here, in words; null when it can. */
   readonly unavailable = computed(() => {
     const id = this.library.selectedId();
@@ -61,6 +63,18 @@ export class Review {
     this.watcher++;
     try {
       this.follow(await this.engine.start(id, again));
+    } catch (error) {
+      this.job.set({ stage: 'error', error: errorMessage(error) });
+    }
+  }
+
+  /** Cancels the open recording's review: it stops and keeps nothing, so the review shown before stays. */
+  async cancel(): Promise<void> {
+    const id = this.library.selectedId();
+    if (!id) return;
+    this.watcher++;
+    try {
+      this.job.set(await this.engine.cancel(id));
     } catch (error) {
       this.job.set({ stage: 'error', error: errorMessage(error) });
     }

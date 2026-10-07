@@ -80,12 +80,15 @@
       </span>
     </div>
   } @else if (v.state === 'downloading') {
-    <div class="progress">
-      <div class="fill" [style.width.%]="v.total ? (100 * v.done) / v.total : 0"></div>
-      <span class="progress-text">
-        <span role="status">{{ v.label || 'Downloading the video' }}</span>
-        <span aria-hidden="true">{{ v.total ? v.done + ' / ' + v.total + ' MB' : '' }}</span>
-      </span>
+    <div class="progress-line">
+      <div class="progress">
+        <div class="fill" [style.width.%]="v.total ? (100 * v.done) / v.total : 0"></div>
+        <span class="progress-text">
+          <span role="status">{{ v.label || 'Downloading the video' }}</span>
+          <span aria-hidden="true">{{ v.total ? v.done + ' / ' + v.total + ' MB' : '' }}</span>
+        </span>
+      </div>
+      <button type="button" appButton (click)="cancelDownload()">Cancel</button>
     </div>
   } @else if (v.state === 'not-downloaded') {
     <p class="note" role="alert">Could not download the video: {{ v.error }}</p>
@@ -106,12 +109,17 @@
   }
 }
 @if (progress(); as p) {
-  <div class="progress">
-    <div class="fill" [style.width.%]="100 * p.fraction"></div>
-    <span class="progress-text">
-      <span [attr.role]="p.failed ? 'alert' : 'status'">{{ p.stage }}</span>
-      <span aria-hidden="true">{{ p.count }}</span>
-    </span>
+  <div class="progress-line">
+    <div class="progress">
+      <div class="fill" [style.width.%]="100 * p.fraction"></div>
+      <span class="progress-text">
+        <span [attr.role]="p.failed ? 'alert' : 'status'">{{ p.stage }}</span>
+        <span aria-hidden="true">{{ p.count }}</span>
+      </span>
+    </div>
+    @if (review.running()) {
+      <button type="button" appButton (click)="cancelReview()">Cancel</button>
+    }
   </div>
 }
 @if (headline(); as h) {

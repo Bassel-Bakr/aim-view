@@ -154,6 +154,28 @@ for (const mode of MODE_CASES) {
       expect(source.recordings().filter((recording) => recording.id === id)).toHaveLength(1);
     });
 
+    it("cancels a link's download, leaving the recording not downloaded", async () => {
+      const source = setUp(mode, RecordingSource);
+      let cancelled = false;
+      const routes: ApiRoutes = {
+        ...linkServer([]),
+        ...anywhere({
+          '/api/cancel': () => {
+            cancelled = true;
+            return { stage: 'cancelled', link: true };
+          },
+          '/api/job': () =>
+            cancelled
+              ? { stage: 'cancelled', link: true }
+              : { stage: 'downloading', done: 1, total: 2, link: true },
+        }),
+      };
+      const id = await mode.finish(source.addLink(LINK, '400'), routes);
+      await mode.finish(source.cancelLink(id), routes);
+      await untilIn(source, id, routes);
+      expect(source.video(id)).toEqual({ state: 'not-downloaded', error: 'Cancelled' });
+    });
+
     it('says why a link cannot be read', async () => {
       const source = setUp(mode, RecordingSource);
       const why = 'yt-dlp cannot read this link: Private video';

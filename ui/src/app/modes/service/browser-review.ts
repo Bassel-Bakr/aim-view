@@ -3,6 +3,7 @@ import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AreaBox,
+  CANCELLED,
   errorMessage,
   Job,
   JobStage,
@@ -140,6 +141,8 @@ export class BrowserReview extends ServerReview {
   private readonly finder = inject(PageAreaFinder);
   /** The reviews the page runs, by recording: where each stands. */
   private readonly running = new Map<string, Job>();
+  /** What stops each review the page runs (its workers), by recording. */
+  private readonly stops = new Map<string, () => void>();
 
   override async start(id: string, again: boolean): Promise<Job> {
     return this.follow(id, await super.start(id, again));
@@ -154,6 +157,14 @@ export class BrowserReview extends ServerReview {
 
   override async setMarks(id: string, marks: RunMarks | null): Promise<Job> {
     return this.follow(id, await super.setMarks(id, marks));
+  }
+
+  /** Stops the page's own review (its workers) and tells the service, which keeps nothing it sends after. */
+  override async cancel(id: string): Promise<Job> {
+    this.stops.get(id)?.();
+    const job = await super.cancel(id);
+    this.running.delete(id);
+    return job;
   }
 
   /** Runs the review a job asks for (once), and answers the job as the page runs it. */
@@ -184,7 +195,7 @@ export class BrowserReview extends ServerReview {
     };
     try {
       const file = await this.files.read(order.video);
-      const parts = await this.track(file, order, report);
+      const parts = await this.track(id, file, order, report);
       report({ stage: 'linking', done: 0, total: 0 });
       const detector = `onnxruntime-web (${DEVICE_NAMES[parts[0].device]})`;
       const joined = await this.core.joinReview(parts, detector);
@@ -205,9 +216,15 @@ export class BrowserReview extends ServerReview {
       this.finder.ensure(id).catch((error: unknown) => console.warn(error));
     } catch (caught) {
       const error = errorMessage(caught);
+      if (error === CANCELLED) {
+        this.running.delete(id);
+        return;
+      }
       this.running.set(id, { stage: 'error', error });
       await this.tell(id, { error }).catch(() => undefined);
       this.running.delete(id);
+    } finally {
+      this.stops.delete(id);
     }
   }
 
@@ -220,7 +237,12 @@ export class BrowserReview extends ServerReview {
    * The recording's runs tracked, each in a review worker with a camera worker beside it (the two talk over a port of
    * their own); `report` hears how far they are.
    */
-  private track(file: Blob, order: ReviewOrder, report: (job: Job) => void): Promise<RunPart[]> {
+  private track(
+    id: string,
+    file: Blob,
+    order: ReviewOrder,
+    report: (job: Job) => void,
+  ): Promise<RunPart[]> {
     const split =
       order.device === 'webgpu' && navigator.hardwareConcurrency >= GPU_RUNS_MIN_THREADS;
     const runs = split ? GPU_RUNS : 1;
@@ -237,6 +259,7 @@ export class BrowserReview extends ServerReview {
         if (error !== null) reject(new Error(error));
         else resolve(parts.filter((part): part is RunPart => !!part));
       };
+      this.stops.set(id, () => end(CANCELLED));
       for (let i = 0; i < runs; i++) {
         const worker = new Worker(new URL('../wasm/review.worker', import.meta.url), {
           type: 'module',

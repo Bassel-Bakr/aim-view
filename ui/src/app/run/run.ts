@@ -166,6 +166,14 @@ export class Run {
     void this.review.analyse(this.recording().analysed && !this.unmeasured());
   }
 
+  protected cancelReview(): void {
+    void this.review.cancel();
+  }
+
+  protected cancelDownload(): void {
+    void this.library.source.cancelLink(this.recording().id);
+  }
+
   protected toggleWindow(): void {
     this.windowOpen.update((open) => !open);
   }

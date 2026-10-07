@@ -1,8 +1,8 @@
 import { computed, inject, Service, signal } from '@angular/core';
-import { errorMessage, LinkInfo, Recording } from '../../api';
+import { CANCELLED, errorMessage, LinkInfo, Recording } from '../../api';
 import { FolderAction, Transfer, VideoState } from '../../platform/recording-source';
 import { SentVideo, ServerRecordings } from '../http/server-recordings';
-import { BrowserLinks } from '../web-files/browser-links';
+import { BrowserLinks, LinkFetch } from '../web-files/browser-links';
 import { parseTitledName, parseVodName } from '../web-files/stats-csv';
 import { isMp4, mp4Name, toMp4 } from '../web-files/video-files';
 import { KovaakCopy } from './kovaak-copy';
@@ -59,6 +59,8 @@ export class BrowserRecordings extends ServerRecordings {
   private readonly files = inject(MountedFiles);
   private readonly vods = inject(VodsFolder);
   private readonly fetcher = inject(BrowserLinks);
+  /** The links' videos on their way into the browser, by recording id: what cancels each. */
+  private readonly fetches = new Map<string, LinkFetch>();
   private readonly kovaak = inject(KovaakCopy);
   /** The videos opened in the page, by recording id: being remuxed, ready to play, or not. */
   private readonly opened = signal<ReadonlyMap<string, VideoState>>(new Map());
@@ -206,6 +208,7 @@ export class BrowserRecordings extends ServerRecordings {
       if (row) this.setLink(id, { row, video: { state: 'downloading', label, done, total } });
     });
     id = this.freeUploadId(mp4Name(new File([], started.name)));
+    this.fetches.set(id, started);
     row = linkRow(id, started.name);
     const listed = row;
     this.setLink(id, { row, video: { state: 'downloading', label: '', done: 0, total: 0 } });
@@ -214,10 +217,19 @@ export class BrowserRecordings extends ServerRecordings {
       .catch((error: unknown) =>
         this.setLink(id, {
           row: listed,
-          video: { state: 'not-downloaded', error: errorMessage(error) },
+          video: {
+            state: 'not-downloaded',
+            error: errorMessage(error) === CANCELLED ? 'Cancelled' : errorMessage(error),
+          },
         }),
-      );
+      )
+      .finally(() => this.fetches.delete(id));
     return id;
+  }
+
+  override cancelLink(id: string): Promise<void> {
+    this.fetches.get(id)?.cancel();
+    return Promise.resolve();
   }
 
   /** A link's video, all here: sent to the service as an upload, then played from the page's own copy. */

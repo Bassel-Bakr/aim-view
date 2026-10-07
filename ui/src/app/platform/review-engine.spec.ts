@@ -55,6 +55,12 @@ for (const mode of MODE_CASES) {
       expect(await loaded()).toEqual({ mode: 'click', fps: 60, kills: 2 });
     });
 
+    it('cancels a recording’s review', async () => {
+      const engine = setUp(mode, ReviewEngine);
+      const job = await mode.finish(engine.cancel(ID), { '/api/cancel': { stage: 'cancelled' } });
+      expect(job.stage).toBe('cancelled');
+    });
+
     it('answers how a recording’s job stands', async () => {
       const engine = setUp(mode, ReviewEngine);
       const job = await mode.finish(engine.job(ID), { '/api/job': { stage: 'none' } });

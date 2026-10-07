@@ -23,6 +23,7 @@ const STAGES: Record<JobStage, string> = {
   'yt-dlp': 'Getting yt-dlp (once)',
   done: 'Reviewed',
   error: 'The review failed',
+  cancelled: 'Cancelled: the review shown before is kept',
 };
 
 /**

@@ -27,6 +27,9 @@ export abstract class ReviewEngine {
   /** The recording's review job as it stands. */
   abstract job(id: string): Promise<Job>;
 
+  /** Cancels the recording's review while it runs: it stops and keeps nothing (the review shown before stays). */
+  abstract cancel(id: string): Promise<Job>;
+
   /** The user's run window for the recording; null when none is marked. Call it where a resource can be made. */
   abstract marks(id: () => string | undefined): ResourceRef<RunMarks | null | undefined>;
 

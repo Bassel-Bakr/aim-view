@@ -36,8 +36,17 @@
     @apply mb-6 text-xs text-muted;
   }
 
+  // a progress bar with its Cancel button beside it
+  .progress-line {
+    @apply mb-7 flex items-center gap-3;
+  }
+
   .progress {
     @apply relative mb-7 h-12 overflow-hidden rounded-pill bg-surface-2;
+  }
+
+  .progress-line .progress {
+    @apply mb-0 flex-1;
   }
 
   .fill {
