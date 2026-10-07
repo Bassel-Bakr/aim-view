@@ -6,10 +6,11 @@
  * python/model/MODEL_FILE.md, and
  * models.json) and the user's area finder data (data/), which browser mode starts from.
  * angular.json serves core/ to every mode and the rest to browser mode only; Angular takes no files
- * from outside ui/. The desktop installer bundles models/ (desktop/tauri.conf.json).
+ * from outside ui/. The desktop installer bundles models/ (desktop/tauri.conf.json), and the release's
+ * server zip copies them (.github/workflows/release.yml).
  *
  * Only what the modes asked for is made (--modes, all three by default): the core for every mode, the
- * service and the area data for browser mode, the models for browser mode and the desktop installer.
+ * service and the area data for browser mode, and the models for every mode.
  * Only what changed is redone: one cargo run builds the core and the service together (their links
  * overlap), cargo rebuilds only after a Rust change, wasm-opt runs only when the service's module or
  * its options changed (its stamp in cargo's target folder), and a file is written only when its
@@ -39,8 +40,6 @@ const modesAt = args.indexOf('--modes');
 const modes = modesAt >= 0 ? args[modesAt + 1].split(',') : ['browser', 'server', 'desktop'];
 /** Browser mode runs the service, the detector and the area finder in the page. */
 const forBrowser = modes.includes('browser');
-/** The desktop installer bundles the models (desktop/tauri.conf.json). */
-const withModels = forBrowser || modes.includes('desktop');
 /** The cargo profile the WebAssembly builds use. */
 const profile = release ? 'release' : 'wasm-dev';
 /** Where cargo puts the WebAssembly modules of that profile. */
@@ -171,6 +170,6 @@ await step('assets', async () => {
   await cargo();
   if (forBrowser) await service();
   if (forBrowser) sqlite();
-  if (withModels) models();
+  models();
   if (forBrowser) data();
 }, { profile, modes: modes.join(',') });
