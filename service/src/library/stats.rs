@@ -19,8 +19,9 @@ use serde_json::{Value, json};
 use super::names::{local_stamp, parse_stats_name, parse_video, stamp_seconds};
 use super::recordings::{STATS_UPLOADS, is_upload};
 use super::reviews::Job;
-use super::{Answer, Failure, Library, modified, read_json, write_json};
+use super::{Answer, Failure, Library, keep_json, modified, read_kept};
 use crate::disk::Instant;
+use crate::store::{Item, Mark};
 
 /// Stats files offered to pair with a recording.
 const CANDIDATES: usize = 40;
@@ -30,8 +31,6 @@ const INDEX_AGE_S: u64 = 60;
 const NEAR_S: f64 = 5.0;
 /// The end of a stats file read for its "Key:,value" lines, in bytes (they take about 1.5 kB).
 const FOOTER_BYTES: u64 = 4096;
-/// The user's choice of stats file, in the recording's folder.
-const PICK_FILE: &str = "stats.json";
 /// Where a picked stats file is kept: KovaaK's stats folder, or the uploads (`Pick`'s source).
 const KOVAAK_SOURCE: &str = "kovaak";
 pub(super) const UPLOAD_SOURCE: &str = "upload";
@@ -259,7 +258,7 @@ impl Library {
     }
 
     pub(super) fn pairing(&self, id: &str) -> Option<Pick> {
-        read_json(&self.review_dir(id).join(PICK_FILE))
+        read_kept(self.store(), Item::Mark(id, Mark::StatsPick))
     }
 
     fn stats_file(&self, name: &str, source: &str) -> Answer<PathBuf> {
@@ -347,9 +346,9 @@ impl Library {
     /// The report is worked out when it is shown, so nothing is measured again here.
     pub fn set_stats(&self, id: &str, body: &Value) -> Answer<Value> {
         let video = self.resolve(id)?;
-        let path = self.review_dir(id).join(PICK_FILE);
+        let pick = Item::Mark(id, Mark::StatsPick);
         if body["auto"].as_bool() == Some(true) {
-            let _ = crate::disk::remove_file(&path);
+            let _ = self.store().remove(pick);
         } else {
             let file = body["file"].as_str().map(str::to_string);
             let source = body["source"].as_str().unwrap_or(KOVAAK_SOURCE).to_string();
@@ -358,7 +357,7 @@ impl Library {
             {
                 return Err(Failure::missing(name.clone()));
             }
-            write_json(&path, &Pick { file, source })?;
+            keep_json(self.store(), pick, &Pick { file, source })?;
         }
         let job = if self.reviewed(id) {
             Job::new("done", &self.shown(id).0.unwrap_or_default())

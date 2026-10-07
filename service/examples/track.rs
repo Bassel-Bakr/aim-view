@@ -80,7 +80,8 @@ fn main() {
     std::fs::write(out.join("readings.json"), serde_json::to_vec(&reviewed.readings).unwrap()).unwrap();
     std::fs::write(out.join("hud.json"), serde_json::to_vec(&reviewed.hud).unwrap()).unwrap();
     let stats = args.get(STATS_ARG).map(Path::new);
-    match aimview_service::report::work_out(&out, &request.video, stats, None, None, None) {
+    let parts = aimview_service::store::folder_parts(&out);
+    match aimview_service::report::work_out(parts, &request.video, stats, None, None, None) {
         Ok(Some(report)) => {
             let summary = &report["summary"];
             eprintln!("report: kills from {}, {} kills", summary["info"]["source"], summary["kills"]);

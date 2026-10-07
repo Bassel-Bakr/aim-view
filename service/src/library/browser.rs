@@ -108,9 +108,8 @@ impl Library {
         if model.is_empty() || Path::new(&model).file_name().is_none_or(|file| file != model.as_str()) {
             return Err(Failure::bad(format!("not a model's name: {model}")));
         }
-        let out = self.review_dir(id).join("models").join(&model);
         let files = ReviewFiles { tracks: &review.tracks, readings: &review.readings, hud: &review.hud, kills: None };
-        let outcome = keep_review(&out, &files, review.found.as_ref());
+        let outcome = keep_review(self.store(), id, &model, &files, review.found.as_ref());
         let Some(job) = job else {
             outcome?;
             return Ok(json!(Job::new("done", &model)));
@@ -138,7 +137,7 @@ impl Library {
     pub fn keep_found(&self, id: &str, body: &[u8]) -> Answer<Value> {
         let found: Found =
             serde_json::from_slice(body).map_err(|error| Failure::bad(format!("the found areas: {error}")))?;
-        crate::finder::keep(&self.review_dir(id), &found)?;
+        crate::finder::keep(self.store(), id, &found)?;
         Ok(json!({ "id": id, "kept": true }))
     }
 

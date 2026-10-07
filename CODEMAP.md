@@ -104,15 +104,15 @@ rust-analyzer's call hierarchy.
   folder, or found the way KovOBS finds it: the PATH's ffmpeg and ffprobe when both run, else (ffmpeg-sidecar)
   downloaded into a folder the first time a review needs it, and unpacked there (the desktop app does not ship it).
 - `service/src/finder.rs`: The area finder (src/areas.rs, python/areas.py) on a recording: its frames read, and what it
-  found kept in the recording's folder as python/areas.py keeps it (areas.json: the found areas; areas_maps.npz: the
+  found kept with the recording as python/areas.py keeps it (store.rs; areas.json: the found areas; areas_maps.npz: the
   stand-out and change maps).
 - `service/src/gpu_frames.rs`: A run's frames decoded on the GPU (Windows): Media Foundation decodes the recording into
   D3D11 textures, and a compute shader (gpu_frames.hlsl) makes the detector's 1280 x 720 RGB with src/convert.rs's 2:1
   integer arithmetic, the 720p luma the camera reads (the same means), and the Y plane's top rows the HUD reads (only
   those: the whole plane, 3.7 MB a frame, was most of what the CPU copied back).
 - `service/src/labels.rs`: Labelling (python/server.py): the recordings the user marked as another game, the queue of
-  recordings to label areas in and the ones skipped there, kept in the data folder as the review server keeps them
-  (not_aim_trainer.json, label_skipped.json: sorted lists of recording ids).
+  recordings to label areas in and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists
+  of recording ids, not_aim_trainer.json and label_skipped.json in its data folder).
 - `service/src/lib.rs`: Aim View's review service: the review server's API (python/server.py) over a library of
   recordings, with the review run natively (ffmpeg's frames, the core, and the detector on the GPU).
 - `service/src/library/browser.rs`: The browser build's own routes (api.rs): the page runs the review, the area finder
@@ -128,10 +128,10 @@ rust-analyzer's call hierarchy.
 - `service/src/library/recordings.rs`: The recordings: the list (python/server.py: Library.list), a recording's video
   from its id and its folder, videos and stats files added from the user's computer, and each scenario's facts from its
   scenario file.
-- `service/src/library/reviews.rs`: A recording's reviews (each model's in models/<model>/ in its folder: tracks.json,
-  readings.json, hud.json): the review on show, the review jobs (each runs in a thread of its own; in the browser build
-  the page runs it, browser.rs), the user's run window and the report, worked out when it is shown (python/server.py:
-  shown, analyse, run, set_run, /api/report).
+- `service/src/library/reviews.rs`: A recording's reviews (each model's kept apart, store.rs: tracks, readings, what the
+  HUD read, the kills' check): the review on show, the review jobs (each runs in a thread of its own; in the browser
+  build the page runs it, browser.rs), the user's run window and the report, worked out when it is shown
+  (python/server.py: shown, analyse, run, set_run, /api/report).
 - `service/src/library/settings.rs`: What the user set, kept in settings.json: the VODs folder they chose in the app
   (`vods`), the model new reviews use (`model`), the device the detector runs on (`device`) and the frames it takes at
   once on each device (`batch`, by device name).
@@ -147,14 +147,17 @@ rust-analyzer's call hierarchy.
 - `service/src/pyjson.rs`: JSON as python/server.py reads and writes it, so the files the app keeps are the review
   server's, byte for byte.
 - `service/src/report.rs`: A review's report, worked out by the core as the browser does (src/review.rs: `review_json`),
-  from what the review keeps in its folder: tracks.json, readings.json and hud.json (what the HUD read; a review made
-  before the HUD was read has none).
+  from what the review keeps (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the
+  HUD was read has none).
 - `service/src/review.rs`: A recording's review on this computer: ffmpeg decodes the frames, the core converts them to
   ffmpeg's 720p RGB byte for byte, the detector runs on the GPU (detector.rs), and the core's review session
   (aimview::session, which the browser's workers feed the same way) does the rest: it plans the runs, reads the key
   frames, tracks each run's frames, watches the camera's turn and the HUD, and joins the runs.
-- `service/src/run_window.rs`: The user's run window for a recording: where the run starts and ends, kept as run.json in
-  its review folder (as python/server.py keeps it).
+- `service/src/run_window.rs`: The user's run window for a recording: where the run starts and ends, kept with the
+  recording (store.rs; as python/server.py keeps it, run.json in its folder).
+- `service/src/store.rs`: What the library keeps, through one interface (`Store`), so where it is kept can change
+  (docs/storage-design.md): today the files in the data folder (`Files`, laid out as config.rs's layout says), later one
+  SQLite database.
 - `service/src/video.rs`: A recording's frames from ffmpeg (ffmpeg.rs: the app's own copy), as Python's review decodes
   them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core
   converts them to the same bytes.
@@ -870,8 +873,7 @@ webcam, another player's overlay.
 
 - `Kind` (struct): A kind of area: its id never changes; its name and what it is can.
 - `Library` methods: `kinds`, `save_kind`, `exclude`, `exclude_boxes`, `exclude_areas`, `tracked_with_areas`,
-  `exclude_answer`, `set_exclude`, `labelled`, `find_areas`, `examples_path`, `examples_text`, `set_examples`,
-  `fix_examples`.
+  `exclude_answer`, `set_exclude`, `labelled`, `find_areas`, `examples_text`, `set_examples`, `fix_examples`.
 - Functions: `kovobs_areas`, `tracked_areas`.
 
 ## service/src/bin/aimview-tool.rs
@@ -960,11 +962,11 @@ programs' paths, which video.rs and links.rs run.
 
 ## service/src/finder.rs
 
-The area finder (src/areas.rs, python/areas.py) on a recording: its frames read, and what it found kept in the
-recording's folder as python/areas.py keeps it (areas.json: the found areas; areas_maps.npz: the stand-out and change
+The area finder (src/areas.rs, python/areas.py) on a recording: its frames read, and what it found kept with the
+recording as python/areas.py keeps it (store.rs; areas.json: the found areas; areas_maps.npz: the stand-out and change
 maps). A review keeps what the finder found in the key frames it reads anyway (review.rs); a recording not reviewed yet
 is read here when its areas are first asked for (in the browser build the page reads it, with the core's finder in a
-worker, and sends what it found: library/browser.rs). In: a video, or a review's finds. Out: those two files, which
+worker, and sends what it found: library/browser.rs). In: a video, or a review's finds. Out: those two items, which
 areas.rs reads for /api/find_areas.
 
 - Functions: `analyse`, `found`, `maps`, `keep`, `keep_with_review`.
@@ -990,9 +992,10 @@ wanted. Out: each frame's RGB, 720p luma and those rows.
 ## service/src/labels.rs
 
 Labelling (python/server.py): the recordings the user marked as another game, the queue of recordings to label areas in
-and the ones skipped there, kept in the data folder as the review server keeps them (not_aim_trainer.json,
-label_skipped.json: sorted lists of recording ids). In: the page's marks and skips (/api/not_aim, /api/label_skip) and
-the recordings list. Out: those files, and the queues the page labels from (/api/label_queue; faint.rs's).
+and the ones skipped there, kept as the review server keeps them (store.rs: sorted lists of recording ids,
+not_aim_trainer.json and label_skipped.json in its data folder). In: the page's marks and skips (/api/not_aim,
+/api/label_skip) and the recordings list. Out: those lists, and the queues the page labels from (/api/label_queue;
+faint.rs's).
 
 - `Library` methods: `not_aim`, `set_not_aim`, `skip_label`, `label_queue`.
 
@@ -1051,11 +1054,11 @@ stats files added from the user's computer, and each scenario's facts from its s
 
 ## service/src/library/reviews.rs
 
-A recording's reviews (each model's in models/<model>/ in its folder: tracks.json, readings.json, hud.json): the review
-on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it, browser.rs), the
-user's run window and the report, worked out when it is shown (python/server.py: shown, analyse, run, set_run,
-/api/report). In: /api/analyse, /api/job, /api/run, /api/tracks and /api/report. Out: the review's files (review.rs's
-results), run.json (run_window.rs) and the answers.
+A recording's reviews (each model's kept apart, store.rs: tracks, readings, what the HUD read, the kills' check): the
+review on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it, browser.rs),
+the user's run window and the report, worked out when it is shown (python/server.py: shown, analyse, run, set_run,
+/api/report). In: /api/analyse, /api/job, /api/run, /api/tracks and /api/report. Out: the kept reviews (review.rs's
+results), the run window (run_window.rs) and the answers.
 
 - `Job` (struct): A review job: its stage, how far it is (frames), the device its detector runs on once it has loaded
   ("DirectML", "CUDA" or "CPU"; "DirectML and CPU" when its runs' differ), and at the end its time or its error.
@@ -1096,12 +1099,13 @@ answers. Also this computer's offset from UTC, for the logs' and the stats files
 
 NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays, deflated): the cut-off's
 detector labels (faint.rs) and the area finder's maps (finder.rs), so Python's tools read what the app writes and the
-app reads what Python wrote. In: arrays to save, or a file to read one from. Out: the file, or the array.
+app reads what Python wrote. In: arrays to save, or a file's bytes to read one from. Out: the file's bytes, or the
+array.
 
 - `Dtype` (enum): An array's element type: bytes, or 32-bit floats (little-endian).
 - `Array` (struct): An array: its type, its shape (empty for a single value) and its bytes in C order. Methods: `u8`,
   `f32`, `floats`.
-- Functions: `save`, `load`.
+- Functions: `to_bytes`, `array`.
 
 ## service/src/pyjson.rs
 
@@ -1112,10 +1116,10 @@ JSON as python/server.py reads and writes it, so the files the app keeps are the
 ## service/src/report.rs
 
 A review's report, worked out by the core as the browser does (src/review.rs: `review_json`), from what the review keeps
-in its folder: tracks.json, readings.json and hud.json (what the HUD read; a review made before the HUD was read has
-none). With a stats file the core reviews from it; without one, from the HUD's reading, else from the video alone
-(python/server.py does the same). In: the review's folder and the recording's stats file, run marks, facts and cut-off
-(library/reviews.rs, aimview-tool). Out: the report's JSON, which /api/report answers.
+(store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the HUD was read has none). With a
+stats file the core reviews from it; without one, from the HUD's reading, else from the video alone (python/server.py
+does the same). In: the review's parts and the recording's stats file, run marks, facts and cut-off (library/reviews.rs;
+aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which /api/report answers.
 
 - Functions: `work_out`.
 
@@ -1150,12 +1154,34 @@ found areas (`Reviewed`), which library/reviews.rs keeps.
 
 ## service/src/run_window.rs
 
-The user's run window for a recording: where the run starts and ends, kept as run.json in its review folder (as
-python/server.py keeps it). In: the marks the page sends (/api/run). Out: run.json, the part of the video a review
-tracks (with a margin, library/reviews.rs) and the marks the report measures within (report.rs).
+The user's run window for a recording: where the run starts and ends, kept with the recording (store.rs; as
+python/server.py keeps it, run.json in its folder). In: the marks the page sends (/api/run). Out: the kept marks, the
+part of the video a review tracks (with a margin, library/reviews.rs) and the marks the report measures within
+(report.rs).
 
 - `RunMarks` (struct): The marks in seconds, any of them None. Methods: `read`, `is_set`, `parse`, `save`, `tracked`.
 - Functions: `covers`.
+
+## service/src/store.rs
+
+What the library keeps, through one interface (`Store`), so where it is kept can change (docs/storage-design.md): today
+the files in the data folder (`Files`, laid out as config.rs's layout says), later one SQLite database. The library
+formats each thing (JSON as python/server.py writes it, .npz as NumPy does); a store keeps the bytes it is given and
+gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and the
+crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same bytes, and what is kept
+for each recording.
+
+- `IdList` (enum): A list of recording ids the user marked.
+- `Mark` (enum): What is kept for a recording beside its reviews. Methods: `file_name`.
+- `Part` (enum): A part of a review: its tracks, the video's readings (the camera's turn, the countdown), what the HUD
+  read, and the check of the kills the video alone gives. Methods: `file_name`.
+- `ReviewBy` (enum): Which of a recording's reviews: a model's, or the one python/server.py kept before reviews were
+  kept per model.
+- `Item` (enum): One thing the library keeps. Methods: `file_name`.
+- `Store` (trait): Where the library keeps what it keeps (see the module's comment).
+- `Files` (struct): The store as the files in the data folder (disk.rs), laid out as the layout's folders say: today's
+  files, byte for byte. Methods: `new`, `path`.
+- Functions: `recording_folder`, `folder_parts`.
 
 ## service/src/video.rs
 

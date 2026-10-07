@@ -1,19 +1,18 @@
-//! The user's run window for a recording: where the run starts and ends, kept as run.json in its review folder (as
-//! python/server.py keeps it). In: the marks the page sends (/api/run). Out: run.json, the part of the video a review
-//! tracks (with a margin, library/reviews.rs) and the marks the report measures within (report.rs).
-
-use std::path::Path;
+//! The user's run window for a recording: where the run starts and ends, kept with the recording (store.rs; as
+//! python/server.py keeps it, run.json in its folder). In: the marks the page sends (/api/run). Out: the kept marks,
+//! the part of the video a review tracks (with a margin, library/reviews.rs) and the marks the report measures within
+//! (report.rs).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::review::TimeWindow;
+use crate::store::{Item, Mark, Store};
 
 /// Seconds tracked either side of the window, so its first and last kills are whole (as the browser does).
 const MARGIN_S: f64 = 1.0;
 /// The latest a mark can be, in seconds (python/server.py: set_run).
 const LONGEST_S: f64 = 36000.0;
-const FILE: &str = "run.json";
 
 /// The marks in seconds, any of them None.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -25,9 +24,9 @@ pub struct RunMarks {
 }
 
 impl RunMarks {
-    /// The recording's marks; none when it has no run.json.
-    pub fn read(dir: &Path) -> RunMarks {
-        let bytes = crate::disk::read(dir.join(FILE)).ok();
+    /// The recording's marks; none when none are kept.
+    pub fn read(store: &dyn Store, id: &str) -> RunMarks {
+        let bytes = store.read(Item::Mark(id, Mark::RunWindow)).ok().flatten();
         bytes.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
     }
 
@@ -56,16 +55,15 @@ impl RunMarks {
         Ok(marks)
     }
 
-    /// Keeps the marks; none set forgets them.
-    pub fn save(&self, dir: &Path) -> Result<(), String> {
-        let path = dir.join(FILE);
+    /// Keeps the recording's marks; none set forgets them.
+    pub fn save(&self, store: &dyn Store, id: &str) -> Result<(), String> {
+        let item = Item::Mark(id, Mark::RunWindow);
         if !self.is_set() {
-            let _ = crate::disk::remove_file(&path);
+            let _ = store.remove(item);
             return Ok(());
         }
-        crate::disk::create_dir_all(dir).map_err(|error| error.to_string())?;
         let bytes = serde_json::to_vec(self).map_err(|error| error.to_string())?;
-        crate::disk::write(path, bytes).map_err(|error| error.to_string())
+        store.write(item, &bytes).map_err(|error| error.to_string())
     }
 
     /// The part of the video to track (python/retired/review.py's run_window, in seconds, with a margin): start and

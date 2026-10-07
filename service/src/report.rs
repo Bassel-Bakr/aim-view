@@ -1,8 +1,9 @@
 //! A review's report, worked out by the core as the browser does (src/review.rs: `review_json`), from what the review
-//! keeps in its folder: tracks.json, readings.json and hud.json (what the HUD read; a review made before the HUD was
-//! read has none). With a stats file the core reviews from it; without one, from the HUD's reading, else from the video
-//! alone (python/server.py does the same). In: the review's folder and the recording's stats file, run marks, facts
-//! and cut-off (library/reviews.rs, aimview-tool). Out: the report's JSON, which /api/report answers.
+//! keeps (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the HUD was read has
+//! none). With a stats file the core reviews from it; without one, from the HUD's reading, else from the video alone
+//! (python/server.py does the same). In: the review's parts and the recording's stats file, run marks, facts and
+//! cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which
+//! /api/report answers.
 
 use std::path::Path;
 
@@ -10,32 +11,31 @@ use aimview::scenario::{Facts, Kind};
 use serde_json::{Value, json};
 
 use crate::run_window::RunMarks;
-
-/// A JSON file, or None when it is missing or not JSON.
-fn read(path: &Path) -> Option<Value> {
-    serde_json::from_slice(&crate::disk::read(path).ok()?).ok()
-}
+use crate::store::Part;
 
 /// A file's name, as the core's review request takes it.
 fn file_name(path: &Path) -> Option<String> {
     path.file_name().map(|name| name.to_string_lossy().into_owned())
 }
 
-/// The report of the review in `dir` of `video`, with its stats file when it has one, the user's run marks, the
-/// scenario's facts and the user's faint-target cut-off (faint.json: {on, offset}); None when the folder has no tracks.
+/// The report of the review of `video` whose parts `parts` gives, with its stats file when it has one, the user's run
+/// marks, the scenario's facts and the user's faint-target cut-off (faint.json: {on, offset}); None when the review has
+/// no tracks.
 pub fn work_out(
-    dir: &Path,
+    parts: impl Fn(Part) -> Option<Vec<u8>>,
     video: &Path,
     stats: Option<&Path>,
     run: Option<RunMarks>,
     facts: Option<&Facts>,
     faint: Option<Value>,
 ) -> Result<Option<Value>, String> {
-    let Some(tracks) = read(&dir.join("tracks.json")) else { return Ok(None) };
-    let readings = read(&dir.join("readings.json")).unwrap_or(json!({ "camera": [], "countdown": [] }));
-    let hud = read(&dir.join("hud.json")).unwrap_or(Value::Null);
-    // the check of the kills the video alone gives (kills.json; null or missing: not checked)
-    let kill_check = read(&dir.join("kills.json")).unwrap_or(Value::Null);
+    // each part's JSON, or None when it is missing or not JSON
+    let read = |part: Part| serde_json::from_slice::<Value>(&parts(part)?).ok();
+    let Some(tracks) = read(Part::Tracks) else { return Ok(None) };
+    let readings = read(Part::Readings).unwrap_or(json!({ "camera": [], "countdown": [] }));
+    let hud = read(Part::Hud).unwrap_or(Value::Null);
+    // the check of the kills the video alone gives (null or missing: not checked)
+    let kill_check = read(Part::Kills).unwrap_or(Value::Null);
     let stats_text = match stats {
         Some(path) => {
             let bytes = crate::disk::read(path).map_err(|error| error.to_string())?;

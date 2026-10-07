@@ -1,9 +1,9 @@
 //! NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays, deflated): the cut-off's
 //! detector labels (faint.rs) and the area finder's maps (finder.rs), so Python's tools read what the app writes and
-//! the app reads what Python wrote. In: arrays to save, or a file to read one from. Out: the file, or the array.
+//! the app reads what Python wrote. In: arrays to save, or a file's bytes to read one from. Out: the file's bytes, or
+//! the array.
 
 use std::io::{Cursor, Read, Write};
-use std::path::Path;
 
 use zip::write::SimpleFileOptions;
 
@@ -128,28 +128,22 @@ impl Array {
     }
 }
 
-/// Writes the arrays as `np.savez_compressed` does (each as "<name>.npy", deflated); a file there is replaced.
-pub fn save(path: &Path, arrays: &[(&str, &Array)]) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        crate::disk::create_dir_all(dir).map_err(|error| error.to_string())?;
-    }
-    // made in memory, then written: the same bytes a zip written straight to the file has
+/// The arrays as `np.savez_compressed` writes them (each as "<name>.npy", deflated): the file's bytes.
+pub fn to_bytes(arrays: &[(&str, &Array)]) -> Result<Vec<u8>, String> {
+    // made in memory: the same bytes a zip written straight to a file has
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for (name, array) in arrays {
         zip.start_file(format!("{name}.npy"), options).map_err(|error| error.to_string())?;
         zip.write_all(&array.npy()).map_err(|error| error.to_string())?;
     }
-    let bytes = zip.finish().map_err(|error| error.to_string())?.into_inner();
-    crate::disk::write(path, bytes).map_err(|error| format!("{}: {error}", path.display()))
+    Ok(zip.finish().map_err(|error| error.to_string())?.into_inner())
 }
 
-/// One array of a .npz file.
-pub fn load(path: &Path, name: &str) -> Result<Array, String> {
-    let file = crate::disk::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|error| error.to_string())?;
-    let mut entry =
-        zip.by_name(&format!("{name}.npy")).map_err(|error| format!("{}: {name}: {error}", path.display()))?;
+/// One array of a .npz file's bytes.
+pub fn array(bytes: &[u8], name: &str) -> Result<Array, String> {
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| error.to_string())?;
+    let mut entry = zip.by_name(&format!("{name}.npy")).map_err(|error| format!("{name}: {error}"))?;
     let mut bytes = Vec::new();
     entry.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
     Array::from_npy(&bytes)
@@ -161,16 +155,13 @@ mod tests {
 
     #[test]
     fn arrays_read_back() {
-        let dir = std::env::temp_dir().join(format!("aimview-npz-{}", std::process::id()));
-        let file = dir.join("a.npz");
         let img = Array::u8(&[2, 3], vec![1, 2, 3, 4, 5, 6]);
         let (boxes, none) = (Array::f32(&[1, 4], &[1.5, 2.0, 3.25, 4.0]), Array::u8(&[], vec![0]));
-        save(&file, &[("rgb", &img), ("boxes", &boxes), ("hidden", &none)]).unwrap();
-        let rgb = load(&file, "rgb").unwrap();
+        let file = to_bytes(&[("rgb", &img), ("boxes", &boxes), ("hidden", &none)]).unwrap();
+        let rgb = array(&file, "rgb").unwrap();
         assert_eq!((rgb.dtype, rgb.shape.clone(), rgb.data.clone()), (Dtype::U8, vec![2, 3], vec![1, 2, 3, 4, 5, 6]));
-        assert_eq!(load(&file, "boxes").unwrap().floats(), vec![1.5, 2.0, 3.25, 4.0]);
-        assert_eq!(load(&file, "hidden").unwrap().shape, Vec::<usize>::new());
+        assert_eq!(array(&file, "boxes").unwrap().floats(), vec![1.5, 2.0, 3.25, 4.0]);
+        assert_eq!(array(&file, "hidden").unwrap().shape, Vec::<usize>::new());
         assert_eq!((img.npy().len() - 6) % HEADER_ALIGN, 0);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

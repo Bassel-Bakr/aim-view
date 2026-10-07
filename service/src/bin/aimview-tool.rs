@@ -513,7 +513,8 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
     let report = if line.has("no-report") {
         None
     } else {
-        aimview_service::report::work_out(&out, &request.video, stats.as_deref(), None, facts.as_ref(), None)?
+        let parts = aimview_service::store::folder_parts(&out);
+        aimview_service::report::work_out(parts, &request.video, stats.as_deref(), None, facts.as_ref(), None)?
     };
     if let Some(report) = &report {
         write("report", serde_json::to_vec(report))?;

@@ -8,8 +8,8 @@
 //! stamps. links.rs: recordings added from a link (yt-dlp). The areas (areas.rs), the faint-target cut-off
 //! (faint.rs), labelling (labels.rs) and the mouse logs' measures (mouse.rs) are kept beside it.
 //!
-//! In: the library's `Config` and the API's requests (api.rs). Out: the answers, and the files kept in the data
-//! folder (disk.rs).
+//! In: the library's `Config` and the API's requests (api.rs). Out: the answers, and what the library keeps
+//! (store.rs: today the files in the data folder).
 
 #[cfg(not(feature = "native"))]
 mod browser;
@@ -23,13 +23,14 @@ mod stats;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use aimview::scenario::Facts;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, Folders};
+use crate::store::{Files, Item, Store};
 pub use names::{local_stamp, parse_name, parse_stats_name, slug, stamp_seconds};
 pub(crate) use recordings::is_upload;
 pub use reviews::Job;
@@ -78,6 +79,8 @@ pub type Answer<T> = Result<T, Failure>;
 pub struct Library {
     config: Config,
     folders: Folders,
+    /// Where the library keeps what it keeps.
+    store: Arc<dyn Store>,
     settings: Mutex<Settings>,
     stats: Mutex<StatsIndex>,
     facts: Mutex<Option<Arc<HashMap<String, Facts>>>>,
@@ -97,13 +100,15 @@ pub(crate) fn read_json<T: for<'a> Deserialize<'a>>(path: &Path) -> Option<T> {
     serde_json::from_slice(&crate::disk::read(path).ok()?).ok()
 }
 
-/// Writes a value as compact JSON, its folder made first.
-pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Answer<()> {
-    if let Some(dir) = path.parent() {
-        crate::disk::create_dir_all(dir).map_err(|error| error.to_string())?;
-    }
+/// A kept item's JSON value; None when nothing is kept or it is not that value.
+pub(crate) fn read_kept<T: for<'a> Deserialize<'a>>(store: &dyn Store, item: Item<'_>) -> Option<T> {
+    serde_json::from_slice(&store.read(item).ok()??).ok()
+}
+
+/// Keeps a value as compact JSON.
+pub(crate) fn keep_json(store: &dyn Store, item: Item<'_>, value: &impl Serialize) -> Answer<()> {
     let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
-    crate::disk::write(path, bytes).map_err(|error| error.to_string().into())
+    store.write(item, &bytes).map_err(|error| error.to_string().into())
 }
 
 impl Library {
@@ -116,10 +121,12 @@ impl Library {
         crate::disk::create_dir_all(&folders.files).map_err(|error| format!("{}: {error}", folders.files.display()))?;
         #[cfg(feature = "native")]
         crate::ffmpeg::set_source(config.ffmpeg.clone());
-        let settings = Settings::read(&folders.files.join(settings::FILE));
+        let store: Arc<dyn Store> = Arc::new(Files::new(folders.clone()));
+        let settings = Settings::read(&*store);
         let library = Arc::new(Library {
             config,
             folders,
+            store,
             settings: Mutex::new(settings),
             stats: Mutex::default(),
             facts: Mutex::default(),
@@ -142,8 +149,14 @@ impl Library {
         &self.folders
     }
 
-    /// One of the library's own files (settings.json, area_kinds.json...).
-    pub(crate) fn file(&self, name: &str) -> PathBuf {
-        self.folders.files.join(name)
+    /// Where the library keeps what it keeps.
+    pub(crate) fn store(&self) -> &dyn Store {
+        &*self.store
+    }
+
+    /// The same, for a thread of its own (the native review's end, a cut-off's labels).
+    #[cfg(feature = "native")]
+    pub(crate) fn shared_store(&self) -> Arc<dyn Store> {
+        self.store.clone()
     }
 }

@@ -1,15 +1,15 @@
 //! The areas a review leaves out (python/server.py: exclude, set_exclude, kinds, save_kind, find_areas, labelled): a
 //! webcam, another player's overlay.
 //!
-//! In: the page's areas for a recording, its new and renamed area kinds, and an area_examples.jsonl it loads. Kept:
-//! each recording's areas in its folder (exclude.json: [x0, y0, x1, y1, kind id], shares of the frame); for an added
+//! In: the page's areas for a recording, its new and renamed area kinds, and an area_examples.jsonl it loads. Kept
+//! (store.rs): each recording's areas (exclude.json: [x0, y0, x1, y1, kind id], shares of the frame); for an added
 //! recording without its own, the ones last saved for one (exclude_uploads.json), else KovOBS's layout. The kinds an
 //! area can be are area_kinds.json; the area finder (finder.rs, the core's src/areas.rs) learns from the saved areas
 //! into area_examples.jsonl (python/areas.py). Out: the areas the review tracks with (a review tracked with other
 //! areas is made again), and the areas the finder proposes.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use aimview::areas::{self as finder_areas, Area, Examples, Labelled, Maps, SavedBox};
@@ -21,15 +21,12 @@ use crate::finder;
 use crate::library::{Answer, Failure, Library, is_upload};
 use crate::pyjson;
 use crate::review::AreaBox;
+use crate::library::slug as recording_slug;
+use crate::store::{Item, Mark, Part, ReviewBy};
 
-const EXCLUDE: &str = "exclude.json";
-const EXCLUDE_UPLOADS: &str = "exclude_uploads.json";
-const AREA_KINDS: &str = "area_kinds.json";
-const AREA_EXAMPLES: &str = "area_examples.jsonl";
-/// The finder's areas found in a recording, kept in its folder (finder.rs).
-const FOUND: &str = "areas.json";
-/// The review's tracks, in the folder of the review shown.
-const TRACKS: &str = "tracks.json";
+/// The names messages give the area kinds and the area finder's examples.
+const AREA_KINDS: &str = Item::AreaKinds.file_name();
+const AREA_EXAMPLES: &str = Item::AreaExamples.file_name();
 /// An area the user removed: an example of "not an area" (python/areas.py: NONE).
 const NONE: &str = "none";
 /// The kind of an area whose kind is not known.
@@ -184,10 +181,10 @@ fn valid_box(area: &Value) -> bool {
         && y1 <= 1.0
 }
 
-/// The areas a review in `dir` was tracked with (tracks.json's `areas`; a review made before it kept them was
-/// tracked with KovOBS's layout); None without tracks.
-pub fn tracked_areas(dir: &Path) -> Option<Vec<[f64; 4]>> {
-    let tracks: Value = serde_json::from_slice(&crate::disk::read(dir.join(TRACKS)).ok()?).ok()?;
+/// The areas a review was tracked with, from its tracks (tracks.json's `areas`; a review made before it kept them was
+/// tracked with KovOBS's layout); None when they are not tracks.
+pub fn tracked_areas(tracks: &[u8]) -> Option<Vec<[f64; 4]>> {
+    let tracks: Value = serde_json::from_slice(tracks).ok()?;
     Some(match tracks["areas"].as_array() {
         Some(boxes) => boxes.iter().filter_map(rect).collect(),
         None => aimview::geometry::overlay_shares().to_vec(),
@@ -224,10 +221,9 @@ impl Library {
     /// The area kinds, built-in ones first (python/server.py: kinds). The first use, or a list kept before kinds had
     /// ids, writes the list with ids.
     pub fn kinds(&self) -> Answer<Vec<Kind>> {
-        let path = self.file(AREA_KINDS);
-        let kept: Vec<OldKind> = match pyjson::load(&path) {
+        let kept: Vec<OldKind> = match pyjson::load(self.store(), Item::AreaKinds) {
             Some(value) => serde_json::from_value(value).map_err(|error| format!("{AREA_KINDS}: {error}"))?,
-            None if crate::disk::exists(&path) => return Err(format!("{AREA_KINDS} is not JSON").into()),
+            None if self.store().has(Item::AreaKinds) => return Err(format!("{AREA_KINDS} is not JSON").into()),
             None => Vec::new(),
         };
         if !kept.is_empty() && kept.iter().all(|kind| kind.id.is_some()) {
@@ -237,7 +233,7 @@ impl Library {
                 .collect());
         }
         let kinds = kinds_with_ids(kept);
-        pyjson::dump(&path, &kinds, true)?;
+        pyjson::dump(self.store(), Item::AreaKinds, &kinds, true)?;
         Ok(kinds)
     }
 
@@ -280,7 +276,7 @@ impl Library {
                 .ok_or_else(|| Failure::bad(format!("no type with the id {id}")))?;
             (kind.name, kind.about) = (name, about);
         }
-        pyjson::dump(&self.file(AREA_KINDS), &kinds, true)?;
+        pyjson::dump(self.store(), Item::AreaKinds, &kinds, true)?;
         Ok(json!(kinds))
     }
 
@@ -301,16 +297,16 @@ impl Library {
     /// The areas a review of the recording leaves out, and where they come from: saved for it, else for an added
     /// recording the ones last saved for one, else KovOBS's layout.
     pub fn exclude(&self, id: &str) -> Answer<Value> {
-        let read = |path: &Path| -> Answer<Vec<Value>> {
-            let value = pyjson::load(path).ok_or_else(|| format!("{} is not JSON", path.display()))?;
+        let read = |item: Item<'_>| -> Answer<Vec<Value>> {
+            let value =
+                pyjson::load(self.store(), item).ok_or_else(|| format!("{} is not JSON", self.store().name(item)))?;
             Ok(value.as_array().cloned().unwrap_or_default())
         };
-        let saved = self.review_dir(id).join(EXCLUDE);
-        let uploads = self.file(EXCLUDE_UPLOADS);
-        let (boxes, source) = if crate::disk::exists(&saved) {
-            (read(&saved)?, "saved")
-        } else if is_upload(id) && crate::disk::exists(&uploads) {
-            (read(&uploads)?, "last upload")
+        let (saved, uploads) = (Item::Mark(id, Mark::SavedAreas), Item::UploadAreas);
+        let (boxes, source) = if self.store().has(saved) {
+            (read(saved)?, "saved")
+        } else if is_upload(id) && self.store().has(uploads) {
+            (read(uploads)?, "last upload")
         } else {
             (overlay_shares(), "kovobs")
         };
@@ -335,9 +331,10 @@ impl Library {
         }
     }
 
-    /// Whether the review in `dir` was tracked with the recording's areas.
-    pub fn tracked_with_areas(&self, id: &str, dir: &Path) -> bool {
-        tracked_areas(dir).is_some_and(|tracked| same_rects(&tracked, &self.exclude_areas(id)))
+    /// Whether the recording's review `by` was tracked with the recording's areas.
+    pub fn tracked_with_areas(&self, id: &str, by: &ReviewBy) -> bool {
+        let tracked = self.review_part(id, by, Part::Tracks).and_then(|tracks| tracked_areas(&tracks));
+        tracked.is_some_and(|tracked| same_rects(&tracked, &self.exclude_areas(id)))
     }
 
     /// GET /api/exclude: the kinds, and the recording's areas (or with `kovobs`, KovOBS's layout, kinds by name).
@@ -362,9 +359,9 @@ impl Library {
             Some(list) if list.iter().all(valid_box) => self.with_ids(list)?,
             _ => return Err(Failure::bad("boxes: a list of [x0, y0, x1, y1, type id] (shares of the frame)")),
         };
-        pyjson::dump(&self.review_dir(id).join(EXCLUDE), &boxes, false)?;
+        pyjson::dump(self.store(), Item::Mark(id, Mark::SavedAreas), &boxes, false)?;
         if is_upload(id) {
-            pyjson::dump(&self.file(EXCLUDE_UPLOADS), &boxes, false)?;
+            pyjson::dump(self.store(), Item::UploadAreas, &boxes, false)?;
         }
         // the finder learns in the background: finding the areas reads the recording when they are not kept yet
         #[cfg(feature = "native")]
@@ -392,32 +389,24 @@ impl Library {
     /// The review job once the recording's areas changed: none without a review, done when the review was tracked with
     /// these areas, else the review made again.
     fn areas_job(self: &Arc<Self>, id: &str) -> Answer<Value> {
-        let (model, dir) = self.shown(id);
-        if !crate::disk::is_file(dir.join(TRACKS)) {
+        let (model, by) = self.shown(id);
+        if !self.store().has(Item::ReviewPart(id, &by, Part::Tracks)) {
             Ok(json!({ "stage": "none" }))
-        } else if self.tracked_with_areas(id, &dir) {
+        } else if self.tracked_with_areas(id, &by) {
             Ok(json!({ "stage": "done", "done": 0, "total": 1, "model": model }))
         } else {
             self.analyse(id, true)
         }
     }
 
-    /// The recordings the user saved areas for: (its folder's name, its found areas, its saved areas), leaving out
-    /// `but` and other games (python/server.py: labelled).
+    /// The recordings the user saved areas for: (its slug, its found areas, its saved areas), leaving out `but` and
+    /// other games (python/server.py: labelled, by its folder's name).
     pub fn labelled(&self, but: Option<&str>) -> Vec<(String, Value, Value)> {
-        let skip: BTreeSet<PathBuf> =
-            self.not_aim().iter().map(|id| self.review_dir(id)).chain(but.map(|id| self.review_dir(id))).collect();
-        let mut out = Vec::new();
-        for entry in crate::disk::read_dir(&self.folders().recordings).into_iter().flatten().flatten() {
-            let dir = entry.path();
-            if !entry.is_dir() || skip.contains(&dir) {
-                continue;
-            }
-            if let (Some(found), Some(saved)) = (pyjson::load(&dir.join(FOUND)), pyjson::load(&dir.join(EXCLUDE))) {
-                out.push((entry.file_name().to_string_lossy().into_owned(), found, saved));
-            }
-        }
-        out
+        let skip: BTreeSet<String> = self.not_aim().iter().map(|id| recording_slug(id)).chain(but.map(recording_slug)).collect();
+        let parsed = |(name, found, saved): (String, Vec<u8>, Vec<u8>)| {
+            Some((name, pyjson::parse(&found).ok()?, pyjson::parse(&saved).ok()?))
+        };
+        self.store().labelled(&skip).into_iter().filter_map(parsed).collect()
     }
 
     /// The areas to propose (python/server.py: find_areas): the user's own areas from a recording with the same layout
@@ -436,7 +425,7 @@ impl Library {
         } else {
             Vec::new()
         };
-        let examples = Examples::Lines(crate::disk::read_to_string(self.examples_path()).unwrap_or_default()).list();
+        let examples = Examples::Lines(self.examples_lines()).list();
         let proposal = finder_areas::find(&found, &examples, &labelled);
         let boxes: Vec<Value> = proposal.boxes.iter().map(|area| json!(area)).collect();
         let recordings: BTreeSet<&str> = examples
@@ -454,8 +443,8 @@ impl Library {
     /// now and kept (python/areas.py: find, maps). In the browser build the page finds them: with none kept the
     /// answer is `FOUND_NEEDED` (409).
     fn found_areas(&self, id: &str, video: &Path, with_maps: bool) -> Answer<(Vec<Area>, Option<Maps>)> {
-        let dir = self.review_dir(id);
-        let (found, maps) = (finder::found(&dir), if with_maps { finder::maps(&dir) } else { None });
+        let store = self.store();
+        let (found, maps) = (finder::found(store, id), if with_maps { finder::maps(store, id) } else { None });
         if let Some(found) = &found
             && (!with_maps || maps.is_some())
         {
@@ -471,10 +460,10 @@ impl Library {
         }
         #[cfg(feature = "native")]
         {
-            finder::keep(&dir, &finder::analyse(video)?)?;
+            finder::keep(store, id, &finder::analyse(video)?)?;
             let missing = || Failure::from("the found areas could not be kept".to_string());
-            let found = finder::found(&dir).ok_or_else(missing)?;
-            Ok((found, if with_maps { Some(finder::maps(&dir).ok_or_else(missing)?) } else { None }))
+            let found = finder::found(store, id).ok_or_else(missing)?;
+            Ok((found, if with_maps { Some(finder::maps(store, id).ok_or_else(missing)?) } else { None }))
         }
     }
 
@@ -487,21 +476,20 @@ impl Library {
         let saved: Vec<SavedBox> = saved.iter().filter_map(|area| serde_json::from_value(area.clone()).ok()).collect();
         let new = finder_areas::learn(id, &found, &saved, maps.as_ref());
         let _one_at_a_time = EXAMPLES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let path = self.examples_path();
-        let lines = crate::disk::read_to_string(&path).unwrap_or_default();
-        Ok(pyjson::write_text(&path, finder_areas::merge(&lines, id, &new).as_bytes())?)
+        let lines = self.examples_lines();
+        Ok(pyjson::write_text(self.store(), Item::AreaExamples, finder_areas::merge(&lines, id, &new).as_bytes())?)
     }
 
-    /// The area finder's examples (area_examples.jsonl).
-    pub fn examples_path(&self) -> PathBuf {
-        self.file(AREA_EXAMPLES)
+    /// The area finder's examples (area_examples.jsonl) as text; empty when there are none or they are not UTF-8.
+    fn examples_lines(&self) -> String {
+        let bytes = self.store().read(Item::AreaExamples).ok().flatten().unwrap_or_default();
+        String::from_utf8(bytes).unwrap_or_default()
     }
 
     /// GET /api/area_examples: area_examples.jsonl as it is kept; empty when there is none.
     pub fn examples_text(&self) -> Answer<Vec<u8>> {
-        match crate::disk::read(self.examples_path()) {
-            Ok(bytes) => Ok(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        match self.store().read(Item::AreaExamples) {
+            Ok(bytes) => Ok(bytes.unwrap_or_default()),
             Err(error) => Err(format!("{AREA_EXAMPLES}: {error}").into()),
         }
     }
@@ -526,7 +514,7 @@ impl Library {
         }
         {
             let _one_at_a_time = EXAMPLES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            pyjson::write_text(&self.examples_path(), &out)?;
+            pyjson::write_text(self.store(), Item::AreaExamples, &out)?;
         }
         self.fix_examples()?;
         Ok(json!({ "examples": count }))
@@ -535,8 +523,7 @@ impl Library {
     /// Examples kept before kinds had ids hold the kind's name: their kinds as ids (python/server.py: Library's
     /// start). Nothing changes when they have ids.
     pub fn fix_examples(&self) -> Answer<()> {
-        let path = self.examples_path();
-        let Ok(text) = crate::disk::read(&path) else { return Ok(()) };
+        let Ok(Some(text)) = self.store().read(Item::AreaExamples) else { return Ok(()) };
         let mut examples: Vec<Example> = Vec::new();
         for line in text.split(|&byte| byte == b'\n') {
             if line.iter().all(u8::is_ascii_whitespace) {
@@ -560,7 +547,7 @@ impl Library {
                 out.extend(pyjson::to_vec(example, false));
                 out.push(b'\n');
             }
-            pyjson::write_text(&path, &out)?;
+            pyjson::write_text(self.store(), Item::AreaExamples, &out)?;
         }
         Ok(())
     }

@@ -192,9 +192,10 @@ impl Library {
         Ok(path)
     }
 
-    /// A recording's folder in the data folder (python/server.py: cache_dir): its reviews, areas, marks.
+    /// A recording's folder in the data folder (python/server.py: cache_dir), where `Files` keeps its reviews, areas
+    /// and marks: aimview-tool gives it to Python's scripts.
     pub fn review_dir(&self, id: &str) -> PathBuf {
-        self.folders.recordings.join(slug(id))
+        crate::store::recording_folder(&self.folders, id)
     }
 
     /// Each scenario's facts by lower-case name, from the scenario folders' files, read once.

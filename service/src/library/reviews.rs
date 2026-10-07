@@ -1,11 +1,10 @@
-//! A recording's reviews (each model's in models/<model>/ in its folder: tracks.json, readings.json, hud.json): the
-//! review on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it,
+//! A recording's reviews (each model's kept apart, store.rs: tracks, readings, what the HUD read, the kills' check):
+//! the review on show, the review jobs (each runs in a thread of its own; in the browser build the page runs it,
 //! browser.rs), the user's run window and the report, worked out when it is shown (python/server.py: shown, analyse,
-//! run, set_run, /api/report). In: /api/analyse, /api/job, /api/run, /api/tracks and /api/report. Out: the review's
-//! files (review.rs's results), run.json (run_window.rs) and the answers.
+//! run, set_run, /api/report). In: /api/analyse, /api/job, /api/run, /api/tracks and /api/report. Out: the kept
+//! reviews (review.rs's results), the run window (run_window.rs) and the answers.
 
-use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -14,15 +13,11 @@ use aimview::kill_check::KillEvidence;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::{Answer, Library, modified, read_json, write_json};
+use super::{Answer, Library, keep_json, read_kept};
 use crate::review::{CANCELLED, Request, TimeWindow};
 use crate::run_window::{RunMarks, covers};
+use crate::store::{Item, Part, ReviewBy, Store};
 
-/// The bytes at the end of an old tracks.json (python/server.py's, kept in the recording's own folder) read for the
-/// detector's name.
-const OLD_TRACKS_TAIL_BYTES: u64 = 200;
-/// The key an old tracks.json ends with when a model made it (the hand-written detector's has none).
-const DETECTOR_KEY: &[u8] = b"\"detector\"";
 /// A job's and the log's times are rounded to a tenth of a second.
 const TENTHS_PER_SECOND: f64 = 10.0;
 
@@ -107,72 +102,58 @@ pub(super) struct ReviewFiles<'a, T: Serialize, R: Serialize, H: Serialize> {
     pub kills: Option<&'a [KillEvidence]>,
 }
 
-/// Writes a review's files in its folder `out` (models/<model> in the recording's), and keeps what the area finder
-/// found (`finder::keep_with_review`). The native review's end and the page's (/api/reviewed) both write them so;
-/// kills.json is written null when the kills were not checked, so a review made again keeps no older check.
+/// Keeps a review by `model` of the recording `id`, and what the area finder found (`finder::keep_with_review`).
+/// The native review's end and the page's (/api/reviewed) both keep them so; the kills' check is kept null when the
+/// kills were not checked, so a review made again keeps no older check.
 pub(super) fn keep_review<T: Serialize, R: Serialize, H: Serialize>(
-    out: &Path,
+    store: &dyn Store,
+    id: &str,
+    model: &str,
     files: &ReviewFiles<T, R, H>,
     found: Option<&Found>,
 ) -> Result<(), String> {
-    write_json(&out.join("tracks.json"), files.tracks).map_err(|failure| failure.message)?;
-    write_json(&out.join("readings.json"), files.readings).map_err(|failure| failure.message)?;
-    write_json(&out.join("hud.json"), files.hud).map_err(|failure| failure.message)?;
-    write_json(&out.join("kills.json"), &files.kills).map_err(|failure| failure.message)?;
-    crate::finder::keep_with_review(out, found)
-}
-
-/// The model of an old tracks.json (python/server.py's, in the recording's own folder): "hand" when the hand-written
-/// detector made it, else None (not recorded). The detector's name ends the file.
-fn old_tracks_model(tracks: &Path) -> Option<String> {
-    let mut end = Vec::new();
-    if let Ok(mut file) = crate::disk::File::open(tracks) {
-        let size = file.metadata().map_or(0, |metadata| metadata.len());
-        let start = SeekFrom::Start(size.saturating_sub(OLD_TRACKS_TAIL_BYTES));
-        let _ = file.seek(start).and_then(|_| file.read_to_end(&mut end));
-    }
-    let named = end.windows(DETECTOR_KEY.len()).any(|window| window == DETECTOR_KEY);
-    (!named).then(|| "hand".to_string())
-}
-
-/// The folders in `models` (a recording's models/) that hold a review.
-fn review_folders(models: &Path) -> impl Iterator<Item = PathBuf> {
-    let folders = crate::disk::read_dir(models).into_iter().flatten().flatten().map(|entry| entry.path());
-    folders.filter(|folder| crate::disk::is_file(folder.join("tracks.json")))
+    let by = ReviewBy::Model(model.to_string());
+    let item = |part: Part| Item::ReviewPart(id, &by, part);
+    let message = |failure: super::Failure| failure.message;
+    keep_json(store, item(Part::Tracks), files.tracks).map_err(message)?;
+    keep_json(store, item(Part::Readings), files.readings).map_err(message)?;
+    keep_json(store, item(Part::Hud), files.hud).map_err(message)?;
+    keep_json(store, item(Part::Kills), &files.kills).map_err(message)?;
+    crate::finder::keep_with_review(store, id, found)
 }
 
 impl Library {
-    /// The review to show: (model, folder): the chosen model's; else one python/server.py made before reviews were
-    /// kept per model (tracks.json in the recording's own folder; its model "hand" when the hand-written detector made
-    /// it, else None: not recorded); else the newest by another model. With none, the chosen model's folder for a new
-    /// one.
-    pub fn shown(&self, id: &str) -> (Option<String>, PathBuf) {
+    /// The review to show: (model, which): the chosen model's; else one python/server.py made before reviews were kept
+    /// per model (its model "hand" when the hand-written detector made it, else None: not recorded); else the newest
+    /// by another model. With none, the chosen model's, for a new one.
+    pub fn shown(&self, id: &str) -> (Option<String>, ReviewBy) {
         let model = self.model();
-        let dir = self.review_dir(id);
-        let models = dir.join("models");
-        let own = models.join(&model);
-        if crate::disk::is_file(own.join("tracks.json")) {
+        let own = ReviewBy::Model(model.clone());
+        if self.store().has(Item::ReviewPart(id, &own, Part::Tracks)) {
             return (Some(model), own);
         }
-        let old = dir.join("tracks.json");
-        if crate::disk::is_file(&old) {
-            return (old_tracks_model(&old), dir);
+        if let Some(old_model) = self.store().old_review(id) {
+            return (old_model, ReviewBy::Old);
         }
-        let changed = |folder: &PathBuf| modified(&folder.join("tracks.json"));
-        let newest = review_folders(&models).max_by(|a, b| changed(a).total_cmp(&changed(b)));
+        let changed = |name: &String| {
+            let by = ReviewBy::Model(name.clone());
+            self.store().changed(Item::ReviewPart(id, &by, Part::Tracks)).unwrap_or(0.0)
+        };
+        let newest = self.store().models(id).into_iter().max_by(|a, b| changed(a).total_cmp(&changed(b)));
         match newest {
-            Some(dir) => {
-                let name = dir.file_name().map(|name| name.to_string_lossy().into_owned());
-                (Some(name.unwrap_or_default()), dir)
-            }
+            Some(name) => (Some(name.clone()), ReviewBy::Model(name)),
             None => (Some(model), own),
         }
     }
 
+    /// A part of one of the recording's reviews, as kept; None when it is not.
+    pub(crate) fn review_part(&self, id: &str, by: &ReviewBy, part: Part) -> Option<Vec<u8>> {
+        self.store().read(Item::ReviewPart(id, by, part)).ok().flatten()
+    }
+
     /// Whether the recording has a review.
     pub(crate) fn reviewed(&self, id: &str) -> bool {
-        let dir = self.review_dir(id);
-        crate::disk::is_file(dir.join("tracks.json")) || review_folders(&dir.join("models")).next().is_some()
+        self.store().reviewed(id)
     }
 
     pub fn job(&self, id: &str) -> Value {
@@ -194,8 +175,8 @@ impl Library {
             return Ok(json!(*job));
         }
         let video = self.resolve(id)?;
-        let (shown, dir) = self.shown(id);
-        if !again && crate::disk::is_file(dir.join("tracks.json")) && self.tracked_with_areas(id, &dir) {
+        let (shown, by) = self.shown(id);
+        if !again && self.store().has(Item::ReviewPart(id, &by, Part::Tracks)) && self.tracked_with_areas(id, &by) {
             return Ok(json!(Job::new("done", &shown.unwrap_or_default())));
         }
         let model = self.model();
@@ -241,7 +222,7 @@ impl Library {
         let threads = std::thread::available_parallelism().map_or(1, |threads| threads.get());
         let runs = crate::review::parts_at_once(threads, self.config.gpu_frames);
         // the user's run window: only its part of the video is tracked
-        let window = RunMarks::read(&self.review_dir(id)).tracked(facts.as_ref().and_then(|facts| facts.limit));
+        let window = RunMarks::read(self.store(), id).tracked(facts.as_ref().and_then(|facts| facts.limit));
         Ok(Request {
             video,
             model: self.model_file(model),
@@ -265,7 +246,7 @@ impl Library {
     #[cfg(feature = "native")]
     fn run_review(&self, id: &str, request: Request, job: Arc<Mutex<Job>>, model: String) {
         use crate::review::{add_device, review};
-        let out = self.review_dir(id).join("models").join(&model);
+        let store = self.shared_store();
         let started = std::time::Instant::now();
         let id = id.to_string();
         std::thread::spawn(move || {
@@ -294,7 +275,7 @@ impl Library {
                     hud: &reviewed.hud,
                     kills: reviewed.kills.as_deref(),
                 };
-                keep_review(&out, &files, reviewed.found.as_ref())
+                keep_review(&*store, &id, &model, &files, reviewed.found.as_ref())
             });
             if let Ok(mut job) = job.lock() {
                 // one line in the log for each review: the model, the device it ran on, and the time or the error
@@ -323,7 +304,7 @@ impl Library {
     /// The user's run window for the recording (all three null when none is marked).
     pub fn marks(&self, id: &str) -> Answer<Value> {
         self.resolve(id)?;
-        Ok(json!(RunMarks::read(&self.review_dir(id))))
+        Ok(json!(RunMarks::read(self.store(), id)))
     }
 
     /// Keeps the run window ({start, end, length}; all null forgets it). The report reads it when it is shown; a review
@@ -331,9 +312,9 @@ impl Library {
     pub fn set_marks(self: &Arc<Self>, id: &str, body: &Value) -> Answer<Value> {
         let video = self.resolve(id)?;
         let marks = RunMarks::parse(body).map_err(super::Failure::bad)?;
-        marks.save(&self.review_dir(id))?;
-        let (shown, dir) = self.shown(id);
-        let Some(tracks) = read_json::<Value>(&dir.join("tracks.json")) else {
+        marks.save(self.store(), id)?;
+        let (shown, by) = self.shown(id);
+        let Some(tracks) = read_kept::<Value>(self.store(), Item::ReviewPart(id, &by, Part::Tracks)) else {
             return Ok(json!(Job::new("none", "")));
         };
         let tracked: Option<TimeWindow> = serde_json::from_value(tracks["window"].clone()).unwrap_or(None);
@@ -344,21 +325,22 @@ impl Library {
         self.analyse(id, true)
     }
 
-    /// The shown review's tracks (tracks.json), or None.
+    /// The shown review's tracks (tracks.json's bytes), or None.
     pub fn tracks(&self, id: &str) -> Option<Vec<u8>> {
-        crate::disk::read(self.shown(id).1.join("tracks.json")).ok()
+        self.review_part(id, &self.shown(id).1, Part::Tracks)
     }
 
     /// The shown review's report, worked out by the core (report.rs) from its tracks and the stats file, or without
     /// one from what the HUD read, else from the video alone; None without a review.
     pub fn report(&self, id: &str) -> Answer<Value> {
         let video = self.resolve(id)?;
-        let (model, dir) = self.shown(id);
+        let (model, by) = self.shown(id);
         let stats = self.stats_of(id, &video);
         let facts = self.facts_of(&video);
-        let run = Some(RunMarks::read(&self.review_dir(id)));
+        let run = Some(RunMarks::read(self.store(), id));
         let faint = Some(self.faint(id));
-        let worked_out = crate::report::work_out(&dir, &video, stats.as_deref(), run, facts.as_ref(), faint)?;
+        let parts = |part: Part| self.review_part(id, &by, part);
+        let worked_out = crate::report::work_out(parts, &video, stats.as_deref(), run, facts.as_ref(), faint)?;
         let Some(mut report) = worked_out else { return Ok(Value::Null) };
         report["review_model"] = json!(model);
         Ok(report)

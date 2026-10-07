@@ -5,14 +5,14 @@
 //! folder). In: /api/model, /api/device, /api/batch and the app's folder dialog. Out: settings.json, /api/models'
 //! answer, and the model, device and frames at once new reviews use (reviews.rs).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::{Map, Value, json};
 
-use super::{Answer, Failure, Library, read_json, write_json};
+use super::{Answer, Failure, Library, keep_json, read_json, read_kept};
 use crate::config::Device;
+use crate::store::{Item, Store};
 
-pub(super) const FILE: &str = "settings.json";
 /// The model new reviews use until the user picks one when models.json names no default (its "default": infer.BEST).
 pub const BEST: &str = "full_v3";
 /// The frames the detector can take at once (the browser offers the same).
@@ -25,9 +25,9 @@ const DEFAULT_BATCH: usize = 4;
 pub(super) struct Settings(Map<String, Value>);
 
 impl Settings {
-    /// The settings in `path`; none when it is missing or not a JSON object.
-    pub(super) fn read(path: &Path) -> Settings {
-        Settings(read_json(path).unwrap_or_default())
+    /// The settings kept in `store`; none when they are missing or not a JSON object.
+    pub(super) fn read(store: &dyn Store) -> Settings {
+        Settings(read_kept(store, Item::Settings).unwrap_or_default())
     }
 }
 
@@ -39,7 +39,7 @@ impl Library {
     fn save_settings(&self, key: &str, value: Value) -> Answer<()> {
         let mut settings = self.settings.lock().map_err(|_| "the settings are broken".to_string())?;
         settings.0.insert(key.into(), value);
-        write_json(&self.file(FILE), &settings.0)
+        keep_json(self.store(), Item::Settings, &settings.0)
     }
 
     /// The VODs folder: the one the configuration gives, else the one the user chose in the app.

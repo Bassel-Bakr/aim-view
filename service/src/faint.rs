@@ -1,15 +1,14 @@
 //! The faint-target cut-off (python/server.py: faint, set_faint, submit_faint, skip_faint, faint_queue).
 //!
-//! In: the page's cut-off for a recording ({on, offset}), its submits and its skips. Kept: faint.json in the
-//! recording's folder, which a tracking run's report measures with (report.rs), and faint_skipped.json, the recordings
-//! left out of the cut-off queue. Out: a submitted cut-off written as detector labels in the layout's cutoff folder
-//! (the core picks the crops, python/model/hand_crops.py's `cutoff_crops`; here each crop's pixels and the fixed map
-//! are read from the recording, and written as that script writes them).
+//! In: the page's cut-off for a recording ({on, offset}), its submits and its skips. Kept (store.rs): the recording's
+//! cut-off (faint.json), which a tracking run's report measures with (report.rs), and the recordings left out of the
+//! cut-off queue (faint_skipped.json). Out: a submitted cut-off kept as detector labels (in the layout's cutoff folder:
+//! the core picks the crops, python/model/hand_crops.py's `cutoff_crops`; here each crop's pixels and the fixed map are
+//! read from the recording, and kept as that script writes them).
 
 use std::ops::RangeInclusive;
 #[cfg(feature = "native")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "native")]
 use aimview::convert::{Converter, DST_H, DST_W};
@@ -26,15 +25,10 @@ use crate::library::{Answer, Failure, Library, local_stamp};
 use crate::npz::{self, Array};
 use crate::pyjson;
 #[cfg(feature = "native")]
-use crate::video::{Frames, VideoInfo, probe};
-
-const FAINT: &str = "faint.json";
-const FAINT_SKIPPED: &str = "faint_skipped.json";
-/// The review's tracks, in the folder of the review shown.
-const TRACKS: &str = "tracks.json";
-/// A submit's label rows, in the cutoff folder (its crops go in train/).
+use crate::store::{ReviewBy, Store};
+use crate::store::{IdList, Item, Mark, Part};
 #[cfg(feature = "native")]
-const CHECKED_ROWS: &str = "checked.jsonl";
+use crate::video::{Frames, VideoInfo, probe};
 /// The offsets a cut-off can have (python/server.py's check).
 const OFFSET_RANGE: RangeInclusive<f64> = 0.2..=0.6;
 /// The decimals an offset is kept with.
@@ -117,17 +111,14 @@ fn kept_record(submitted: Option<String>, old: &Value) -> Option<Submitted> {
 }
 
 impl Library {
-    fn faint_path(&self, id: &str) -> PathBuf {
-        self.review_dir(id).join(FAINT)
-    }
-
     /// The recording's cut-off as kept ({on, offset}, and submitted and labels once submitted); off by default.
     pub fn faint(&self, id: &str) -> Value {
-        pyjson::load(&self.faint_path(id)).unwrap_or_else(|| json!({ "on": false, "offset": DEFAULT_OFFSET }))
+        let kept = pyjson::load(self.store(), Item::Mark(id, Mark::Cutoff));
+        kept.unwrap_or_else(|| json!({ "on": false, "offset": DEFAULT_OFFSET }))
     }
 
     fn faint_file(&self, id: &str) -> Option<FaintFile> {
-        serde_json::from_value(pyjson::load(&self.faint_path(id))?).ok()
+        serde_json::from_value(pyjson::load(self.store(), Item::Mark(id, Mark::Cutoff))?).ok()
     }
 
     /// Keeps the cut-off ({on, offset}); a later change keeps the record of the last submit. The report measures with
@@ -137,48 +128,54 @@ impl Library {
         let offset = offset_of(body)?;
         let record = kept_record(submitted, &self.faint(id));
         let new = FaintFile { on, offset: aimview::python::round(offset, OFFSET_DECIMALS), record };
-        pyjson::dump(&self.faint_path(id), &new, false)?;
+        pyjson::dump(self.store(), Item::Mark(id, Mark::Cutoff), &new, false)?;
         Ok(self.faint(id))
     }
 
     /// The user's cut-off, submitted: kept (on), and the review's tracks written as detector labels in the background.
     /// In the browser build only kept: the page makes the labels (cutoff.worker.ts) and downloads them.
     pub fn submit_faint(&self, id: &str, offset: f64) -> Answer<Value> {
-        let dir = self.shown(id).1;
+        let by = self.shown(id).1;
         let report = match self.report(id) {
-            Ok(report) if crate::disk::is_file(dir.join(TRACKS)) && !report.is_null() => report,
+            Ok(report) if self.store().has(Item::ReviewPart(id, &by, Part::Tracks)) && !report.is_null() => report,
             Ok(_) => return Err(Failure::bad("review the recording first")),
             Err(failure) => return Err(failure),
         };
         let out = self.set_faint(id, &json!({ "on": true, "offset": offset }), Some(now_iso()))?;
         #[cfg(feature = "native")]
-        self.write_cutoff_labels(id, dir, report, offset)?;
+        self.write_cutoff_labels(id, by, report, offset)?;
         #[cfg(not(feature = "native"))]
-        let _ = (dir, report);
+        let _ = (by, report);
         Ok(out)
     }
 
-    /// A submitted cut-off's labels, written in the background (`cutoff_labels`), and their count kept in faint.json.
+    /// A submitted cut-off's labels, written in the background (`cutoff_labels`), and their count kept with the
+    /// cut-off.
     #[cfg(feature = "native")]
-    fn write_cutoff_labels(&self, id: &str, dir: PathBuf, report: Value, offset: f64) -> Answer<()> {
+    fn write_cutoff_labels(&self, id: &str, by: ReviewBy, report: Value, offset: f64) -> Answer<()> {
         let video: PathBuf = self.resolve(id)?.components().collect();
         let exclude: Vec<[f64; 4]> = self.exclude_areas(id);
-        // the labels go where python/ keeps them (the layout's cutoff folder): crops in train/, rows in checked.jsonl
-        let (faint, labels) = (self.faint_path(id), self.folders().cutoff.clone());
+        let (store, id) = (self.shared_store(), id.to_string());
         std::thread::spawn(move || {
-            let label_count = match cutoff_labels(&video, &dir.join(TRACKS), &report, exclude, offset, &labels) {
+            let tracks = store.read(Item::ReviewPart(&id, &by, Part::Tracks));
+            let labelled = tracks.map_err(|error| error.to_string()).and_then(|tracks| {
+                let tracks = tracks.ok_or("the review has no tracks")?;
+                cutoff_labels(&video, &tracks, &report, exclude, offset, &*store)
+            });
+            let label_count = match labelled {
                 Ok(count) => count,
                 Err(error) => {
                     eprintln!("the cut-off's labels: {error}");
                     return;
                 }
             };
-            let kept = pyjson::load(&faint).and_then(|value| serde_json::from_value::<FaintFile>(value).ok());
+            let faint = Item::Mark(&id, Mark::Cutoff);
+            let kept = pyjson::load(&*store, faint).and_then(|value| serde_json::from_value::<FaintFile>(value).ok());
             let Some(mut file) = kept else { return };
             if let Some(record) = file.record.as_mut() {
                 record.labels = json!(label_count);
             }
-            if let Err(error) = pyjson::dump(&faint, &file, false) {
+            if let Err(error) = pyjson::dump(&*store, faint, &file, false) {
                 eprintln!("the cut-off's labels: {error}");
             }
         });
@@ -187,13 +184,13 @@ impl Library {
 
     /// Skipped in the cut-off queue: left out of it from now on.
     pub fn skip_faint(&self, id: &str) -> Answer<Value> {
-        crate::labels::add_id(&self.file(FAINT_SKIPPED), id)
+        crate::labels::add_id(self.store(), IdList::FaintSkipped, id)
     }
 
     /// Recordings to set a cut-off in, in the area queue's order, leaving out probes, other games, skipped and
     /// submitted ones.
     pub fn faint_queue(&self) -> Answer<Value> {
-        let skipped = crate::labels::read_ids(&self.file(FAINT_SKIPPED));
+        let skipped = crate::labels::read_ids(self.store(), IdList::FaintSkipped);
         let submitted = |id: &str| {
             self.faint_file(id).and_then(|file| file.record).is_some_and(|record| !record.submitted.is_empty())
         };
@@ -202,19 +199,18 @@ impl Library {
 }
 
 /// The labels of a submitted cut-off (python/server.py: submit_faint's run): the crops the core picks from the run's
-/// frames, each written as hand_crops.py writes them (train/<stem>_<frame>.npz: the crop's RGB and fixed map, an empty
-/// target mask, the boxes kept; a row in checked.jsonl). Returns how many.
+/// frames (the review's `tracks`), each kept as hand_crops.py writes them (train/<stem>_<frame>.npz: the crop's RGB
+/// and fixed map, an empty target mask, the boxes kept; a row in checked.jsonl). Returns how many.
 #[cfg(feature = "native")]
 fn cutoff_labels(
     video: &Path,
-    tracks: &Path,
+    tracks: &[u8],
     report: &Value,
     exclude: Vec<[f64; 4]>,
     offset: f64,
-    out: &Path,
+    store: &dyn Store,
 ) -> Result<usize, String> {
-    let bytes = crate::disk::read(tracks).map_err(|error| error.to_string())?;
-    let tracks: Tracks = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    let tracks: Tracks = serde_json::from_slice(tracks).map_err(|error| error.to_string())?;
     let (start, end, near) = run_span(report);
     if start.is_none() {
         return Ok(0);
@@ -232,13 +228,13 @@ fn cutoff_labels(
     let (mut rows, mut label_count) = (Vec::new(), 0);
     for crop in &crops {
         let Ok(rgb) = frame_rgb(video, &info, crop.frame) else { continue };
-        write_crop(out, crop, &rgb, &fixed)?;
+        write_crop(store, crop, &rgb, &fixed)?;
         rows.extend(pyjson::to_vec(&crop.row, false));
         rows.push(b'\n');
         label_count += 1;
     }
     // a later submit's rows win (hand_crops.py: to_dataset)
-    pyjson::append_text(&out.join(CHECKED_ROWS), &rows)?;
+    pyjson::append_text(store, Item::CutoffRows, &rows)?;
     Ok(label_count)
 }
 
@@ -282,7 +278,7 @@ fn frame_rgb(video: &Path, info: &VideoInfo, frame: usize) -> Result<Vec<u8>, St
 
 /// One crop's file, as `np.savez_compressed(rgb=, fixed=, tmask=, boxes=, hidden=)` in hand_crops.py.
 #[cfg(feature = "native")]
-fn write_crop(out: &Path, crop: &CutoffCrop, rgb: &[u8], fixed: &[u8]) -> Result<(), String> {
+fn write_crop(store: &dyn Store, crop: &CutoffCrop, rgb: &[u8], fixed: &[u8]) -> Result<(), String> {
     let (x0, y0) = (crop.x0, crop.y0);
     let mut pixels = Vec::with_capacity(CROP * CROP * RGB_BYTES);
     let mut fixed_crop = Vec::with_capacity(CROP * CROP);
@@ -299,5 +295,6 @@ fn write_crop(out: &Path, crop: &CutoffCrop, rgb: &[u8], fixed: &[u8]) -> Result
         ("boxes", &Array::f32(&[crop.boxes.len(), 4], &boxes)),
         ("hidden", &Array::u8(&[], vec![0])),
     ];
-    npz::save(&out.join(&crop.row.file), &arrays)
+    let item = Item::CutoffCrop(&crop.row.file);
+    store.write(item, &npz::to_bytes(&arrays)?).map_err(|error| format!("{}: {error}", store.name(item)))
 }

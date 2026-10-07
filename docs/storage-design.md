@@ -1,6 +1,7 @@
 # Storage: one SQLite database per data folder
 
-Status: proposed (2026-10-07). The prototype that backs it: `prototypes/sqlite_opfs/` (README.md has its numbers).
+Status: step 1 done (2026-10-07), steps 2 to 4 proposed. The prototype that backs it: `prototypes/sqlite_opfs/`
+(README.md has its numbers).
 
 ## Why
 
@@ -106,7 +107,13 @@ Each ends in a check, and each is committed on its own.
 
 1. **The storage interface.** The library's reads and writes go through one interface, its file backend being today's
    code. Check: the replay test, the parity tests and the UI's tests pass unchanged; the API's answers on a copy of
-   test_out are byte-equal (the apicheck scripts).
+   test_out are byte-equal (the apicheck scripts). Done: `Store` in service/src/store.rs. An `Item` names each thing
+   kept (the settings, the lists of ids, the area kinds and examples, a recording's marks, a review's parts by model,
+   the cut-off labels); a store takes bytes and gives the same bytes back, and answers what a recording has (its
+   reviews, the old one, which recordings have anything kept, which have saved and found areas). `Files` keeps them as
+   before, in either layout, and Python's text items with its line ends. Checked with `scripts/storage_check.py`: the
+   API's answers and every file left are the same as the build before it, on copies of test_out and the desktop
+   app's data; the Rust tests pass.
 2. **SQLite natively.** The `Sql` trait, `rusqlite`, the schema, the import from files. Check: on a copy of the desktop
    app's data and of test_out converted to the app's layout, every review's report and the API's answers equal the
    file backend's.
@@ -121,3 +128,6 @@ Each ends in a check, and each is committed on its own.
 - How large the database grows for a heavy user (thousands of recordings and several models), and whether reviews of
   old models are pruned automatically or only from the data panel.
 - The crop-check folders stay files in this design; they could become a table later.
+- The mouse logs stay files after step 1: the desktop app's logger (a process of its own) writes them, and the
+  measures read only each log's first and last records to find the one that covers a run. In the database they need
+  the logger to write through the service, or an import when the service starts, and a read of a blob's ends.

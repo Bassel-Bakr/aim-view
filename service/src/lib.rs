@@ -34,6 +34,7 @@ pub mod pyjson;
 pub mod report;
 pub mod review;
 pub mod run_window;
+pub mod store;
 #[cfg(feature = "native")]
 pub mod video;
 #[cfg(all(windows, feature = "native"))]

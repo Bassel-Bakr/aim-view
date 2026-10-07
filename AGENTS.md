@@ -363,7 +363,11 @@ models.json, and `bun run assets` has run again; `assets` names any listed model
   (retired/python-bindings/, python/retired/server_thin.py; the old Python server is python/retired/server.py); the
   tool gives what the bindings gave, checked on every recording's pairing and on two native reviews, byte for byte.
   Checked against the old Python server on a copy of test_out: the same answers and byte-equal files (scratchpad
-  apicheck scripts).
+  apicheck scripts). Everything the library keeps goes through one interface (service/src/store.rs: `Store`, each
+  kept thing an `Item`, bytes in and the same bytes out; today `Files`, the data folder's files as before), so it can
+  move to one SQLite database (docs/storage-design.md). `python scripts/storage_check.py` compares two builds of
+  service/examples/api.rs: their answers and the files they leave on fresh copies of test_out and the desktop app's
+  data.
 - The desktop app (desktop/, Tauri 2): the desktop build in a WebView2 window, with the server mode's services
   (modes/tauri/: their requests go to http://api.localhost). The app answers the review server's API itself
   (desktop/src/protocol.rs over a custom protocol, to the service: no network port, nothing outside the app reaches

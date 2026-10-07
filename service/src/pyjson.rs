@@ -1,18 +1,20 @@
 //! JSON as python/server.py reads and writes it, so the files the app keeps are the review server's, byte for byte.
 //!
-//! In: the data folder's JSON files (areas and found areas, area kinds and examples, cut-offs, labelling lists) and the
-//! page's bodies. Out: values for the library (areas.rs, faint.rs, finder.rs, labels.rs) and those files written back.
+//! In: the kept JSON items (store.rs: areas and found areas, area kinds and examples, cut-offs, labelling lists) and
+//! the page's bodies. Out: values for the library (areas.rs, faint.rs, finder.rs, labels.rs) and those items kept
+//! again.
 //! Numbers are read exactly (serde_json's default parser can be a bit off in the last place, and a box saved back must
 //! be the box the page sent), and written as Python's `json.dumps` writes them (", " and ": " between items, or one
 //! space of indent, non-ASCII as \u escapes, floats as Python's `repr`).
 
 use std::io;
 use std::ops::Range;
-use std::path::Path;
 
 use serde::Serialize;
 use serde_json::Value;
 use serde_json::ser::{CharEscape, Formatter};
+
+use crate::store::{Item, Store};
 
 /// What `parse` puts before a number's text, making it a JSON string that starts with a NUL character, which
 /// `numbers` reads back as a number.
@@ -92,38 +94,28 @@ pub fn to_vec<T: Serialize + ?Sized>(value: &T, indent: bool) -> Vec<u8> {
     out
 }
 
-/// Text as Python's `open(path, "w")` writes it: on Windows each "\n" as "\r\n". The folder is made when missing.
-pub fn write_text(path: &Path, text: &[u8]) -> Result<(), String> {
-    make_parent(path)?;
-    crate::disk::write(path, newlines(text)).map_err(|error| format!("{}: {error}", path.display()))
+/// Text kept as Python's `open(path, "w")` writes a file (store.rs: `Files`); a failure names where it is kept.
+pub fn write_text(store: &dyn Store, item: Item<'_>, text: &[u8]) -> Result<(), String> {
+    store.write(item, text).map_err(|error| format!("{}: {error}", store.name(item)))
 }
 
-/// Text added at the end of a file, as Python's `open(path, "a")` adds it.
-pub fn append_text(path: &Path, text: &[u8]) -> Result<(), String> {
-    make_parent(path)?;
-    crate::disk::append(path, &newlines(text)).map_err(|error| format!("{}: {error}", path.display()))
+/// Text added at the end of a kept item, as Python's `open(path, "a")` adds it to a file.
+pub fn append_text(store: &dyn Store, item: Item<'_>, text: &[u8]) -> Result<(), String> {
+    store.append(item, text).map_err(|error| format!("{}: {error}", store.name(item)))
 }
 
-/// The folder a file goes in, made when missing.
-fn make_parent(path: &Path) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        crate::disk::create_dir_all(dir).map_err(|error| error.to_string())?;
-    }
-    Ok(())
+/// `json.dump(value, open(path, "w"))`, or with `indent=1`, into a kept item.
+pub fn dump<T: Serialize + ?Sized>(store: &dyn Store, item: Item<'_>, value: &T, indent: bool) -> Result<(), String> {
+    write_text(store, item, &to_vec(value, indent))
 }
 
-/// `json.dump(value, open(path, "w"))`, or with `indent=1`.
-pub fn dump<T: Serialize + ?Sized>(path: &Path, value: &T, indent: bool) -> Result<(), String> {
-    write_text(path, &to_vec(value, indent))
-}
-
-/// A JSON file read exactly (`parse`); None when it is missing or not JSON.
-pub fn load(path: &Path) -> Option<Value> {
-    parse(&crate::disk::read(path).ok()?).ok()
+/// A kept JSON item read exactly (`parse`); None when nothing is kept or it is not JSON.
+pub fn load(store: &dyn Store, item: Item<'_>) -> Option<Value> {
+    parse(&store.read(item).ok()??).ok()
 }
 
 /// Text with each "\n" as "\r\n" on Windows, as Python's text files write it; elsewhere unchanged.
-fn newlines(text: &[u8]) -> Vec<u8> {
+pub(crate) fn newlines(text: &[u8]) -> Vec<u8> {
     if !cfg!(windows) {
         return text.to_vec();
     }
