@@ -26,6 +26,8 @@ const WINDOWS_BUILD_URL: &str =
     "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
 /// A byte count shifted right by this many bits is in megabytes (MiB), as progress is told.
 const MEGABYTE_SHIFT: u32 = 20;
+/// The player the download also unpacks: the review never runs it, and BtbN's Windows build of it is 170 MB.
+const PLAYER: &str = "ffplay";
 
 /// Where ffmpeg comes from, for the whole process (`Library::open` sets it).
 pub fn set_source(source: Ffmpeg) {
@@ -69,6 +71,11 @@ fn download_url() -> Result<&'static str, String> {
     }
 }
 
+/// The downloaded folder without ffplay (also from a folder an older version unpacked it into).
+fn without_player(folder: &Path) {
+    let _ = std::fs::remove_file(folder.join(format!("{PLAYER}{}", std::env::consts::EXE_SUFFIX)));
+}
+
 fn installed(folder: &Path, url: &str) -> bool {
     let source = std::fs::read_to_string(folder.join(SOURCE_FILE)).unwrap_or_default();
     source.trim() == url && program("ffmpeg").is_file() && program("ffprobe").is_file()
@@ -84,6 +91,7 @@ pub fn ensure(progress: impl Fn(usize, usize)) -> Result<(), String> {
     let _one = INSTALLING.lock().unwrap_or_else(PoisonError::into_inner);
     let url = download_url()?;
     if installed(folder, url) {
+        without_player(folder);
         return Ok(());
     }
     std::fs::create_dir_all(folder).map_err(|error| format!("ffmpeg's folder could not be made: {error}"))?;
@@ -95,6 +103,7 @@ pub fn ensure(progress: impl Fn(usize, usize)) -> Result<(), String> {
     })
     .map_err(failed)?;
     unpack_ffmpeg(&archive, folder).map_err(failed)?;
+    without_player(folder);
     std::fs::write(folder.join(SOURCE_FILE), url)
         .map_err(|error| format!("ffmpeg's folder could not be written: {error}"))?;
     if !installed(folder, url) {
