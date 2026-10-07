@@ -27,7 +27,9 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   Pathing check, the fastest and your-path overlays; checked equal to the old page on 1wall 6targets 889.26), the
   model panel, upload and the stats file panel, and the three modes. Browser mode runs the review service in the page
   (see "Three modes, one app, one backend"); it keeps its data folder in the browser's private file system (OPFS
-  `aimview/data`, the app's layout) and KovaaK's files in `aimview/kovaak`, and reads the VODs folder and the models
+  `aimview/data`, the app's layout; since 2026-10-07 what the library keeps is in one SQLite database there,
+  docs/storage-design.md, and the files hold the videos, mouse logs and crop folders) and KovaaK's files in
+  `aimview/kovaak`, and reads the VODs folder and the models
   where they are (`modes/service/mounts.ts`). Files added are uploads, as in server mode (a video that is not an MP4
   is remuxed into one with Mediabunny first, streams copied). The user opens a folder of recordings (VODs folder:
   Chrome's folder picker, remembered across visits, mounted at /vods; a recording's id is its path there, and a

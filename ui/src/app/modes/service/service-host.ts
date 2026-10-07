@@ -157,6 +157,7 @@ export class ServiceHost {
     const start: ServiceStart = {
       kind: 'start',
       wasmUrl: new URL('service/aimview_service.wasm', base).href,
+      sqliteUrl: new URL('service/sqlite3.wasm', base).href,
       modelsUrl: new URL('models/', base).href,
       dataUrl: new URL('data/', base).href,
     };

@@ -47,6 +47,8 @@ export interface ServiceStart {
   kind: 'start';
   /** The address of the service's WebAssembly. */
   wasmUrl: string;
+  /** The address of SQLite's WebAssembly (the service's database). */
+  sqliteUrl: string;
   /** The address of the models' folder. */
   modelsUrl: string;
   /** The address of the shipped data's folder. */

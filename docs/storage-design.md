@@ -1,6 +1,6 @@
 # Storage: one SQLite database per data folder
 
-Status: steps 1 and 2 done (2026-10-07), steps 3 and 4 proposed. The prototype that backs it: `prototypes/sqlite_opfs/`
+Status: steps 1 to 3 done (2026-10-07), step 4 proposed. The prototype that backs it: `prototypes/sqlite_opfs/`
 (README.md has its numbers).
 
 ## Why
@@ -121,12 +121,24 @@ Each ends in a check, and each is committed on its own.
    it with `Files` on a small data folder.
 3. **SQLite in the browser.** `host_sql`, SQLite's build in the worker, the tab lock, the import from OPFS files and
    IndexedDB. Check: the browser mode's specs, and a review made and reopened in Chrome, the same report as natively.
+   Done: `HostSql` (service/src/sql.rs), answered by ui/src/app/modes/service/service-database.ts (SQLite 3.53's
+   WebAssembly, `bun run assets` copies it to service/sqlite3.wasm; its pool in OPFS `.aimview-sqlite`). `host_sql`
+   is synchronous, so it is not one of Asyncify's imports, and the import from files works through it. A tab that
+   opens steals the Web Lock; the tab that held it closes the database after its running request and answers 503
+   with "open in another tab" until it is reloaded. The page reads and replaces area_kinds.json through
+   /api/area_kinds_file instead of the data folder. Checked in Chrome (the built-in browser): a recording and its
+   review seeded as files, imported on the first opening, answered every route as the native files did (tracks,
+   report, run, stats, exclude, faint, job, mouse; find_areas differs only by the other recordings each has);
+   writes (a run window, the 327 KB examples, the area types) read back after a reload; the lock passed both ways
+   between two tabs. Not moved yet: the cut-off labels the page keeps in IndexedDB, and KovaaK's copies (files, as
+   step 2's schema leaves `stats_files` and `scenarios` for later). A new review made in the browser was not run
+   (the pane was not drawing).
 4. **The data panel** and **the export zip**, on the interface.
 
 ## Open questions
 
-- Whether `host_sql`'s calls from the Rust service, which runs through Asyncify, need anything special: a sync import
-  should pass straight through, and step 3 starts by proving it.
+- `host_sql` passes straight through Asyncify (step 3): it is not one of its imports, and calls before a `host_fs` wait
+  are not made again when the stack rewinds.
 - How large the database grows for a heavy user (thousands of recordings and several models), and whether reviews of
   old models are pruned automatically or only from the data panel.
 - The crop-check folders stay files in this design; they could become a table later.

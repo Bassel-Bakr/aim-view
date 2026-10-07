@@ -4,7 +4,8 @@
  * page's own: browser mode answers the same API as the review server and the desktop app with it.
  * The service's files are mounted as the contract says (mounts.ts): /data and /kovaak in the
  * browser's private file system, /vods the VODs folder the user opened, /models the models beside
- * the app. One request runs at a time, in the order asked. In: `ServiceTask`s from
+ * the app. What the service keeps is in its database (service-database.ts: SQLite in this worker,
+ * held by one tab at a time). One request runs at a time, in the order asked. In: `ServiceTask`s from
  * service-host.ts. Out: `ServiceReply`s, each with its task's id.
  */
 import { moveBrowserData } from './browser-data-move';
@@ -22,6 +23,7 @@ import {
   ServiceTask,
   VodsMount,
 } from './service-messages';
+import { ServiceDatabase } from './service-database';
 import { HandleRequest, OpenFailed, ServiceModule } from './service-module';
 
 /** The shipped area finder data the first run starts from, when /data has none of its own. */
@@ -42,12 +44,17 @@ const FOLDER_KEY = 'recordings-folder';
 const SPOOL_OWNER = crypto.getRandomValues(new Uint32Array(1))[0] || 1;
 /** A file system call's code for a file not there (mounts.ts). */
 const FS_NOT_FOUND = 1;
+/** A host call's code for any other failure (service-module.ts). */
+const FS_OTHER = 3;
 /** The status of a task that failed for a file not there. */
 const NOT_FOUND = 404;
 /** The status of a task that failed because the service is not open. */
 const UNAVAILABLE = 503;
 /** The status of a task that failed for any other reason. */
 const SERVER_ERROR = 500;
+/** Why the service stopped answering once another tab took its database. */
+const MOVED =
+  'Aim View is open in another tab of this browser, which now keeps its data. Reload this tab to use it here.';
 
 /** The service's file system: every mount by its name. */
 const mounts = new Mounts();
@@ -58,6 +65,10 @@ const mounts = new Mounts();
 let kovaak: KovaakMount | null = null;
 /** The service's module once started; null until the start task. */
 let service: Promise<ServiceModule> | null = null;
+/** The service's database (SQLite in this worker) once open; null until the start task. */
+let database: ServiceDatabase | null = null;
+/** Whether another tab took the database: the service answers no more requests here. */
+let moved = false;
 /** Where the module is: kept to load it again after a trap. */
 let wasmUrl = '';
 /** The config (JSON) the module opens with: kept to open it again after a trap. */
@@ -166,6 +177,7 @@ async function start(task: ServiceStart): Promise<ServiceModule> {
     if (folder) mounts.set('vods', new DirMount(Promise.resolve(folder), false));
     await fillShipped(task.dataUrl).catch((error: unknown) => console.warn('Shipped data:', error));
     wasmUrl = task.wasmUrl;
+    database = await ServiceDatabase.open(task.sqliteUrl, () => void inTurn(async () => letGo()));
     config = JSON.stringify({
       data: '/data',
       vods: folder ? '/vods' : null,
@@ -202,9 +214,27 @@ function unready(error: unknown): Unready {
   return new Unready(`The review service could not start in this browser: ${why}`);
 }
 
+/**
+ * Another tab took the database: closed here, after the request that was running, so the other
+ * tab can open it; the requests after it are answered with why.
+ */
+function letGo(): void {
+  moved = true;
+  database?.close();
+  database = null;
+}
+
 /** The module loaded and opened (again after a trap: a panic in Rust aborts the instance). */
 async function load(): Promise<ServiceModule> {
-  const module = await ServiceModule.load(wasmUrl, (op, path, arg) => mounts.host(op, path, arg));
+  const sql = (op: number, statement: string, values: Uint8Array) =>
+    database
+      ? database.run(op, statement, values)
+      : { code: FS_OTHER, bytes: new TextEncoder().encode(MOVED) };
+  const module = await ServiceModule.load(
+    wasmUrl,
+    (op, path, arg) => mounts.host(op, path, arg),
+    sql,
+  );
   await module.open(config);
   return module;
 }
@@ -220,6 +250,7 @@ function opened(): Promise<ServiceModule> {
  */
 async function handle(request: HandleRequest, body: Uint8Array): Promise<ServiceAnswer> {
   const module = await opened();
+  if (moved) throw new Unready(MOVED);
   try {
     return await module.handle(request, body);
   } catch (error) {

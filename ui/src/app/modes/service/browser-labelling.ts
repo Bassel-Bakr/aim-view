@@ -1,6 +1,6 @@
 /**
  * Browser mode's `Labelling`, and the area finder's training data in this browser. In: the service
- * in the page's labelling routes and /api/area_examples, area_kinds.json in its data folder, and
+ * in the page's labelling routes, /api/area_examples and /api/area_kinds_file, and
  * the files the user loads. Out: the queue and marks (as the server mode's), the examples' counts,
  * and the two files to download.
  */
@@ -12,7 +12,6 @@ import { AreaExample, AreaKind } from '../../api';
 import { ExamplesCount, ExamplesLoaded, ExamplesStore } from '../../platform/labelling';
 import { ServerLabelling } from '../http/server-labelling';
 import { builtInKinds } from '../web-files/area-kinds';
-import { MountedFiles } from './mounted-files';
 
 /**
  * The area finder's examples file, as the review service keeps it in its data folder (and the
@@ -21,11 +20,8 @@ import { MountedFiles } from './mounted-files';
 const EXAMPLES_FILE = 'area_examples.jsonl';
 /** The area types' file, kept beside it. */
 const KINDS_FILE = 'area_kinds.json';
-/**
- * Where the service keeps the area types (its data folder): the page reads and writes the file
- * itself.
- */
-const KINDS = `/data/${KINDS_FILE}`;
+/** The service's route for area_kinds.json as kept: read it, or replace it whole. */
+const KINDS_ROUTE = '/api/area_kinds_file';
 /**
  * The prefix of the examples KovOBS's own layout gives a recording until the user saves its areas
  * (python/areas.py); they name no recording of the user's.
@@ -125,17 +121,15 @@ function asciiJson(text: string): string {
 
 /**
  * The area finder's training data in browser mode: the review service's area_examples.jsonl
- * (/api/area_examples) and area_kinds.json in its data folder in this browser, which the service
+ * (/api/area_examples) and area_kinds.json (/api/area_kinds_file) in this browser, which the service
  * learns into when areas are saved. The user downloads them as they are, and loads the review
  * server's files into them: the examples of each recording in a file replace that recording's,
  * and each area type replaces the one with its id (the others stay, after the file's).
  */
 @Service()
 export class BrowserExamples implements ExamplesStore {
-  /** Reads and replaces area_examples.jsonl through the service. */
+  /** Reads and replaces area_examples.jsonl and area_kinds.json through the service. */
   private readonly http = inject(HttpClient);
-  /** Reads and writes area_kinds.json in the service's data folder. */
-  private readonly files = inject(MountedFiles);
   /** How many times the files changed here. */
   private readonly version = signal(0);
   /**
@@ -177,7 +171,7 @@ export class BrowserExamples implements ExamplesStore {
   /** Reads the two files into `texts`, unless a newer reading began meanwhile. */
   private async refresh(): Promise<void> {
     const ticket = ++this.reading;
-    const [examples, kinds] = await Promise.all([this.examplesText(), this.files.text(KINDS)]);
+    const [examples, kinds] = await Promise.all([this.examplesText(), this.kindsText()]);
     if (ticket === this.reading) this.texts.set({ examples, kinds });
   }
 
@@ -187,10 +181,16 @@ export class BrowserExamples implements ExamplesStore {
     return firstValueFrom(asked).catch(() => null);
   }
 
+  /** The service's area_kinds.json; null when none is kept (or it cannot be read). */
+  private kindsText(): Promise<string | null> {
+    const asked = this.http.get(KINDS_ROUTE, { responseType: 'text' });
+    return firstValueFrom(asked).catch(() => null);
+  }
+
   /** One of the two files as kept; the built-in area types until there are any. */
   async file(name: string): Promise<Blob> {
     if (name === KINDS_FILE) {
-      const text = await this.files.text(KINDS);
+      const text = await this.kindsText();
       return new Blob([text ?? asciiJson(JSON.stringify(builtInKinds(), null, 1))], {
         type: 'application/json',
       });
@@ -237,10 +237,10 @@ export class BrowserExamples implements ExamplesStore {
   private async loadKinds(file: File): Promise<number> {
     const loaded = parseKinds(await file.text());
     const ids = new Set(loaded.map((kind) => kind.id));
-    const text = await this.files.text(KINDS);
+    const text = await this.kindsText();
     const kept = text === null ? builtInKinds() : parsedOr(parseKinds, text);
     const kinds = [...loaded, ...kept.filter((kind) => !ids.has(kind.id))];
-    await this.files.write(KINDS, asciiJson(JSON.stringify(kinds, null, 1)));
+    await firstValueFrom(this.http.post(KINDS_ROUTE, asciiJson(JSON.stringify(kinds, null, 1))));
     return loaded.length;
   }
 }

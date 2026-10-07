@@ -144,6 +144,12 @@ fn special_answer(library: &Library, route: &Route) -> Option<ApiResponse> {
             Err(failure) => json_response(Err(failure)),
         });
     }
+    if !route.post && route.path == "/api/area_kinds_file" {
+        return Some(match library.kinds_file() {
+            Ok(bytes) => ApiResponse::new(OK, "application/json", bytes),
+            Err(failure) => json_response(Err(failure)),
+        });
+    }
     if !route.post && route.path == "/api/area_examples" {
         return Some(match library.examples_text() {
             Ok(text) => ApiResponse::new(OK, "text/plain; charset=utf-8", text),
@@ -248,6 +254,7 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/faint_skip" => id().and_then(|id| library.skip_faint(&id)),
         "/api/faint_submit" => id().and_then(|id| library.submit_faint(&id, offset(route.query("offset"))?)),
         "/api/area_examples" => library.set_examples(body),
+        "/api/area_kinds_file" => library.set_kinds_file(body),
         "/api/crop_answer" => crop_ids(route).and_then(|(page, id)| library.save_crop_answer(&page, &id, body)),
         "/api/crop_import" => page(route).and_then(|page| library.import_crop_answers(&page, body)),
         #[cfg(not(feature = "native"))]

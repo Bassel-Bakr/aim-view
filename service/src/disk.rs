@@ -255,24 +255,35 @@ mod imp {
     /// A result block's code: the path is there already, or a folder to remove is not empty.
     const THERE_ALREADY: u32 = 2;
 
-    /// A call to the host: its bytes, or its error (see `DONE` and the codes after it).
-    fn call(op: Op, path: &Path, arg: &[u8]) -> io::Result<Vec<u8>> {
-        let path = path.to_string_lossy();
-        // SAFETY: the host reads the two byte ranges it is given and answers with a block it reserved with `alloc`
-        let block = unsafe { host_fs(op as u32, path.as_ptr(), path.len(), arg.as_ptr(), arg.len()) };
+    /// A result block's code and bytes, the block freed: [u32 code][u32 len][len bytes], little-endian, as the host
+    /// answers its calls (`host_fs` here, `host_sql` in sql.rs). A null block is the page not answering.
+    ///
+    /// # Safety
+    ///
+    /// `block` is null or a block the host reserved with the module's `alloc`, whose length is its own.
+    pub(crate) unsafe fn take_block(block: *mut u8) -> io::Result<(u32, Vec<u8>)> {
         if block.is_null() {
             return Err(io::Error::other("the page did not answer"));
         }
         // SAFETY: the block starts with its code and its length, then that many bytes
-        let (code, bytes) = unsafe {
+        unsafe {
             let head = std::slice::from_raw_parts(block, BLOCK_HEAD_BYTES);
             let code = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
             let len = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
             let bytes = std::slice::from_raw_parts(block.add(BLOCK_HEAD_BYTES), len).to_vec();
             let layout = Layout::from_size_align((BLOCK_HEAD_BYTES + len).max(1), BLOCK_ALIGN);
             dealloc(block, layout.expect("a block's layout"));
-            (code, bytes)
-        };
+            Ok((code, bytes))
+        }
+    }
+
+    /// A call to the host: its bytes, or its error (see `DONE` and the codes after it).
+    fn call(op: Op, path: &Path, arg: &[u8]) -> io::Result<Vec<u8>> {
+        let path = path.to_string_lossy();
+        // SAFETY: the host reads the two byte ranges it is given and answers with a block it reserved with `alloc`
+        let block = unsafe { host_fs(op as u32, path.as_ptr(), path.len(), arg.as_ptr(), arg.len()) };
+        // SAFETY: the host answers with a result block it reserved with `alloc`, or none
+        let (code, bytes) = unsafe { take_block(block) }?;
         let message = || String::from_utf8_lossy(&bytes).into_owned();
         match code {
             DONE => Ok(bytes),

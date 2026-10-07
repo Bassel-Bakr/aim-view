@@ -14,6 +14,7 @@
         "@angular/router": "^22.2.0",
         "@fontsource/barlow": "^5.3.0",
         "@fontsource/barlow-condensed": "^5.3.0",
+        "@sqlite.org/sqlite-wasm": "3.53.4-build2",
         "@tanstack/angular-table": "9.2.6",
         "mediabunny": "^1.61.0",
         "onnxruntime-web": "^1.30.0",
@@ -462,6 +463,8 @@
     "@schematics/angular": ["@schematics/angular@22.2.1", "", { "dependencies": { "@angular-devkit/core": "22.2.1", "@angular-devkit/schematics": "22.2.1", "jsonc-parser": "3.3.1", "oxc-parser": "0.150.0", "typescript": "6.0.3" } }, "sha512-L4Nl8D43znCzXwze9PtbQhG1GKlhWq9ip8Hz+e3LHgG3WpT5Tlr7aVsyHDqb9Qetuy0Mpd4tXE15STtGdA897w=="],
 
     "@sindresorhus/base62": ["@sindresorhus/base62@1.0.0", "", {}, "sha512-TeheYy0ILzBEI/CO55CP6zJCSdSWeRtGnHy8U8dWSUH4I68iqTsy7HkMktR4xakThc9jotkPQUXT4ITdbV7cHA=="],
+
+    "@sqlite.org/sqlite-wasm": ["@sqlite.org/sqlite-wasm@3.53.4-build2", "", {}, "sha512-kQVArGJA4z7s56Dm8t+eTBXad4LiohuVj9pfgDNOcxa+Ic5xMrWlLPTq6cT0hw5S4MIvtpsraW+B0wD+IPvC7A=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 

@@ -129,16 +129,18 @@ pub(crate) fn keep_json(store: &dyn Store, item: Item<'_>, value: &impl Serializ
     store.write(item, &bytes).map_err(|error| error.to_string().into())
 }
 
-/// Where the library keeps what it keeps: the database when `config` asks for one (natively), else the files.
+/// Where the library keeps what it keeps: the database when `config` asks for one (natively its file in the data
+/// folder, in the browser the page's), else the files.
 fn open_store(config: &Config, folders: &Folders) -> Result<Arc<dyn Store>, String> {
-    #[cfg(feature = "native")]
-    if config.database {
-        let database = crate::database::Database::open_file(&config.data, folders);
-        return Ok(Arc::new(database.map_err(|error| format!("the data folder's database: {error}"))?));
+    if !config.database {
+        return Ok(Arc::new(Files::new(folders.clone())));
     }
+    #[cfg(feature = "native")]
+    let database = crate::database::Database::open_file(&config.data, folders);
     #[cfg(not(feature = "native"))]
-    let _ = config;
-    Ok(Arc::new(Files::new(folders.clone())))
+    let database =
+        crate::database::Database::open(Box::new(crate::sql::HostSql), "this browser's database".into(), folders);
+    Ok(Arc::new(database.map_err(|error| format!("the data folder's database: {error}"))?))
 }
 
 impl Library {

@@ -242,16 +242,16 @@ describe('the excluded areas editor', () => {
   afterEach(() => history.replaceState(null, '', '/'));
 
   it('in the browser, follows the kinds loaded from a kinds file, keeping the areas drawn', async () => {
-    // the review service reads the kinds from its data folder's area_kinds.json, which the page writes
+    // the review service keeps area_kinds.json, which the page replaces through its route
     let kinds: AreaKind[] = builtInKinds();
     const routes: ApiRoutes = {
       ...fakeServer({ saved: null, analysed: [] }),
       '/api/exclude': { kinds, boxes: [WEBCAM], source: 'saved' },
-      '/files/data/area_kinds.json': (req: HttpRequest<unknown>) => {
-        if (req.method !== 'PUT') return JSON.stringify(kinds);
+      '/api/area_kinds_file': (req: HttpRequest<unknown>) => {
+        if (req.method !== 'POST') return JSON.stringify(kinds);
         kinds = JSON.parse(req.body as string) as AreaKind[];
         routes['/api/exclude'] = { kinds, boxes: [WEBCAM], source: 'saved' };
-        return null;
+        return { kinds: kinds.length };
       },
     };
     TestBed.configureTestingModule({

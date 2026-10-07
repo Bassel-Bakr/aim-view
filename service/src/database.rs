@@ -125,10 +125,6 @@ fn decompress(bytes: &[u8]) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Now, in seconds since 1970.
-fn now_s() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |since| since.as_secs_f64())
-}
 
 /// A row's column as bytes; empty when it is not bytes or text.
 fn bytes_of(value: SqlValue) -> Vec<u8> {
@@ -327,7 +323,7 @@ impl Store for Database {
 
     /// Keeps the bytes in the item's row, now its time of change; text Python keeps gets Windows' line ends.
     fn write(&self, item: Item<'_>, bytes: &[u8]) -> io::Result<()> {
-        Database::write_row(&mut **self.sql(), &Row::of(item), &Database::as_kept(item, bytes), now_s())
+        Database::write_row(&mut **self.sql(), &Row::of(item), &Database::as_kept(item, bytes), crate::disk::now())
     }
 
     /// Reads the row and writes it back with the bytes after it, while no one else uses the connection.
@@ -336,7 +332,7 @@ impl Store for Database {
         let mut sql = self.sql();
         let mut kept = Database::read_row(&mut **sql, &row)?.unwrap_or_default();
         kept.extend_from_slice(&Database::as_kept(item, bytes));
-        Database::write_row(&mut **sql, &row, &kept, now_s())
+        Database::write_row(&mut **sql, &row, &kept, crate::disk::now())
     }
 
     /// Deletes the item's row; a missing row is an error, as a missing file is.

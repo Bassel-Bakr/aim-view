@@ -1,8 +1,9 @@
 /**
  * Builds the review core for the browser (WebAssembly) and copies what the UI ships beside it into
  * ui/generated/ (not in git): the core's module (core/aimview.wasm), the review service's
- * (service/aimview_service.wasm), the detector models the browser runs (models/, the _u8in
- * exports, each with its settings file detector_<name>.json: python/model/MODEL_FILE.md, and
+ * (service/aimview_service.wasm) and SQLite's (service/sqlite3.wasm), the detector models the
+ * browser runs (models/, the _u8in exports, each with its settings file detector_<name>.json:
+ * python/model/MODEL_FILE.md, and
  * models.json) and the user's area finder data (data/), which browser mode starts from.
  * angular.json serves core/ to every mode and the rest to browser mode only; Angular takes no files
  * from outside ui/. The desktop installer bundles models/ (desktop/tauri.conf.json).
@@ -116,6 +117,16 @@ async function service(): Promise<void> {
 }
 
 /**
+ * SQLite's own WebAssembly, beside the service's: the service's database in browser mode
+ * (ui/src/app/modes/service/service-database.ts loads it from there).
+ */
+function sqlite(): void {
+  const wasm = join(ROOT, 'ui', 'node_modules', '@sqlite.org', 'sqlite-wasm', 'dist', 'sqlite3.wasm');
+  mkdirSync(join(out, 'service'), { recursive: true });
+  writeIfChanged(join(out, 'service', 'sqlite3.wasm'), readFileSync(wasm));
+}
+
+/**
  * The models the model panel offers (models.json beside the models folder), each as its _u8in
  * export and its settings file (a model without one takes today's values), and models.json itself,
  * so the desktop app (which bundles this folder) reads the same models and default.
@@ -159,6 +170,7 @@ await step('assets', async () => {
   // what a mode does not need is left as it is: angular.json gives each mode only its own
   await cargo();
   if (forBrowser) await service();
+  if (forBrowser) sqlite();
   if (withModels) models();
   if (forBrowser) data();
 }, { profile, modes: modes.join(',') });

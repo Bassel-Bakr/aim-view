@@ -507,6 +507,26 @@ impl Library {
         }
     }
 
+    /// GET /api/area_kinds_file: area_kinds.json as kept, for the page to download; a 404 when none is (the page
+    /// offers the built-in types then).
+    pub fn kinds_file(&self) -> Answer<Vec<u8>> {
+        match self.store().read(Item::AreaKinds) {
+            Ok(Some(bytes)) => Ok(bytes),
+            Ok(None) => Err(Failure::missing(format!("no {AREA_KINDS}"))),
+            Err(error) => Err(format!("{AREA_KINDS}: {error}").into()),
+        }
+    }
+
+    /// POST /api/area_kinds_file: area_kinds.json replaced by `body` (the page's file of area types), once it reads
+    /// as a list of them; else 400 and nothing changes. Answers how many types it holds.
+    pub fn set_kinds_file(&self, body: &[u8]) -> Answer<Value> {
+        let bad = |reason: String| Failure::bad(format!("{AREA_KINDS}: {reason}"));
+        let kinds: Vec<OldKind> = serde_json::from_value(pyjson::parse(body).map_err(bad)?)
+            .map_err(|error| Failure::bad(format!("{AREA_KINDS}: {error}")))?;
+        pyjson::write_text(self.store(), Item::AreaKinds, body)?;
+        Ok(json!({ "kinds": kinds.len() }))
+    }
+
     /// POST /api/area_examples: area_examples.jsonl replaced by `body` (its text), once each of its lines reads as an
     /// example; else the first line that does not is named (400) and nothing changes. Kinds kept by name become ids
     /// (`fix_examples`). Answers how many examples it holds.

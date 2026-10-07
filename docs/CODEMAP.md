@@ -163,7 +163,8 @@ rust-analyzer's call hierarchy.
   recording (store.rs; as python/retired/server.py kept it, run.json in its folder).
 - `service/src/sql.rs`: The SQL the data folder's database runs (database.rs), behind one interface (`Sql`) so its
   statements are written once (docs/storage-design.md): natively SQLite built into the exe through rusqlite (`Sqlite`),
-  in the browser build SQLite's own WebAssembly in the page.
+  in the browser build SQLite's own WebAssembly in the page (`HostSql`, the `host_sql` import, in a binary form both
+  sides read: tagged values, rows as a column and a row count before them).
 - `service/src/store.rs`: What the library keeps, through one interface (`Store`), so where it is kept can change
   (docs/storage-design.md): the files in the data folder (`Files`, laid out as config.rs's layout says) or one SQLite
   database (database.rs).
@@ -885,7 +886,8 @@ a webcam, another player's overlay.
 
 - `Kind` (struct): A kind of area: its id never changes; its name and what it is can.
 - `Library` methods: `kinds`, `save_kind`, `exclude`, `exclude_boxes`, `exclude_areas`, `tracked_with_areas`,
-  `exclude_answer`, `set_exclude`, `labelled`, `find_areas`, `examples_text`, `set_examples`, `fix_examples`.
+  `exclude_answer`, `set_exclude`, `labelled`, `find_areas`, `examples_text`, `kinds_file`, `set_kinds_file`,
+  `set_examples`, `fix_examples`.
 - Functions: `kovobs_areas`, `tracked_areas`.
 
 ## service/src/bin/aimview-tool.rs
@@ -1189,12 +1191,17 @@ report measures within (report.rs).
 
 The SQL the data folder's database runs (database.rs), behind one interface (`Sql`) so its statements are written once
 (docs/storage-design.md): natively SQLite built into the exe through rusqlite (`Sqlite`), in the browser build SQLite's
-own WebAssembly in the page. In: a statement and its values. Out: the rows it gives, as values.
+own WebAssembly in the page (`HostSql`, the `host_sql` import, in a binary form both sides read: tagged values, rows as
+a column and a row count before them). In: a statement and its values. Out: the rows it gives.
 
 - `SqlValue` (enum): A value a statement takes or a row gives (SQLite's five kinds).
 - `Sql` (trait): One connection to a database: one caller at a time (database.rs holds it behind a mutex).
 - `Sqlite` (struct): A database file through rusqlite, in WAL mode: readers don't wait on a writer, and a crash
   mid-write loses nothing committed. Methods: `open`.
+- `HostSql` (struct): The page's database, through the `host_sql` import: SQLite's own WebAssembly in the service's
+  worker, on the browser's private file system through its pool of sync access handles, so each call returns at once (no
+  Asyncify wait; ui/src/app/modes/service/service-database.ts answers it).
+- Functions: `encode_values`, `decode_rows`.
 
 ## service/src/store.rs
 

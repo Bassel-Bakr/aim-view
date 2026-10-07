@@ -2,7 +2,8 @@
 /**
  * Loads and calls the review service built as WebAssembly (browser-service/), in its worker. In:
  * the module's address, the worker's file system calls (mounts.ts), the service's config and each
- * request. Out: the service's answers, its file system calls awaited through Binaryen's Asyncify.
+ * request, and its database (service-database.ts). Out: the service's answers, its file system
+ * calls awaited through Binaryen's Asyncify, its database calls answered at once.
  */
 import { ServiceAnswer } from './service-messages';
 
@@ -72,6 +73,12 @@ export interface FsResult {
 export type HostFs = (op: number, path: string, arg: Uint8Array) => Promise<FsResult>;
 
 /**
+ * The host's database call (service/src/sql.rs: host_sql): the op, the statement and its values in
+ * the binary form; answered at once, with a code (0 done) and bytes as a file system call is.
+ */
+export type HostSql = (op: number, sql: string, values: Uint8Array) => FsResult;
+
+/**
  * The request service_handle takes: its method and path, and for an upload the file its body was
  * written to.
  */
@@ -113,15 +120,22 @@ export class ServiceModule {
   }
 
   /**
-   * Loads the module from `url`, its file system calls answered by `fs`. Rejects when it cannot be
-   * fetched.
+   * Loads the module from `url`, its file system calls answered by `fs` and its database calls by
+   * `sql`. Rejects when it cannot be fetched.
    */
-  static async load(url: string, fs: HostFs): Promise<ServiceModule> {
+  static async load(url: string, fs: HostFs, sql: HostSql): Promise<ServiceModule> {
     let module: ServiceModule | null = null;
     const imports: WebAssembly.Imports = {
       host: {
         host_fs: (op: number, path: number, pathLen: number, arg: number, argLen: number) =>
           (module as ServiceModule).hostFs(fs, op, path, pathLen, arg, argLen),
+        host_sql: (
+          op: number,
+          statement: number,
+          statementLen: number,
+          values: number,
+          valuesLen: number,
+        ) => (module as ServiceModule).hostSql(sql, op, statement, statementLen, values, valuesLen),
         host_now: () => Date.now() / MS_PER_SECOND,
         host_utc_offset: (secs: number) =>
           -new Date(secs * MS_PER_SECOND).getTimezoneOffset() * SECONDS_PER_MINUTE,
@@ -233,6 +247,23 @@ export class ServiceModule {
     this.exports.asyncify_start_unwind(this.data);
     // the module ignores what an unwinding call returns
     return 0;
+  }
+
+  /**
+   * host_sql: the database answers at once (no Asyncify wait), as a result block the module
+   * frees.
+   */
+  private hostSql(
+    sql: HostSql,
+    op: number,
+    statementPtr: number,
+    statementLen: number,
+    valuesPtr: number,
+    valuesLen: number,
+  ): number {
+    const statement = new TextDecoder().decode(this.bytes(statementPtr, statementLen));
+    const values = this.bytes(valuesPtr, valuesLen).slice();
+    return this.resultBlock(sql(op, statement, values));
   }
 
   /** A result block the module frees: [u32 code][u32 len][len bytes]. */

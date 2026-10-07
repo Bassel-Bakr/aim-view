@@ -92,8 +92,8 @@ for (const mode of MODE_CASES) {
 }
 
 /**
- * The review service's two area finder files as the page reaches them: area_examples.jsonl through its route, and
- * area_kinds.json in its data folder (kept with no types at first).
+ * The review service's two area finder files as the page reaches them, each through its route: area_examples.jsonl,
+ * and area_kinds.json (kept with no types at first).
  */
 function fakeFinderFiles(): ApiRoutes {
   let examples = '';
@@ -105,9 +105,9 @@ function fakeFinderFiles(): ApiRoutes {
         ? { examples: examples.split('\n').filter(Boolean).length }
         : examples;
     },
-    '/files/data/area_kinds.json': (req: HttpRequest<unknown>) => {
-      if (req.method === 'PUT') kinds = req.body as string;
-      return req.method === 'PUT' ? null : kinds;
+    '/api/area_kinds_file': (req: HttpRequest<unknown>) => {
+      if (req.method === 'POST') kinds = req.body as string;
+      return req.method === 'POST' ? { kinds: (JSON.parse(kinds) as unknown[]).length } : kinds;
     },
   };
 }
