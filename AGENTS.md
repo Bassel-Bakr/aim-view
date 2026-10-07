@@ -62,6 +62,10 @@ bun run assets                                 # the core as WebAssembly, the mo
                                                # into ui/generated/ (--no-data: without the data; see below)
 bun run types                                  # the UI's types of the JSON the Rust structs write (ts-rs), into
                                                # ui/src/app/generated/: run after changing a Rust struct the UI reads
+bun scripts/next-version.ts [--notes]          # the next release's semver from the Conventional Commits since the last
+                                               # vX.Y.Z tag (or its notes); .github/workflows/release.yml builds the
+                                               # browser site, the Windows server and the installer and publishes them
+                                               # as a GitHub release, on a push to main that changes the app
 ```
 
 Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
