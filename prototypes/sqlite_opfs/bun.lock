@@ -1,0 +1,14 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "@sqlite.org/sqlite-wasm": "^3.53.4-build2",
+      },
+    },
+  },
+  "packages": {
+    "@sqlite.org/sqlite-wasm": ["@sqlite.org/sqlite-wasm@3.53.4-build2", "", {}, "sha512-kQVArGJA4z7s56Dm8t+eTBXad4LiohuVj9pfgDNOcxa+Ic5xMrWlLPTq6cT0hw5S4MIvtpsraW+B0wD+IPvC7A=="],
+  }
+}

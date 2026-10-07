@@ -99,6 +99,14 @@
         "test_out/vod_model/hand/batch2/checked.jsonl"
       ],
       "port": 8775
+    },
+    {
+      "name": "sqlite-proto",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "prototypes/sqlite_opfs/server.ts"
+      ],
+      "port": 8790
     }
   ]
 }

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SQLite on OPFS</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 24px; color: #1a1a1a; background: #fafafa; }
+    table { border-collapse: collapse; margin-top: 12px; }
+    th, td { padding: 6px 12px; border-bottom: 1px solid #ddd; text-align: left; }
+    td.value { text-align: right; font-variant-numeric: tabular-nums; }
+    th.group { background: #eee; }
+    #status { margin-top: 8px; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>SQLite on OPFS: prototype</h1>
+  <p>One SQLite database on OPFS (SQLite's WebAssembly build, in a worker, as the app's review service runs) against
+    today's storage (a file per review file on OPFS), with a real review: av1, 6,000 frames.</p>
+  <button id="run">Run</button>
+  <div id="status"></div>
+  <table id="results"><tbody></tbody></table>
+  <script type="module">
+    const body = document.querySelector('#results tbody');
+    const status = document.querySelector('#status');
+    let group = '';
+    document.querySelector('#run').onclick = () => {
+      body.innerHTML = '';
+      group = '';
+      status.textContent = 'running...';
+      const worker = new Worker('/bench.worker.js', { type: 'module' });
+      worker.onmessage = ({ data }) => {
+        if (data.error) { status.textContent = 'error: ' + data.error; return; }
+        if (data.done) { status.textContent = 'done'; worker.terminate(); return; }
+        if (data.group !== group) {
+          group = data.group;
+          body.insertAdjacentHTML('beforeend', `<tr><th class="group" colspan="3">${group}</th></tr>`);
+        }
+        const value = data.value < 10 ? data.value.toFixed(2) : data.value.toFixed(1);
+        body.insertAdjacentHTML('beforeend',
+          `<tr><td>${data.what}</td><td class="value">${value} ${data.unit}</td><td>${data.note ?? ''}</td></tr>`);
+      };
+      worker.postMessage('run');
+    };
+  </script>
+</body>
+</html>
