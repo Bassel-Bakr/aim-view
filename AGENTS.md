@@ -111,6 +111,9 @@ From the user, 2026-10-04:
 - **Correctness first.** The user wants near-100% accuracy, even at the cost of speed. Judge a detector by the
   stats-file checks (`eval_vods.py`, `eval_moving.py`, `eval_video_alone.py`), not only by crop scores.
 - **Bun for JavaScript** tools, not Node.
+- **No hard-coded configuration.** Paths, folders, URLs, ports and anything a user or machine might change go in the
+  JSON settings (see Paths) or are discovered (Steam's folder from the registry), never in code. Flag any you find.
+  Algorithm parameters stay named constants or the model's settings file.
 - **Readable code.** Names say what a thing is, with its unit where it has one (`shift_deg`, `kill_frame`,
   `radius_px`). Single letters only for loop counters (`i`, `j`), coordinates (`x`, `y`) and a comparison's two sides
   (`a`, `b`). Short forms only from `docs/GLOSSARY.md`. A number with a meaning is a named constant

@@ -28,6 +28,9 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   `modes/mode.ts` for it, so a build carries only its own mode's code. Each contract has one spec that runs against the
   browser and server modes (`platform/*.spec.ts`), both answered by the fake review server (`fake-api.ts`, without the
   browser mode's interceptor).
+- **Generated code follows the same style.** A generator renames its files to kebab-case (rewriting their imports) and
+  runs Prettier over them, and lint passes on them. Only `ui/generated/` (the copied assets) is in `.prettierignore`.
+  Don't add `withFetch()`: fetch is already `HttpClient`'s default, and Angular 22 deprecates it.
 - **Named types.** Every object or tuple type gets a name (an interface or a type alias). No inline anonymous types
   such as `{ gpu: number; cpu: number }` in a field or a signature; ESLint enforces it. The types of the JSON that Rust
   structs write are generated (`bun run types`, the `ts` feature, into `ui/src/app/generated/`, kept in git), and
