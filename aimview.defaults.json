@@ -1,0 +1,27 @@
+{
+  "about": "Aim View's settings for a checkout of the repo: read by the review server, the Rust examples and tests, and the Python scripts (src/local_config.rs, python/local_config.py). This file is in git and holds nothing personal; aimview.json beside it (out of git, optional) overrides any key for this computer, e.g. {\"vods\": \"E:\\\\OBS\\\\KovOBS\"}. Paths start at the repo's root unless absolute; null means none.",
+  "data": "test_out",
+  "models": "python/model/exports",
+  "ui": "ui/dist/server/browser",
+  "ffmpeg": "test_out/ffmpeg",
+  "vods": null,
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8770
+  },
+  "steam": null,
+  "steam_found": {
+    "about": "Where Steam's folder is looked for when steam is null: on Windows the registry value Steam keeps it in, elsewhere this folder under the home folder.",
+    "registry_key": "HKCU\\Software\\Valve\\Steam",
+    "registry_value": "SteamPath",
+    "under_home": ".steam/steam"
+  },
+  "kovaak": {
+    "about": "KovaaK's folders: game and workshop under Steam's folder, the others under the game's.",
+    "game": "steamapps/common/FPSAimTrainer/FPSAimTrainer",
+    "workshop": "steamapps/workshop/content/824270",
+    "stats": "stats",
+    "scenarios": "Saved/SaveGames/Scenarios",
+    "crosshairs": "crosshairs"
+  }
+}

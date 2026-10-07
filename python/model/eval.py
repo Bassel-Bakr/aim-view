@@ -19,11 +19,13 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import infer  # noqa: E402
+import local_config  # noqa: E402
 import net  # noqa: E402
 import train  # noqa: E402
 
-VODS = r"E:\OBS\KovOBS"
+VODS = local_config.folder("vods")
 SWEEP = (0.2, 0.3, 0.4, 0.5, 0.6)       # the thresholds tried on the val split
 BATCH = 64
 WORKERS = 4

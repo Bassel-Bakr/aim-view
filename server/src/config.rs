@@ -1,27 +1,19 @@
-//! The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults run on the
-//! machine Aim View is made on with no flags at all: the repo's test_out/ as the data folder (python/server.py's
-//! layout), KovOBS's recordings, KovaaK's folders and the models in python/model/.
+//! The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults are the
+//! repo's settings (aimview.defaults.json under this computer's aimview.json: aimview::local_config): the repo's
+//! test_out/ as the data folder (python/server.py's layout), the recordings' folder this computer names, KovaaK's
+//! folders under Steam's, and the models in python/model/.
 //!
 //! In: the flags (clap) and the settings file's text. Out: the `Settings` main.rs runs with, which glue.rs turns into
 //! the review service's `Config`.
 
 use std::path::{Path, PathBuf};
 
+use aimview::local_config::LocalConfig;
 use clap::{Parser, ValueEnum};
 use serde::Deserialize;
 
 /// The settings file read when --config is not given: this name in the current folder, when it is there.
 pub const DEFAULT_FILE: &str = "aimview-server.toml";
-/// The address and port the server listens on by default.
-const DEFAULT_HOST: &str = "127.0.0.1";
-const DEFAULT_PORT: u16 = 8770;
-/// The recordings' folder by default (Windows only): KovOBS's.
-const DEFAULT_VODS: &str = r"E:\OBS\KovOBS";
-/// Steam's folder on Windows, and under the home folder elsewhere.
-const STEAM_WINDOWS: &str = r"C:\Program Files (x86)\Steam";
-const STEAM_UNDER_HOME: &str = ".steam/steam";
-/// KovaaK's app id on Steam: the name of its workshop's folder.
-const KOVAAK_STEAM_APP_ID: &str = "824270";
 /// The ffmpeg setting that means "the PATH's ffmpeg only", in any case.
 const FFMPEG_FROM_PATH: &str = "path";
 /// The characters a token may hold besides ASCII letters and digits (URL-safe without percent-encoding).
@@ -75,21 +67,21 @@ pub struct Flags {
     /// The settings file (TOML) [default: aimview-server.toml in the current folder, when there is one]
     #[arg(long, value_name = "FILE")]
     pub config: Option<PathBuf>,
-    /// The address to listen on. Any address but a loopback one needs --token [default: 127.0.0.1]
+    /// The address to listen on. Any address but a loopback one needs --token [default: aimview.json's server.host]
     #[arg(long)]
     pub host: Option<String>,
-    /// The port [default: 8770]
+    /// The port [default: aimview.json's server.port]
     #[arg(long)]
     pub port: Option<u16>,
-    /// The data folder: reviews, uploads and the user's marks, in python/server.py's layout [default: the repo's
-    /// test_out]
+    /// The data folder: reviews, uploads and the user's marks, in python/server.py's layout [default: aimview.json's
+    /// data, the repo's test_out]
     #[arg(long, value_name = "FOLDER")]
     pub data: Option<PathBuf>,
     /// The recordings, one folder per scenario; empty (--vods=) for the folder last chosen in the app [default:
-    /// E:\OBS\KovOBS]
+    /// aimview.json's vods]
     #[arg(long, value_name = "FOLDER", value_parser = any_path)]
     pub vods: Option<PathBuf>,
-    /// KovaaK's stats folder [default: FPSAimTrainer\stats in Steam's folder]
+    /// KovaaK's stats folder [default: KovaaK's in Steam's folder, as aimview.json says where]
     #[arg(long, value_name = "FOLDER")]
     pub stats: Option<PathBuf>,
     /// The folders of scenario files (.sce): give the flag more than once, or several folders after it [default:
@@ -97,7 +89,7 @@ pub struct Flags {
     #[arg(long, value_name = "FOLDER", num_args = 1..)]
     pub scenarios: Vec<PathBuf>,
     /// The models: the detector_<name>_u8in.onnx exports, with models.json there or in the folder above [default:
-    /// the repo's python/model/exports]
+    /// aimview.json's models, the repo's python/model/exports]
     #[arg(long, value_name = "FOLDER")]
     pub models: Option<PathBuf>,
     /// Where the detector runs [default: auto]
@@ -111,7 +103,8 @@ pub struct Flags {
     /// else ffmpeg/ in the data folder, downloaded there when missing (BtbN's build, with the dav1d AV1 decoder)]
     #[arg(long, value_name = "FOLDER|path")]
     pub ffmpeg: Option<PathBuf>,
-    /// The server-mode UI build (`bun run build:server`) [default: the repo's ui/dist/server/browser]
+    /// The server-mode UI build (`bun run build:server`) [default: aimview.json's ui, the repo's
+    /// ui/dist/server/browser]
     #[arg(long, value_name = "FOLDER")]
     pub ui: Option<PathBuf>,
     /// The access token: letters, digits and - . _ ~. Prefer the settings file: a flag shows in the process list
@@ -167,42 +160,25 @@ pub struct Settings {
     pub dev: bool,
 }
 
-/// The repo this server was built from (the defaults point into it).
-pub fn repo() -> PathBuf {
-    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
-    here.parent().unwrap_or(here).to_path_buf()
-}
-
-/// Steam's folder, where KovaaK's (FPSAimTrainer) is installed.
-fn steam() -> PathBuf {
-    if cfg!(windows) {
-        PathBuf::from(STEAM_WINDOWS)
-    } else {
-        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(STEAM_UNDER_HOME)
-    }
-}
 
 impl Settings {
     /// The settings with no file and no flags.
     pub fn defaults() -> Settings {
-        let repo = repo();
-        let steamapps = steam().join("steamapps");
-        let kovaak = steamapps.join("common").join("FPSAimTrainer").join("FPSAimTrainer");
+        let config = LocalConfig::load();
+        let (host, port) = config.server();
+        let folder = |key: &str| config.folder(key).unwrap_or_default();
         Settings {
-            host: DEFAULT_HOST.into(),
-            port: DEFAULT_PORT,
-            data: repo.join("test_out"),
-            vods: cfg!(windows).then(|| PathBuf::from(DEFAULT_VODS)),
-            stats: kovaak.join("stats"),
-            scenarios: vec![
-                kovaak.join("Saved").join("SaveGames").join("Scenarios"),
-                steamapps.join("workshop").join("content").join(KOVAAK_STEAM_APP_ID),
-            ],
-            models: repo.join("python").join("model").join("exports"),
+            host,
+            port,
+            data: folder("data"),
+            vods: config.folder("vods"),
+            stats: config.kovaak("stats").unwrap_or_default(),
+            scenarios: config.kovaak_scenarios(),
+            models: folder("models"),
             device: Device::Auto,
             gpu_frames: true,
-            ffmpeg: FfmpegChoice::Auto(repo.join("test_out").join("ffmpeg")),
-            ui: repo.join("ui").join("dist").join("server").join("browser"),
+            ffmpeg: FfmpegChoice::Auto(folder("ffmpeg")),
+            ui: folder("ui"),
             token: None,
             dev: false,
         }

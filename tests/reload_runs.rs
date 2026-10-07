@@ -3,27 +3,25 @@
 //! the ammo rules read from the scenario's file. `--nocapture` prints each run's reloads and its what-if line.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+use aimview::local_config::LocalConfig;
 use aimview::review::{KillTimes, Report, review_clicks};
 use aimview::scenario::{AmmoRules, facts};
 use aimview::track::Tracks;
 
-const STEAMAPPS: &str = r"C:\Program Files (x86)\Steam\steamapps";
-const SCENARIOS: &str = r"common\FPSAimTrainer\FPSAimTrainer\Saved\SaveGames\Scenarios";
-const WORKSHOP: &str = r"workshop\content\824270";
-const STATS: &str = r"common\FPSAimTrainer\FPSAimTrainer\stats";
 /// What separates the scenario's name from the rest in a stats file's name.
 const STATS_NAME_SEPARATOR: &str = " - Challenge - ";
 const RUNS: [&str; 1] = ["Pasu_Reload_Goated_-_112_-_2026.08.24-02.21.32"];
 
 /// The scenario's file: the user's own, else the workshop's.
 fn scenario_file(name: &str) -> Option<PathBuf> {
-    let own = Path::new(STEAMAPPS).join(SCENARIOS).join(format!("{name}.sce"));
+    let config = LocalConfig::load();
+    let own = config.kovaak("scenarios")?.join(format!("{name}.sce"));
     if own.exists() {
         return Some(own);
     }
-    fs::read_dir(Path::new(STEAMAPPS).join(WORKSHOP))
+    fs::read_dir(config.kovaak("workshop")?)
         .ok()?
         .flatten()
         .map(|item| item.path().join(format!("{name}.sce")))
@@ -64,6 +62,7 @@ fn check_reloads(run: &str, rules: &AmmoRules, report: &Report) {
 #[test]
 fn forced_reloads_on_real_runs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out/reload_runs");
+    let stats_folder = LocalConfig::load().kovaak("stats").unwrap_or_default();
     for run in RUNS {
         let dir = root.join(run);
         let (Ok(tracks), Ok(report)) =
@@ -75,7 +74,7 @@ fn forced_reloads_on_real_runs() {
         let tracks: Tracks = serde_json::from_str(&tracks).unwrap();
         let report: serde_json::Value = serde_json::from_str(&report).unwrap();
         let stats = report["stats"].as_str().unwrap();
-        let path = Path::new(STEAMAPPS).join(STATS).join(stats);
+        let path = stats_folder.join(stats);
         let scenario = stats.split(STATS_NAME_SEPARATOR).next().unwrap();
         let stats_text = fs::read(&path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
         let (Ok(text), Some(scenario_path)) = (stats_text, scenario_file(scenario)) else {

@@ -23,8 +23,12 @@ import threading
 from datetime import datetime
 from multiprocessing import shared_memory
 from pathlib import Path
+import sys
 import numpy as np
 from scipy import ndimage
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import local_config  # noqa: E402
 
 
 W, H = 1280, 720
@@ -452,8 +456,8 @@ def _prefetch(it, n):
         yield x
 
 
-SCENARIOS = (r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\Saved\SaveGames\Scenarios",
-             r"C:\Program Files (x86)\Steam\steamapps\workshop\content\824270")
+# without Steam's folder, a folder that is not there: no scenario files, as when KovaaK's is not installed
+SCENARIOS = tuple(str(local_config.kovaak(name) or local_config.ROOT / "no Steam") for name in ("scenarios", "workshop"))
 
 
 @functools.lru_cache(maxsize=1)

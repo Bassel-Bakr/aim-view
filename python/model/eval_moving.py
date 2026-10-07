@@ -32,7 +32,7 @@ import eval_vods  # noqa: E402
 import old_review  # noqa: E402
 
 PER = {"dynamic": 6, "switching": 6, "tracking": 12}
-KOVOBS = r"E:\OBS\KovOBS"
+KOVOBS = str(eval_vods.VODS)
 SKIP = {"voxTS Voltaic Easy - 111 - 2026.08.13-01.17.08.mp4"}     # a recording of another game, not KovaaK's
 STATIC = list(eval_vods.DEFAULT) + glob.glob(rf"{KOVOBS}\1wall 2targets xsmall - valorant\*558.46*.mp4") + \
     [path for score in ("889.26", "886.15", "849.91")

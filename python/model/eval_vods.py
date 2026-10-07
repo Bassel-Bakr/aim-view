@@ -22,14 +22,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import local_config  # noqa: E402
 
-STATS = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats"
-DEFAULT = [
-    r"E:\OBS\KovOBS\1w4ts Voltaic\1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
-    r"E:\OBS\KovOBS\10 Sphere Hipfire Extra Small\10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4",
-    r"E:\OBS\KovOBS\Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD\Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4",
-    r"E:\OBS\KovOBS\Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO\Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4",
-]
+STATS = local_config.required(local_config.kovaak("stats"), "KovaaK's stats folder (Steam's)")
+VODS = local_config.required(local_config.folder("vods"), "recordings' folder (vods)")
+DEFAULT = [str(VODS / video) for video in (
+    "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4",
+    "10 Sphere Hipfire Extra Small/10 Sphere Hipfire Extra Small - 1550 - 2026.08.26-04.40.26.mp4",
+    "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD/Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD - 114 - 2026.10.01-06.07.58.mp4",
+    "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO/Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO - 84 - 2026.10.01-06.22.30.mp4",
+)]
 FOLDER_CHARS = 60               # a review's folder keeps this much of the video's name
 VIDEO_CHARS, ERROR_CHARS = 46, 60   # the printed line's columns
 

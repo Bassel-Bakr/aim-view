@@ -6,11 +6,9 @@
 pub mod mouse;
 pub mod protocol;
 
-use std::path::Path;
 use std::sync::Arc;
 
-use aimview_service::config::{KOVAAK_DEFAULT, kovaak_scenarios, kovaak_stats};
-use aimview_service::{Config, Device, Ffmpeg, Layout, Library};
+use aimview_service::{Config, Ffmpeg, Layout, Library};
 use tauri::Manager;
 
 /// Opens the app's window, with its library in the app's data folder and the models it ships with.
@@ -23,19 +21,10 @@ pub fn run() {
         .setup(|app| {
             let data = app.path().app_data_dir()?;
             mouse::set_folder(data.join("mouse"));
-            let kovaak = Path::new(KOVAAK_DEFAULT);
+            // the VODs folder the user chooses in the app (settings.json), KovaaK's where Steam keeps them
             let config = Config {
-                data,
-                layout: Layout::App,
-                // the folder the user chooses in the app (settings.json)
-                vods: None,
-                stats: kovaak_stats(kovaak),
-                scenarios: kovaak_scenarios(kovaak),
-                models: app.path().resource_dir()?.join("models"),
-                device: Device::Auto,
                 ffmpeg: Ffmpeg::Download(app.path().app_local_data_dir()?.join("ffmpeg")),
-                // frames decoded and converted on the GPU where the video allows it: the same reviews, less CPU
-                gpu_frames: true,
+                ..Config::new(data, Layout::App, app.path().resource_dir()?.join("models"))
             };
             app.manage(Library::open(config)?);
             Ok(())

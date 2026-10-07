@@ -345,7 +345,7 @@ if __name__ == "__main__":
     ap.add_argument("--n", type=int, default=30)
     a = ap.parse_args()
     if a.what == "bootstrap":
-        lib = aimview_tools.Library(r"E:\OBS\KovOBS", aimview_tools.STATS_DEFAULT)
+        lib = aimview_tools.Library()
         seen, picked = set(), []
         for v in lib.list():
             sc = v["id"].split("/")[0]

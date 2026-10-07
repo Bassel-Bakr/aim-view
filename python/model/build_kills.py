@@ -366,7 +366,7 @@ def done_and_todo(jobs, manifest):
 def main():
     global KILLS, COUNTS
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vods", default=r"E:\OBS\KovOBS")
+    parser.add_argument("--vods", default=aimview_tools.VODS_DEFAULT)
     parser.add_argument("--out", default="test_out/vod_model/data_kills")
     parser.add_argument("--per-folder", type=int, default=1)
     parser.add_argument("--also", help="a file of VOD hashes to include whatever --per-folder says (new runs)")

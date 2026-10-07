@@ -23,6 +23,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import local_config  # noqa: E402
 import net  # noqa: E402
 from crop_pack import PackedCrops, PackLoader, read_crop  # noqa: E402
 HALF = 0.5                      # a coin toss; and a mask's 0/1 split
@@ -194,7 +196,7 @@ def outline_ring(image, target_mask, fixed, share, width, soft):
     return image * (1 - alpha) + color * alpha
 
 
-KOVAAKS_CROSSHAIRS = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\crosshairs"
+KOVAAKS_CROSSHAIRS = local_config.kovaak("crosshairs")
 _REAL = {}
 
 

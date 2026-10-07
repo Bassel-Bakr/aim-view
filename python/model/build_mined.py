@@ -1183,7 +1183,7 @@ def write_picks(picked, out, recordings):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vods", default=r"E:\OBS\KovOBS")
+    parser.add_argument("--vods", default=aimview_tools.VODS_DEFAULT)
     parser.add_argument("--out", default="test_out/vod_model/data_mined")
     parser.add_argument("--per-folder", type=int, default=1, help="the newest recordings with a stats file per folder")
     parser.add_argument("--budget", type=float, default=3600, help="seconds of native review, then stop")

@@ -15,11 +15,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use aimview::local_config::LocalConfig;
 use aimview::review::review_json;
 use serde_json::{Value, json};
 
 const DEFAULT_ROOTS: [&str; 2] = ["test_out/vod_model/eval/video_alone", "test_out/vod_model/data_mined/reviews"];
-const DEFAULT_STATS: &str = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats";
 
 /// The run folders under `root`, sorted.
 fn run_folders(root: &Path) -> Vec<PathBuf> {
@@ -64,7 +64,7 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let stats_folder = match args.iter().position(|arg| arg == "--stats") {
         Some(at) => PathBuf::from(args.drain(at..at + 2).nth(1).expect("--stats needs a folder")),
-        None => PathBuf::from(DEFAULT_STATS),
+        None => LocalConfig::load().kovaak("stats").expect("no stats folder: give --stats, or Steam's in aimview.json"),
     };
     let out = PathBuf::from(args.first().expect("usage: review_runs <out> [<root> ...] [--stats <folder>]"));
     let roots: Vec<PathBuf> = if args.len() > 1 {

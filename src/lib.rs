@@ -11,6 +11,8 @@ pub mod fixed;
 pub mod geometry;
 pub mod hud;
 pub mod kill_check;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod local_config;
 pub mod matching;
 pub mod measure;
 pub mod model;

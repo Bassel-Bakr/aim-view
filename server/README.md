@@ -22,21 +22,24 @@ need be reachable; the dev server passes the API on to this server on 127.0.0.1.
 
 ## Settings
 
-With no settings, the server runs on the machine Aim View is made on:
+With no settings, the server takes the repo's settings: `aimview.defaults.json` (in git) under this computer's
+`aimview.json` (beside it at the repo's root, out of git; any of the defaults' keys, such as
+`{"vods": "E:/OBS/KovOBS"}`). Steam's folder is where Steam records it (the registry on Windows), unless
+`aimview.json` names `steam`.
 
 | Setting | Flag | Default |
 | --- | --- | --- |
-| Address | `--host` | `127.0.0.1` |
-| Port | `--port` | `8770` |
-| Data folder | `--data` | the repo's `test_out/`, in the Python server's layout |
-| Recordings | `--vods` | `E:\OBS\KovOBS` (`--vods=` for the folder last chosen in the app) |
-| KovaaK's stats files | `--stats` | `...\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats` |
-| Scenario folders | `--scenarios` (several) | KovaaK's `Saved\SaveGames\Scenarios` and `steamapps\workshop\content\824270` |
-| Models | `--models` | the repo's `python/model/exports` (`models.json` is found in the folder above) |
+| Address | `--host` | `server.host`: `127.0.0.1` |
+| Port | `--port` | `server.port`: `8770` |
+| Data folder | `--data` | `data`: the repo's `test_out/`, in the Python server's layout |
+| Recordings | `--vods` | `vods`, none in the defaults: the folder last chosen in the app (`--vods=` too) |
+| KovaaK's stats files | `--stats` | `kovaak.stats` in KovaaK's folder (`kovaak.game`, in Steam's) |
+| Scenario folders | `--scenarios` (several) | `kovaak.scenarios` in KovaaK's folder and `kovaak.workshop` in Steam's |
+| Models | `--models` | `models`: the repo's `python/model/exports` (`models.json` is found in the folder above) |
 | Device | `--device` | `auto`; also `directml`, `cuda`, `cpu` |
 | GPU frames | `--gpu-frames` | `on`: decoded and converted on the GPU where the video allows it (Windows, 2560 x 1440 AV1 or H.264 MP4s; the same reviews with a third to a half of the CPU); `off` for ffmpeg's software decode (TOML: `gpu_frames = false`) |
-| ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg/` in the data folder; `path` for the PATH's only |
-| UI build | `--ui` | the repo's `ui/dist/server/browser` |
+| ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg` (the repo's `test_out/ffmpeg`); `path` for the PATH's only |
+| UI build | `--ui` | `ui`: the repo's `ui/dist/server/browser` |
 | Token | `--token` | none |
 | Dev mode: no token ("Access") | `--dev` | off (TOML: `dev = true`) |
 

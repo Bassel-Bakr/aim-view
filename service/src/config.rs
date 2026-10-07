@@ -4,9 +4,6 @@
 
 use std::path::{Path, PathBuf};
 
-/// KovaaK's folder where Steam puts it (FPSAimTrainer, holding stats/ and Saved/SaveGames/Scenarios/).
-pub const KOVAAK_DEFAULT: &str = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer";
-
 /// A library's settings.
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -183,13 +180,13 @@ impl Config {
     /// A library in `data` with the models in `models`: no VODs folder until the user chooses one, KovaaK's folders
     /// where Steam puts them, the detector on the GPU when there is one, ffmpeg from the PATH.
     pub fn new(data: PathBuf, layout: Layout, models: PathBuf) -> Config {
-        let kovaak = Path::new(KOVAAK_DEFAULT);
+        let (stats, scenarios) = kovaak_folders();
         Config {
             data,
             layout,
             vods: None,
-            stats: kovaak_stats(kovaak),
-            scenarios: kovaak_scenarios(kovaak),
+            stats,
+            scenarios,
             models,
             device: Device::Auto,
             ffmpeg: Ffmpeg::Path,
@@ -203,17 +200,15 @@ impl Config {
     }
 }
 
-/// KovaaK's stats folder in its folder (FPSAimTrainer).
-pub fn kovaak_stats(kovaak: &Path) -> PathBuf {
-    kovaak.join("stats")
+/// KovaaK's stats folder and scenario folders where this computer's Steam keeps them (aimview::local_config).
+#[cfg(not(target_arch = "wasm32"))]
+fn kovaak_folders() -> (PathBuf, Vec<PathBuf>) {
+    let config = aimview::local_config::LocalConfig::load();
+    (config.kovaak("stats").unwrap_or_default(), config.kovaak_scenarios())
 }
 
-/// The scenario folders of KovaaK's folder (FPSAimTrainer): the user's scenarios, then the workshop's
-/// (steamapps/common/FPSAimTrainer/FPSAimTrainer: steamapps/workshop/content/824270, one folder per scenario).
-pub fn kovaak_scenarios(kovaak: &Path) -> Vec<PathBuf> {
-    let mut out = vec![kovaak.join("Saved").join("SaveGames").join("Scenarios")];
-    if let Some(steamapps) = kovaak.ancestors().nth(3) {
-        out.push(steamapps.join("workshop").join("content").join("824270"));
-    }
-    out
+/// None in the browser: its service is given the folders the page copied in (browser-service `service_open`).
+#[cfg(target_arch = "wasm32")]
+fn kovaak_folders() -> (PathBuf, Vec<PathBuf>) {
+    (PathBuf::new(), Vec::new())
 }

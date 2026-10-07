@@ -32,6 +32,9 @@ rust-analyzer's call hierarchy.
   target that dies leaves wall where it was, while a target the tracking only lost, or a crosshair the detector boxed,
   still shows there.
 - `src/lib.rs`: Aim View's review core.
+- `src/local_config.rs`: Aim View's settings for a checkout of the repo and this computer: aimview.defaults.json (in
+  git, built in here: the project's own layout and where KovaaK keeps its folders under Steam's) under aimview.json
+  (beside it at the repo's root, out of git, optional: this computer's own, such as the recordings' folder).
 - `src/matching.rs`: Each kill matched to the target it killed, and the flick to it (review.py: `match_times`,
   `_attach_kills`, `appearances`, `crosshair_spots`).
 - `src/measure.rs`: Each flick measured (review.py: `target_radius`, `measure`, `choices`).
@@ -441,6 +444,18 @@ set that took 1wall 6targets extra small from 45 to 57 of its 98 kills, the held
 
 Aim View's review core. It is built natively for the desktop app and as WebAssembly for the browser. The Python code in
 `python/` stays the reference: each part ported here must give the same reports on every recording.
+
+## src/local_config.rs
+
+Aim View's settings for a checkout of the repo and this computer: aimview.defaults.json (in git, built in here: the
+project's own layout and where KovaaK keeps its folders under Steam's) under aimview.json (beside it at the repo's root,
+out of git, optional: this computer's own, such as the recordings' folder). No folder is written in the code: the review
+server's defaults, the examples and the tests read them here (python/local_config.py reads the same files for the
+scripts). Steam's folder, unless named, is where Steam records it: the registry on Windows, else under the home folder.
+In: the two files. Out: folders, and the server's address.
+
+- `LocalConfig` (struct): The settings: the defaults with this computer's file over them, and the folder their relative
+  paths start at. Methods: `load`, `at`, `folder`, `server`, `steam`, `kovaak`, `kovaak_scenarios`.
 
 ## src/matching.rs
 
@@ -877,8 +892,6 @@ from its own folders; a server from its command line.
 - `Device` (enum): The detector's device. Methods: `from_name`, `built`, `name`.
 - `Ffmpeg` (enum): Where ffmpeg and ffprobe come from.
 - `Folders` (struct): The folders a layout puts the library's files in.
-- Functions: `kovaak_stats`, `kovaak_scenarios`.
-- Constants: `KOVAAK_DEFAULT`.
 
 ## service/src/crops.rs
 
@@ -1187,9 +1200,10 @@ gets in, by an address or a machine's name (still no rebinding, and no other sit
 
 ## server/src/config.rs
 
-The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults run on the machine
-Aim View is made on with no flags at all: the repo's test_out/ as the data folder (python/server.py's layout), KovOBS's
-recordings, KovaaK's folders and the models in python/model/.
+The server's settings: the command line, over a settings file (TOML), over the defaults. The defaults are the repo's
+settings (aimview.defaults.json under this computer's aimview.json: aimview::local_config): the repo's test_out/ as the
+data folder (python/server.py's layout), the recordings' folder this computer names, KovaaK's folders under Steam's, and
+the models in python/model/.
 
 - `Switch` (enum): A setting turned on or off on the command line.
 - `Device` (enum): Where the detector runs. Methods: `flag`.
@@ -1197,7 +1211,7 @@ recordings, KovaaK's folders and the models in python/model/.
 - `Flags` (struct): The command line.
 - `FileSettings` (struct): The settings file: the same settings as the flags, each one optional.
 - `Settings` (struct): The settings the server runs with. Methods: `defaults`, `url`.
-- Functions: `repo`, `parse_file`, `resolve`, `load`.
+- Functions: `parse_file`, `resolve`, `load`.
 - Constants: `DEFAULT_FILE`.
 
 ## server/src/files.rs

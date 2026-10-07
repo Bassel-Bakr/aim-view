@@ -426,8 +426,7 @@ mod tests {
     /// Python: `f"{Path(v).stem[:40]}_{hashlib.md5(Path(v).name.encode()).hexdigest()[:6]}".replace(" ", "_")`.
     #[test]
     fn the_stem_is_pythons() {
-        let video =
-            r"E:\OBS\KovOBS\1wall 6targets extra small\1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4";
+        let video = "1wall 6targets extra small/1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4";
         assert_eq!(crop_stem(video), PYTHON_STEM);
     }
 

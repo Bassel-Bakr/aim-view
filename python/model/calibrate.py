@@ -45,12 +45,14 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
+import local_config  # noqa: E402
 
 FORMAT = 1
 REFERENCE = infer.BEST                      # the scale every model's scores are put on
 EXPORTS = HERE / "exports"
-VODS = r"E:\OBS\KovOBS"                     # crop names start with the md5 of the recording's path here (build_data)
+VODS = local_config.folder("vods")                     # crop names start with the md5 of the recording's path here (build_data)
 # the map: the val splits full_v3 and small_v13 were picked on (every scenario kind)
 VAL = ("test_out/vod_model/data_v3", "test_out/vod_model/data_kills4", "test_out/vod_model/data_moving_dark")
 SWEEP_DATA = "test_out/vod_model/data"      # the threshold: eval.py's default, where infer.THRESHOLD was picked

@@ -17,7 +17,7 @@ random), saved as compressed .npz:
   boxes  (n, 4)        float32 cx, cy, w, h in px, for the targets whose center is in the crop
   scores (n,)          float32 the model's score of each box (--model only)
 manifest.jsonl lists every VOD with its split, label statistics and whether it was kept.
-Usage: python python/model/build_data.py [--vods E:/OBS/KovOBS] [--out test_out/vod_model/data] [--per-folder 4]
+Usage: python python/model/build_data.py [--vods <recordings' folder>] [--out test_out/vod_model/data] [--per-folder 4]
 """
 import argparse
 import glob
@@ -36,12 +36,12 @@ from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import aimview_tools  # noqa: E402
+import local_config  # noqa: E402
 import old_review  # noqa: E402
 
 WIDTH, HEIGHT, FRAME_BYTES = old_review.W, old_review.H, old_review.FRAME
 CROP = 256
-SCEN = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\Saved\SaveGames\Scenarios"
-WORKSHOP = r"C:\Program Files (x86)\Steam\steamapps\workshop\content\824270"
+SCEN, WORKSHOP = old_review.SCENARIOS
 # the end-to-end evaluation VODs' scenarios: never trained on
 TEST_FOLDERS = {"1w4ts Voltaic", "10 Sphere Hipfire Extra Small", "Pokeball 5 Sphere Hipfire Extra Small LG56 AIMGOD",
                 "Pokeball 1 Sphere Hipfire Extra Small LG56 AIMGO"}
@@ -264,7 +264,7 @@ def one(job):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vods", default=r"E:\OBS\KovOBS")
+    parser.add_argument("--vods", default=local_config.folder("vods"))
     parser.add_argument("--out", default="test_out/vod_model/data")
     parser.add_argument("--per-folder", type=int, default=4, help="the newest recordings of each scenario (0: every "
                         "one)")

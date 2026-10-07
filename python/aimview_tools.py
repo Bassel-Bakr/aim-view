@@ -18,10 +18,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import local_config
+
 ROOT = Path(__file__).resolve().parent.parent
 AREA_EXAMPLES = ROOT / "test_out" / "vod_app" / "area_examples.jsonl"   # the saved areas the area finder learns from
-VODS_DEFAULT = r"E:\OBS\KovOBS"
-STATS_DEFAULT = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats"
+VODS_DEFAULT = local_config.folder("vods")             # this computer's settings (local_config.py); None: the app's
+STATS_DEFAULT = local_config.kovaak("stats")
 TOOL = ROOT / "target" / "release" / ("aimview-tool.exe" if os.name == "nt" else "aimview-tool")
 # The share of the time a review's detector runs (aimview-tool review --gpu-share), when this is set.
 GPU_SHARE_VAR = "AIMVIEW_GPU_SHARE"

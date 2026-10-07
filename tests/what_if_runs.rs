@@ -5,10 +5,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use aimview::local_config::LocalConfig;
 use aimview::review::{KillTimes, Report, review_clicks};
 use aimview::track::Tracks;
 
-const STATS: &str = r"C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats";
 const RUNS: [&str; 5] = [
     "parity/av1/review",
     "parity/pokeball134/review",
@@ -37,6 +37,7 @@ fn check_lines(run: &str, report: &Report) {
 #[test]
 fn what_if_lines_are_plausible_on_real_runs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_out");
+    let stats_folder = LocalConfig::load().kovaak("stats").unwrap_or_default();
     for run in RUNS {
         let dir = root.join(run);
         let (Ok(tracks), Ok(report)) =
@@ -48,7 +49,7 @@ fn what_if_lines_are_plausible_on_real_runs() {
         let tracks: Tracks = serde_json::from_str(&tracks).unwrap();
         let report: serde_json::Value = serde_json::from_str(&report).unwrap();
         let stats = report["stats"].as_str().unwrap();
-        let path = if Path::new(stats).is_absolute() { PathBuf::from(stats) } else { Path::new(STATS).join(stats) };
+        let path = if Path::new(stats).is_absolute() { PathBuf::from(stats) } else { stats_folder.join(stats) };
         let Ok(text) = fs::read(&path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned()) else {
             eprintln!("no {}", path.display());
             continue;

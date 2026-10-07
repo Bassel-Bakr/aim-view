@@ -62,6 +62,7 @@ dependencies = [
 name = "aimview-server"
 version = "0.1.0"
 dependencies = [
+ "aimview",
  "aimview-service",
  "axum",
  "clap",

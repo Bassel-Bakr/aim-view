@@ -68,9 +68,13 @@ bun scripts/next-version.ts [--notes]          # the next release's semver from 
                                                # as a GitHub release, on a push to main that changes the app
 ```
 
-Paths: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats in
-`C:\Program Files (x86)\Steam\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats` (more than 70k CSVs: use a Python
-glob, not `ls`); scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
+Paths: no folder is written in the code. The repo's settings are `aimview.defaults.json` (in git: the project's
+layout, the server's address, and KovaaK's folders under Steam's) under this computer's `aimview.json` (out of git:
+the recordings' folder, `vods`, and anything else this computer needs). The Rust code reads them through
+`src/local_config.rs`, the scripts through `python/local_config.py`; Steam's folder comes from the registry unless
+`aimview.json` names `steam`. On this machine: recordings in `E:\OBS\KovOBS` (one folder per scenario); KovaaK's stats
+in `...\steamapps\common\FPSAimTrainer\FPSAimTrainer\stats` (more than 70k CSVs: use a Python glob, not `ls`);
+scenarios in `...\FPSAimTrainer\Saved\SaveGames\Scenarios`.
 
 Facts about the recordings, from the user (2026-10-04): the crosshair is always at the screen's center and never
 changes during a run (no hit flash, color change or expanding), though it differs between runs and players; one click

@@ -15,3 +15,5 @@ desktop/gen/schemas/
 _copy_*.log
 # the review server's settings: they hold its access token (server/README.md, "Access")
 aimview-server.toml
+# this computer's own settings over aimview.defaults.json (src/local_config.rs)
+aimview.json

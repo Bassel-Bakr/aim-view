@@ -19,7 +19,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-VIDEO = r"E:\OBS\KovOBS\1w4ts Voltaic\1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4"
+VIDEO = "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4"     # in the recordings' folder
 SAMPLE = Path("test_out/vod_model/bench_frame.npz")
 SAMPLE_KEY_FRAME = 10           # the key frame the sample is
 WARM_UP, TIMED = 5, 30          # CPU: runs before timing, runs timed
@@ -33,9 +33,11 @@ def sample():
     """A real frame and its fixed map, cached."""
     if not SAMPLE.exists():
         import build_data
+        import local_config
         import old_review
-        yuv = build_data.keyframes(VIDEO, "yuv420p")
-        rgb = build_data.keyframes(VIDEO, "rgb24")
+        video = str(local_config.required(local_config.folder("vods"), "recordings' folder (vods)") / VIDEO)
+        yuv = build_data.keyframes(video, "yuv420p")
+        rgb = build_data.keyframes(video, "rgb24")
         np.savez(SAMPLE, rgb=np.frombuffer(rgb[SAMPLE_KEY_FRAME], np.uint8).reshape(720, 1280, 3),
                  fixed=old_review.fixed_map(yuv).astype(np.uint8))
     saved = np.load(SAMPLE)
