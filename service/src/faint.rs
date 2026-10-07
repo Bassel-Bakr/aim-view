@@ -6,6 +6,8 @@
 //! the core picks the crops, python/model/hand_crops.py's `cutoff_crops`; here each crop's pixels and the fixed map are
 //! read from the recording, and kept as that script writes them).
 
+use std::collections::BTreeSet;
+use std::io::Write;
 use std::ops::RangeInclusive;
 #[cfg(feature = "native")]
 use std::path::{Path, PathBuf};
@@ -19,14 +21,15 @@ use aimview::faint::{CROP, CutoffCrop, CutoffRequest, cutoff_crops};
 use aimview::track::Tracks;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use zip::write::SimpleFileOptions;
 
 use crate::library::{Answer, Failure, Library, local_stamp};
 #[cfg(feature = "native")]
 use crate::npz::{self, Array};
 use crate::pyjson;
+use crate::store::{IdList, Item, Mark, Part};
 #[cfg(feature = "native")]
 use crate::store::{ReviewBy, Store};
-use crate::store::{IdList, Item, Mark, Part};
 #[cfg(feature = "native")]
 use crate::video::{Frames, VideoInfo, probe};
 /// The offsets a cut-off can have (python/retired/server.py's check).
@@ -140,8 +143,43 @@ impl Library {
         Ok(self.faint(id))
     }
 
+    /// The rows of the kept cut-off labels (checked.jsonl), each line's JSON; a line that does not read is left out.
+    fn cutoff_rows(&self) -> Vec<Value> {
+        let text = self.store().read(Item::CutoffRows).ok().flatten().unwrap_or_default();
+        text.split(|&byte| byte == b'\n').filter_map(|line| pyjson::parse(line.trim_ascii()).ok()).collect()
+    }
+
+    /// GET /api/cutoff_labels?count=1: how many crops the kept labels have (by file) and from how many recordings.
+    pub fn cutoff_labels_count(&self) -> Answer<Value> {
+        let rows = self.cutoff_rows();
+        let distinct = |key: &str| rows.iter().filter_map(|row| row[key].as_str()).collect::<BTreeSet<_>>().len();
+        Ok(json!({ "crops": distinct("file"), "recordings": distinct("video") }))
+    }
+
+    /// GET /api/cutoff_labels: the kept labels as the zip detector training reads, as the review server keeps them in
+    /// vod_model/hand/cutoff/: checked.jsonl (deflated) and each row's crop, train/<name>.npz (stored: an .npz is
+    /// compressed already). A crop that is not kept is left out.
+    pub fn cutoff_labels_zip(&self) -> Answer<Vec<u8>> {
+        let rows = self.store().read(Item::CutoffRows).map_err(|error| error.to_string())?.unwrap_or_default();
+        let files: BTreeSet<String> =
+            self.cutoff_rows().iter().filter_map(|row| row["file"].as_str().map(str::to_string)).collect();
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let deflated = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let zip_error = |error: zip::result::ZipError| error.to_string();
+        zip.start_file(Item::CutoffRows.file_name(), deflated).map_err(zip_error)?;
+        zip.write_all(&rows).map_err(|error| error.to_string())?;
+        for file in &files {
+            let Some(npz) = self.store().read(Item::CutoffCrop(file)).ok().flatten() else { continue };
+            zip.start_file(file.as_str(), stored).map_err(zip_error)?;
+            zip.write_all(&npz).map_err(|error| error.to_string())?;
+        }
+        Ok(zip.finish().map_err(zip_error)?.into_inner())
+    }
+
     /// The user's cut-off, submitted: kept (on), and the review's tracks written as detector labels in the background.
-    /// In the browser build only kept: the page makes the labels (cutoff.worker.ts) and downloads them.
+    /// In the browser build only kept: the page makes the labels (cutoff.worker.ts) and sends them
+    /// (/api/cutoff_labels).
     pub fn submit_faint(&self, id: &str, offset: f64) -> Answer<Value> {
         let by = self.shown(id).1;
         let report = match self.report(id) {
@@ -305,4 +343,38 @@ fn write_crop(store: &dyn Store, crop: &CutoffCrop, rgb: &[u8], fixed: &[u8]) ->
     ];
     let item = Item::CutoffCrop(&crop.row.file);
     store.write(item, &npz::to_bytes(&arrays)?).map_err(|error| format!("{}: {error}", store.name(item)))
+}
+
+/// The kept cut-off labels, counted and zipped.
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use super::*;
+    use crate::config::{Config, Layout};
+
+    /// Two submits' rows (one crop written twice): counted by crop and recording, and zipped as checked.jsonl and each
+    /// kept crop, a crop not kept left out.
+    #[test]
+    fn labels_are_counted_and_zipped() {
+        let dir = std::env::temp_dir().join(format!("aimview-cutoff-labels-{}", std::process::id()));
+        let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
+        let empty = library.cutoff_labels_count().unwrap();
+        assert_eq!(empty, json!({ "crops": 0, "recordings": 0 }));
+        let rows = b"{\"file\": \"train/a.npz\", \"video\": \"x.mp4\"}\n{\"file\": \"train/b.npz\", \"video\": \"x.mp4\"}\n";
+        pyjson::append_text(library.store(), Item::CutoffRows, rows).unwrap();
+        pyjson::append_text(library.store(), Item::CutoffRows, b"{\"file\": \"train/a.npz\", \"video\": \"y.mp4\"}\n")
+            .unwrap();
+        library.store().write(Item::CutoffCrop("train/a.npz"), b"npz bytes").unwrap();
+        assert_eq!(library.cutoff_labels_count().unwrap(), json!({ "crops": 2, "recordings": 2 }));
+        let bytes = library.cutoff_labels_zip().unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+        assert_eq!(names, ["checked.jsonl", "train/a.npz"]);
+        let mut crop = Vec::new();
+        zip.by_name("train/a.npz").unwrap().read_to_end(&mut crop).unwrap();
+        assert_eq!(crop, b"npz bytes");
+        drop(library);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

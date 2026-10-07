@@ -145,6 +145,12 @@ fn special_answer(library: &Library, route: &Route) -> Option<ApiResponse> {
             Err(failure) => json_response(Err(failure)),
         });
     }
+    if !route.post && route.path == "/api/cutoff_labels" && !route.flag("count") {
+        return Some(match library.cutoff_labels_zip() {
+            Ok(bytes) => ApiResponse::new(OK, "application/zip", bytes),
+            Err(failure) => json_response(Err(failure)),
+        });
+    }
     if !route.post && route.path == "/api/area_kinds_file" {
         return Some(match library.kinds_file() {
             Ok(bytes) => ApiResponse::new(OK, "application/json", bytes),
@@ -206,6 +212,7 @@ fn get_answer(library: &Library, route: &Route) -> Answer<Value> {
             scenario.and_then(|scenario| library.history(&scenario))
         }
         "/api/mouse" => id().and_then(|id| library.mouse_measures(&id)),
+        "/api/cutoff_labels" => library.cutoff_labels_count(),
         #[cfg(not(feature = "native"))]
         "/api/kovaak_files" => library.kovaak_files(),
         "/api/info" => Ok(json!({ "detector": library.model(), "device": library.config().device.name() })),
@@ -274,6 +281,8 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/kovaak" if route.flag("changed") => library.kovaak_changed(),
         #[cfg(not(feature = "native"))]
         "/api/kovaak_files" => library.add_kovaak_files(body),
+        #[cfg(not(feature = "native"))]
+        "/api/cutoff_labels" => library.add_cutoff_labels(body),
         path => Err(Failure::missing(format!("not found: {path}"))),
     }
 }

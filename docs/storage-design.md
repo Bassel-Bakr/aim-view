@@ -141,8 +141,9 @@ Each ends in a check, and each is committed on its own.
    review seeded as files, imported on the first opening, answered every route as the native files did (tracks,
    report, run, stats, exclude, faint, job, mouse; find_areas differs only by the other recordings each has);
    writes (a run window, the 327 KB examples, the area types) read back after a reload; the lock passed both ways
-   between two tabs. Not moved yet: the cut-off labels the page keeps in IndexedDB. A new review made in the browser
-   was not run (the pane was not drawing). KovaaK's files were moved later the same day (version 2, above): checked in
+   between two tabs. The cut-off labels the page kept in IndexedDB moved later that day: the service keeps a
+   submit's labels (POST /api/cutoff_labels) and builds the zip in every mode (GET /api/cutoff_labels); the old ones
+   are sent once and marked moved. A new review made in the browser was not run (the pane was not drawing). KovaaK's files were moved later the same day (version 2, above): checked in
    the built-in browser with 40 of the user's stats files and a scenario sent as a batch, the history equal to
    native's for those 40 runs, the pairing, the scenario's kind, the paired text kept across a reload, and a layout-1
    database and the old copies moved on opening.

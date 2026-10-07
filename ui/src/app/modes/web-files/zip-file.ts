@@ -1,6 +1,6 @@
 /**
  * Writes zip files in the browser, with the same bytes each time for the same input. In: files'
- * paths and bytes (an .npz's arrays in npz-file.ts, the cut-off's labels in cutoff-labels.ts).
+ * paths and bytes (an .npz's arrays in npz-file.ts).
  * Out: the zip's bytes, compressed with the browser's CompressionStream where asked.
  */
 

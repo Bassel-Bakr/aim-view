@@ -1,6 +1,6 @@
 /**
  * A key-value store in the browser's IndexedDB. In: values browser mode keeps across visits (the
- * VODs folder's handle in vods-folder.ts, the cut-off's labels in cutoff-labels.ts). Out: the same
+ * VODs folder's handle in vods-folder.ts; until 2026-10-07 the cut-off's labels). Out: the same
  * values on a later visit; browser-data-move.ts reads the old ones in this database once.
  */
 

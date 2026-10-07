@@ -1,7 +1,7 @@
 /**
  * Browser mode's `FaintCutoffs`. In: the service in the page's /api/faint routes, and on a submit
  * the recording's report, tracks, areas and video. Out: the cut-off kept by the service, and a
- * submit's detector labels made in the page and kept in this browser (cutoff-labels.ts).
+ * submit's detector labels made in the page and kept by the service (cutoff-labels.ts).
  */
 
 import { HttpClient } from '@angular/common/http';
@@ -12,7 +12,7 @@ import { CutoffLabelsStore } from '../../platform/faint-cutoffs';
 import { ServerFaintCutoffs } from '../http/server-faint-cutoffs';
 import { CoreModule, CutoffCrop } from '../wasm/core-module';
 import { CropPixels, CutoffReply, CutoffWork } from '../wasm/cutoff-messages';
-import { CutoffCropFile, CutoffLabels, LABELS_FILE } from '../web-files/cutoff-labels';
+import { CutoffCropFile, CutoffLabels, LABELS_FILE } from './cutoff-labels';
 import { npzFile } from '../web-files/npz-file';
 import { MountedFiles, recordingPath } from './mounted-files';
 
@@ -99,8 +99,8 @@ function cropFile(crop: CutoffCrop, pixels: CropPixels): Promise<CutoffCropFile>
 /**
  * Browser mode's cut-offs: the review service keeps each recording's, as the review server does.
  * The page makes a submit's detector labels, in the background (the service has no ffmpeg here):
- * the core picks the crops as hand_crops.py does, a worker reads their pixels, and they are kept in
- * this browser (CutoffLabels), which the user downloads as cutoff.zip.
+ * the core picks the crops as hand_crops.py does, a worker reads their pixels, and the service keeps
+ * them (CutoffLabels), which the user downloads as cutoff.zip.
  */
 @Service()
 export class BrowserFaintCutoffs extends ServerFaintCutoffs {
@@ -110,10 +110,10 @@ export class BrowserFaintCutoffs extends ServerFaintCutoffs {
   private readonly files = inject(MountedFiles);
   /** The core on the page, which picks the crops. */
   private readonly core = inject(CoreModule);
-  /** Where the labels are kept in this browser. */
+  /** Sends the labels to the service and reads them back. */
   private readonly store = inject(CutoffLabels);
 
-  /** The labels kept in this browser, to download as cutoff.zip. */
+  /** The labels the service keeps, to download as cutoff.zip. */
   override readonly labels: CutoffLabelsStore = {
     count: this.store.count,
     fileName: LABELS_FILE,

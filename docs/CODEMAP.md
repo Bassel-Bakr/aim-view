@@ -122,7 +122,8 @@ rust-analyzer's call hierarchy.
   of recordings, with the review run natively (ffmpeg's frames, the core, and the detector on the GPU).
 - `service/src/library/browser.rs`: The browser build's own routes (api.rs): the page runs the review and the area
   finder itself and sends what they give, which is kept as the native review keeps it; it adds raw mouse logs, chooses
-  the VODs folder (a folder it mounted) and sends KovaaK's files the user chose, read once.
+  the VODs folder (a folder it mounted), sends KovaaK's files the user chose, read once, and the detector labels a
+  cut-off's submit made.
 - `service/src/library/links.rs`: Recordings added from a link: a video's page on a site yt-dlp reads (YouTube, Twitch,
   Medal, Streamable...) or a video file's address.
 - `service/src/library/mod.rs`: The library: the user's recordings (the VODs folder and the uploads), KovaaK's stats
@@ -973,7 +974,8 @@ library's paths and bytes. Out: the files' bytes, listings and metadata, the tim
 
 The faint-target cut-off (python/retired/server.py: faint, set_faint, submit_faint, skip_faint, faint_queue).
 
-- `Library` methods: `faint`, `set_faint`, `submit_faint`, `skip_faint`, `faint_queue`.
+- `Library` methods: `faint`, `set_faint`, `cutoff_labels_count`, `cutoff_labels_zip`, `submit_faint`, `skip_faint`,
+  `faint_queue`.
 
 ## service/src/ffmpeg.rs
 
@@ -1035,13 +1037,14 @@ scripts use the library and the native review through aimview-tool (src/bin/aimv
 ## service/src/library/browser.rs
 
 The browser build's own routes (api.rs): the page runs the review and the area finder itself and sends what they give,
-which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it mounted) and
-sends KovaaK's files the user chose, read once. In: /api/job (POST), /api/reviewed, /api/found, /api/mouse_log,
-/api/folder, /api/kovaak and /api/kovaak_files. Out: the reviews, found areas, mouse logs, settings and KovaaK's runs
-and scenario facts kept, and the jobs' state.
+which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it mounted),
+sends KovaaK's files the user chose, read once, and the detector labels a cut-off's submit made. In: /api/job (POST),
+/api/reviewed, /api/found, /api/mouse_log, /api/folder, /api/kovaak, /api/kovaak_files and /api/cutoff_labels. Out: the
+reviews, found areas, mouse logs, settings, KovaaK's runs and scenario facts and the cut-off labels kept, and the jobs'
+state.
 
 - `Library` methods: `choose_vods`, `page_progress`, `review_done`, `keep_found`, `keep_mouse_log`, `kovaak_files`,
-  `add_kovaak_files`, `kovaak_changed`.
+  `add_kovaak_files`, `add_cutoff_labels`, `kovaak_changed`.
 
 ## service/src/library/links.rs
 

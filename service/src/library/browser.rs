@@ -1,20 +1,22 @@
 //! The browser build's own routes (api.rs): the page runs the review and the area finder itself and sends what they
 //! give, which is kept as the native review keeps it; it adds raw mouse logs, chooses the VODs folder (a folder it
-//! mounted) and sends KovaaK's files the user chose, read once. In: /api/job (POST), /api/reviewed, /api/found,
-//! /api/mouse_log, /api/folder, /api/kovaak and /api/kovaak_files. Out: the reviews, found areas, mouse logs, settings
-//! and KovaaK's runs and scenario facts kept, and the jobs' state.
+//! mounted), sends KovaaK's files the user chose, read once, and the detector labels a cut-off's submit made. In:
+//! /api/job (POST), /api/reviewed, /api/found, /api/mouse_log, /api/folder, /api/kovaak, /api/kovaak_files and
+//! /api/cutoff_labels. Out: the reviews, found areas, mouse logs, settings, KovaaK's runs and scenario facts and the
+//! cut-off labels kept, and the jobs' state.
 
 use std::path::{Path, PathBuf};
 
 use aimview::areas::Found;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::names::free_name;
 use super::reviews::{Job, ReviewFiles, keep_review, to_tenths};
 use super::{Answer, Failure, Library};
+use crate::pyjson;
 use crate::review::Request;
-use crate::store::{ScenarioRow, StatsRow};
+use crate::store::{Item, ScenarioRow, StatsRow};
 
 /// Where a stats file is in /kovaak (POST /api/kovaak_files).
 const STATS_PREFIX: &str = "stats/";
@@ -24,6 +26,38 @@ const SCENARIO_PREFIXES: [&str; 2] = ["scenarios/", "workshop/"];
 const U32_BYTES: usize = 4;
 /// An f64's bytes in a batch.
 const F64_BYTES: usize = 8;
+/// The rows of a submit's cut-off labels in its batch (POST /api/cutoff_labels).
+const ROWS_FILE: &str = "rows.json";
+/// Where a cut-off label's crop is, as its row names it.
+const CROP_FOLDER: &str = "train/";
+
+/// A cut-off label's row as the page sends it, written as the native submit writes the core's `CutoffRow` (the same
+/// fields in the same order, numbers as floats): see aimview::faint::CutoffRow for each field.
+#[derive(Deserialize, Serialize)]
+struct PageCutoffRow {
+    /// The crop's file, train/<stem>_<frame, 6 digits>.npz.
+    file: String,
+    /// The boxes the cut keeps, in crop pixels.
+    boxes: Vec<[f64; 4]>,
+    /// Always "correct".
+    verdict: String,
+    /// Every box the model gave in the crop.
+    model: Vec<[f64; 4]>,
+    /// Always "cutoff".
+    source: String,
+    /// The recording.
+    video: String,
+    /// The cut-off's offset.
+    offset: f64,
+    /// The score the cut was at.
+    cut: f64,
+}
+
+/// Whether `path` names a crop as a row does: train/<name>.npz, one name with no folder above.
+fn is_crop_path(path: &str) -> bool {
+    path.strip_prefix(CROP_FOLDER)
+        .is_some_and(|name| name.ends_with(".npz") && !name.contains(['/', '\\']) && !name.starts_with('.'))
+}
 
 /// One file of a batch the page sends (POST /api/kovaak_files).
 struct BatchFile<'a> {
@@ -265,6 +299,36 @@ impl Library {
         kovaak.add_scenarios(&scenarios).map_err(|error| error.to_string())?;
         self.kovaak_changed()?;
         Ok(json!({ "stats": stats.len(), "scenarios": scenarios.len() }))
+    }
+
+    /// POST /api/cutoff_labels: a submit's detector labels the page made (`batch_files`): its crops (train/<name>.npz),
+    /// each kept in place of any of the same name, and its rows (rows.json, a list), written after the rows before as
+    /// the native submit writes them, so a later submit's rows win. Answers how many crops and rows it kept.
+    pub fn add_cutoff_labels(&self, body: &[u8]) -> Answer<Value> {
+        let (mut crops, mut rows) = (0, Vec::<PageCutoffRow>::new());
+        for file in batch_files(body)? {
+            if file.path == ROWS_FILE {
+                rows = serde_json::from_slice(file.bytes)
+                    .map_err(|error| Failure::bad(format!("{ROWS_FILE}: {error}")))?;
+            } else if is_crop_path(file.path) {
+                let item = Item::CutoffCrop(file.path);
+                self.store()
+                    .write(item, file.bytes)
+                    .map_err(|error| format!("{}: {error}", self.store().name(item)))?;
+                crops += 1;
+            } else {
+                return Err(Failure::bad(format!("not a cut-off label's file: {}", file.path)));
+            }
+        }
+        let mut text = Vec::new();
+        for row in &rows {
+            text.extend(pyjson::to_vec(row, false));
+            text.push(b'\n');
+        }
+        if !text.is_empty() {
+            pyjson::append_text(self.store(), Item::CutoffRows, &text)?;
+        }
+        Ok(json!({ "crops": crops, "rows": rows.len() }))
     }
 
     /// POST /api/kovaak?changed=1: the page copied new KovaaK files, so the stats files and the scenarios are read

@@ -10,7 +10,8 @@
  * service-host.ts. Out: `ServiceReply`s, each with its task's id.
  */
 import { moveBrowserData } from './browser-data-move';
-import { moveKovaakCopies } from './kovaak-move';
+import { moveCutoffLabels } from './cutoff-labels-move';
+import { moveKovaakCopies, ServiceSend } from './kovaak-move';
 import { DirMount, FilesMount, FsError, HttpMount, KovaakMount, Mounts } from './mounts';
 import {
   FilesAsk,
@@ -198,8 +199,12 @@ async function start(task: ServiceStart): Promise<ServiceModule> {
       console.warn('Moving browser data:', error),
     );
     // after the start, in the queue's turn: the requests asked meanwhile are answered between batches
-    void moveKovaakCopies((method, path, body) => inTurn(() => send(method, path, body))).catch(
-      (error: unknown) => console.warn("Moving KovaaK's copies:", error),
+    const queued: ServiceSend = (method, path, body) => inTurn(() => send(method, path, body));
+    void moveKovaakCopies(queued).catch((error: unknown) =>
+      console.warn("Moving KovaaK's copies:", error),
+    );
+    void moveCutoffLabels(queued).catch((error: unknown) =>
+      console.warn("Moving the cut-off's labels:", error),
     );
     return module;
   } catch (error) {

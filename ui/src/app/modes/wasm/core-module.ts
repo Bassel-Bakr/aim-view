@@ -7,7 +7,7 @@
 
 import { Service } from '@angular/core';
 import { AreaRect, Scene, SceneView, TrackFrame, Tracks } from '../../api';
-import { CutoffRow } from '../web-files/cutoff-labels';
+import { CutoffRow } from '../service/cutoff-labels';
 import { Core } from './core';
 import { HudReading, RunPart, VideoReadings } from './review-messages';
 

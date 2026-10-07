@@ -1,7 +1,7 @@
 /**
  * Writes NumPy's .npy and .npz files in the browser, byte for byte as NumPy 2 does. In: arrays of
  * bytes with their names, types and shapes (the cut-off's crops). Out: .npz files for the
- * cut-off's labels zip (cutoff-labels.ts), the files detector training reads.
+ * cut-off's labels (cutoff-labels.ts), the files detector training reads.
  */
 
 import { zipFile } from './zip-file';
