@@ -30,7 +30,10 @@ the HUD's small vectors (1.8 million blocks) first; with those buffers kept and 
 Runtime leaves them, 2.39 GB in 1.2 million blocks (the same review's files, byte for byte). The GPU's frames now also
 give the 720p luma (the shader's means, which `mean_2x2` made again on the CPU) and only the Y plane's rows the HUD
 reads (`Review::hud_rows`: 330 of 1,440 at 1440p), so a frame's Y reads back as 0.9 MB of luma and 0.8 MB of rows
-instead of 3.7 MB. A review's fixed cost (the model, DirectML's session, the key frames) is about 1.5 s.
+instead of 3.7 MB. A review's fixed cost (the model, DirectML's session, the key frames) is about 1.5 s. TensorRT 10.16
+(fp32, through ONNX Runtime's CUDA build) ran the detector alone 8.5% faster (1.41 ms a frame against DirectML's 1.55,
+`detector_speed`), but the review of the window took 6.26 s against 5.48 and 49 s of CPU against 7, its tracks moved
+by up to 0.09 degrees, and it needs 5.6 GB of NVIDIA's libraries and a 30 s engine build a model: not kept (2026-10-07).
 
 ## Every frame (about 6,000 a review)
 

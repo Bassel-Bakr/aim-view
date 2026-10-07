@@ -2,6 +2,7 @@
 //! noise, `batch` a call, in one session or several at once (a review runs one a part), with the time a frame. For
 //! comparing models, batch sizes and devices without decoding a video.
 //! cargo run -p aimview-service --release --example detector_speed -- <model _u8in.onnx> [batch] [frames] [sessions]
+//! [device: auto, directml, cuda or cpu]
 
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -33,9 +34,9 @@ fn noise(bytes: usize) -> Vec<u8> {
 
 /// One session's run: its calls on `frames` frames after the warm-up. Returns the device it ran on and the seconds
 /// its timed calls took (loading and the warm-up left out).
-fn run_session(model: &Path, batch: usize, frames: usize) -> Result<(&'static str, f64), String> {
+fn run_session(model: &Path, batch: usize, frames: usize, device: Device) -> Result<(&'static str, f64), String> {
     let fixed = vec![0u8; DST_W * DST_H];
-    let mut detector = Detector::new(model, batch, &fixed, Device::Auto)?;
+    let mut detector = Detector::new(model, batch, &fixed, device)?;
     let rgb = noise(batch * DST_W * DST_H * RGB_CHANNELS);
     for _ in 0..WARM_UP_CALLS {
         detector.run(&rgb, |_| ())?;
@@ -52,8 +53,12 @@ fn main() -> Result<(), String> {
     let model = PathBuf::from(args.get(1).ok_or("give a model's _u8in.onnx")?);
     let count = |i: usize, default: usize| args.get(i).and_then(|arg| arg.parse().ok()).unwrap_or(default);
     let (batch, frames, sessions) = (count(2, DEFAULT_BATCH), count(3, DEFAULT_FRAMES), count(4, DEFAULT_SESSIONS));
+    let device = match args.get(5).map(String::as_str) {
+        None | Some("auto") => Device::Auto,
+        Some(name) => Device::from_name(name).ok_or_else(|| format!("no device called {name}"))?,
+    };
     let runs: Vec<Result<(&'static str, f64), String>> = thread::scope(|scope| {
-        let runs: Vec<_> = (0..sessions).map(|_| scope.spawn(|| run_session(&model, batch, frames))).collect();
+        let runs: Vec<_> = (0..sessions).map(|_| scope.spawn(|| run_session(&model, batch, frames, device))).collect();
         runs.into_iter().map(|run| run.join().unwrap_or_else(|_| Err("a session failed".into()))).collect()
     });
     let runs = runs.into_iter().collect::<Result<Vec<_>, _>>()?;
