@@ -1,0 +1,36 @@
+# The git hooks (lefthook; bun install sets them up through package.json's prepare). They check what a commit stages,
+# in a few seconds; the slow checks (clippy, the tests, the builds) stay in bun run build and CI. LEFTHOOK=0 skips them
+# all and LEFTHOOK_EXCLUDE=<name> one job, for a commit that must go in as it is.
+
+pre-commit:
+  jobs:
+    # formatting first, its fixes added to the commit, so the lints read the formatted files
+    - name: prettier
+      root: ui/
+      glob: '*.{ts,html,scss,css,json}'
+      run: bunx prettier --write --log-level warn {staged_files}
+      stage_fixed: true
+    - name: rustfmt
+      glob: '*.rs'
+      run: rustfmt --edition 2024 {staged_files}
+      stage_fixed: true
+    - group:
+        parallel: true
+        jobs:
+          - name: eslint
+            root: ui/
+            glob: '*.{ts,html}'
+            run: bunx eslint --cache --cache-location .angular/cache/eslint-hook --no-warn-ignored {staged_files}
+          - name: ui-styles
+            glob: 'ui/src/**/*.{scss,css,html,ts}'
+            run: bun scripts/tailwind-values.ts && bun scripts/status-lines.ts
+          - name: ruff
+            glob: '*.py'
+            run: python -m ruff check --quiet {staged_files}
+          - name: hardcoded-config
+            run: bun scripts/hardcoded-config.ts
+
+commit-msg:
+  jobs:
+    - name: conventional-commits
+      run: bun scripts/commit-message.ts {1}

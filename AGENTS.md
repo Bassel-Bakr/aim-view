@@ -55,7 +55,8 @@ bun run costs                           # docs/COSTS.md's measured table again, 
 bun run app                             # the desktop app (Tauri 2, desktop/)
 bun run build:app                       # its installer, in target/release/bundle/nsis/
 bun run test:ui                         # the UI's tests
-bun run lint:ui                         # ESLint
+bun run lint:ui                         # ESLint and the style checks (bun run build runs it too)
+bunx lefthook install                   # the git hooks (lefthook.yml; bun install runs it): format, lint, commit messages
 bun run format                          # Prettier, over ui/
 cargo clippy --workspace --all-targets  # the Rust lints
 bacon                                   # the lints on every save (t: the quick tests), output in .bacon-locations

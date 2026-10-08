@@ -19,9 +19,11 @@
     "build:app": "cd desktop && bun ../scripts/costs.ts run build:app -- cargo tauri build",
     "costs": "bun scripts/costs.ts",
     "server": "cargo run -p aimview-server --release",
-    "server:dev": "cargo run -p aimview-server --release -- --dev --host 0.0.0.0"
+    "server:dev": "cargo run -p aimview-server --release -- --dev --host 0.0.0.0",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
-    "binaryen": "^132.0.0"
+    "binaryen": "^132.0.0",
+    "lefthook": "^2.2.0"
   }
 }

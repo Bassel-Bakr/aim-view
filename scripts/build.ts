@@ -1,6 +1,7 @@
 /**
  * Builds the UI for one mode or several (`bun run build`, `bun run build:<mode>`): the shared assets once
- * (ui-assets.ts --release: the core and the browser's service as WebAssembly, the models), then each mode's Angular
+ * (ui-assets.ts --release: the core and the browser's service as WebAssembly, the models) beside the UI's lint (an
+ * error in either stops the build), then each mode's Angular
  * build (angular.json: production plus the mode's configuration), all at once when there are several, each in its
  * own process. Each step's time goes in the costs log (scripts/costs.ts, docs/COSTS.md).
  * In: the modes asked for. Out: ui/generated/ and ui/dist/<mode>/.
@@ -48,10 +49,17 @@ async function assets(): Promise<void> {
   if ((await child.exited) !== 0) throw new Error('the assets failed');
 }
 
+/** The UI's lint (ESLint, the Tailwind values, the status lines), timed: an error in it stops the build. */
+function lint(): Promise<void> {
+  return step('build: lint', () => run(['bun', 'run', 'lint'], join(ROOT, 'ui')));
+}
+
 /** Whether the Angular builds run at once. */
 const together = modes.length > 1 && !oneAtATime;
 await step('build', async () => {
-  await assets();
+  // the lint runs beside the assets, which take far longer, so it adds no time; both finish before either fails
+  const [assetsDone, lintDone] = await Promise.allSettled([assets(), lint()]);
+  for (const done of [lintDone, assetsDone]) if (done.status === 'rejected') throw done.reason;
   if (together) {
     await Promise.all(modes.map(angular));
   } else {
