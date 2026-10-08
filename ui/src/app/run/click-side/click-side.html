@@ -5,9 +5,12 @@
       <p class="section-note">{{ b.note }}</p>
     }
     @for (bar of b.bars; track $index) {
-      @if (bar.hidden) {
-      } @else if (bar.label) {
-        <div class="reference">
+      @if (bar.label) {
+        <div
+          class="reference"
+          [attr.data-hidden]="bar.hidden || null"
+          [attr.aria-hidden]="bar.hidden || null"
+        >
           <span>{{ bar.label }}</span>
           <div class="thin-bar" [style.width.%]="bar.width">
             @for (seg of bar.segments; track $index) {
@@ -21,7 +24,12 @@
           </div>
         </div>
       } @else {
-        <div class="bar" [style.width.%]="bar.width">
+        <div
+          class="bar"
+          [attr.data-hidden]="bar.hidden || null"
+          [attr.aria-hidden]="bar.hidden || null"
+          [style.width.%]="bar.width"
+        >
           @for (seg of bar.segments; track $index) {
             <div
               class="segment"

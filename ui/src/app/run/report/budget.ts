@@ -171,8 +171,8 @@ export interface BudgetBar {
   /** A thin reference bar, with no text inside. */
   thin: boolean;
   /**
-   * Meant to keep its height only, so the box does not jump when a kill is picked; the template
-   * (click-side.html) draws nothing for it.
+   * Kept for its height only, so the box does not jump when a kill is picked; the template
+   * (click-side.html) keeps its space but does not show it.
    */
   hidden: boolean;
   /** The steps, in order. */
@@ -226,7 +226,7 @@ interface KillTime {
 
 /**
  * A kill's bar, `width` percent wide, with its steps as segments; `label` names a reference bar,
- * `thin` draws it thin with no text, `hidden` marks it not to draw.
+ * `thin` draws it thin with no text, `hidden` keeps its space but does not show it.
  */
 function bar(
   { parts, reload }: KillTime,

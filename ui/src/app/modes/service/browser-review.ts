@@ -91,7 +91,7 @@ interface ReviewedBody {
   found: null;
   /** How long the review took, in seconds, to a tenth. */
   seconds: number;
-  /** Where the detector was asked to run, by name ("WebGPU", "WebAssembly"). */
+  /** Where the detector ran, by name ("WebGPU", "WebAssembly", "WebGPU and WebAssembly"). */
   device: string;
 }
 
@@ -109,6 +109,14 @@ interface JobReport {
 
 /** Each device's name as the service and the report show it. */
 const DEVICE_NAMES: Record<BrowserDevice, string> = { webgpu: 'WebGPU', wasm: 'WebAssembly' };
+
+/**
+ * Where the parts' detectors ran, by name: "WebGPU", or "WebGPU and WebAssembly" when the parts
+ * ran on different devices (as the service's `add_device` words it, service/src/review.rs).
+ */
+export function partsDevices(parts: readonly RunPart[]): string {
+  return [...new Set(parts.map((part) => DEVICE_NAMES[part.device]))].join(' and ');
+}
 /**
  * The runs a recording is split into on the GPU, each reviewed in a worker of its own
  * (src/session.rs): one software decoder is the review's limit there, and two decode at almost
@@ -260,7 +268,8 @@ export class BrowserReview extends ServerReview {
       const file = await this.files.read(order.video);
       const parts = await this.track(id, file, order, report);
       report({ stage: 'linking', done: 0, total: 0 });
-      const detector = `onnxruntime-web (${DEVICE_NAMES[parts[0].device]})`;
+      const devices = partsDevices(parts);
+      const detector = `onnxruntime-web (${devices})`;
       const joined = await this.core.joinReview(parts, detector);
       const body: ReviewedBody = {
         model: order.model,
@@ -270,7 +279,7 @@ export class BrowserReview extends ServerReview {
         hud: joined.hud,
         found: null,
         seconds: tenthsOfSecond(performance.now() - begun),
-        device: DEVICE_NAMES[order.device],
+        device: devices,
       };
       await firstValueFrom(this.client.post<Job>('/api/reviewed', body, { params: { id } }));
       this.running.delete(id);

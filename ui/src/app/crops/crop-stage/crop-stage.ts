@@ -467,7 +467,7 @@ export class CropStage {
     if (!crop || !scene) return;
     const selection = this.draft.selection();
     // a handle only drags: tapped, it is what lies under it that was meant (a head above a body's turn handle)
-    const handle = ['corner', 'turn', 'face', 'tumble', 'thickness'].includes(held.kind);
+    const handle = ['corner', 'side', 'turn', 'face', 'tumble'].includes(held.kind);
     const grip = handle ? gripAt(scene, crop, [], [x, y], this.place().scale) : held;
     const id = grip.id;
     if (grip.kind === 'move' && id) {

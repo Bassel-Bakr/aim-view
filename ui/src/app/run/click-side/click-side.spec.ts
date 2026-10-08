@@ -52,6 +52,8 @@ describe('ClickSide', () => {
     expect(el.textContent?.indexOf('Stopped short')).toBeLessThan(
       el.textContent?.indexOf('Slow start') ?? 0,
     );
+    // the average's reference bar keeps its space, hidden, until a kill is picked
+    expect(el.querySelector('.reference[data-hidden]')?.textContent).toContain('Average kill');
 
     TestBed.inject(FlickFocus).selected.set(FLICK);
     await fixture.whenStable();

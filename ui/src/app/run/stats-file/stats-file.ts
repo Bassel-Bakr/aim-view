@@ -178,21 +178,6 @@ export class StatsFile {
     this.choice({ auto: true }, 'Found by its name and time again');
   }
 
-  /** Runs a step that changes no file by itself, showing what it did or why it failed. */
-  private async act(step: () => Promise<void>, done: string): Promise<void> {
-    this.saving.set(true);
-    this.message.set(null);
-    try {
-      await step();
-      this.pairing.reload();
-      this.message.set({ text: done, failed: false });
-    } catch (error) {
-      this.message.set({ text: errorMessage(error), failed: true });
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
   /** Pairs the recording with a .csv chosen from this computer. */
   protected pickFile(input: HTMLInputElement): void {
     const file = input.files?.[0];

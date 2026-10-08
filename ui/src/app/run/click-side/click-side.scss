@@ -48,6 +48,14 @@
     border-radius: r.$budget-radius;
   }
 
+  // A hidden bar keeps its space, so the panel does not jump when a kill is picked
+  .bar,
+  .reference {
+    &[data-hidden] {
+      @apply invisible;
+    }
+  }
+
   .reference {
     @apply text-xs;
 

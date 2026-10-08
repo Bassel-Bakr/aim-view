@@ -78,7 +78,7 @@ fn place(file: &Path, dest: &Path) -> Result<(), String> {
 /// Where a link's video goes in `uploads`: `name`, or "<stem> (2).mp4" and so on while a file has that name or
 /// another link downloads into it (`jobs`, the library's).
 fn free_destination(uploads: &Path, name: &str, jobs: &HashMap<String, Arc<Mutex<Job>>>) -> PathBuf {
-    let downloading = |job: &Arc<Mutex<Job>>| job.lock().is_ok_and(|job| job.link && job.stage != "error");
+    let downloading = |job: &Arc<Mutex<Job>>| job.lock().is_ok_and(|job| job.link && job.running());
     let taken = |path: &Path| {
         let id = format!("uploads/{}", path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default());
         path.exists() || jobs.get(&id).is_some_and(downloading)
@@ -274,6 +274,18 @@ mod tests {
         ];
         for body in refused {
             assert_eq!(link_url(&body).unwrap_err().status, 400, "{body}");
+        }
+    }
+
+    /// A link still downloading keeps its file name, so the next download of it gets " (2)"; a failed or cancelled
+    /// one gives the name back.
+    #[test]
+    fn only_a_running_download_holds_its_name() {
+        let uploads = std::env::temp_dir().join(format!("aimview-free-{}", std::process::id()));
+        for (stage, dest) in [("downloading", "run (2).mp4"), ("error", "run.mp4"), ("cancelled", "run.mp4")] {
+            let job = Job { link: true, ..Job::new(stage, "") };
+            let jobs = HashMap::from([("uploads/run.mp4".to_string(), Arc::new(Mutex::new(job)))]);
+            assert_eq!(free_destination(&uploads, "run.mp4", &jobs), uploads.join(dest), "{stage}");
         }
     }
 

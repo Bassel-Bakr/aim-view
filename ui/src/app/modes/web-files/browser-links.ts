@@ -186,7 +186,7 @@ export class BrowserLinks {
 
   /**
    * Waits for the server's download of a link, showing how far it is; cancels it there when `stop`
-   * is aborted, and rejects when the server's download failed.
+   * is aborted, and rejects when the server's download failed or was cancelled there.
    */
   private async downloaded(
     added: LinkAdded,
@@ -200,6 +200,7 @@ export class BrowserLinks {
       }
       const job = await this.ask<Job>('/api/job', undefined, { id: added.id });
       if (job.stage === 'error') throw new Error(job.error ?? 'the download failed');
+      if (job.stage === CANCELLED) throw new Error(CANCELLED);
       if (job.stage === 'none' || !job.link) return;
       const label = SERVER_STAGES[job.stage] ?? DOWNLOADING;
       progress(label, job.done ?? 0, job.total ?? 0);

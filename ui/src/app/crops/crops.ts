@@ -8,7 +8,6 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CropAnswers, CropPage, CropSet, CropVerdict } from '../api';
 import { Button } from '../controls/button';
 import { CropSets } from '../platform/crop-sets';
-import { Pages } from '../services/pages';
 import { CropDraft, CropNote, messageOf } from './crop-draft';
 import { CropStage } from './crop-stage/crop-stage';
 import { CropTools } from './crop-tools/crop-tools';
@@ -42,8 +41,6 @@ const SUGGESTION_WORDS = {
 export class Crops {
   /** The page's state: the folder and set open, the crop on show, its answer and the fix. */
   protected readonly draft = inject(CropDraft);
-  /** The app's page state (services/pages.ts); neither this class nor its template reads it. */
-  protected readonly pages = inject(Pages);
   /** Whether the user can add a check folder from this computer (browser mode). */
   protected readonly canAddFolder = inject(CropSets).addFolder !== null;
   /** What an add, export or import is doing, or did; null before the first. */
