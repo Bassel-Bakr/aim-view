@@ -6,7 +6,9 @@
  * ui/src's SCSS (@apply), templates (class="...") and components (host classes). Out: each class
  * that breaks the rule, with its file and line, and exit code 1 when there is one.
  * It also fails on a long @apply copied across stylesheets (MIN_SHARED_CLASSES classes or more, in
- * MIN_COPIES files or more): that look belongs in one shared class in themes/controls.scss.
+ * MIN_COPIES files or more): that look belongs in one shared class in themes/controls.scss. And on a
+ * standalone color or a font size written anywhere but COLOR_HOME: that file holds the base colors and
+ * the font scale, and every other color is built from a token (so the palettes cannot drift apart).
  * Usage: bun scripts/tailwind-values.ts (bun run lint:ui runs it).
  */
 import { Glob } from 'bun';
@@ -98,23 +100,52 @@ export function copiedApplies(sheets: Map<string, string>): Copied[] {
     .map(([classes, files]) => ({ classes, files: [...files].sort() }));
 }
 
+/** The one stylesheet a color or a font size may be written out in, below ui/src. */
+const COLOR_HOME = 'themes/theme.scss';
+/**
+ * A standalone color: a color function given its own channels (`oklch(0.7 0.1 200)`), or a hex color in a
+ * declaration's value. A color built from a token (`var(--white)`, `oklch(from var(--black) l c h / 0.6)`,
+ * `color-mix(in oklch, var(--accent) 18%, var(--surface-1))`) is not one.
+ */
+const COLOR_LITERAL = /\b(?:oklch|oklab|lch|lab|rgba?|hsla?|hwb)\(\s*[\d.]|:\s*[^;{]*#[0-9a-fA-F]{3,8}\b/;
+/** A font size written out: in font-size, a font shorthand or a font token (`font-size: 13px`, `600 8px ...`). */
+const FONT_SIZE_LITERAL = /(?:font-size|font|--[\w-]*font[\w-]*)\s*:[^;]*(?<![\w-])\d*\.?\d+(?:px|rem|em|pt)\b/;
+
+/**
+ * The lines of a stylesheet that write a standalone color or a font size, unless it is COLOR_HOME, where the base
+ * colors and the font scale are. Comment lines are prose.
+ */
+export function colorLiteralsIn(file: string, text: string): Finding[] {
+  if (file.replace(/\\/g, '/') === COLOR_HOME || !/\.(s?css)$/.test(file)) return [];
+  return text
+    .split('\n')
+    .map((line, index) => ({ file, line: index + 1, name: line.trim() }))
+    .filter(
+      ({ name }) => !/^(\/\/|\*|\/\*)/.test(name) && (COLOR_LITERAL.test(name) || FONT_SIZE_LITERAL.test(name)),
+    );
+}
+
 if (import.meta.main) {
   const findings: Finding[] = [];
+  const colors: Finding[] = [];
   const sheets = new Map<string, string>();
   for (const file of FILES.scanSync(SOURCES)) {
     if (file.includes('generated')) continue;
     const text = readFileSync(join(SOURCES, file), 'utf8');
     findings.push(...findingsIn(file, text));
+    colors.push(...colorLiteralsIn(file, text));
     if (file.endsWith('.scss')) sheets.set(file, text);
   }
   for (const { file, line, name } of findings)
     console.error(`ui/src/${file}:${line}: ${name} takes an arbitrary value; use a token`);
+  for (const { file, line, name } of colors)
+    console.error(`ui/src/${file}:${line}: a standalone color or font size (${name}); build it from a token in ${COLOR_HOME}`);
   const copies = copiedApplies(sheets);
   for (const { classes, files } of copies)
     console.error(
       `@apply ${classes} is in ${files.length} stylesheets (${files.join(', ')}); ` +
         'make it one class in themes/controls.scss',
     );
-  if (findings.length || copies.length) process.exit(1);
-  console.log('tailwind values: every class reaches a token, and no long @apply is copied');
+  if (findings.length || colors.length || copies.length) process.exit(1);
+  console.log('tailwind values: every class, color and font size reaches a token, and no long @apply is copied');
 }

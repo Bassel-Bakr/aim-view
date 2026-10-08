@@ -3,8 +3,6 @@
 @mixin tokens {
   --top-bar-height: 44px;
   --sidebar-width: 288px;
-  // The top bar: a shade darker than the page, like a title bar
-  --surface-bar: oklch(0.153 0.007 258.4);
   --empty-width: 560px;
   --empty-offset: 12vh; // viewport-height-ok: a margin, not a height
   // At this width and below (a phone) the app takes its narrow layout: the recordings list is a drawer over the page.
@@ -15,7 +13,7 @@
   --top-bar-full-width: 1599px;
   // The top bar's More menu: one tool to a row, over the page
   --top-bar-menu-width: 240px;
-  --top-bar-menu-shadow: 0 12px 32px oklch(0 0 0 / 0.55);
+  --top-bar-menu-shadow: 0 12px 32px oklch(from var(--black) l c h / 0.55);
   // The recordings drawer stays over the page's own layers (the video, its overlay, the floating player)
   --layer-drawer: 30;
   // The main area's side padding on a narrow screen

@@ -5,11 +5,43 @@
 @mixin tokens {
   color-scheme: dark;
 
+  // Base colors: every color the app shows, the same in every theme. The roles below and the module tokens
+  // (themes/<module>.scss) are built from these (var(), or oklch(from var(--x) l c h / alpha)), never a color of
+  // their own; scripts/tailwind-values.ts fails on a color written out anywhere else.
+  --white: oklch(1 0 0); // labels and lines over the video and the crops
+  --black: oklch(0 0 0); // the screen behind the video, shadows, label backings
+  --night: oklch(0.168 0.004 264.4); // a label backing over the video, a hair off black
+  --cyan: oklch(0.7614 0.1215 213.62); // the app's accent
+  --cyan-light: oklch(0.845 0.092 210.5); // the accent under the pointer, values
+  --cyan-dark: oklch(0.555 0.08 213.3); // a quiet bar beside a loud one
+  --cyan-ink: oklch(0.174 0.018 222.6); // text on the accent
+  --sky: oklch(0.782 0.121 222.5); // shapes drawn by hand on a crop
+  --teal: oklch(0.7212 0.1366 161.81); // the third chart series
+  --green: oklch(0.786 0.138 159.8); // good: reviewed, done
+  --green-light: oklch(0.806 0.136 149.5); // a crop's body shape
+  --green-deep: oklch(0.667 0.183 147.8); // a fine check, as a tint
+  --yellow: oklch(0.8496 0.1463 90.49); // the model's shapes on a crop
+  --amber: oklch(0.7738 0.1465 70.19); // a warning; the playhead
+  --amber-light: oklch(0.811 0.1644 78.46); // a check that needs attention, as a tint
+  --orange: oklch(0.622 0.173 40.1); // excluded areas
+  --coral: oklch(0.731 0.166 30.3); // attention
+  --coral-light: oklch(0.79 0.122 29.9); // attention as text
+  --coral-dark: oklch(0.357 0.066 28.9); // attention as a line
+  --coral-ink: oklch(0.171 0.027 32.6); // text on attention
+  --red: oklch(0.586 0.199 23.5); // the Wrong button
+  --red-light: oklch(0.654 0.176 20.9); // the Wrong button under the pointer
+  --red-bright: oklch(0.691 0.199 23.9); // a crossed-out crop shape
+  --rose: oklch(0.622 0.171 0.8); // the fifth chart series
+  --pink: oklch(0.756 0.167 354.5); // a crop's head shape
+  --purple: oklch(0.754 0.139 293.1); // a crop's occluder
+
   // Surfaces, from the page (0) up: the frame, panels, cards, and a selected or hovered row
   --surface-0: oklch(0.168 0.007 258.4);
   --surface-1: oklch(0.19 0.009 255.6);
   --surface-2: oklch(0.216 0.012 254.1);
   --surface-3: oklch(0.258 0.017 255.7);
+  // The top bar: a shade darker than the page, like a title bar
+  --surface-bar: oklch(0.153 0.007 258.4);
 
   // Text
   --text-primary: oklch(0.933 0.007 260.7);
@@ -21,31 +53,31 @@
   --border-strong: oklch(0.327 0.022 259.4);
   --grid: oklch(0.254 0.014 253.1);
   --axis: oklch(0.327 0.022 259.4);
-  --backdrop: oklch(0 0 0 / 0.6);
+  --backdrop: oklch(from var(--black) l c h / 0.6);
 
   // Roles. Accent: the app's cyan (actions, the selection, the main series). Attention: what to work on (coral).
-  --accent: oklch(0.7614 0.1215 213.62);
-  --accent-hover: oklch(0.845 0.092 210.5);
-  --accent-soft: oklch(0.7614 0.1215 213.62 / 0.12);
-  --accent-pressed: oklch(0.7614 0.1215 213.62 / 0.2);
-  --value: oklch(0.845 0.092 210.5);
-  --good-soft: oklch(0.786 0.138 159.8 / 0.14);
-  --good-text: oklch(0.786 0.138 159.8);
-  --warning: oklch(0.7738 0.1465 70.19);
-  --attention: oklch(0.731 0.166 30.3);
-  --attention-text: oklch(0.79 0.122 29.9);
-  --attention-line: oklch(0.357 0.066 28.9);
-  --on-attention: oklch(0.171 0.027 32.6);
-  --on-accent: oklch(0.174 0.018 222.6);
+  --accent: var(--cyan);
+  --accent-hover: var(--cyan-light);
+  --accent-soft: oklch(from var(--accent) l c h / 0.12);
+  --accent-pressed: oklch(from var(--accent) l c h / 0.2);
+  --value: var(--cyan-light);
+  --good-soft: oklch(from var(--good-text) l c h / 0.14);
+  --good-text: var(--green);
+  --warning: var(--amber);
+  --attention: var(--coral);
+  --attention-text: var(--coral-light);
+  --attention-line: var(--coral-dark);
+  --on-attention: var(--coral-ink);
+  --on-accent: var(--cyan-ink);
 
   // Chart series
-  --series-1: oklch(0.7614 0.1215 213.62);
-  --series-2: oklch(0.731 0.166 30.3);
-  --series-3: oklch(0.7212 0.1366 161.81);
-  --series-4: oklch(0.7738 0.1465 70.19);
-  --series-5: oklch(0.622 0.171 0.8);
+  --series-1: var(--cyan);
+  --series-2: var(--coral);
+  --series-3: var(--teal);
+  --series-4: var(--amber);
+  --series-5: var(--rose);
   // A quiet bar beside a loud one (a kill time under a second, beside the ones over it)
-  --series-quiet: oklch(0.555 0.08 213.3);
+  --series-quiet: var(--cyan-dark);
 
   // On and off the target: the overlay, the timeline and their legends
   --on-target: var(--series-3);
@@ -74,6 +106,8 @@
   --font-family: 'Barlow', 'Segoe UI', system-ui, sans-serif;
   // Big numbers and titles: the condensed cut, so a value reads at a glance and fits its tile
   --font-display: 'Barlow Condensed', 'Barlow', 'Segoe UI', sans-serif;
+  --font-size-4xs: 8px;
+  --font-size-3xs: 10px;
   --font-size-2xs: 12px;
   --font-size-xs: 13px;
   --font-size-sm: 14px;
@@ -188,6 +222,8 @@ $radius-pill: var(--radius-pill);
 
 $font-family: var(--font-family);
 $font-display: var(--font-display);
+$font-size-4xs: var(--font-size-4xs);
+$font-size-3xs: var(--font-size-3xs);
 $font-size-2xs: var(--font-size-2xs);
 $font-size-xs: var(--font-size-xs);
 $font-size-sm: var(--font-size-sm);

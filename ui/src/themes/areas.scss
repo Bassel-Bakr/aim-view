@@ -2,16 +2,16 @@
 // variables when it draws.
 
 @mixin tokens {
-  --area-fill: oklch(0.622 0.173 40.1 / 0.28);
-  --area-fill-selected: oklch(0.622 0.173 40.1 / 0.42);
-  --area-line: oklch(0.622 0.173 40.1 / 0.9);
-  --area-line-selected: oklch(1 0 0);
+  --area-fill: oklch(from var(--orange) l c h / 0.28);
+  --area-fill-selected: oklch(from var(--orange) l c h / 0.42);
+  --area-line: oklch(from var(--orange) l c h / 0.9);
+  --area-line-selected: var(--white);
   --area-line-width: 1.5;
   --area-line-width-selected: 2;
   --area-label-font: var(--font-weight-strong) var(--font-size-2xs) var(--font-family);
-  --area-label-bg: oklch(0.168 0.004 264.4 / 0.75);
-  --area-label-text: oklch(1 0 0);
-  --area-label-text-selected: oklch(1 0 0 / 0.55);
+  --area-label-bg: oklch(from var(--night) l c h / 0.75);
+  --area-label-text: var(--white);
+  --area-label-text-selected: oklch(from var(--white) l c h / 0.55);
 
   // The kind form's fields
   --kind-name-width: 170px;

@@ -41,7 +41,10 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   or module uses are in `ui/src/themes/<page or module>.scss`. Each file has a `tokens` mixin, which `styles.scss`
   includes in `:root`. Component styles `@use 'themes/...'` and use only `$tokens`: no raw colors, sizes, spaces, fonts
   or durations. Keywords and layout values (`flex`, `solid`, `0`, `100%`, `1fr`) are fine. Canvas drawings read their
-  colors and fonts from the same CSS variables.
+  colors and fonts from the same CSS variables. Every standalone color and every font size is in `theme.scss`: its
+  base colors (`--white`, `--cyan`, `--orange`...) and its font scale. Any other color, a role in `theme.scss` or a
+  module's token, is built from them (`var(--yellow)`, `oklch(from var(--black) l c h / 0.6)`, `color-mix(...)` of
+  tokens), never a color of its own; `bun run lint:ui` fails on one (`scripts/tailwind-values.ts`).
 - **Tailwind on the tokens.** `ui/src/tailwind.css` maps Tailwind 4's theme onto the tokens (`@theme inline reference`,
   Tailwind's own scales off), so a class can only reach a token: `bg-surface-1`, `text-muted`, `p-4` (4 x `--space-1`),
   `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`: `bun run lint:ui` fails on one

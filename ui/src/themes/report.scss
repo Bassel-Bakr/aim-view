@@ -17,8 +17,8 @@
   --card-why-leading: 1.35;
   --issues-columns: repeat(auto-fill, minmax(320px, 1fr));
   --issue-flag-size: 11.5px;
-  --issue-attention-bg: oklch(0.811 0.1644 78.46 / 0.12);
-  --issue-fine-bg: oklch(0.667 0.183 147.8 / 0.12);
+  --issue-attention-bg: oklch(from var(--amber-light) l c h / 0.12);
+  --issue-fine-bg: oklch(from var(--green-deep) l c h / 0.12);
   --budget-max-width: 1100px;
   --budget-height: 30px;
   --budget-thin-height: 8px;
