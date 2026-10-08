@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::finder;
+use crate::library::slug as recording_slug;
 use crate::library::{Answer, Failure, Library, is_upload};
 use crate::pyjson;
 use crate::review::AreaBox;
-use crate::library::slug as recording_slug;
 use crate::store::{Item, Mark, Part, ReviewBy};
 
 /// The name messages give the area kinds.
@@ -415,7 +415,8 @@ impl Library {
     /// The recordings the user saved areas for: (its slug, its found areas, its saved areas), leaving out `but` and
     /// other games (python/retired/server.py: labelled, by its folder's name).
     pub fn labelled(&self, but: Option<&str>) -> Vec<(String, Value, Value)> {
-        let skip: BTreeSet<String> = self.not_aim().iter().map(|id| recording_slug(id)).chain(but.map(recording_slug)).collect();
+        let skip: BTreeSet<String> =
+            self.not_aim().iter().map(|id| recording_slug(id)).chain(but.map(recording_slug)).collect();
         let parsed = |(name, found, saved): (String, Vec<u8>, Vec<u8>)| {
             Some((name, pyjson::parse(&found).ok()?, pyjson::parse(&saved).ok()?))
         };

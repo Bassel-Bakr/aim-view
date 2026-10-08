@@ -88,9 +88,7 @@ fn is_local_network_host(host: &str) -> bool {
 
 /// An Origin header's page is on this machine (http://localhost:4200, http://127.0.0.1:8770, ...).
 fn is_loopback_origin(origin: &str) -> bool {
-    origin
-        .split_once("://")
-        .is_some_and(|(scheme, host)| matches!(scheme, "http" | "https") && is_loopback_host(host))
+    origin.split_once("://").is_some_and(|(scheme, host)| matches!(scheme, "http" | "https") && is_loopback_host(host))
 }
 
 /// The Origin of a page on this machine (http://localhost:4200, the UI in browser mode), which may read the API's
@@ -222,7 +220,11 @@ impl Access {
             return Verdict::Refuse { status: StatusCode::FORBIDDEN, reason: "a request from another site" };
         }
         let Some(token) = &self.token else {
-            return if self.open_network { check_local_network(host, origin) } else { check_this_machine(host, origin) };
+            return if self.open_network {
+                check_local_network(host, origin)
+            } else {
+                check_this_machine(host, origin)
+            };
         };
         let is_token = |given: &str| equal_in_constant_time(given.as_bytes(), token.as_bytes());
         if bearer_token(headers).is_some_and(is_token) {
@@ -387,13 +389,15 @@ mod tests {
     fn dev_mode_lets_the_local_network_in_without_a_token() {
         let a = Access::new(&lan(), Some(TOKEN.into()), true).unwrap();
         assert!(a.is_open_network() && !a.has_token(), "dev mode uses no token, even when one is set");
-        for host in ["192.168.1.111:8770", "10.0.0.5", "[fe80::1]:8770", "my-pc:8770", "my-pc.local:8770", "localhost"] {
+        for host in ["192.168.1.111:8770", "10.0.0.5", "[fe80::1]:8770", "my-pc:8770", "my-pc.local:8770", "localhost"]
+        {
             assert_eq!(check(&a, Method::GET, "/api/vods", &[("host", host)]), Verdict::Pass, "{host}");
         }
         // the server's own page, and the UI in browser mode on this machine
         let own = [("host", "192.168.1.111:8770"), ("origin", "http://192.168.1.111:8770")];
         assert_eq!(check(&a, Method::POST, "/api/analyse?id=x", &own), Verdict::Pass);
-        let browser = [("host", "127.0.0.1:8770"), ("origin", "http://localhost:4200"), ("sec-fetch-site", "cross-site")];
+        let browser =
+            [("host", "127.0.0.1:8770"), ("origin", "http://localhost:4200"), ("sec-fetch-site", "cross-site")];
         assert_eq!(check(&a, Method::POST, "/api/link", &browser), Verdict::Pass);
         // DNS rebinding: a web site's name that points at this machine
         let rebound = [("host", "evil.example:8770")];

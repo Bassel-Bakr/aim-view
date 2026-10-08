@@ -64,10 +64,7 @@ pub fn radians(degrees: f64) -> f64 {
 
 /// A pixel's angle from the crosshair, in degrees: right and up are positive.
 pub fn to_deg(x: f64, y: f64) -> (f64, f64) {
-    (
-        degrees(((x - CX) / K).atan()),
-        degrees(((CY - y) / hypot(K, x - CX)).atan()),
-    )
+    (degrees(((x - CX) / K).atan()), degrees(((CY - y) / hypot(K, x - CX)).atan()))
 }
 
 /// The pixel at an angle from the crosshair: the inverse of `to_deg`.

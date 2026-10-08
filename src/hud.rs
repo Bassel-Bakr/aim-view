@@ -1181,9 +1181,11 @@ impl Store {
         let image_offset = (self.images.len() / GLYPH_PIXELS) as u32;
         let line_offset = self.lines.len() as u32 - 1;
         self.images.extend(next.images);
-        self.lines.extend(next.lines.into_iter().skip(1).map(|line| {
-            line.into_iter().map(|glyph| Glyph { image: glyph.image + image_offset, ..glyph }).collect()
-        }));
+        self.lines.extend(
+            next.lines.into_iter().skip(1).map(|line| {
+                line.into_iter().map(|glyph| Glyph { image: glyph.image + image_offset, ..glyph }).collect()
+            }),
+        );
         for (row, runs) in next.rows.into_iter().enumerate() {
             let mut to_drop = left_out as u32;
             for (line, frames) in runs {
@@ -1664,9 +1666,12 @@ impl<K: PartialEq + Copy> Counter<K> {
     fn top(&self) -> Option<K> {
         self.0
             .iter()
-            .fold(None, |best: Option<(K, usize)>, &entry| {
-                if best.is_none_or(|best| entry.1 > best.1) { Some(entry) } else { best }
-            })
+            .fold(
+                None,
+                |best: Option<(K, usize)>, &entry| {
+                    if best.is_none_or(|best| entry.1 > best.1) { Some(entry) } else { best }
+                },
+            )
             .map(|entry| entry.0)
     }
 }
@@ -1787,9 +1792,12 @@ fn join_leftover_shapes(shapes: &Shapes, digits: &mut [Option<u8>]) {
             let best = (0..digits.len())
                 .filter(|&digit_shape| digits[digit_shape].is_some())
                 .map(|digit_shape| (dot(&unit, &shapes.unit(digit_shape)), digit_shape))
-                .fold(None, |best: Option<(f64, usize)>, entry| {
-                    if best.is_none_or(|best| entry >= best) { Some(entry) } else { best }
-                });
+                .fold(
+                    None,
+                    |best: Option<(f64, usize)>, entry| {
+                        if best.is_none_or(|best| entry >= best) { Some(entry) } else { best }
+                    },
+                );
             if let Some((likeness, digit_shape)) = best
                 && likeness >= DIGIT_LIKENESS
             {
@@ -2136,11 +2144,8 @@ fn clock_seconds(clock: i64) -> i64 {
 
 /// The POINTS number's stable values. Each glyph is the most alike digit shape (a minus sign is short and wide).
 fn points_stretches(store: &Store, shapes: &Shapes, digits: &[Option<u8>]) -> Vec<Stretch<i64>> {
-    let prototypes: Vec<([f32; GLYPH_PIXELS], u8)> = digits
-        .iter()
-        .enumerate()
-        .filter_map(|(shape, digit)| digit.map(|digit| (shapes.unit(shape), digit)))
-        .collect();
+    let prototypes: Vec<([f32; GLYPH_PIXELS], u8)> =
+        digits.iter().enumerate().filter_map(|(shape, digit)| digit.map(|digit| (shapes.unit(shape), digit))).collect();
     let mut read: HashMap<u32, Option<i64>> = HashMap::new();
     let values: Vec<Option<i64>> = store
         .per_frame(POINTS_ROW)

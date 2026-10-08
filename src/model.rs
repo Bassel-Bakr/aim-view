@@ -147,9 +147,8 @@ impl ModelSettings {
 
     /// The settings for a run of this kind (None: not known): the at-crosshair rule left out when it names other kinds.
     pub fn for_kind(mut self, kind: Option<Kind>) -> ModelSettings {
-        let applies = |weak: &AtCrosshair| {
-            weak.kinds.as_ref().is_none_or(|kinds| kind.is_some_and(|kind| kinds.contains(&kind)))
-        };
+        let applies =
+            |weak: &AtCrosshair| weak.kinds.as_ref().is_none_or(|kinds| kind.is_some_and(|kind| kinds.contains(&kind)));
         if !self.at_crosshair.as_ref().is_some_and(applies) {
             self.at_crosshair = None;
         }

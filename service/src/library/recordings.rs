@@ -15,9 +15,9 @@ use serde_json::{Value, json};
 
 use super::names::{free_name, local_stamp, parse_name, parse_titled, parse_video, slug};
 use super::stats::UPLOAD_SOURCE;
-use crate::store::Item;
 use super::{Answer, Failure, Library, modified, read_kept};
 use crate::disk::Entry;
+use crate::store::Item;
 
 /// The extensions (lower case) of the files the library takes as videos.
 pub(crate) const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];

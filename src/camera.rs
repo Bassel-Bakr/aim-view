@@ -235,11 +235,8 @@ fn agreed(shifts: &TileShifts, clear: &[bool; TILES]) -> CameraReading {
         return None;
     }
     let median = (median_f32(&mut axis(&allowed, |shift| shift.0)), median_f32(&mut axis(&allowed, |shift| shift.1)));
-    let agreeing: Capped<(f32, f32), TILES> = allowed
-        .iter()
-        .filter(|shift| (shift.0 - median.0).hypot(shift.1 - median.1) < AGREE_DEG)
-        .copied()
-        .collect();
+    let agreeing: Capped<(f32, f32), TILES> =
+        allowed.iter().filter(|shift| (shift.0 - median.0).hypot(shift.1 - median.1) < AGREE_DEG).copied().collect();
     if agreeing.len() < MIN_AGREEING_TILES {
         return None;
     }
@@ -609,9 +606,8 @@ fn near_color(color: [i32; 3], to: [f64; 3], tolerance: f64) -> bool {
 fn fill_color(rgb: &[u8]) -> [f64; 3] {
     let (left, top) = (COUNTDOWN_COLUMNS.0 + FILL_SAMPLE_LEFT, COUNTDOWN_ROWS.0 + BAR_TOP);
     std::array::from_fn(|channel| {
-        let mut values: [i32; BAR_ROWS * FILL_SAMPLE_COLUMNS] = std::array::from_fn(|j| {
-            pixel(rgb, left + j % FILL_SAMPLE_COLUMNS, top + j / FILL_SAMPLE_COLUMNS)[channel]
-        });
+        let mut values: [i32; BAR_ROWS * FILL_SAMPLE_COLUMNS] =
+            std::array::from_fn(|j| pixel(rgb, left + j % FILL_SAMPLE_COLUMNS, top + j / FILL_SAMPLE_COLUMNS)[channel]);
         values.sort();
         let middle = values.len() / 2;
         (values[middle - 1] + values[middle]) as f64 / 2.0
@@ -684,6 +680,5 @@ pub fn countdown_showing(rgb: &[u8]) -> bool {
     }
     let fill_left_of_track =
         (counts.fill_x_sum as f64 / counts.fill as f64) < (counts.track_x_sum as f64 / counts.track as f64);
-    fill_left_of_track
-        && track_end_pixels(rgb) as f64 > MIN_TRACK_END_SHARE * (BAR_ROWS * TRACK_END_COLUMNS) as f64
+    fill_left_of_track && track_end_pixels(rgb) as f64 > MIN_TRACK_END_SHARE * (BAR_ROWS * TRACK_END_COLUMNS) as f64
 }

@@ -73,7 +73,7 @@ fn config(settings: &Settings) -> Config {
 pub fn open(settings: &Settings) -> Result<Arc<dyn Api>, String> {
     if matches!(settings.device, Device::Cuda) && !cfg!(feature = "cuda") {
         return Err(
-            "--device cuda needs a build with the cuda feature (cargo build -p aimview-server --features cuda)".into()
+            "--device cuda needs a build with the cuda feature (cargo build -p aimview-server --features cuda)".into(),
         );
     }
     if matches!(settings.device, Device::DirectMl) && !cfg!(windows) {

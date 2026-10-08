@@ -1368,8 +1368,7 @@ mod lanes {
             i32x4_add(splat(offset), i32x4_shr(i32x4_mul(chroma, splat(slope)), 16))
         };
         // the y table at 4 indexes
-        let level =
-            |i: v128| i32x4_min(i32x4_max(i32x4_shr(i32x4_add(base, i32x4_mul(i, step)), 16), zero), max_level);
+        let level = |i: v128| i32x4_min(i32x4_max(i32x4_shr(i32x4_add(base, i32x4_mul(i, step)), 16), zero), max_level);
         // 4 pixels' channel from their pairs' offsets (pairs p, p, p+1, p+1) and their luma
         let channel_level = |offset: v128, luma: v128| level(i32x4_add(offset, luma));
         for block in 0..DST_W / 16 {

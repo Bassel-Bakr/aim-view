@@ -58,14 +58,17 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     };
     respond(match desktop {
         Some(answer) => json_response(answer),
-        None => api::handle(lib, &ApiRequest {
-            method: req.method().as_str(),
-            path_and_query: at,
-            range: req.headers().get("Range").and_then(|range| range.to_str().ok()),
-            body: req.body(),
-            // the window's request comes whole, its body already in memory: an upload is written from it
-            upload: None,
-        }),
+        None => api::handle(
+            lib,
+            &ApiRequest {
+                method: req.method().as_str(),
+                path_and_query: at,
+                range: req.headers().get("Range").and_then(|range| range.to_str().ok()),
+                body: req.body(),
+                // the window's request comes whole, its body already in memory: an upload is written from it
+                upload: None,
+            },
+        ),
     })
 }
 

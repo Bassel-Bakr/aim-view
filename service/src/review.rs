@@ -8,17 +8,17 @@
 //! (library/reviews.rs, aimview-tool, the track example). Out: the review's tracks, readings, HUD reading, found areas
 //! and kill check (`Reviewed`), which library/reviews.rs keeps.
 
-use std::path::PathBuf;
 #[cfg(feature = "native")]
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "native")]
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 #[cfg(feature = "native")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "native")]
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-#[cfg(feature = "native")]
-use std::sync::Mutex;
 #[cfg(feature = "native")]
 use std::thread;
 

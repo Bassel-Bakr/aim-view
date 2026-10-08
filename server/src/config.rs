@@ -187,7 +187,6 @@ pub struct Settings {
     pub dev: bool,
 }
 
-
 impl Settings {
     /// The settings with no file and no flags.
     pub fn defaults() -> Settings {
@@ -298,7 +297,11 @@ pub fn resolve(flags: Flags, file: FileSettings, base: &Path, defaults: Settings
         scenarios,
         models: path(flags.models, file.models).unwrap_or(defaults.models),
         device: flags.device.or(file.device).unwrap_or(defaults.device),
-        gpu_frames: flags.gpu_frames.map(|switch| switch == Switch::On).or(file.gpu_frames).unwrap_or(defaults.gpu_frames),
+        gpu_frames: flags
+            .gpu_frames
+            .map(|switch| switch == Switch::On)
+            .or(file.gpu_frames)
+            .unwrap_or(defaults.gpu_frames),
         ffmpeg,
         ui: path(flags.ui, file.ui).unwrap_or(defaults.ui),
         token,
@@ -380,8 +383,20 @@ mod tests {
     fn flags_override_the_file() {
         let file = parse_file("port = 9000\ndevice = \"cpu\"\nscenarios = [\"x\"]\ntoken = \"from-file\"").unwrap();
         let given = flags(&[
-            "--port", "8775", "--device", "cuda", "--scenarios", "s1", "s2", "--scenarios", "s3", "--token", "flag",
-            "--vods=", "--ffmpeg", "path",
+            "--port",
+            "8775",
+            "--device",
+            "cuda",
+            "--scenarios",
+            "s1",
+            "s2",
+            "--scenarios",
+            "s3",
+            "--token",
+            "flag",
+            "--vods=",
+            "--ffmpeg",
+            "path",
         ]);
         let settings = resolve(given, file, Path::new("base"), Settings::defaults()).unwrap();
         assert_eq!(settings.port, 8775);

@@ -348,10 +348,12 @@ Timelimit=60.0
         assert_eq!(facts(&CAPSULE.replace("MainBBHasHead=false", "MainBBHasHead=true")).hitbox, None);
         assert_eq!(facts(&CAPSULE.replace("Cylindrical", "Mesh")).hitbox, None);
         // a second bot with another hitbox: none
-        let two = CAPSULE.replace("AddedBots=Centering II 180.bot", "AddedBots=Centering II 180.bot;Ball.bot")
-            .replace("[Map Data]", "[Bot Profile]\r\nName=Ball\r\nCharacterProfile=Ball\r\n[Character Profile]\r\n\
+        let two = CAPSULE.replace("AddedBots=Centering II 180.bot", "AddedBots=Centering II 180.bot;Ball.bot").replace(
+            "[Map Data]",
+            "[Bot Profile]\r\nName=Ball\r\nCharacterProfile=Ball\r\n[Character Profile]\r\n\
                 Name=Ball\r\nMainBBType=Spheroid\r\nMainBBHeight=50.0\r\nMainBBRadius=25.0\r\nMainBBHasHead=false\r\n\
-                MainBBHide=false\r\n[Map Data]");
+                MainBBHide=false\r\n[Map Data]",
+        );
         assert_eq!(facts(&two).hitbox, None);
     }
 

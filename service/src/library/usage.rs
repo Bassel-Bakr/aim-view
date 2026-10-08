@@ -131,7 +131,8 @@ impl Library {
                     }
                 }
                 "kovaak" => {
-                    let kovaak = self.store().kovaak().ok_or_else(|| Failure::bad("KovaaK's files are not kept here"))?;
+                    let kovaak =
+                        self.store().kovaak().ok_or_else(|| Failure::bad("KovaaK's files are not kept here"))?;
                     kovaak.clear_kovaak().map_err(failed)?;
                     #[cfg(not(feature = "native"))]
                     self.kovaak_changed()?;

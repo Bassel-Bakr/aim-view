@@ -18,8 +18,8 @@ use crate::matching::KillSource;
 use crate::optional_fields::OptionalFields;
 use crate::python::{hypot, round};
 use crate::scenario::{Hitbox, HitboxKind};
-use crate::stats_file::StatsFile;
 use crate::statistics::median;
+use crate::stats_file::StatsFile;
 use crate::summary::DIRECTIONS;
 use crate::track::{TrackFrame, Tracks};
 
@@ -591,7 +591,13 @@ fn swings_and_corrections(moving: &[usize], steady: &[bool], along: &[f64], radi
             continue;
         }
         let cut = (radius[i] * SWING_SHARE).max(JITTER_DEG);
-        let now = if along[i] > cut { 1 } else if along[i] < -cut { -1 } else { 0 };
+        let now = if along[i] > cut {
+            1
+        } else if along[i] < -cut {
+            -1
+        } else {
+            0
+        };
         if now != 0 && side != 0 && now != side {
             swings += 1;
         }
@@ -1096,9 +1102,8 @@ fn nearest_and_inside(frames: &[TrackFrame], hitbox: Option<Hitbox>) -> (Box<[Ne
 
 /// A tracking run's summary with only its stats file's facts filled in.
 fn unmeasured_summary(meta: &HashMap<String, String>, source: KillSource) -> TrackSummary {
-    let number = |key: &str| {
-        meta.get(key).filter(|value| !value.is_empty()).and_then(|value| value.trim().parse::<f64>().ok())
-    };
+    let number =
+        |key: &str| meta.get(key).filter(|value| !value.is_empty()).and_then(|value| value.trim().parse::<f64>().ok());
     let (hits, misses) = (number("Hit Count"), number("Miss Count"));
     TrackSummary {
         scenario: meta.get("Scenario").cloned(),
@@ -1109,9 +1114,10 @@ fn unmeasured_summary(meta: &HashMap<String, String>, source: KillSource) -> Tra
         },
         fps_avg: number("Avg FPS"),
         mode: crate::summary::Mode::Track,
-        sens: meta.get("Horiz Sens").filter(|value| !value.is_empty()).map(|horizontal| {
-            format!("{horizontal} {}", meta.get("Sens Scale").map(String::as_str).unwrap_or("None"))
-        }),
+        sens: meta
+            .get("Horiz Sens")
+            .filter(|value| !value.is_empty())
+            .map(|horizontal| format!("{horizontal} {}", meta.get("Sens Scale").map(String::as_str).unwrap_or("None"))),
         on_target: None,
         error: None,
         lost: None,

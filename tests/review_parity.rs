@@ -8,7 +8,7 @@ use std::fs;
 
 use aimview::review::{KillTimes, review_clicks};
 use aimview::track::Tracks;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 mod common;
 use common::{Diff, compare, parity_root, read, rename_key};

@@ -6,9 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use aimview::faint::{
-    CutoffCrop, CutoffRequest, FaintSetting, TrackScore, cutoff_crops, faint_scores, without_faint,
-};
+use aimview::faint::{CutoffCrop, CutoffRequest, FaintSetting, TrackScore, cutoff_crops, faint_scores, without_faint};
 use aimview::track::Tracks;
 use serde_json::{Value, json};
 

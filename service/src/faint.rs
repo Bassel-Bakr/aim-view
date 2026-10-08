@@ -361,7 +361,8 @@ mod tests {
         let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
         let empty = library.cutoff_labels_count().unwrap();
         assert_eq!(empty, json!({ "crops": 0, "recordings": 0 }));
-        let rows = b"{\"file\": \"train/a.npz\", \"video\": \"x.mp4\"}\n{\"file\": \"train/b.npz\", \"video\": \"x.mp4\"}\n";
+        let rows =
+            b"{\"file\": \"train/a.npz\", \"video\": \"x.mp4\"}\n{\"file\": \"train/b.npz\", \"video\": \"x.mp4\"}\n";
         pyjson::append_text(library.store(), Item::CutoffRows, rows).unwrap();
         pyjson::append_text(library.store(), Item::CutoffRows, b"{\"file\": \"train/a.npz\", \"video\": \"y.mp4\"}\n")
             .unwrap();

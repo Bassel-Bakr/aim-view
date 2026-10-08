@@ -20,14 +20,15 @@ use aimview::convert::{DST_H, DST_W, Matrix};
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_11_1, D3D11_SRV_DIMENSION_BUFFER, D3D11_SRV_DIMENSION_TEXTURE2D, ID3DBlob,
+    D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_11_1, D3D11_SRV_DIMENSION_BUFFER, D3D11_SRV_DIMENSION_TEXTURE2D,
+    ID3DBlob,
 };
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter, IDXGIFactory1};
 use windows::Win32::Media::MediaFoundation::*;
-use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
 use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
 use windows::core::{GUID, Interface, PCSTR, PCWSTR};
 
 use crate::video::VideoInfo;
@@ -77,7 +78,9 @@ pub fn usable(video: &Path, info: &VideoInfo) -> bool {
         let extension = extension.to_string_lossy().to_lowercase();
         extension == "mp4" || extension == "mov"
     });
-    mp4 && info.width == SRC_W as usize && info.height == SRC_H as usize && CHECKED_CODECS.contains(&info.codec.as_str())
+    mp4 && info.width == SRC_W as usize
+        && info.height == SRC_H as usize
+        && CHECKED_CODECS.contains(&info.codec.as_str())
 }
 
 /// The GPU with the most memory of its own (the discrete one where there are two), and its device.
@@ -305,7 +308,9 @@ fn texture_view(
     let desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
         Format: format,
         ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
-        Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 } },
+        Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+            Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
+        },
     };
     let mut view = None;
     unsafe { device.CreateShaderResourceView(texture, Some(&desc), Some(&mut view)) }
@@ -484,10 +489,8 @@ impl GpuFrames {
                 continue;
             }
             unsafe {
-                let buffer: IMFDXGIBuffer = sample
-                    .GetBufferByIndex(0)
-                    .and_then(|buffer| buffer.cast())
-                    .map_err(failed("a decoded frame"))?;
+                let buffer: IMFDXGIBuffer =
+                    sample.GetBufferByIndex(0).and_then(|buffer| buffer.cast()).map_err(failed("a decoded frame"))?;
                 let mut raw: *mut c_void = std::ptr::null_mut();
                 buffer.GetResource(&ID3D11Texture2D::IID, &mut raw).map_err(failed("a decoded frame"))?;
                 let slice = buffer.GetSubresourceIndex().map_err(failed("a decoded frame"))?;
@@ -544,7 +547,9 @@ impl GpuFrames {
         for (staging, out) in copies.into_iter().filter(|(_, out)| !out.is_empty()) {
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             unsafe {
-                self.context.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)).map_err(failed("reading a frame"))?;
+                self.context
+                    .Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+                    .map_err(failed("reading a frame"))?;
                 out.copy_from_slice(std::slice::from_raw_parts(mapped.pData as *const u8, out.len()));
                 self.context.Unmap(staging, 0);
             }

@@ -1,0 +1,4 @@
+# How cargo fmt lays out the Rust code: at the width it is written to (the pre-commit hook, lefthook.yml, formats
+# the Rust files a commit stages).
+max_width = 120
+use_small_heuristics = "Max"

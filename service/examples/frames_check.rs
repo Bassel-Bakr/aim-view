@@ -47,9 +47,8 @@ fn main() -> Result<(), String> {
         gpu_frames.push((rgb, small, plane));
     }
     println!("ffmpeg gave {} frames, the GPU {}", cpu_frames.len(), gpu_frames.len());
-    let differing: Vec<usize> = (0..cpu_frames.len().min(gpu_frames.len()))
-        .filter(|&i| cpu_frames[i] != gpu_frames[i])
-        .collect();
+    let differing: Vec<usize> =
+        (0..cpu_frames.len().min(gpu_frames.len())).filter(|&i| cpu_frames[i] != gpu_frames[i]).collect();
     println!("frames differing: {} (first {:?})", differing.len(), differing.iter().take(5).collect::<Vec<_>>());
     if let Some(&first) = differing.first() {
         let near = first.saturating_sub(SHIFT_REACH)..(first + SHIFT_REACH + 1).min(cpu_frames.len());

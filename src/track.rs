@@ -300,9 +300,7 @@ pub fn spikes(shifts: &[(f64, f64)]) -> Vec<bool> {
     let count = shifts.len();
     let size: Vec<f64> = shifts.iter().map(|shift| hypot(shift.0, shift.1)).collect();
     (0..count)
-        .map(|j| {
-            j >= 1 && j + 1 < count && size[j] > SPIKE_DEG && size[j] > SPIKE_RATIO * size[j - 1].max(size[j + 1])
-        })
+        .map(|j| j >= 1 && j + 1 < count && size[j] > SPIKE_DEG && size[j] > SPIKE_RATIO * size[j - 1].max(size[j + 1]))
         .collect()
 }
 
@@ -404,9 +402,8 @@ fn repaired_shifts(frames: &[Vec<Spot>], found: &FoundShifts) -> Box<[(f64, f64)
 /// scores when it gave them.
 fn track_frame(i: usize, shift: (f64, f64), tracked: &[Tracked]) -> TrackFrame {
     let boxes: Vec<ModelBox> = tracked.iter().filter_map(|target| target.spot.model).collect();
-    let place = |target: &Tracked| {
-        (target.id, round(target.spot.x, PLACE_DECIMALS), round(target.spot.y, PLACE_DECIMALS))
-    };
+    let place =
+        |target: &Tracked| (target.id, round(target.spot.x, PLACE_DECIMALS), round(target.spot.y, PLACE_DECIMALS));
     TrackFrame {
         i,
         shift,

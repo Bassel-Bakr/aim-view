@@ -16,14 +16,14 @@ use crate::geometry::{CX, CY, H, K, W};
 use crate::hud::{HudFinal, HudGame, HudReading};
 use crate::kill_check::{KillEvidence, ruled_out, with_hidden_kills};
 use crate::matching::{
-    appearances, crosshair_spots, match_times, match_video, without_ghosts, Flick, KillSource, MatchInfo, PathPoint,
-    JOIN_GAP_S, JOIN_RADIUS_DEG, SPOTS,
+    Flick, JOIN_GAP_S, JOIN_RADIUS_DEG, KillSource, MatchInfo, PathPoint, SPOTS, appearances, crosshair_spots,
+    match_times, match_video, without_ghosts,
 };
-use crate::measure::{choices, measure, target_radius, Measure};
-use crate::reload::{reload_cost, ReloadCost};
+use crate::measure::{Measure, choices, measure, target_radius};
+use crate::reload::{ReloadCost, reload_cost};
 use crate::scenario::{AmmoRules, Hitbox};
 use crate::stats_file::StatsFile;
-use crate::summary::{judge, summarize, Issue, Mode, Summary};
+use crate::summary::{Issue, Mode, Summary, judge, summarize};
 use crate::track::{REVIEW_VERSION, Tracks};
 use crate::tracking::{CameraReading, FaintCut, RunFacts, TrackSummary, countdown_end, stats_length, track_summary};
 

@@ -1385,8 +1385,7 @@ pub fn check(examples: &[Example]) -> Check {
     for rec in recs {
         let rest: Vec<Example> = examples.iter().filter(|example| example.rec != rec).cloned().collect();
         for example in examples.iter().filter(|example| example.rec == rec) {
-            let guess =
-                if rest.len() < NEAREST_EXAMPLES { None } else { vote(&example.feat, &rest, NEAREST_EXAMPLES) };
+            let guess = if rest.len() < NEAREST_EXAMPLES { None } else { vote(&example.feat, &rest, NEAREST_EXAMPLES) };
             let Some(guess) = guess else {
                 continue; // not sure: the rules decide
             };

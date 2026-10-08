@@ -2,7 +2,7 @@
 //! adds passes, while a field Python has that the core lacks, or a different value, is a difference.
 
 mod common;
-use common::{compare, rename_key, Diff};
+use common::{Diff, compare, rename_key};
 use serde_json::json;
 
 /// The differences `compare` finds between the core's JSON and Python's, from the root path "r".

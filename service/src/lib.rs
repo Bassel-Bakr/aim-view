@@ -29,6 +29,8 @@ pub mod faint;
 #[cfg(feature = "native")]
 pub mod ffmpeg;
 pub mod finder;
+#[cfg(all(windows, feature = "native"))]
+pub mod gpu_frames;
 pub mod labels;
 pub mod library;
 pub mod mouse;
@@ -41,8 +43,6 @@ pub mod sql;
 pub mod store;
 #[cfg(feature = "native")]
 pub mod video;
-#[cfg(all(windows, feature = "native"))]
-pub mod gpu_frames;
 #[cfg(feature = "native")]
 pub mod ytdlp;
 

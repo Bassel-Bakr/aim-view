@@ -815,10 +815,12 @@ fn clock_offset(kill_times: &[f64], video_times: &[f64], fps: f64) -> f64 {
     // from the start finds it
     let nearest = |time: f64| {
         let at = video_times.partition_point(|&video| video < time);
-        [at.wrapping_sub(1), at].into_iter().filter_map(|i| video_times.get(i)).fold(
-            (f64::INFINITY, 0.0),
-            |best, &video| if (time - video).abs() < best.0 { ((time - video).abs(), video) } else { best },
-        )
+        [at.wrapping_sub(1), at]
+            .into_iter()
+            .filter_map(|i| video_times.get(i))
+            .fold((f64::INFINITY, 0.0), |best, &video| {
+                if (time - video).abs() < best.0 { ((time - video).abs(), video) } else { best }
+            })
     };
     let mut best: Option<(usize, f64)> = None;
     for &video in video_times.iter().take(CLOCK_VOTES) {
@@ -1439,8 +1441,13 @@ mod tests {
         let frames = frames
             .into_iter()
             .enumerate()
-            .map(|(i, (shift, targets))| {
-                TrackFrame { i, shift, a: vec![40; targets.len()], t: targets, wh: None, s: None }
+            .map(|(i, (shift, targets))| TrackFrame {
+                i,
+                shift,
+                a: vec![40; targets.len()],
+                t: targets,
+                wh: None,
+                s: None,
             })
             .collect();
         Tracks { fps: 60.0, frames, version: 0 }

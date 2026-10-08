@@ -34,9 +34,8 @@ fn read_lossy(path: &str) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let value = |name: &str| args.iter().position(|arg| arg == name).and_then(|i| args.get(i + 1)).cloned();
-    let number = |name: &str| {
-        value(name).map(|arg| arg.parse::<f64>().unwrap_or_else(|_| panic!("{name} takes a number")))
-    };
+    let number =
+        |name: &str| value(name).map(|arg| arg.parse::<f64>().unwrap_or_else(|_| panic!("{name} takes a number")));
     let Some(log_path) = args.get(1).filter(|arg| !arg.starts_with("--")) else {
         eprintln!("give a log: mouse_read <log.bin> [--stats <csv>] ...");
         std::process::exit(2);
@@ -47,9 +46,8 @@ fn main() {
         reader::read_header(&bytes).map_or(0, |(_, _, start_ns)| utc_offset_at(start_ns as f64 / NS_PER_S));
     let stats = value("--stats");
     let stats_text = stats.as_deref().map(read_lossy);
-    let file_name = |path: &String| {
-        Path::new(path).file_name().map_or(path.clone(), |name| name.to_string_lossy().into_owned())
-    };
+    let file_name =
+        |path: &String| Path::new(path).file_name().map_or(path.clone(), |name| name.to_string_lossy().into_owned());
     let stats_name = stats.as_ref().map(file_name);
     let request = ReadRequest { stats_name: stats_name.clone(), stats_text, options, utc_offset };
     match reader::read(&bytes, &request) {

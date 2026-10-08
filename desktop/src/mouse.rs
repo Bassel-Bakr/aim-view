@@ -840,8 +840,8 @@ fn log_facts_json(path: &Path) -> Value {
     match std::fs::read(path).map_err(|error| error.to_string()).and_then(|bytes| reader::read_log(&bytes)) {
         Ok(log) => {
             let facts = reader::log_facts(&log, utc_offset_at(log.wall0));
-            let throttled = facts.throttled
-                || (facts.events >= MIN_EVENTS_FOR_RATE && facts.busiest_hz <= THROTTLED_BUSIEST_HZ);
+            let throttled =
+                facts.throttled || (facts.events >= MIN_EVENTS_FOR_RATE && facts.busiest_hz <= THROTTLED_BUSIEST_HZ);
             json!({
                 "file": name, "events": facts.events, "duration": facts.duration, "busiest_hz": facts.busiest_hz,
                 "median_interval": facts.median_interval, "throttled": throttled,

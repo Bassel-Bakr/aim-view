@@ -330,7 +330,11 @@ fn in_convex(polygon: &[[f64; 2]], x: f64, y: f64) -> bool {
 fn pill_segment(shape: &Shape) -> [[f64; 2]; 2] {
     let (_, half) = pill_parts(shape);
     let end = |sign: f64| {
-        if shape.frame[2] >= shape.frame[3] { to_crop(shape, sign * half, 0.0) } else { to_crop(shape, 0.0, sign * half) }
+        if shape.frame[2] >= shape.frame[3] {
+            to_crop(shape, sign * half, 0.0)
+        } else {
+            to_crop(shape, 0.0, sign * half)
+        }
     };
     [end(-1.0), end(1.0)]
 }
@@ -406,8 +410,13 @@ pub fn check(scene: &Scene) -> Result<(), String> {
         }
         let solid = shape.solid.iter().flat_map(|solid| [solid.thickness, solid.tip, solid.swing]);
         let points = shape.points.iter().flatten().flatten().copied();
-        let mut numbers =
-            shape.frame.into_iter().chain([shape.angle]).chain(shape.face.into_iter().flatten()).chain(solid).chain(points);
+        let mut numbers = shape
+            .frame
+            .into_iter()
+            .chain([shape.angle])
+            .chain(shape.face.into_iter().flatten())
+            .chain(solid)
+            .chain(points);
         if numbers.any(|value| !value.is_finite() || value.abs() > MAX_VALUE) {
             return Err(format!("the shape {} has a number out of range", shape.id));
         }
@@ -476,10 +485,8 @@ fn mask_box(mask: &[u8], width: usize) -> Option<[f64; 4]> {
 
 /// The box round shapes' outlines, [center x, center y, width, height].
 fn shapes_box(shapes: &[&Shape]) -> [f64; 4] {
-    let [x0, y0, x1, y1] = shapes
-        .iter()
-        .map(|shape| bounds(shape))
-        .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, one| {
+    let [x0, y0, x1, y1] =
+        shapes.iter().map(|shape| bounds(shape)).fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, one| {
             [b[0].min(one[0]), b[1].min(one[1]), b[2].max(one[2]), b[3].max(one[3])]
         });
     [(x0 + x1) / 2.0, (y0 + y1) / 2.0, x1 - x0, y1 - y0]
@@ -601,7 +608,18 @@ mod tests {
 
     /// A flat, unturned shape with this id, kind, frame and depth, and no role or model box.
     fn shape(id: &str, kind: ShapeKind, frame: [f64; 4], depth: i32) -> Shape {
-        Shape { id: id.into(), kind, frame, angle: 0.0, face: None, solid: None, points: None, depth, role: None, model: None }
+        Shape {
+            id: id.into(),
+            kind,
+            frame,
+            angle: 0.0,
+            face: None,
+            solid: None,
+            points: None,
+            depth,
+            role: None,
+            model: None,
+        }
     }
 
     /// Whether the pixel (x, y) of a SIDE x SIDE crop is set in these run lengths.
@@ -673,28 +691,53 @@ mod tests {
             assert_eq!(contains(&facing, x, y), contains(&flat, x, y), "facing the camera, a box is its rectangle");
         }
         let tipped = Shape { solid: solid(90.0, 0.0), ..flat.clone() };
-        assert!(contains(&tipped, 64.0, 64.0 + 14.9) && !contains(&tipped, 64.0, 64.0 + 15.1), "its top: the thickness");
+        assert!(
+            contains(&tipped, 64.0, 64.0 + 14.9) && !contains(&tipped, 64.0, 64.0 + 15.1),
+            "its top: the thickness"
+        );
         let swung = Shape { solid: solid(0.0, 90.0), ..flat.clone() };
         assert!(contains(&swung, 64.0 + 14.9, 64.0) && !contains(&swung, 64.0 + 15.1, 64.0), "its side: the thickness");
         let [x0, y0, x1, y1] = bounds(&Shape { solid: solid(30.0, 30.0), ..flat });
         assert!(x1 - x0 > 20.0 && y1 - y0 > 10.0, "a cube seen from above and the right shows more than its front");
         let pill = shape("p", ShapeKind::Pill, [64.0, 64.0, 10.0, 40.0], 0);
         let end_on = Shape { solid: solid(90.0, 0.0), ..pill.clone() };
-        assert!(contains(&end_on, 64.0 + 4.9, 64.0) && !contains(&end_on, 64.0, 64.0 + 6.0), "a capsule end on: a disc");
+        assert!(
+            contains(&end_on, 64.0 + 4.9, 64.0) && !contains(&end_on, 64.0, 64.0 + 6.0),
+            "a capsule end on: a disc"
+        );
         let leaning = Shape { solid: solid(60.0, 0.0), ..pill };
-        assert!(contains(&leaning, 64.0, 64.0 + 12.4) && !contains(&leaning, 64.0, 64.0 + 13.0), "foreshortened by half");
-        assert!(check(&Scene { shapes: vec![Shape { solid: Some(Solid { thickness: 0.0, tip: 0.0, swing: 0.0 }), ..shape("z", ShapeKind::Box, [1.0, 1.0, 1.0, 1.0], 0) }], ..Scene::default() }).is_err());
+        assert!(
+            contains(&leaning, 64.0, 64.0 + 12.4) && !contains(&leaning, 64.0, 64.0 + 13.0),
+            "foreshortened by half"
+        );
+        assert!(
+            check(&Scene {
+                shapes: vec![Shape {
+                    solid: Some(Solid { thickness: 0.0, tip: 0.0, swing: 0.0 }),
+                    ..shape("z", ShapeKind::Box, [1.0, 1.0, 1.0, 1.0], 0)
+                }],
+                ..Scene::default()
+            })
+            .is_err()
+        );
     }
 
     /// A box's vertices placed by hand decide its outline: 4 moved corners, or a cube's 8 spanning a hexagon.
     #[test]
     fn a_box_with_its_vertices_placed_covers_what_they_span() {
         let flat = shape("b", ShapeKind::Box, [64.0, 64.0, 20.0, 20.0], 0);
-        let leaning = Shape { points: Some(vec![[54.0, 54.0], [74.0, 58.0], [74.0, 70.0], [54.0, 74.0]]), ..flat.clone() };
+        let leaning =
+            Shape { points: Some(vec![[54.0, 54.0], [74.0, 58.0], [74.0, 70.0], [54.0, 74.0]]), ..flat.clone() };
         assert!(contains(&leaning, 73.0, 60.0) && !contains(&leaning, 73.0, 56.0), "the corner moved down on its own");
         assert!(contains(&flat, 73.0, 56.0), "the box it came from covered it");
-        let cube: Vec<[f64; 2]> =
-            (0..8_usize).map(|i| [54.0 + 20.0 * (i & 1) as f64 + 6.0 * (i >> 2) as f64, 54.0 + 20.0 * (i >> 1 & 1) as f64 - 6.0 * (i >> 2) as f64]).collect();
+        let cube: Vec<[f64; 2]> = (0..8_usize)
+            .map(|i| {
+                [
+                    54.0 + 20.0 * (i & 1) as f64 + 6.0 * (i >> 2) as f64,
+                    54.0 + 20.0 * (i >> 1 & 1) as f64 - 6.0 * (i >> 2) as f64,
+                ]
+            })
+            .collect();
         let placed = Shape { points: Some(cube), ..flat };
         assert_eq!(outline(&placed).len(), 6, "eight vertices of a cube seen at an angle span a hexagon");
         assert!(contains(&placed, 78.0, 50.0) && !contains(&placed, 55.0, 50.0));

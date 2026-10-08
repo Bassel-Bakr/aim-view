@@ -531,7 +531,11 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, ["bars.train.a.7.json", "bars.train.a.8.json"]);
-        assert_eq!(library.crop_answers(PAGE, "bars").unwrap()["bars.train.a"]["at"], 8.0, "replaced ones are not read");
+        assert_eq!(
+            library.crop_answers(PAGE, "bars").unwrap()["bars.train.a"]["at"],
+            8.0,
+            "replaced ones are not read"
+        );
         let _ = std::fs::remove_dir_all(folder.parent().unwrap().parent().unwrap());
     }
 

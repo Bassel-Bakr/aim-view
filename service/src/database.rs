@@ -74,7 +74,6 @@ const LIBRARY_ITEMS: [Item<'static>; 8] = [
     Item::CutoffRows,
 ];
 
-
 /// The folder in the cut-off folder that holds the labels' crops.
 const CROPS_FOLDER: &str = "train";
 
@@ -785,7 +784,8 @@ mod tests {
         let data = data_folder("kovaak");
         let database = open(&data);
         let run = StatsRun { score: 100.0, kills: Some(10.0), accuracy: Some(0.5) };
-        let row = |name: &str, size: u64, run: Option<StatsRun>| StatsRow { name: name.into(), size, modified: 7.0, run };
+        let row =
+            |name: &str, size: u64, run: Option<StatsRun>| StatsRow { name: name.into(), size, modified: 7.0, run };
         database.add_stats_files(&[row("a.csv", 10, Some(run.clone())), row("b.csv", 20, None)]).unwrap();
         database.keep_stats_csv("a.csv", b"Score:,100\n").unwrap();
         database.add_stats_files(&[row("a.csv", 10, Some(run.clone()))]).unwrap();
@@ -802,7 +802,8 @@ mod tests {
             reload: None,
             hitbox: None,
         };
-        let scenario = |path: &str, limit: f64| ScenarioRow { path: path.into(), size: 1, modified: 2.0, facts: facts(limit) };
+        let scenario =
+            |path: &str, limit: f64| ScenarioRow { path: path.into(), size: 1, modified: 2.0, facts: facts(limit) };
         database.add_scenarios(&[scenario("workshop/1/x.sce", 30.0), scenario("scenarios/x.sce", 60.0)]).unwrap();
         let paths: Vec<String> = database.scenarios().unwrap().into_iter().map(|row| row.path).collect();
         assert_eq!(paths, ["scenarios/x.sce", "workshop/1/x.sce"]);

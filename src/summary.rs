@@ -11,11 +11,11 @@ use serde::Serialize;
 
 use crate::capped::Capped;
 use crate::matching::{KillSource, MatchInfo};
-use crate::measure::{flick_profile, Choice, FlickProfile, Measure};
+use crate::measure::{Choice, FlickProfile, Measure, flick_profile};
 use crate::optional_fields::OptionalFields;
 use crate::reload::{ReloadCost, Reloads};
 use crate::statistics::{mean, med, median, pstdev};
-use crate::what_if::{click_what_if, ClickWhatIf};
+use crate::what_if::{ClickWhatIf, click_what_if};
 
 /// Each sector of DIRECTIONS spans this many degrees, centered on its direction.
 const SECTOR_DEG: f64 = 45.0;
@@ -809,9 +809,8 @@ fn direction_bias(summary: &Summary) -> Option<Issue> {
         return None;
     }
     // the first of the slowest, as Python's max() picks it
-    let worst = (0..directions.len()).fold(0, |slowest, i| {
-        if directions[i].beyond > directions[slowest].beyond { i } else { slowest }
-    });
+    let worst = (0..directions.len())
+        .fold(0, |slowest, i| if directions[i].beyond > directions[slowest].beyond { i } else { slowest });
     let others_s: Vec<f64> =
         directions.iter().enumerate().filter(|&(i, _)| i != worst).filter_map(|(_, other)| other.beyond).collect();
     let extra_s = directions[worst].beyond? - median(&others_s);

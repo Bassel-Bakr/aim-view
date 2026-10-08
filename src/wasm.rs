@@ -109,10 +109,8 @@ pub unsafe extern "C" fn tracker_push_maps(
 pub unsafe extern "C" fn tracker_push_boxes(tracker: *mut Tracker, boxes: *const f32, count: usize) -> usize {
     let tracker = unsafe { &mut *tracker };
     let flat = unsafe { std::slice::from_raw_parts(boxes, 5 * count) };
-    let raw: Vec<RawBox> = flat
-        .chunks_exact(5)
-        .map(|b| RawBox { cx: b[0], cy: b[1], w: b[2], h: b[3], score: b[4] })
-        .collect();
+    let raw: Vec<RawBox> =
+        flat.chunks_exact(5).map(|b| RawBox { cx: b[0], cy: b[1], w: b[2], h: b[3], score: b[4] }).collect();
     tracker.push_boxes(&raw)
 }
 

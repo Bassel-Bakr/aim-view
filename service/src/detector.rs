@@ -84,8 +84,8 @@ fn on_gpu(model: &Path, batch: usize, provider: ExecutionProviderDispatch) -> or
 
 /// The model on the CPU, on up to MAX_CPU_THREADS threads.
 fn on_cpu(model: &Path, batch: usize) -> ort::Result<Session> {
-    let threads = std::thread::available_parallelism()
-        .map_or(DEFAULT_CPU_THREADS, |threads| threads.get().min(MAX_CPU_THREADS));
+    let threads =
+        std::thread::available_parallelism().map_or(DEFAULT_CPU_THREADS, |threads| threads.get().min(MAX_CPU_THREADS));
     Session::builder()
         .and_then(|builder| builder.with_execution_providers([CPUExecutionProvider::default().build()]))
         .and_then(|builder| builder.with_intra_threads(threads))

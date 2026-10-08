@@ -12,7 +12,7 @@ use crate::capped::Capped;
 use crate::measure::Measure;
 use crate::reload::ReloadCost;
 use crate::statistics::median;
-use crate::summary::{direction_sector, in_distance_group, whole_ms, Mode, Summary, DIRECTIONS, DISTANCES};
+use crate::summary::{DIRECTIONS, DISTANCES, Mode, Summary, direction_sector, in_distance_group, whole_ms};
 
 /// A line that cuts times to their median or to a quantile of them needs this many of them.
 const MIN_TIMES: usize = 4;

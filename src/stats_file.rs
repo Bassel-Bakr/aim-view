@@ -80,9 +80,8 @@ fn micros(text: &str) -> Option<i64> {
     let mut fields = clock.split(':');
     let mut field = |max: i64| -> Option<i64> {
         let digits = fields.next()?;
-        let well_formed = !digits.is_empty()
-            && digits.len() <= MAX_FIELD_DIGITS
-            && digits.bytes().all(|b| b.is_ascii_digit());
+        let well_formed =
+            !digits.is_empty() && digits.len() <= MAX_FIELD_DIGITS && digits.bytes().all(|b| b.is_ascii_digit());
         let value: i64 = well_formed.then(|| digits.parse().ok())??;
         (value <= max).then_some(value)
     };

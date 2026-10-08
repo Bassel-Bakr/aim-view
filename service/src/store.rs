@@ -338,9 +338,7 @@ impl Files {
             | Item::AreaExamples
             | Item::UploadAreas
             | Item::ImportedScenarios
-            | Item::Ids(_) => {
-                self.folders.files.join(name)
-            }
+            | Item::Ids(_) => self.folders.files.join(name),
             Item::Mark(id, _) => recording_folder(&self.folders, id).join(name),
             Item::ReviewPart(id, by, _) => self.review_folder(id, by).join(name),
             Item::CutoffRows | Item::CutoffCrop(_) => self.folders.cutoff.join(name),

@@ -48,8 +48,7 @@ struct Decoded {
 /// av1 at 2560 x 1440, full range: its size takes the converter's 2:1 shortcut.
 const AV1_2560: Decoded = Decoded { name: "2560", key: "av1_2560_pc", width: 2560, height: 1440, full_range: true };
 /// An h264 recording at 1920 x 1080, limited range: its size goes through swscale's full pipeline.
-const H264_1920: Decoded =
-    Decoded { name: "1920", key: "h264_1920_tv", width: 1920, height: 1080, full_range: false };
+const H264_1920: Decoded = Decoded { name: "1920", key: "h264_1920_tv", width: 1920, height: 1080, full_range: false };
 /// The recordings the convert and HUD benches run on.
 const DECODED: [Decoded; 2] = [AV1_2560, H264_1920];
 
