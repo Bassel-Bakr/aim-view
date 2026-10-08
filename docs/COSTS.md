@@ -42,6 +42,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 4.9 s | 5.9 s | 8 | 2026-10-08, 433f4a8+ |
 | build: lint | - | 4.4 s | 4.5 s | 5 | 2026-10-08, 433f4a8+ |
+| label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
 | lint:ui | - | 5.5 s | 4.7 s | 48 | 2026-10-08, ac709f4+ |
 | review-av1 | profile local | 19.2 s | 19.1 s | 2 | 2026-10-08, 433f4a8+ |
