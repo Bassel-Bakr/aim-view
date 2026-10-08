@@ -29,6 +29,10 @@ const CANDIDATES: usize = 40;
 const INDEX_AGE_S: u64 = 60;
 /// The most a stats file's time can be from the recording's, in seconds, to pair them by time.
 const NEAR_S: f64 = 5.0;
+/// The most stats files kept in one pack (database.rs `stats_pack`): one scenario's files compress together about twice
+/// as well as alone; a pack of 64 (about 350 KB of text) still unpacks in a few milliseconds to read one of them.
+#[cfg(any(test, not(feature = "native")))]
+const PACK_FILES: usize = 64;
 /// The end of a stats file read for its "Key:,value" lines, in bytes (they take about 1.5 kB).
 const FOOTER_BYTES: u64 = 4096;
 /// Where a picked stats file is kept (`Pick`'s source): KovaaK's stats folder.
@@ -322,31 +326,6 @@ impl Library {
         Ok(serde_json::to_value(past_runs).map_err(|error| error.to_string())?)
     }
 
-    /// The runs the user's recordings hold, by scenario: each one's end (seconds, see `stamp_seconds`), from their
-    /// names alone (the quick list).
-    #[cfg(not(feature = "native"))]
-    pub(super) fn recorded_runs(&self) -> HashMap<String, Vec<f64>> {
-        let mut out: HashMap<String, Vec<f64>> = HashMap::new();
-        if let Ok(Value::Array(rows)) = self.recordings(true) {
-            for row in rows {
-                let (Some(scenario), Some(stamp)) = (row["scenario"].as_str(), row["stamp"].as_str()) else { continue };
-                if let Some(end_s) = stamp_seconds(stamp) {
-                    out.entry(scenario.to_string()).or_default().push(end_s);
-                }
-            }
-        }
-        out
-    }
-
-    /// Whether one of the runs `runs` (see `recorded_runs`) pairs with the stats file `name` by scenario and time
-    /// (`stats_for`'s rule).
-    #[cfg(not(feature = "native"))]
-    pub(super) fn pairs_with(runs: &HashMap<String, Vec<f64>>, name: &str) -> bool {
-        let Some((scenario, stamp)) = parse_stats_name(name) else { return false };
-        let Some(end_s) = stamp_seconds(&stamp) else { return false };
-        runs.get(&scenario).is_some_and(|ends| ends.iter().any(|end| (end - end_s).abs() <= NEAR_S))
-    }
-
     /// Whether a stats file is there: one of KovaaK's the browser keeps, or a file.
     fn stats_exists(&self, path: &Path) -> bool {
         match self.kept_stats_name(path) {
@@ -499,6 +478,26 @@ impl Library {
 }
 
 /// Reading past runs.
+/// Stats files' texts, (name, text) each, in packs for the store: each scenario's files together, in name order (by
+/// time), at most `PACK_FILES` a pack. A name that does not read as a stats file's is a scenario of its own.
+#[cfg(any(test, not(feature = "native")))]
+pub(super) fn stats_packs<'a>(mut files: Vec<(&'a str, &'a [u8])>) -> Vec<Vec<(&'a str, &'a [u8])>> {
+    let scenario = |name: &str| parse_stats_name(name).map_or_else(|| name.to_string(), |(scenario, _)| scenario);
+    files.sort_by_cached_key(|(name, _)| (scenario(name), (*name).to_string()));
+    let mut packs: Vec<Vec<(&str, &[u8])>> = Vec::new();
+    let mut last: Option<String> = None;
+    for file in files {
+        let this = scenario(file.0);
+        let same = last.as_ref() == Some(&this);
+        match packs.last_mut() {
+            Some(pack) if same && pack.len() < PACK_FILES => pack.push(file),
+            _ => packs.push(vec![file]),
+        }
+        last = Some(this);
+    }
+    packs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,5 +528,23 @@ mod tests {
             assert_eq!(serde_json::to_value(from_bytes).unwrap(), serde_json::to_value(past_run(&path, "s")).unwrap());
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Packs hold one scenario's files each, in name order, at most PACK_FILES a pack; a name that is not a stats
+    /// file's is a pack of its own.
+    #[test]
+    fn packs_keep_each_scenario_apart() {
+        let name = |scenario: &str, minute: usize| {
+            format!("{scenario} - Challenge - 2026.10.07-{:02}.{:02}.00 Stats.csv", 5 + minute / 60, minute % 60)
+        };
+        let names: Vec<String> =
+            (0..70).map(|minute| name("B", minute)).chain([name("A", 1), "odd.csv".into()]).collect();
+        let files: Vec<(&str, &[u8])> = names.iter().rev().map(|name| (name.as_str(), &b"x"[..])).collect();
+        let packs = stats_packs(files);
+        let sizes: Vec<usize> = packs.iter().map(Vec::len).collect();
+        assert_eq!(sizes, [1, PACK_FILES, 70 - PACK_FILES, 1], "A, then B in two packs, then the odd name");
+        assert_eq!(packs[0][0].0, name("A", 1));
+        assert_eq!(packs[1][0].0, name("B", 0), "in name order: by time");
+        assert_eq!(packs[3][0].0, "odd.csv");
     }
 }

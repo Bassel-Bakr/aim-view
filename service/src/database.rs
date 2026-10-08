@@ -24,8 +24,9 @@ use crate::store::{
 pub const DATABASE_FILE: &str = "aimview.sqlite3";
 
 /// The layout of the tables below, kept in the database's `user_version`; 0 is a new database. 1 had the first four
-/// tables in the plural (marks, reviews, cutoff_crops) and no KovaaK tables.
-const SCHEMA_VERSION: i64 = 2;
+/// tables in the plural (marks, reviews, cutoff_crops) and no KovaaK tables; 2 kept a stats file's text only alone (its
+/// `csv`), not in packs.
+const SCHEMA_VERSION: i64 = 3;
 
 /// The tables of what the library keeps. `library`: the library's own items by their file names (settings, area
 /// kinds and examples, the lists, the cut-off's rows). `mark`: each recording's marks by its folder name (its slug)
@@ -42,12 +43,15 @@ CREATE TABLE cutoff_crop (file TEXT PRIMARY KEY, bytes BLOB NOT NULL, changed RE
 ";
 
 /// The tables of KovaaK's files in the browser build (store.rs: `Kovaak`; empty natively, which reads the folders).
-/// `stats_file`: each stats file's size and time of change, its run (no score: none), and its whole text
-/// gzip-compressed only once a recording used it. `scenario`: each scenario file's facts as JSON, by its path in
-/// /kovaak (scenarios/... or workshop/...).
+/// `stats_file`: each stats file's size and time of change, its run (no score: none), and its whole text: alone,
+/// gzip-compressed (`csv`), or in a pack (`pack`, from `start`, `length` bytes long). `stats_pack`: stats files of one
+/// scenario laid end to end and gzip-compressed together, which compresses them about twice as well as alone (each
+/// file reuses the ones before it). `scenario`: each scenario file's facts as JSON, by its path in /kovaak
+/// (scenarios/... or workshop/...).
 const KOVAAK_TABLES: &str = "
 CREATE TABLE stats_file (name TEXT PRIMARY KEY, size INTEGER NOT NULL, modified REAL NOT NULL, score REAL,
-  kills REAL, accuracy REAL, csv BLOB);
+  kills REAL, accuracy REAL, csv BLOB, pack INTEGER, start INTEGER, length INTEGER);
+CREATE TABLE stats_pack (id INTEGER PRIMARY KEY, gz BLOB NOT NULL);
 CREATE TABLE scenario (path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified REAL NOT NULL, facts TEXT NOT NULL);
 ";
 
@@ -57,6 +61,18 @@ ALTER TABLE marks RENAME TO mark;
 ALTER TABLE reviews RENAME TO review;
 ALTER TABLE cutoff_crops RENAME TO cutoff_crop;
 ";
+
+/// Layout 2 to 3: the stats files' packs. A text kept alone stays in its `csv`.
+const FROM_LAYOUT_2: &str = "
+ALTER TABLE stats_file ADD COLUMN pack INTEGER;
+ALTER TABLE stats_file ADD COLUMN start INTEGER;
+ALTER TABLE stats_file ADD COLUMN length INTEGER;
+CREATE TABLE stats_pack (id INTEGER PRIMARY KEY, gz BLOB NOT NULL);
+";
+
+/// The packs no stats file points to any more (every file in them changed since), deleted.
+const UNUSED_PACKS: &str =
+    "DELETE FROM stats_pack WHERE id NOT IN (SELECT pack FROM stats_file WHERE pack IS NOT NULL)";
 
 /// The model column of the old review (python/retired/server.py's, kept before reviews were kept per model): no
 /// model's folder can have an empty name.
@@ -204,6 +220,7 @@ impl Database {
                 import(sql, folders)
             }),
             1 => in_transaction(&mut *sql, |sql| sql.batch(&format!("{FROM_LAYOUT_1}{KOVAAK_TABLES}"))),
+            2 => in_transaction(&mut *sql, |sql| sql.batch(FROM_LAYOUT_2)),
             SCHEMA_VERSION => Ok(()),
             _ => Err(io::Error::other(format!("{place}: made by a newer Aim View (layout {version})"))),
         };
@@ -255,6 +272,20 @@ impl Database {
         let values = [text(Mark::FoundAreas.file_name()), text(Mark::SavedAreas.file_name())];
         self.sql().query(statement, &values)
     }
+}
+
+/// Inserts a pack (`gz`) and points each of its files' rows at its part: (name, start, length), in bytes of the
+/// unpacked pack. Within the caller's transaction.
+fn keep_pack(sql: &mut dyn Sql, gz: Vec<u8>, parts: &[(&str, usize, usize)]) -> io::Result<()> {
+    sql.execute("INSERT INTO stats_pack (gz) VALUES (?1)", &[SqlValue::Blob(gz)])?;
+    let id = sql.query("SELECT last_insert_rowid()", &[])?.into_iter().next().and_then(|row| row.into_iter().next());
+    let id = id.ok_or_else(|| io::Error::other("the new pack has no id"))?;
+    let place = |value: usize| SqlValue::Integer(i64::try_from(value).unwrap_or(i64::MAX));
+    let statement = "UPDATE stats_file SET csv = NULL, pack = ?1, start = ?2, length = ?3 WHERE name = ?4";
+    for (name, start, length) in parts {
+        sql.execute(statement, &[id.clone(), place(*start), place(*length), text(name)])?;
+    }
+    Ok(())
 }
 
 /// Runs `work` in one transaction that ends by setting the layout to this version; nothing is kept when it fails.
@@ -545,11 +576,13 @@ impl Kovaak for Database {
             .collect())
     }
 
-    /// An upsert per row in one transaction; the kept text stays only when the size and time are the same.
+    /// An upsert per row in one transaction; the kept text (alone or in a pack) stays only when the size and time are
+    /// the same. Then the packs no file points to any more are deleted.
     fn add_stats_files(&self, rows: &[StatsRow]) -> io::Result<()> {
         let statement = "INSERT INTO stats_file (name, size, modified, score, kills, accuracy) \
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (name) DO UPDATE SET \
                          csv = CASE WHEN size = excluded.size AND modified = excluded.modified THEN csv END, \
+                         pack = CASE WHEN size = excluded.size AND modified = excluded.modified THEN pack END, \
                          size = excluded.size, modified = excluded.modified, score = excluded.score, \
                          kills = excluded.kills, accuracy = excluded.accuracy";
         self.insert_all(
@@ -565,16 +598,67 @@ impl Kovaak for Database {
                     real(run.and_then(|run| run.accuracy)),
                 ]
             }),
-        )
+        )?;
+        self.sql().batch(UNUSED_PACKS)
     }
 
-    /// The kept text, decompressed.
+    /// The kept text, decompressed: the file's own, else its part of its pack.
     fn stats_csv(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
-        let rows = self.sql().query("SELECT csv FROM stats_file WHERE name = ?1", &[text(name)])?;
-        match rows.into_iter().next().and_then(|row| row.into_iter().next()) {
-            Some(SqlValue::Blob(bytes)) => decompress(&bytes).map(Some),
-            _ => Ok(None),
+        let mut sql = self.sql();
+        let rows = sql.query("SELECT csv, pack, start, length FROM stats_file WHERE name = ?1", &[text(name)])?;
+        let Some(row) = rows.into_iter().next() else { return Ok(None) };
+        if let SqlValue::Blob(bytes) = &row[0] {
+            return decompress(bytes).map(Some);
         }
+        let (SqlValue::Integer(pack), SqlValue::Integer(start), SqlValue::Integer(length)) =
+            (&row[1], &row[2], &row[3])
+        else {
+            return Ok(None);
+        };
+        let packs = sql.query("SELECT gz FROM stats_pack WHERE id = ?1", &[SqlValue::Integer(*pack)])?;
+        let Some(gz) = packs.into_iter().next().and_then(|row| row.into_iter().next()) else { return Ok(None) };
+        let unpacked = decompress(&bytes_of(gz))?;
+        let range = usize::try_from(*start).ok().zip(usize::try_from(*length).ok());
+        let part = range.and_then(|(start, length)| unpacked.get(start..start.checked_add(length)?));
+        let part = part.ok_or_else(|| io::Error::other(format!("{}: {name} is past its pack's end", self.place)))?;
+        Ok(Some(part.to_vec()))
+    }
+
+    /// The files laid end to end, gzip-compressed into one new pack, and each file's row pointed at its part (its own
+    /// text dropped), in one transaction; a file with no row is left out.
+    fn keep_stats_pack(&self, files: &[(&str, &[u8])]) -> io::Result<()> {
+        let mut joined = Vec::with_capacity(files.iter().map(|(_, bytes)| bytes.len()).sum());
+        let mut parts = Vec::with_capacity(files.len());
+        for (name, bytes) in files {
+            parts.push((*name, joined.len(), bytes.len()));
+            joined.extend_from_slice(bytes);
+        }
+        let gz = compress(&joined)?;
+        let mut sql = self.sql();
+        sql.batch("BEGIN IMMEDIATE")?;
+        let done = keep_pack(&mut **sql, gz, &parts);
+        match done {
+            Ok(()) => sql.batch(&format!("COMMIT; {UNUSED_PACKS}")),
+            Err(error) => {
+                let _ = sql.batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    /// The `stats_file` rows whose text is kept, alone or in a pack, their run left out.
+    fn stats_texts_kept(&self) -> io::Result<Vec<StatsRow>> {
+        let statement = "SELECT name, size, modified FROM stats_file WHERE csv IS NOT NULL OR pack IS NOT NULL";
+        let rows = self.sql().query(statement, &[])?;
+        Ok(rows
+            .into_iter()
+            .map(|row| StatsRow {
+                name: text_of(row[0].clone()),
+                size: count_of(&row[1]),
+                modified: real_of(&row[2]).unwrap_or(0.0),
+                run: None,
+            })
+            .collect())
     }
 
     /// The text compressed into the file's row.
@@ -587,13 +671,14 @@ impl Kovaak for Database {
     fn kovaak_size(&self) -> io::Result<(usize, usize, u64)> {
         let count = |table: &str| usize::try_from(self.sum(&format!("SELECT COUNT(*) FROM {table}"), &[])).unwrap_or(0);
         let bytes = self.sum("SELECT SUM(length(name) + IFNULL(length(csv), 0) + 48) FROM stats_file", &[])
+            + self.sum("SELECT SUM(length(gz) + 8) FROM stats_pack", &[])
             + self.sum("SELECT SUM(length(path) + length(facts) + 16) FROM scenario", &[]);
         Ok((count("stats_file"), count("scenario"), bytes))
     }
 
-    /// Deletes both tables' rows.
+    /// Deletes the three tables' rows.
     fn clear_kovaak(&self) -> io::Result<()> {
-        self.sql().batch("DELETE FROM stats_file; DELETE FROM scenario")
+        self.sql().batch("DELETE FROM stats_file; DELETE FROM stats_pack; DELETE FROM scenario")
     }
 
     /// The `scenario` table, the user's scenarios first; a row whose facts do not read is left out.
@@ -810,4 +895,65 @@ mod tests {
         drop(database);
         let _ = std::fs::remove_dir_all(&data);
     }
+
+    /// Stats files' texts in a pack read back whole, each its own part; a changed file loses its part, a pack no file
+    /// points to goes, and the files listed as kept are the ones with a text (alone or packed).
+    #[test]
+    fn packs_stats_texts() {
+        let data = data_folder("packs");
+        let database = open(&data);
+        let row = |name: &str, size: u64| StatsRow { name: name.into(), size, modified: 7.0, run: None };
+        database.add_stats_files(&[row("a.csv", 3), row("b.csv", 5), row("c.csv", 4), row("d.csv", 1)]).unwrap();
+        database.keep_stats_pack(&[("a.csv", b"aaa"), ("b.csv", b"bbbbb"), ("c.csv", b"cccc")]).unwrap();
+        database.keep_stats_csv("d.csv", b"d").unwrap();
+        for (name, text) in [("a.csv", &b"aaa"[..]), ("b.csv", b"bbbbb"), ("c.csv", b"cccc"), ("d.csv", b"d")] {
+            assert_eq!(database.stats_csv(name).unwrap().unwrap(), text, "{name}");
+        }
+        let kept = |database: &Database| {
+            let mut names: Vec<String> = database.stats_texts_kept().unwrap().into_iter().map(|row| row.name).collect();
+            names.sort();
+            names
+        };
+        assert_eq!(kept(&database), ["a.csv", "b.csv", "c.csv", "d.csv"]);
+        // b changed: its part goes, the others stay; then a and c change too, and the pack goes
+        database.add_stats_files(&[row("b.csv", 6)]).unwrap();
+        assert!(database.stats_csv("b.csv").unwrap().is_none());
+        assert_eq!(database.stats_csv("c.csv").unwrap().unwrap(), b"cccc");
+        assert_eq!(kept(&database), ["a.csv", "c.csv", "d.csv"]);
+        database.add_stats_files(&[row("a.csv", 4), row("c.csv", 5)]).unwrap();
+        assert_eq!(database.sum("SELECT COUNT(*) FROM stats_pack", &[]), 0, "a pack no file points to is deleted");
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// A database at layout 2 (stats texts kept alone) is brought to layout 3: a text kept before still reads, and
+    /// packs can be kept.
+    #[test]
+    fn upgrades_layout_2() {
+        let data = data_folder("layout2");
+        let path = data.join(DATABASE_FILE);
+        std::fs::create_dir_all(&data).unwrap();
+        let mut sql = crate::sql::Sqlite::open(&path).unwrap();
+        sql.batch(&format!("{LIBRARY_TABLES}{OLD_KOVAAK_TABLES}PRAGMA user_version = 2;")).unwrap();
+        sql.execute(
+            "INSERT INTO stats_file (name, size, modified, csv) VALUES ('a.csv', 1, 7.0, ?1)",
+            &[SqlValue::Blob(compress(b"a").unwrap())],
+        )
+        .unwrap();
+        drop(sql);
+        let database = open(&data);
+        assert_eq!(database.stats_csv("a.csv").unwrap().unwrap(), b"a");
+        database.add_stats_files(&[StatsRow { name: "b.csv".into(), size: 1, modified: 7.0, run: None }]).unwrap();
+        database.keep_stats_pack(&[("b.csv", b"b")]).unwrap();
+        assert_eq!(database.stats_csv("b.csv").unwrap().unwrap(), b"b");
+        let version = database.sum("PRAGMA user_version", &[]);
+        assert_eq!(version, u64::try_from(SCHEMA_VERSION).unwrap());
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// Layout 2's KovaaK tables, as version 2 made them.
+    const OLD_KOVAAK_TABLES: &str = "
+CREATE TABLE stats_file (name TEXT PRIMARY KEY, size INTEGER NOT NULL, modified REAL NOT NULL, score REAL,
+  kills REAL, accuracy REAL, csv BLOB);
+CREATE TABLE scenario (path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified REAL NOT NULL, facts TEXT NOT NULL);
+";
 }

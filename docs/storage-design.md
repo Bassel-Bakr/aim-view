@@ -30,11 +30,13 @@ The Python layout (`test_out/`, the training workbench) stays on files: Python's
 `area_examples.jsonl`, crop-check folders and `checked.jsonl`. So the library gets one storage interface with two
 backends: files (today's code, for the Python layout) and SQLite (the app's layout).
 
-## Schema, version 2
+## Schema, version 3
 
-`PRAGMA user_version = 2`. Times are seconds since 1970 (REAL). Table names are singular. The first four tables keep
+`PRAGMA user_version = 3`. Times are seconds since 1970 (REAL). Table names are singular. The first four tables keep
 what store.rs's `Item`s name, one row each, so the database gives back the bytes `Files` would
-(service/src/database.rs). Version 1 had them in the plural and no KovaaK tables; opening one renames them and adds
+(service/src/database.rs). Version 2 kept a stats file's text only alone, never in packs; opening one adds the pack
+columns and `stats_pack`, and its texts kept alone stay where they are. Version 1 had the first tables in the plural
+and no KovaaK tables; opening one renames them and adds
 those.
 
 | Table | Columns | Holds |
@@ -43,7 +45,8 @@ those.
 | `mark` | `recording TEXT, mark TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, mark)` | each recording's marks by its folder name (slug) and the mark's file name: run.json, stats.json, faint.json, exclude.json, areas.json, areas_maps.npz |
 | `review` | `recording TEXT, model TEXT, part TEXT, bytes BLOB, changed REAL, PRIMARY KEY (recording, model, part)` | each review's parts (tracks, readings, hud, kills), gzip-compressed; `model` is "" for the old review |
 | `cutoff_crop` | `file TEXT PRIMARY KEY, bytes BLOB, changed REAL` | the cut-off labels' crops by their file (train/<name>.npz) |
-| `stats_file` | `name TEXT PRIMARY KEY, size INTEGER, modified REAL, score REAL, kills REAL, accuracy REAL, csv BLOB` | browser mode only: each of KovaaK's stats files once read, its run (no score: null), and its whole text gzip-compressed only when one of the user's recordings pairs with it |
+| `stats_file` | `name TEXT PRIMARY KEY, size INTEGER, modified REAL, score REAL, kills REAL, accuracy REAL, csv BLOB, pack INTEGER, start INTEGER, length INTEGER` | browser mode only: each of KovaaK's stats files once read, its run (no score: null), and its whole text: in a pack (`pack`, from `start`, `length` bytes long), or gzip-compressed alone (`csv`: one read from the folder when a report needed it, or kept before version 3) |
+| `stats_pack` | `id INTEGER PRIMARY KEY, gz BLOB` | browser mode only: up to 64 stats files of one scenario laid end to end and gzip-compressed together; a pack no file points to any more is deleted |
 | `scenario` | `path TEXT PRIMARY KEY, size INTEGER, modified REAL, facts TEXT` | browser mode only: each scenario file's facts (kind, time limit, targets, ammo, hitbox) as JSON, by its path in /kovaak |
 
 Text Python keeps as text is kept with Windows' line ends, as `Files` writes it. Models and recordings are listed in a
@@ -52,9 +55,14 @@ size and scenario; mouse logs) come with the steps that need them.
 
 KovaaK's files in browser mode are read once, not copied (2026-10-07): the page sends each file new or changed since
 it last sent it (kovaak-batch.ts, POST /api/kovaak_files in batches of up to 1,000 files or 8 MB); the service keeps
-its run or facts in one transaction a batch, and the whole text of a stats file a recording pairs with (by its name's
-scenario and time, within 5 s). A stats file picked by hand is kept when a visit that chose the folder reads it;
-otherwise its report asks for the folder again. The packs the earlier version copied (72,083 files, 401 MB) are sent
+its run or facts in one transaction a batch, and since 2026-10-08 every stats file's whole text, in packs of one
+scenario's files (service/src/library/stats.rs `stats_packs`). Each file's text compressed alone, the user's 72,127 stats
+files (401 MB of text) would take about 93 MB; packed by scenario they take about 45 MB, as one scenario's files share
+most of their text and gzip reaches back 32 KB (about six files). Before, only the text of a stats file a recording
+paired with when the folder was chosen was kept, so a recording added later lost its report after a reload until the
+folder was chosen again ("... is not kept in this browser"); the run page now says so instead of staying blank.
+/api/kovaak_files lists only the stats files whose text is kept, so choosing the folder once more sends the text of
+those kept before without it. The packs the earlier version copied (72,083 files, 401 MB) are sent
 once in the background (kovaak-move.ts) and removed. Natively the service reads KovaaK's folders as before.
 
 Reviews are one row per part, not a row per frame: 6,000 frames of several boxes each would make millions of rows,

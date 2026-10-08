@@ -213,11 +213,12 @@ impl Library {
     }
 
     /// GET /api/kovaak_files: what the browser keeps of KovaaK's files, for the page to send only the new or changed
-    /// ones: {stats: [[name, size, time]], scenarios: [[path, size, time]]} (times in seconds since 1970).
+    /// ones: {stats: [[name, size, time]], scenarios: [[path, size, time]]} (times in seconds since 1970). The stats
+    /// files are those whose whole text is kept, so the page sends again one kept before without it.
     pub fn kovaak_files(&self) -> Answer<Value> {
         let kovaak =
             self.store().kovaak().ok_or_else(|| Failure::from("KovaaK's files are not kept here".to_string()))?;
-        let stats = kovaak.stats_files().map_err(|error| error.to_string())?;
+        let stats = kovaak.stats_texts_kept().map_err(|error| error.to_string())?;
         let scenarios = kovaak.scenarios().map_err(|error| error.to_string())?;
         Ok(json!({
             "stats": stats.iter().map(|row| json!([row.name, row.size, row.modified])).collect::<Vec<_>>(),
@@ -227,29 +228,26 @@ impl Library {
 
     /// POST /api/kovaak_files: a batch of KovaaK's files the user chose, read once (batch.rs): each stats file's
     /// run and each scenario file's facts are kept, each kind in one transaction, and both are read again when next
-    /// needed; the whole text is kept too of each stats file one of the user's recordings pairs with (by name and
-    /// time), so its report needs the folder no more. Other paths are left out. Answers how many of each it kept.
+    /// needed; each stats file's whole text is kept too, in packs of one scenario's files (stats.rs `stats_packs`), so
+    /// no report needs the folder again. Other paths are left out. Answers how many of each it kept.
     pub fn add_kovaak_files(&self, body: &[u8]) -> Answer<Value> {
         let kovaak =
             self.store().kovaak().ok_or_else(|| Failure::from("KovaaK's files are not kept here".to_string()))?;
         let (mut stats, mut scenarios, mut texts) = (Vec::new(), Vec::new(), Vec::new());
-        let recorded = self.recorded_runs();
         for file in crate::batch::read(body)? {
             let size = file.bytes.len() as u64;
             if let Some(name) = file.path.strip_prefix(STATS_PREFIX) {
                 let run = super::stats::run_of_file(file.bytes);
                 stats.push(StatsRow { name: name.to_string(), size, modified: file.modified, run });
-                if Library::pairs_with(&recorded, name) {
-                    texts.push((name, file.bytes));
-                }
+                texts.push((name, file.bytes));
             } else if SCENARIO_PREFIXES.iter().any(|prefix| file.path.starts_with(prefix)) {
                 let facts = aimview::scenario::facts(&aimview::scenario::text_of(file.bytes));
                 scenarios.push(ScenarioRow { path: file.path.to_string(), size, modified: file.modified, facts });
             }
         }
         kovaak.add_stats_files(&stats).map_err(|error| error.to_string())?;
-        for (name, text) in texts {
-            kovaak.keep_stats_csv(name, text).map_err(|error| error.to_string())?;
+        for pack in super::stats::stats_packs(texts) {
+            kovaak.keep_stats_pack(&pack).map_err(|error| error.to_string())?;
         }
         kovaak.add_scenarios(&scenarios).map_err(|error| error.to_string())?;
         self.kovaak_changed()?;

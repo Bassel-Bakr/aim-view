@@ -276,8 +276,14 @@ pub trait Kovaak {
     fn add_stats_files(&self, rows: &[StatsRow]) -> io::Result<()>;
     /// A stats file's whole text when it is kept.
     fn stats_csv(&self, name: &str) -> io::Result<Option<Vec<u8>>>;
-    /// Keeps a stats file's whole text (once a recording used it), when the file is kept.
+    /// Keeps a stats file's whole text alone (one read from the folder when its report needed it), when the file is
+    /// kept.
     fn keep_stats_csv(&self, name: &str, csv: &[u8]) -> io::Result<()>;
+    /// Keeps the whole texts of stats files that are kept, together in one pack: (name, text) each, best of one
+    /// scenario (its files compress together far better than alone).
+    fn keep_stats_pack(&self, files: &[(&str, &[u8])]) -> io::Result<()>;
+    /// The stats files whose whole text is kept (their runs left out): the page sends the others again.
+    fn stats_texts_kept(&self) -> io::Result<Vec<StatsRow>>;
     /// What is kept of KovaaK's files: how many stats files and scenario files, and their bytes.
     fn kovaak_size(&self) -> io::Result<(usize, usize, u64)>;
     /// Forgets every stats file and scenario file kept: the user chooses the folders again.
