@@ -355,6 +355,10 @@ impl CropMaker<'_> {
             .filter(|&(_, point)| self.in_focus(left_out, point))
             .map(|(target_box, _)| target_box)
             .collect();
+        // only malformed tracks (fewer sizes than points) leave none: valid ones draw the same numbers as before
+        if focus_boxes.is_empty() {
+            return None;
+        }
         let target = focus_boxes[self.random.choice(focus_boxes.len())];
         let left = crop_corner(target[0], W, self.random.randint(-CROP_JITTER_PX, CROP_JITTER_PX));
         let top = crop_corner(target[1], H, self.random.randint(-CROP_JITTER_PX, CROP_JITTER_PX));
@@ -476,6 +480,27 @@ mod tests {
     fn the_stem_is_pythons() {
         let video = "1wall 6targets extra small/1wall 6targets extra small - 889.26 - 2026.10.01-16.17.48.mp4";
         assert_eq!(crop_stem(video), PYTHON_STEM);
+    }
+
+    /// Malformed tracks, a frame with fewer sizes than points, give fewer crops instead of a panic.
+    #[test]
+    fn malformed_tracks_make_no_crop() {
+        let mut frames: Vec<TrackFrame> =
+            (0..10).map(|i| frame(i, vec![(1, 5.0, 0.0), (2, 3.0, 1.0)], vec![0.9, 0.4])).collect();
+        for frame in &mut frames {
+            frame.wh = Some(vec![(1.0, 1.0)]);
+        }
+        let request = CutoffRequest {
+            frames,
+            video: "a.mp4".into(),
+            start: Some(0),
+            end: Some(9),
+            exclude: Some(Vec::new()),
+            offset: 0.3,
+            near: 0.0,
+        };
+        // the weak track's side has no box to crop round: none from it, and no panic
+        assert!(cutoff_crops(&request).iter().all(|crop| crop.row.boxes.len() <= 1));
     }
 
     /// The stem Python gives for the recording in `the_stem_is_pythons`.

@@ -30,6 +30,8 @@ const MINUTES_PER_HOUR: i64 = 60;
 const SECONDS_PER_MINUTE: i64 = 60;
 /// Microseconds in a second: the times' unit before they become seconds.
 const MICROS_PER_SECOND: i64 = 1_000_000;
+/// Microseconds in a day: a kill's time of day before the start's is on the next day (a run across midnight).
+const MICROS_PER_DAY: i64 = 86_400 * MICROS_PER_SECOND;
 
 /// A stats file: its "Key:,value" lines (a later line wins), and the kill table's rows as cells of text.
 pub struct StatsFile {
@@ -138,8 +140,9 @@ impl StatsFile {
         self.rows.iter().map(|row| number(row, HITS_COLUMN)).collect()
     }
 
-    /// Each kill's time since the challenge started, and its shots (review.py: `match`). An error when the file has no
-    /// Challenge Start time or a row lacks its time or shots.
+    /// Each kill's time since the challenge started, and its shots (review.py: `match`; a run across midnight counts
+    /// on, where review.py gave negative times). An error when the file has no Challenge Start time or a row lacks its
+    /// time or shots.
     pub fn kills(&self) -> Result<StatsKills, String> {
         let start = self.meta.get(CHALLENGE_START).ok_or("no Challenge Start in the stats file")?;
         let start_micros = micros(start).ok_or_else(|| format!("Challenge Start is not a time: {start}"))?;
@@ -151,7 +154,8 @@ impl StatsFile {
                     .get(TIME_COLUMN)
                     .and_then(|cell| micros(cell))
                     .ok_or_else(|| format!("a kill row without a time: {row:?}"))?;
-                Ok((kill_micros - start_micros) as f64 / MICROS_PER_SECOND as f64)
+                // a run is far shorter than a day: a kill before the start in the day is after midnight
+                Ok((kill_micros - start_micros).rem_euclid(MICROS_PER_DAY) as f64 / MICROS_PER_SECOND as f64)
             })
             .collect::<Result<_, String>>()?;
         Ok(StatsKills { times, shots: self.shots()? })
@@ -181,5 +185,13 @@ mod tests {
         assert_eq!(kills.times, vec![1.5, 2.25]);
         assert_eq!(kills.shots, vec![1, 2]);
         assert_eq!(file.hits(), Some(vec![1, 1]));
+    }
+
+    /// A run that started before midnight counts its kills after it on: 23:59:59 to 00:00:01 is 2 s, not minus a day.
+    #[test]
+    fn a_run_across_midnight_counts_on() {
+        let text = "Kill #,Timestamp,Bot,Weapon,TTK,Shots,Hits\n1,23:59:59.5,b,w,0.1s,1,1\n\
+                    2,00:00:01.0,b,w,0.1s,1,1\n\nChallenge Start:,23:59:59.000\n";
+        assert_eq!(StatsFile::parse(text).kills().unwrap().times, vec![0.5, 2.0]);
     }
 }
