@@ -47,7 +47,7 @@
   }
 
   .list {
-    @apply -mx-2 overflow-y-auto px-2;
+    @apply -mx-2 overflow-x-hidden overflow-y-auto px-2;
 
     outline-offset: calc(-1 * #{t.$focus-offset});
   }
@@ -68,8 +68,9 @@
     @apply font-display text-lg font-strong;
   }
 
+  // One line (the rows are all one height): what does not fit wraps below it and is hidden whole, never cut
   .meta {
-    @apply mt-1 flex items-center gap-x-4 overflow-hidden text-sm whitespace-nowrap text-muted;
+    @apply mt-1 flex h-lh flex-wrap items-center gap-x-4 overflow-hidden text-sm whitespace-nowrap text-muted;
   }
 
   .note {

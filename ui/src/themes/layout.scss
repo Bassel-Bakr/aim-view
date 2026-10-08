@@ -2,7 +2,7 @@
 
 @mixin tokens {
   --top-bar-height: 44px;
-  --sidebar-width: 288px;
+  --sidebar-width: 320px;
   --empty-width: 560px;
   --empty-offset: 12vh; // viewport-height-ok: a margin, not a height
   // At this width and below (a phone) the app takes its narrow layout: the recordings list is a drawer over the page.

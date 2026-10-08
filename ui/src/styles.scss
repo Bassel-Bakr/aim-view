@@ -39,6 +39,12 @@
   }
 }
 
+// CDK's virtual scroll (the recordings list): its rows' wrapper is as wide as its widest row, which would scroll a
+// vertical list sideways; a vertical list's rows take its width instead
+.cdk-virtual-scroll-orientation-vertical .cdk-virtual-scroll-content-wrapper {
+  width: 100%;
+}
+
 // Page-wide element styles go in Tailwind's base layer and component styles in its components layer, so a utility
 // class on an element always wins over both.
 @layer base {
