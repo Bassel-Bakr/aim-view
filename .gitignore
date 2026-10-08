@@ -17,3 +17,5 @@ _copy_*.log
 aimview-server.toml
 # this computer's own settings over aimview.defaults.json (src/local_config.rs)
 aimview.json
+# Serena's settings, caches and language servers' data for this computer (its MCP server for symbol search)
+.serena/
