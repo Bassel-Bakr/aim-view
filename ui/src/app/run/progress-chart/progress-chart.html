@@ -10,7 +10,60 @@
   <p class="note">{{ emptyText }}</p>
 }
 <div #box class="box" [hidden]="!count()">
-  <canvas #chart class="canvas" role="img" [attr.aria-label]="model()?.summary"></canvas>
+  <svg #chart class="chart" role="img" [attr.aria-label]="model()?.summary">
+    @if (shapes(); as paths) {
+      @let m = paths.model;
+      <g>
+        @for (tick of m.grid; track tick.label) {
+          <line
+            class="grid"
+            [attr.x1]="m.left"
+            [attr.x2]="m.right"
+            [attr.y1]="tick.at"
+            [attr.y2]="tick.at"
+          />
+          <text
+            class="axis"
+            text-anchor="end"
+            dominant-baseline="middle"
+            [attr.x]="m.left - scoreGap"
+            [attr.y]="tick.at"
+          >
+            {{ tick.label }}
+          </text>
+        }
+        @for (date of m.dates; track date.at) {
+          <text
+            class="axis"
+            text-anchor="middle"
+            dominant-baseline="text-after-edge"
+            [attr.x]="date.at"
+            [attr.y]="m.size.height - dateGap"
+          >
+            {{ date.label }}
+          </text>
+        }
+      </g>
+      <line
+        class="best-level"
+        [attr.x1]="m.left"
+        [attr.x2]="m.right"
+        [attr.y1]="m.best.y"
+        [attr.y2]="m.best.y"
+      />
+      <path class="runs" [attr.d]="paths.runs" />
+      <path class="median" [attr.d]="paths.median" />
+      <circle class="best" [attr.cx]="m.best.x" [attr.cy]="m.best.y" [attr.r]="ringRadius" />
+      @if (m.current; as current) {
+        <circle
+          class="current"
+          [attr.cx]="current.x"
+          [attr.cy]="current.y"
+          [attr.r]="currentRadius"
+        />
+      }
+    }
+  </svg>
   <div #tip class="tip" hidden aria-hidden="true"></div>
 </div>
 @if (model(); as m) {

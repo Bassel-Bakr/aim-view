@@ -43,8 +43,47 @@
     }
   }
 
-  .canvas {
+  .chart {
     @apply block h-(--progress-chart-height) w-full;
+  }
+
+  // The shapes' colors and lines (progress-chart-shapes.ts gives the shapes): the grid and its labels, the best's
+  // dashed level and ring, every run's dot, the median, and this run's dot outlined in the chart's background
+  .grid {
+    @apply stroke-grid;
+  }
+
+  .axis {
+    @apply fill-muted text-xs;
+  }
+
+  .best-level {
+    stroke: p.$best;
+    stroke-dasharray: p.$dash;
+  }
+
+  .runs {
+    fill: p.$run;
+  }
+
+  .median {
+    fill: none;
+    stroke: p.$median;
+    stroke-width: p.$line;
+    stroke-linejoin: round;
+  }
+
+  .best {
+    fill: none;
+    stroke: p.$best;
+    stroke-width: p.$line;
+  }
+
+  .current {
+    @apply stroke-surface-1;
+
+    fill: p.$this;
+    stroke-width: p.$line;
   }
 
   .tip {

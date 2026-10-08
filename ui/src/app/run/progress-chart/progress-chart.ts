@@ -3,13 +3,12 @@
  *
  * In: the recording (its scenario and time stamp), the scenario's past runs from KovaaK's stats
  * files (ScoreHistory), the recordings in the list (Library) and the user's pointer.
- * Out: the chart drawn on a canvas (progress-chart-drawing.ts), a tip on the run under the pointer,
- * and a click that opens a run's recording (Library `selectedId`).
+ * Out: the chart as SVG (its shapes from progress-chart-shapes.ts, its colors from the stylesheet), a tip on the run
+ * under the pointer, and a click that opens a run's recording (Library `selectedId`).
  */
 
 import {
   afterNextRender,
-  afterRenderEffect,
   Component,
   computed,
   DestroyRef,
@@ -18,7 +17,6 @@ import {
   input,
   linkedSignal,
   signal,
-  untracked,
   viewChild,
 } from '@angular/core';
 import { Recording } from '../../api';
@@ -36,8 +34,12 @@ import {
   SAME_RUN_S,
   stampSeconds,
 } from './progress-chart-model';
-import { drawProgressChart, readStyle } from './progress-chart-drawing';
-import { canvasStyle } from '../../services/theme';
+import { chartPaths, CURRENT_RADIUS, PICK_REACH, RING_RADIUS } from './progress-chart-shapes';
+
+/** The scores' gap from the plot's left edge, in CSS pixels. */
+const SCORE_GAP = 6;
+/** The dates' gap from the chart's bottom, in CSS pixels. */
+const DATE_GAP = 2;
 
 /**
  * Every past score of the run's scenario, from KovaaK's stats files, over the days it was played:
@@ -63,16 +65,16 @@ export class ProgressChart {
   protected readonly needsFolder = inject(StatsFiles).chooseFolder !== null;
   /** The chart's box, which takes the pointer. */
   private readonly box = viewChild.required<ElementRef<HTMLElement>>('box');
-  /** The canvas the chart is drawn on. */
-  private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('chart');
+  /** The chart's SVG, whose size on screen lays the chart out. */
+  private readonly chart = viewChild.required<ElementRef<SVGSVGElement>>('chart');
   /** The tip that describes the run under the pointer. */
   private readonly tip = viewChild.required<ElementRef<HTMLElement>>('tip');
 
   /** The scenario's past runs, oldest first, as a resource. */
   protected readonly runs = inject(ScoreHistory).runs(() => this.recording().scenario);
-  /** The canvas's size on screen, in CSS pixels, kept by a resize observer. */
+  /** The chart's size on screen, in CSS pixels, kept by a resize observer. */
   private readonly size = signal<HistorySize>({ width: 0, height: 0 });
-  /** The chart's layout; null with no runs or before the canvas has a size. */
+  /** The chart's layout; null with no runs or before the chart has a size. */
   protected readonly model = computed<HistoryModel | null>(() => {
     const runs = this.runs.hasValue() ? this.runs.value() : undefined;
     const size = this.size();
@@ -98,29 +100,33 @@ export class ProgressChart {
     source: this.recording,
     computation: () => null,
   });
-  /** The chart's colors and sizes, read from the tokens on the first draw. */
-  private readonly style = canvasStyle(() => this.canvas().nativeElement, readStyle);
+  /** The chart's paths with its layout; null with no layout. */
+  protected readonly shapes = computed(() => {
+    const model = this.model();
+    return model ? chartPaths(model) : null;
+  });
+  /** The personal best's ring's radius, in CSS pixels. */
+  protected readonly ringRadius = RING_RADIUS;
+  /** This run's dot's radius, in CSS pixels. */
+  protected readonly currentRadius = CURRENT_RADIUS;
+  /** The scores' gap from the plot's left edge, in CSS pixels. */
+  protected readonly scoreGap = SCORE_GAP;
+  /** The dates' gap from the chart's bottom, in CSS pixels. */
+  protected readonly dateGap = DATE_GAP;
 
-  /**
-   * Starts watching the canvas's size and the pointer after the first render; redraws on change.
-   */
+  /** Starts watching the chart's size and the pointer after the first render. */
   constructor() {
     afterNextRender(() => this.follow());
-    afterRenderEffect(() => {
-      this.model();
-      this.style();
-      untracked(() => this.draw());
-    });
   }
 
-  /** The chart follows its canvas's size; the pointer shows a run's tip, and a click opens it. */
+  /** The chart follows its own size; the pointer shows a run's tip, and a click opens it. */
   private follow(): void {
     const box = this.box().nativeElement;
     const resize = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       this.size.set({ width, height });
     });
-    resize.observe(this.canvas().nativeElement);
+    resize.observe(this.chart().nativeElement);
     const move = (event: PointerEvent) => this.showTip(event);
     const leave = () => (this.tip().nativeElement.hidden = true);
     const down = (event: PointerEvent) => this.openRun(event);
@@ -135,32 +141,12 @@ export class ProgressChart {
     });
   }
 
-  /** Sizes the canvas at the screen's pixel ratio and draws the chart; nothing without a layout. */
-  private draw(): void {
-    const model = this.model();
-    const canvas = this.canvas().nativeElement;
-    if (!model) return;
-    const pixelRatio = devicePixelRatio || 1;
-    canvas.width = Math.round(model.size.width * pixelRatio);
-    canvas.height = Math.round(model.size.height * pixelRatio);
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    const style = this.style();
-    drawProgressChart(context, model, style);
-  }
-
-  /** The run under the pointer, within the style's reach; null with none. */
+  /** The run under the pointer, within the pick's reach; null with none. */
   private dotAt(event: PointerEvent): HistoryDot | null {
     const model = this.model();
     if (!model) return null;
-    const bounds = this.canvas().nativeElement.getBoundingClientRect();
-    return dotNear(
-      model,
-      event.clientX - bounds.left,
-      event.clientY - bounds.top,
-      this.style().reach,
-    );
+    const bounds = this.chart().nativeElement.getBoundingClientRect();
+    return dotNear(model, event.clientX - bounds.left, event.clientY - bounds.top, PICK_REACH);
   }
 
   /** The recording of a run, when the list has one (same scenario, within five seconds). */

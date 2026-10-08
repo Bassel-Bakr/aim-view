@@ -1,5 +1,5 @@
-// Module tokens: the run page's chart of every past score of the run's scenario (a canvas, which reads these variables
-// when it draws).
+// Module tokens: the run page's chart of every past score of the run's scenario (an SVG: its stylesheet colors it,
+// and the dots' sizes reach its code through app/tokens/tokens.ts).
 
 @mixin tokens {
   --progress-chart-height: 180px;
@@ -18,5 +18,8 @@
 }
 
 $this: var(--progress-chart-this);
+$run: var(--progress-chart-run);
+$line: var(--progress-chart-line);
+$dash: var(--progress-chart-dash);
 $median: var(--progress-chart-median);
 $best: var(--progress-chart-best);

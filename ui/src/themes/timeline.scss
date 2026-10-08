@@ -1,5 +1,5 @@
-// Module tokens: a tracking run's timeline and a clicking run's kill lanes (canvases, which read these variables
-// when they draw).
+// Module tokens: a tracking run's timeline and a clicking run's kill lanes (SVGs: their stylesheets color them, and
+// their sizes reach their code through app/tokens/tokens.ts).
 
 @mixin tokens {
   --timeline-height: 130px;
