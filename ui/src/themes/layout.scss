@@ -14,7 +14,7 @@
   // The top bar's More menu: one tool to a row, over the page
   --top-bar-menu-width: 240px;
   --theme-menu-width: 160px;
-  --top-bar-menu-shadow: 0 12px 32px oklch(from var(--black) l c h / 0.55);
+  --top-bar-menu-shadow: 0 12px 32px var(--shadow-float);
   // The recordings drawer stays over the page's own layers (the video, its overlay, the floating player)
   --layer-drawer: 30;
   // The main area's side padding on a narrow screen

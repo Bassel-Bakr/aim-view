@@ -22,7 +22,7 @@
   // a column of words that may take two lines (a what-if change, a model measure) never narrower than this
   --table-wrap-min-width: 160px;
   --table-menu-width: 240px;
-  --table-menu-shadow: 0 12px 32px oklch(from var(--black) l c h / 0.55);
+  --table-menu-shadow: 0 12px 32px var(--shadow-float);
   // how tall a table's own box grows before it scrolls; none: as tall as its rows
   --table-max-height: none;
   // a card's label column, when each row is a card (on a phone)

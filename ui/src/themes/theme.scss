@@ -65,6 +65,9 @@
   --grid: oklch(0.254 0.014 253.1);
   --axis: oklch(0.327 0.022 259.4);
   --backdrop: oklch(from var(--black) l c h / 0.6);
+  // Shadows: a floating layer's (a menu, the mini player) and a resting one's (the player on the page)
+  --shadow-float: oklch(from var(--black) l c h / 0.55);
+  --shadow-rest: oklch(from var(--black) l c h / 0.35);
 
   // Roles. Accent: the app's cyan (actions, the selection, the main series). Attention: what to work on (coral).
   --accent: var(--cyan);
@@ -194,6 +197,8 @@
   --grid: oklch(0.915 0.006 258);
   --axis: oklch(0.81 0.012 258);
   --backdrop: oklch(from var(--black) l c h / 0.35);
+  --shadow-float: oklch(from var(--black) l c h / 0.16);
+  --shadow-rest: oklch(from var(--black) l c h / 0.1);
   --accent: var(--cyan-deep);
   --accent-hover: var(--cyan-deeper);
   --value: var(--cyan-deep);
@@ -226,6 +231,8 @@ $border-strong: var(--border-strong);
 $grid: var(--grid);
 $axis: var(--axis);
 $backdrop: var(--backdrop);
+$shadow-float: var(--shadow-float);
+$shadow-rest: var(--shadow-rest);
 
 $accent: var(--accent);
 $accent-hover: var(--accent-hover);

@@ -8,7 +8,7 @@
   // In full screen the video never gets smaller than this, however much the panels and controls take
   --player-full-min-height: 270px;
   --player-screen: var(--black);
-  --player-shadow: 0 1px 0 var(--border), 0 8px 24px oklch(from var(--black) l c h / 0.35);
+  --player-shadow: 0 1px 0 var(--border), 0 8px 24px var(--shadow-rest);
   --seek-height: 20px;
   --kill-mark-width: 1px;
   --kill-mark-height: 5px;
@@ -16,7 +16,7 @@
   // The video floating in the page's corner while the player is scrolled away (floating-player.ts)
   --mini-player-width: min(360px, 55vw);
   --mini-player-inset: 16px;
-  --mini-player-shadow: 0 12px 32px oklch(from var(--black) l c h / 0.55);
+  --mini-player-shadow: 0 12px 32px var(--shadow-float);
   --mini-bar-bg: oklch(from var(--black) l c h / 0.6);
   --pip-background: var(--black);
 
