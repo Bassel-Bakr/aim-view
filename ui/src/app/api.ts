@@ -10,6 +10,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import type { AreaBox } from './generated/area-box';
 import type { AreaKind } from './generated/area-kind';
 import type { ClickReport as CoreClickReport } from './generated/click-report';
+import type { HitboxKind } from './generated/hitbox-kind';
 import type { Kind } from './generated/kind';
 import type { RunMarks } from './generated/run-marks';
 import type { TimeWindow } from './generated/time-window';
@@ -179,6 +180,8 @@ export interface Recording {
   kind: Kind | null;
   /** The kind the user chose for it (kind.json); null or absent when it follows its scenario. */
   kind_pick?: Kind | null;
+  /** The bots' hitbox shape the user chose for it (hitbox.json); null or absent when it follows its scenario. */
+  hitbox_pick?: HitboxKind | null;
   /** The score from its file name; null when the name gives none. */
   score: number | null;
   /** When it was recorded, local time, as KovOBS names it ("2026.10.02-12.34.56"). */
@@ -210,6 +213,12 @@ export interface KindChange {
   kind: Kind | null;
   /** The user's choice; null when it follows its scenario. */
   kind_pick: Kind | null;
+}
+
+/** A recording's hitbox after the user chose one (POST /api/hitbox): its row's `hitbox_pick`. */
+export interface HitboxChange {
+  /** The user's choice; null when it follows its scenario. */
+  hitbox_pick: HitboxKind | null;
 }
 
 /**

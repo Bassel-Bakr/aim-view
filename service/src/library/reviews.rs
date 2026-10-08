@@ -352,12 +352,14 @@ impl Library {
         let (model, by) = self.shown(id);
         let stats = self.stats_of(id, &video);
         let stats_text = stats.as_deref().map(|path| self.stats_bytes(path)).transpose()?;
-        let facts = self.facts_for(id, &video);
         let run = Some(RunMarks::read(self.store(), id));
         let faint = Some(self.faint(id));
         let parts = |part: Part| self.review_part(id, &by, part);
+        let facts = self.facts_for(id, &video);
+        let tracks = self.hitbox_pick(id).and_then(|_| parts(Part::Tracks));
+        let hitbox = self.chosen_hitbox(id, tracks.as_deref());
         let stats = stats.as_deref().zip(stats_text.as_deref());
-        let worked_out = crate::report::work_out(parts, &video, stats, run, facts.as_ref(), faint)?;
+        let worked_out = crate::report::work_out(parts, &video, stats, run, facts.as_ref(), hitbox, faint)?;
         let Some(mut report) = worked_out else { return Ok(Value::Null) };
         report["review_model"] = json!(model);
         Ok(report)

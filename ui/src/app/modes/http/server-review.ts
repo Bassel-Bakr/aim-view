@@ -1,14 +1,23 @@
 /**
  * Server mode's `ReviewEngine`, which the desktop app uses too and browser mode extends. In: the
- * review service's /api/report, /api/tracks, /api/analyse, /api/job, /api/cancel, /api/run and
- * /api/kind.
+ * review service's /api/report, /api/tracks, /api/analyse, /api/job, /api/cancel, /api/run,
+ * /api/kind and /api/hitbox.
  * Out: each recording's report, tracks, review job and run window, for the run page.
  */
 
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
 import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Job, KindChange, Report, RunKind, RunMarks, Tracks } from '../../api';
+import {
+  HitboxChange,
+  HitboxKind,
+  Job,
+  KindChange,
+  Report,
+  RunKind,
+  RunMarks,
+  Tracks,
+} from '../../api';
 import { ReviewEngine } from '../../platform/review-engine';
 
 /**
@@ -116,5 +125,12 @@ export class ServerReview implements ReviewEngine {
   /** Keeps the kind (POST /api/kind; null follows the scenario again) and gives the row's kind now. */
   setKind(id: string, kind: RunKind | null): Promise<KindChange> {
     return firstValueFrom(this.http.post<KindChange>('/api/kind', { kind }, { params: { id } }));
+  }
+
+  /** Keeps the hitbox (POST /api/hitbox; null follows the scenario again) and gives the choice now. */
+  setHitbox(id: string, hitbox: HitboxKind | null): Promise<HitboxChange> {
+    return firstValueFrom(
+      this.http.post<HitboxChange>('/api/hitbox', { hitbox }, { params: { id } }),
+    );
   }
 }

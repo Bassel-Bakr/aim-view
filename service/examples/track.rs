@@ -96,7 +96,7 @@ fn main() {
     let stats_text = stats_path.map(|path| std::fs::read(path).unwrap_or_else(|error| panic!("{error}")));
     let stats = stats_path.zip(stats_text.as_deref());
     let parts = aimview_service::store::folder_parts(&out);
-    match aimview_service::report::work_out(parts, &request.video, stats, None, None, None) {
+    match aimview_service::report::work_out(parts, &request.video, stats, None, None, None, None) {
         Ok(Some(report)) => {
             let summary = &report["summary"];
             eprintln!("report: kills from {}, {} kills", summary["info"]["source"], summary["kills"]);

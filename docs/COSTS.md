@@ -20,29 +20,29 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | --- | --- | --- | --- | --- | --- |
 | assets | profile release, modes browser | 0.3 s | 68.7 s | 2 | 2026-10-08, 4303844+ |
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
-| assets | profile release, modes server | 39.5 s | 37.8 s | 2 | 2026-10-07, b9f96dc+ |
+| assets | profile release, modes server | 38.5 s | 37.3 s | 4 | 2026-10-08, ac709f4+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 22.9 s | 13.2 s | 19 | 2026-10-08, 97115eb+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 19.5 s | 13.2 s | 20 | 2026-10-08, ac709f4+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 15.1 s | 6.0 s | 24 | 2026-10-08, 97115eb+ |
-| assets: core wasm (cargo) | profile release | 39.4 s | 37.7 s | 2 | 2026-10-07, b9f96dc+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 12 s | 6.0 s | 25 | 2026-10-08, ac709f4+ |
+| assets: core wasm (cargo) | profile release | 38.5 s | 37.3 s | 4 | 2026-10-08, ac709f4+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O0 | 7.6 s | 7.3 s | 8 | 2026-10-08, 97115eb+ |
+| assets: wasm-opt (Asyncify) | level -O0 | 7.4 s | 7.4 s | 9 | 2026-10-08, ac709f4+ |
 | assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 64.7 s | 62.5 s | 2 | 2026-10-08, 4303844+ |
 | build | modes browser | 143.3 s | 143.3 s | 1 | 2026-10-08, 4303844+ |
 | build | modes browser,server,desktop, angular at once | 63.3 s | 34.2 s | 2 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular one at a time | 182.7 s | 182.7 s | 1 | 2026-10-07, 78c5844+ |
-| build | modes server | 39.9 s | 39.9 s | 1 | 2026-10-07, 78c5844+ |
+| build | modes server | 44.5 s | 42.3 s | 3 | 2026-10-08, ac709f4+ |
 | build: Angular (production) | mode browser | 6.2 s | 6.1 s | 4 | 2026-10-08, 4303844+ |
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
-| build: Angular (production) | mode server | 3.7 s | 4.2 s | 4 | 2026-10-07, 78c5844+ |
-| build: lint | - | 4.1 s | 4.1 s | 1 | 2026-10-08, 4303844+ |
-| lint:ui | - | 7.2 s | 4.5 s | 47 | 2026-10-08, 97115eb+ |
+| build: Angular (production) | mode server | 5.9 s | 5.8 s | 6 | 2026-10-08, ac709f4+ |
+| build: lint | - | 4.5 s | 4.5 s | 3 | 2026-10-08, ac709f4+ |
+| lint:ui | - | 5.5 s | 4.7 s | 48 | 2026-10-08, ac709f4+ |
 | rust-tests | profile quick | 28.4 s | 28.4 s | 9 | 2026-10-08, 6d5bc9d+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 20.3 s | 9.0 s | 37 | 2026-10-08, 97115eb+ |
+| test:ui | - | 10.9 s | 9.0 s | 38 | 2026-10-08, ac709f4+ |
 | tokens | - | 0.5 s | 0.4 s | 7 | 2026-10-08, a386e9e+ |
 <!-- costs:end -->
 

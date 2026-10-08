@@ -32,6 +32,8 @@ pub enum Mark {
     StatsPick,
     /// The kind of run the user chose for it, in place of its scenario's (library/recordings.rs).
     KindPick,
+    /// The bots' hitbox shape the user chose for it, in place of its scenario's (library/recordings.rs).
+    HitboxPick,
     /// The faint-target cut-off (faint.rs).
     Cutoff,
     /// The areas the user saved for it (areas.rs).
@@ -120,6 +122,7 @@ impl Mark {
             Mark::RunWindow => "run.json",
             Mark::StatsPick => "stats.json",
             Mark::KindPick => "kind.json",
+            Mark::HitboxPick => "hitbox.json",
             Mark::Cutoff => "faint.json",
             Mark::SavedAreas => "exclude.json",
             Mark::FoundAreas => "areas.json",
@@ -374,10 +377,11 @@ pub(crate) fn python_text(item: Item<'_>) -> bool {
 /// Every part a review can have.
 pub(crate) const PARTS: [Part; 4] = [Part::Tracks, Part::Readings, Part::Hud, Part::Kills];
 /// Every mark a recording can have.
-pub(crate) const MARKS: [Mark; 7] = [
+pub(crate) const MARKS: [Mark; 8] = [
     Mark::RunWindow,
     Mark::StatsPick,
     Mark::KindPick,
+    Mark::HitboxPick,
     Mark::Cutoff,
     Mark::SavedAreas,
     Mark::FoundAreas,

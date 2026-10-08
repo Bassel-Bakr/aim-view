@@ -1085,6 +1085,20 @@ fn on_box(x: f64, y: f64, width: f64, height: f64, hitbox: Option<Hitbox>) -> bo
     }
 }
 
+/// The targets' width over height on screen: the median over every target box of the run's frames; None when the
+/// detector model gave no boxes. A hitbox's ratio on screen stays as the bot's distance changes, so this is the bots'
+/// hitbox's ratio when no scenario file gives it.
+pub fn box_ratio(frames: &[TrackFrame]) -> Option<f64> {
+    let ratios: Vec<f64> = frames
+        .iter()
+        .filter_map(|frame| frame.wh.as_ref())
+        .flatten()
+        .filter(|(width, height)| *width > 0.0 && *height > 0.0)
+        .map(|(width, height)| width / height)
+        .collect();
+    (!ratios.is_empty()).then(|| crate::statistics::median(&ratios))
+}
+
 /// Each frame's nearest target and whether the crosshair is on a target (`on_box`, or within INSIDE_MARGIN_DEG of its
 /// disc without a box).
 fn nearest_and_inside(frames: &[TrackFrame], hitbox: Option<Hitbox>) -> (Box<[NearestTarget]>, Box<[bool]>) {
@@ -1433,5 +1447,19 @@ mod tests {
         let mut stop = stop;
         stop[5] = true;
         assert_eq!(turns_back(&[2], &inside, &stop, 4, 22, 10.0)[0].back, None);
+    }
+
+    /// The targets' width over height is the median over every box; none without boxes.
+    #[test]
+    fn the_box_ratio_is_the_median_box() {
+        let frame = |wh: serde_json::Value| {
+            serde_json::from_value::<TrackFrame>(
+                serde_json::json!({ "i": 0, "shift": [0, 0], "t": [], "a": [], "wh": wh }),
+            )
+            .unwrap()
+        };
+        let frames = [frame(serde_json::json!([[2.0, 1.0], [3.0, 1.0]])), frame(serde_json::json!([[1.0, 1.0]]))];
+        assert_eq!(box_ratio(&frames), Some(2.0));
+        assert_eq!(box_ratio(&[frame(serde_json::Value::Null)]), None);
     }
 }

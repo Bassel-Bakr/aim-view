@@ -58,6 +58,20 @@
         }
       </select>
     </label>
+    <label
+      class="kind"
+      data-tooltip="The bots' hitbox: a tracking run's time on target counts the crosshair on this shape, not the target's whole box. It follows the scenario's file; choose one when the scenario is not known"
+    >
+      <span class="kind-label">Hitbox</span>
+      <select class="kind-select" #hitbox (change)="chooseHitbox(hitbox)">
+        <option value="" [selected]="!recording().hitbox_pick">From the scenario</option>
+        @for (h of hitboxes; track h.value) {
+          <option [value]="h.value" [selected]="recording().hitbox_pick === h.value">
+            {{ h.label }}
+          </option>
+        }
+      </select>
+    </label>
     <button
       class="button"
       type="button"

@@ -838,7 +838,7 @@ from the tracks and the camera's turn.
   (`meta`), the run's length (seconds) and its first frame when known, the camera's readings, the frames where bots die,
   where the kills come from, and the bots' hitbox (None: the crosshair is on a target within INSIDE_MARGIN_DEG of its
   box).
-- Functions: `track_motion`, `stats_length`, `countdown_end`, `track_summary`.
+- Functions: `track_motion`, `stats_length`, `countdown_end`, `box_ratio`, `track_summary`.
 - Constants: `GET_BACK`, `NO_SLIPS`, `NO_LEADING`, `NO_TRAILING`, `NOT_THROWN`, `EVERY_DIRECTION`, `BEST_TEN_SECONDS`,
   `FASTER_SWITCH`.
 
@@ -1117,7 +1117,8 @@ names and times. Out: their parts and stamps, for the recordings list, the stats
 The recordings: the list (python/retired/server.py: Library.list), a recording's video from its id and its folder,
 videos and stats files added from the user's computer, and each scenario's facts from its scenario file.
 
-- `Library` methods: `resolve`, `review_dir`, `scenarios`, `set_kind`, `recordings`, `upload`, `upload_file`, `spool`.
+- `Library` methods: `resolve`, `review_dir`, `scenarios`, `set_hitbox`, `set_kind`, `recordings`, `upload`,
+  `upload_file`, `spool`.
 
 ## service/src/library/reviews.rs
 
@@ -1448,8 +1449,8 @@ everything that is not a number equal, numbers within a relative tolerance.
 - `TrackingInputs` (struct): A tracking run's inputs as python/retired/tests/fixtures.py --review kept them in
   test_out/parity/<case>/review/: its tracks, the camera's readings and the countdown (from teal.json's counts).
   Methods: `read`, `review`.
-- Functions: `compare`, `rename_key`, `read`, `read_lossy`, `parity_root`, `fixture_dirs`, `excluded_areas`,
-  `showing_frames`, `fixed_map`, `scenario_key`.
+- Functions: `compare`, `rename_key`, `without_tracking_checks`, `read`, `read_lossy`, `parity_root`, `fixture_dirs`,
+  `excluded_areas`, `showing_frames`, `fixed_map`, `scenario_key`.
 - Constants: `FRAME_PIXELS`.
 
 ## tests/compare.rs
@@ -1470,7 +1471,9 @@ size and range).
 The faint-target cut-off (src/faint.rs, review.rs) against Python's: python/retired/tests/fixtures.py --faint writes
 test_out/parity/<case>/faint/<offset>/report.json (a tracking review with the cut-off on) and
 test_out/parity/faint/<recording>.json (the scores, the cut and the labels of every recording the user set a cut-off
-for). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative).
+for). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative). Each recording's
+tracks, which Python read from its review in the data folder, are kept in test_out/parity/faint_tracks/ too: the Storage
+panel can remove those reviews (2026-10-08 it did), and the test needs the very tracks Python read.
 
 ## tests/fixed_parity.rs
 

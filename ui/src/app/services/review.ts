@@ -5,7 +5,7 @@
  */
 
 import { computed, effect, inject, Service, signal } from '@angular/core';
-import { errorMessage, Job, RunKind, RunMarks } from '../api';
+import { errorMessage, HitboxKind, Job, RunKind, RunMarks } from '../api';
 import { ReviewEngine } from '../platform/review-engine';
 import { Library } from './library';
 
@@ -103,6 +103,22 @@ export class Review {
     if (!id) return;
     try {
       const change = await this.engine.setKind(id, kind);
+      this.library.source.patch(id, change);
+      this.report.reload();
+    } catch (error) {
+      this.job.set({ stage: 'error', error: errorMessage(error) });
+    }
+  }
+
+  /**
+   * Keeps the bots' hitbox shape the user chose for the open recording (null: its scenario's again), puts it in the
+   * list, and reads the report again, whose time on target is measured with it.
+   */
+  async saveHitbox(hitbox: HitboxKind | null): Promise<void> {
+    const id = this.library.selectedId();
+    if (!id) return;
+    try {
+      const change = await this.engine.setHitbox(id, hitbox);
       this.library.source.patch(id, change);
       this.report.reload();
     } catch (error) {

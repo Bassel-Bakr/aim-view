@@ -6,7 +6,7 @@
  */
 
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { errorMessage, isClickReport, Recording, RunKind } from '../api';
+import { errorMessage, HitboxKind, isClickReport, Recording, RunKind } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
 import { StatsFiles } from '../platform/stats-files';
@@ -51,6 +51,21 @@ const KIND_OPTIONS: readonly KindOption[] = [
   { value: 'dynamic', label: 'Dynamic clicking' },
   { value: 'switching', label: 'Target switching' },
   { value: 'tracking', label: 'Tracking' },
+];
+
+/** A hitbox shape in the toolbar's Hitbox menu: the shape kept, and its words. */
+interface HitboxOption {
+  /** The shape the service keeps (hitbox.json). */
+  value: HitboxKind;
+  /** Its words in the menu. */
+  label: string;
+}
+
+/** The hitbox shapes the user can choose (KovaaK's MainBBType). */
+const HITBOX_OPTIONS: readonly HitboxOption[] = [
+  { value: 'spheroid', label: 'Sphere' },
+  { value: 'cylindrical', label: 'Capsule' },
+  { value: 'cuboid', label: 'Box' },
 ];
 
 /**
@@ -153,6 +168,8 @@ export class Run {
   protected readonly statsOpen = signal(false);
   /** The kinds of run the Kind menu offers. */
   protected readonly kinds = KIND_OPTIONS;
+  /** The hitbox shapes the Hitbox menu offers. */
+  protected readonly hitboxes = HITBOX_OPTIONS;
   /**
    * The Kind menu's first choice, which follows the scenario: it names the scenario's kind when its file gives one
    * and the user chose none.
@@ -279,6 +296,12 @@ export class Run {
   protected chooseKind(select: HTMLSelectElement): void {
     const kind = KIND_OPTIONS.find((option) => option.value === select.value)?.value ?? null;
     void this.review.saveKind(kind);
+  }
+
+  /** Keeps the shape the user picked in the Hitbox menu: one of HITBOX_OPTIONS, or '' for the scenario's. */
+  protected chooseHitbox(select: HTMLSelectElement): void {
+    const hitbox = HITBOX_OPTIONS.find((option) => option.value === select.value)?.value ?? null;
+    void this.review.saveHitbox(hitbox);
   }
 
   /** Opens or closes the stats file panel. */

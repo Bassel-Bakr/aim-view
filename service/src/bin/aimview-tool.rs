@@ -551,7 +551,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         let parts = aimview_service::store::folder_parts(&out);
         let text = stats.as_deref().map(stats_text).transpose()?;
         let stats = stats.as_deref().zip(text.as_deref());
-        aimview_service::report::work_out(parts, &request.video, stats, None, facts.as_ref(), None)?
+        aimview_service::report::work_out(parts, &request.video, stats, None, facts.as_ref(), None, None)?
     };
     if let Some(report) = &report {
         write("report", serde_json::to_vec(report))?;

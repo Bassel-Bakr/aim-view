@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use aimview::scenario::{Facts, Kind};
+use aimview::scenario::{Facts, Hitbox, Kind};
 use aimview::stats_file::StatsFile;
 use serde_json::{Value, json};
 
@@ -33,7 +33,8 @@ fn file_name(path: &Path) -> Option<String> {
 
 /// The report of the review of `video` whose parts `parts` gives, with its stats file (its path and text) when it has
 /// one, the user's run
-/// marks, the scenario's facts and the user's faint-target cut-off (faint.json: {on, offset}); None when the review has
+/// marks, the scenario's facts, the bots' hitbox the user chose in place of the facts' (None: the facts') and the
+/// user's faint-target cut-off (faint.json: {on, offset}); None when the review has
 /// no tracks.
 pub fn work_out(
     parts: impl Fn(Part) -> Option<Vec<u8>>,
@@ -41,6 +42,7 @@ pub fn work_out(
     stats: Option<(&Path, &[u8])>,
     run: Option<RunMarks>,
     facts: Option<&Facts>,
+    hitbox: Option<Hitbox>,
     faint: Option<Value>,
 ) -> Result<Option<Value>, String> {
     // each part's JSON, or None when it is missing or not JSON
@@ -61,7 +63,7 @@ pub fn work_out(
         "tracking": is_tracking(facts, &stats_text),
         "limit": facts.and_then(|facts| facts.limit),
         "reload": facts.and_then(|facts| facts.reload.as_ref()),
-        "hitbox": facts.and_then(|facts| facts.hitbox),
+        "hitbox": hitbox.or_else(|| facts.and_then(|facts| facts.hitbox)),
         "killCheck": kill_check,
         "camera": readings["camera"],
         "countdown": readings["countdown"],
