@@ -18,7 +18,7 @@
       type="button"
       class="switch"
       role="switch"
-      title="Leave out tracks the model is far less sure of than of this recording's targets: wall seams and tiles"
+      data-tooltip="Leave out tracks the model is far less sure of than of this recording's targets: wall seams and tiles"
       [attr.aria-checked]="faint.on()"
       [disabled]="!faint.has()"
       (click)="toggleOn()"
@@ -44,7 +44,7 @@
       type="button"
       class="switch"
       role="switch"
-      title="Write each track's score beside it on the video; point at one for that frame's own score"
+      data-tooltip="Write each track's score beside it on the video; point at one for that frame's own score"
       [attr.aria-checked]="faint.showScores()"
       (click)="toggleScores()"
     >
@@ -99,7 +99,7 @@
       <button
         type="button"
         appButton
-        title="Leave this recording out of the queue from now on, and open the next"
+        data-tooltip="Leave this recording out of the queue from now on, and open the next"
         (click)="skipRecording()"
       >
         Skip
@@ -107,7 +107,7 @@
       <button
         type="button"
         appButton
-        title="End the queue; this recording stays open"
+        data-tooltip="End the queue; this recording stays open"
         (click)="stopQueue()"
       >
         Stop
@@ -116,7 +116,7 @@
       <button
         type="button"
         appButton
-        title="Save this cut-off and write it as labels for the detector: the tracks it leaves out are not targets, the ones it keeps are"
+        data-tooltip="Save this cut-off and write it as labels for the detector: the tracks it leaves out are not targets, the ones it keeps are"
         [disabled]="!faint.has() || faint.submitting()"
         (click)="submitCutoff()"
       >
@@ -130,7 +130,7 @@
       <button
         type="button"
         appButton
-        title="A zip of checked.jsonl and train/, as the review server writes them in test_out/vod_model/hand/cutoff/: unzip it into a folder of its own there, and training reads it as it reads the server's"
+        data-tooltip="A zip of checked.jsonl and train/, as the review server writes them in test_out/vod_model/hand/cutoff/: unzip it into a folder of its own there, and training reads it as it reads the server's"
         [disabled]="zipping() || !store.count().crops"
         (click)="downloadLabels()"
       >

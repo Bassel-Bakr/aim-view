@@ -2,16 +2,16 @@
  * Checks that a commit adds no hard-coded configuration (AGENTS.md, "No hard-coded configuration"): an absolute
  * folder (`E:\OBS`, `C:/Program Files`) or a local address with a port (`127.0.0.1:8770`, `localhost:4200`) in code.
  * Those belong in aimview.defaults.json or this computer's aimview.json. Only the lines a commit adds are read, so the
- * code that is already there is not judged. Comment lines, docs, retired code and the prototypes are left out; a line
- * that must hold one (a test of the server's address rules) says why with `hardcoded-ok`. In: the staged diff (the
+ * code that is already there is not judged. Comment lines, docs, tests, retired code and the prototypes are left out;
+ * a line that must hold one (a server's address rules) says why with `hardcoded-ok`. In: the staged diff (the
  * pre-commit hook, lefthook.yml). Out: each such line with its file and line, and exit code 1 when there is one.
  * Usage: bun scripts/hardcoded-config.ts
  */
 
 /** The files whose added lines are read: code, not settings files or docs. */
 const CODE_FILE = /\.(rs|ts|js|py|scss|html|cmd|ps1|sh)$/;
-/** The folders left out: code kept only for the record, and experiments. */
-const LEFT_OUT = /(^|\/)(retired|prototypes)\//;
+/** The files left out: code kept only for the record, experiments, and tests (their folders are made-up data). */
+const LEFT_OUT = /(^|\/)(retired|prototypes|tests?)\/|\.spec\.ts$|(^|\/)test_[^/]*\.py$/;
 /** What hard-coded configuration looks like: an absolute Windows folder, or a local address with a port. */
 const HARD_CODED = [/(?<![\w])[A-Za-z]:[\\/]+[A-Za-z]/, /\b(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)/, /\[::1\]:\d+/];
 /** A line that opens with a comment in one of the checked languages. */

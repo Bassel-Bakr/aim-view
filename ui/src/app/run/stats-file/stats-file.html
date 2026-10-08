@@ -75,7 +75,7 @@
           <span class="when">{{ r.when }}</span>
           <span class="off">{{ r.off }}</span>
           @if (r.scenario) {
-            <span class="scenario" [title]="r.scenario">{{ r.scenario }}</span>
+            <span class="scenario" [attr.data-tooltip]="r.scenario">{{ r.scenario }}</span>
           }
           @if (r.inUse) {
             <span appBadge tone="good">in use</span>

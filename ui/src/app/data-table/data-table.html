@@ -49,7 +49,7 @@
         @for (c of shown(); track c.id) {
           <th
             scope="col"
-            [attr.title]="c.title ?? null"
+            [attr.data-tooltip]="c.title ?? null"
             [attr.aria-sort]="sortOf(c.id)"
             [attr.data-align]="alignOf(c.id)"
             [attr.data-prose]="c.prose ? '' : null"
@@ -117,7 +117,7 @@
                   [attr.data-prose]="c.prose ? '' : null"
                   [attr.data-wrap]="c.wrap ? '' : null"
                   [attr.data-tone]="c.tone?.(item) ?? null"
-                  [attr.title]="c.tip?.(item) ?? null"
+                  [attr.data-tooltip]="c.tip?.(item) ?? null"
                 >
                   <ng-container
                     [ngTemplateOutlet]="content"
@@ -132,7 +132,7 @@
                   [attr.data-prose]="c.prose ? '' : null"
                   [attr.data-wrap]="c.wrap ? '' : null"
                   [attr.data-tone]="c.tone?.(item) ?? null"
-                  [attr.title]="c.tip?.(item) ?? null"
+                  [attr.data-tooltip]="c.tip?.(item) ?? null"
                 >
                   <ng-container
                     [ngTemplateOutlet]="content"

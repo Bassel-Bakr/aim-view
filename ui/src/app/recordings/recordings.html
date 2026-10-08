@@ -27,7 +27,7 @@
     type="button"
     appButton
     class="clear"
-    title="Empties the list in this browser; the files stay where they are."
+    data-tooltip="Empties the list in this browser; the files stay where they are."
     (click)="clearList()"
   >
     Clear list
@@ -65,7 +65,7 @@
         [attr.aria-setsize]="shown().length"
       >
         <div class="row-top">
-          <span class="name" [title]="r.scenario">{{ r.scenario }}</span>
+          <span class="name" [attr.data-tooltip]="r.scenario">{{ r.scenario }}</span>
           @if (r.score !== null) {
             <span class="score">{{ r.score | number: '1.0-2' }}</span>
           }

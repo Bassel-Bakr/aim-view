@@ -1,7 +1,7 @@
 @let r = recording();
 <h2 class="title">
   {{ r.scenario }}
-  <span class="source" appBadge [tone]="sourceTone()" [title]="sourceDetail() ?? ''">{{
+  <span class="source" appBadge [tone]="sourceTone()" [attr.data-tooltip]="sourceDetail() ?? ''">{{
     source()
   }}</span>
 </h2>

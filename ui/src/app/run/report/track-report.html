@@ -1,7 +1,7 @@
 <section aria-label="The run's numbers">
   <div class="cards">
     @for (s of stats(); track s.label) {
-      <div class="card" [title]="s.why">
+      <div class="card" [attr.data-tooltip]="s.why">
         <span class="card-title">{{ s.label }}</span>
         <span class="card-reading">{{ s.value }}</span>
         @if (s.detail) {
@@ -29,7 +29,7 @@
     } @else {
       <div class="cards">
         @for (s of m.stats; track s.label) {
-          <div class="card" [title]="s.why">
+          <div class="card" [attr.data-tooltip]="s.why">
             <span class="card-title">{{ s.label }}</span>
             <span class="card-reading">{{ s.value }}</span>
             @if (s.detail) {

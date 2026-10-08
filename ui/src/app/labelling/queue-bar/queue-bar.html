@@ -12,7 +12,7 @@
       <button
         type="button"
         appButton
-        title="Leave this recording out of the queue from now on, and open the next"
+        data-tooltip="Leave this recording out of the queue from now on, and open the next"
         (click)="skipRecording()"
       >
         Skip
@@ -20,7 +20,7 @@
       <button
         type="button"
         appButton
-        title="End the queue; this recording stays open"
+        data-tooltip="End the queue; this recording stays open"
         (click)="stopQueue()"
       >
         Stop

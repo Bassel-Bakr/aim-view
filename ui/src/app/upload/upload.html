@@ -1,7 +1,9 @@
 <button
   type="button"
   appButton
-  [title]="'Add recordings from this computer, with their stats .csv files. ' + source.addedFilesGo"
+  [attr.data-tooltip]="
+    'Add recordings from this computer, with their stats .csv files. ' + source.addedFilesGo
+  "
   (click)="file.click()"
 >
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">

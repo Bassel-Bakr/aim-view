@@ -15,7 +15,7 @@
         <button
           type="button"
           appButton
-          title="Add a check folder make_page.py wrote: the browser keeps a copy"
+          data-tooltip="Add a check folder make_page.py wrote: the browser keeps a copy"
           (click)="folderInput.click()"
         >
           Add folder
@@ -25,7 +25,7 @@
       <button
         type="button"
         appButton
-        title="Save this folder's answers as one file, to import on the review server"
+        data-tooltip="Save this folder's answers as one file, to import on the review server"
         [disabled]="!draft.folder()"
         (click)="exportAnswers()"
       >
@@ -34,7 +34,7 @@
       <button
         type="button"
         appButton
-        title="Load answers a browser exported: a crop's newer answer wins"
+        data-tooltip="Load answers a browser exported: a crop's newer answer wins"
         [disabled]="!draft.folder()"
         (click)="importInput.click()"
       >
@@ -81,7 +81,7 @@
         type="button"
         role="switch"
         class="switch"
-        title="After an answer, go to the next crop not checked yet. Off: the next crop in order, checked or not"
+        data-tooltip="After an answer, go to the next crop not checked yet. Off: the next crop in order, checked or not"
         [attr.aria-checked]="draft.skipChecked()"
         (click)="toggleSkipChecked()"
       >
@@ -151,7 +151,7 @@
         type="button"
         appButton
         class="verdict-wrong"
-        title="Fix the shapes: draw, move, join, remove"
+        data-tooltip="Fix the shapes: draw, move, join, remove"
         [disabled]="!draft.crop() || draft.busy()"
         (click)="draft.fix()"
       >

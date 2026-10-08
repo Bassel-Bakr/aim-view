@@ -31,7 +31,7 @@
   <button
     type="button"
     appButton
-    title="One target made of the selected shapes (a head and a body)"
+    data-tooltip="One target made of the selected shapes (a head and a body)"
     [disabled]="chosen().length < 2"
     (click)="join()"
   >
@@ -40,7 +40,7 @@
   <button
     type="button"
     appButton
-    title="Each selected shape a target of its own"
+    data-tooltip="Each selected shape a target of its own"
     [disabled]="!chosen().length"
     (click)="splitApart()"
   >
@@ -49,7 +49,7 @@
   <button
     type="button"
     appButton
-    title="In front of every other shape: it hides what it covers"
+    data-tooltip="In front of every other shape: it hides what it covers"
     [disabled]="!chosen().length"
     (click)="bring(true)"
   >
@@ -58,7 +58,7 @@
   <button
     type="button"
     appButton
-    title="Behind every other shape: what covers it hides it"
+    data-tooltip="Behind every other shape: what covers it hides it"
     [disabled]="!chosen().length"
     (click)="bring(false)"
   >
@@ -68,7 +68,7 @@
     type="button"
     appButton
     class="tool-toggle"
-    title="Not a target: something in front (a pillar, a health bar) that hides what is behind it"
+    data-tooltip="Not a target: something in front (a pillar, a health bar) that hides what is behind it"
     [attr.aria-pressed]="hiding()"
     [disabled]="!chosen().length"
     (click)="toggleHiding()"
@@ -78,7 +78,7 @@
   <button
     type="button"
     appButton
-    title="A model shape is crossed out (no target there); a drawn one is deleted"
+    data-tooltip="A model shape is crossed out (no target there); a drawn one is deleted"
     [disabled]="!chosen().length"
     (click)="remove()"
   >
@@ -87,7 +87,7 @@
   <button
     type="button"
     appButton
-    title="A copy of the selected shapes, a little down and to the right, to drag into place (Ctrl+D)"
+    data-tooltip="A copy of the selected shapes, a little down and to the right, to drag into place (Ctrl+D)"
     [disabled]="!chosen().length"
     (click)="draft.duplicate()"
   >
@@ -96,7 +96,7 @@
   <button
     type="button"
     appButton
-    title="Both sides the same: a perfect circle or square (also: hold Shift while drawing or resizing)"
+    data-tooltip="Both sides the same: a perfect circle or square (also: hold Shift while drawing or resizing)"
     [disabled]="!chosen().length"
     (click)="evenSides()"
   >
@@ -105,7 +105,7 @@
   <button
     type="button"
     appButton
-    title="Turn the selected shapes 15° to the left, each about its middle"
+    data-tooltip="Turn the selected shapes 15° to the left, each about its middle"
     aria-label="Turn left 15°"
     [disabled]="!chosen().length"
     (click)="turn(-TURN_STEP)"
@@ -115,7 +115,7 @@
   <button
     type="button"
     appButton
-    title="Turn the selected shapes 15° to the right, each about its middle"
+    data-tooltip="Turn the selected shapes 15° to the right, each about its middle"
     aria-label="Turn right 15°"
     [disabled]="!chosen().length"
     (click)="turn(TURN_STEP)"
@@ -126,7 +126,7 @@
     type="button"
     appButton
     class="tool-toggle"
-    title="A side dragged moves its opposite side too, so the shape keeps its middle (also: hold Alt)"
+    data-tooltip="A side dragged moves its opposite side too, so the shape keeps its middle (also: hold Alt)"
     [attr.aria-pressed]="draft.mirroring()"
     (click)="toggleMirroring()"
   >
@@ -136,7 +136,7 @@
     type="button"
     appButton
     class="tool-toggle"
-    title="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
+    data-tooltip="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
     [attr.aria-pressed]="draft.panning()"
     (click)="togglePanning()"
   >
@@ -149,7 +149,7 @@
     <button
       type="button"
       appButton
-      title="Undo the corners placed by hand: the shape is its box again (its size and turn as the box round it)"
+      data-tooltip="Undo the corners placed by hand: the shape is its box again (its size and turn as the box round it)"
       (click)="unplace()"
     >
       Back to a box
@@ -163,7 +163,7 @@
       <button
         type="button"
         appButton
-        [title]="
+        [attr.data-tooltip]="
           'Turn the selected 3D shapes ' + TURN_STEP + '° so more of their ' + s.side + ' shows'
         "
         (click)="show(s.side)"
@@ -174,7 +174,7 @@
     <button
       type="button"
       appButton
-      title="Turn the selected 3D shapes to face the camera squarely (their turn on screen stays)"
+      data-tooltip="Turn the selected 3D shapes to face the camera squarely (their turn on screen stays)"
       (click)="faceCamera()"
     >
       Face me

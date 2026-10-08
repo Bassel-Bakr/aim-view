@@ -96,7 +96,7 @@
       class="full-toggle"
       type="button"
       appButton
-      title="The video fills the screen, with its timeline and controls; the open panels are below them (F, or Escape to leave)"
+      data-tooltip="The video fills the screen, with its timeline and controls; the open panels are below them (F, or Escape to leave)"
       [attr.aria-pressed]="full()"
       (click)="toggleFullScreen()"
     >
@@ -107,7 +107,7 @@
         class="full-toggle"
         type="button"
         appButton
-        title="The video, with what is drawn on it, in a window of its own that stays over other windows"
+        data-tooltip="The video, with what is drawn on it, in a window of its own that stays over other windows"
         [attr.aria-pressed]="floating.inWindow()"
         (click)="toggleWindow()"
       >

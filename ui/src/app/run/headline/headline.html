@@ -3,10 +3,10 @@
     class="tile"
     [attr.data-attention]="t.attention ? '' : null"
     [attr.data-good]="t.good ? '' : null"
-    [title]="t.why"
+    [attr.data-tooltip]="t.why"
   >
-    <span class="tile-label" [title]="t.label">{{ t.label }}</span>
-    <span class="tile-value" [title]="t.value">{{ t.value }}</span>
-    <span class="tile-note" [title]="t.note">{{ t.note }}</span>
+    <span class="tile-label" [attr.data-tooltip]="t.label">{{ t.label }}</span>
+    <span class="tile-value" [attr.data-tooltip]="t.value">{{ t.value }}</span>
+    <span class="tile-note" [attr.data-tooltip]="t.note">{{ t.note }}</span>
   </div>
 }

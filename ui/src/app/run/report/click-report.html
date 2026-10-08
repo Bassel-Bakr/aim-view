@@ -13,7 +13,7 @@
     @for (s of stats(); track s.label) {
       <div class="card">
         <span class="card-label">{{ s.label }}</span>
-        <span class="card-value" [title]="s.title ?? s.value">{{ s.value }}</span>
+        <span class="card-value" [attr.data-tooltip]="s.title ?? s.value">{{ s.value }}</span>
         <span class="card-detail">{{ s.detail }}</span>
       </div>
     }

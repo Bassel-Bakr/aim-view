@@ -2,7 +2,7 @@
   <button
     type="button"
     appButton
-    title="Choose KovaaK's stats folder (FPSAimTrainer\stats) so each VOD finds its stats file, or FPSAimTrainer for your scenarios too. The browser keeps a copy: choose it again after new runs."
+    data-tooltip="Choose KovaaK's stats folder (FPSAimTrainer\stats) so each VOD finds its stats file, or FPSAimTrainer for your scenarios too. The browser keeps a copy: choose it again after new runs."
     [disabled]="!!state.opening()"
     (click)="chooseStatsFolder(statsFolder)"
   >
@@ -21,7 +21,7 @@
   <button
     type="button"
     appButton
-    [title]="f.detail"
+    [attr.data-tooltip]="f.detail"
     [disabled]="f.busy"
     (click)="f.files ? folder.click() : openFolder(f)"
   >

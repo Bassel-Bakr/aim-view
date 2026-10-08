@@ -4,7 +4,7 @@
     <button
       type="button"
       appButton
-      title="Close the editor without saving (in the labelling queue, end the queue)"
+      data-tooltip="Close the editor without saving (in the labelling queue, end the queue)"
       (click)="draft.cancel()"
     >
       Cancel
@@ -40,7 +40,7 @@
     <button
       type="button"
       appButton
-      title="Change this type’s name or description; areas keep it"
+      data-tooltip="Change this type’s name or description; areas keep it"
       [disabled]="selectedKind() === null"
       (click)="editKind()"
     >
@@ -60,7 +60,7 @@
       type="button"
       appButton
       intent="primary"
-      [title]="
+      [attr.data-tooltip]="
         saveBlocked() ??
         'Keep these areas: the area finder learns from them, and a reviewed run is tracked again with them'
       "
@@ -72,7 +72,7 @@
     <button
       type="button"
       appButton
-      [title]="
+      [attr.data-tooltip]="
         draft.finderMissing ??
         'Your areas from a recording with the same layout, else the areas found in this one'
       "
@@ -84,7 +84,7 @@
     <button
       type="button"
       appButton
-      [title]="
+      [attr.data-tooltip]="
         draft.finderMissing ??
         'Find this recording’s areas itself, without copying another recording’s'
       "
@@ -96,7 +96,7 @@
     <button
       type="button"
       appButton
-      title="KovOBS’s layout: the areas the review ignores by default"
+      data-tooltip="KovOBS’s layout: the areas the review ignores by default"
       [disabled]="!draft.ready() || draft.busy() !== null"
       (click)="draft.useLayout()"
     >
@@ -105,7 +105,7 @@
     <button
       type="button"
       appButton
-      title="Remove every area"
+      data-tooltip="Remove every area"
       [disabled]="!draft.ready()"
       (click)="draft.clear()"
     >

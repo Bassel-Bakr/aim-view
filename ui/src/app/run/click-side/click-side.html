@@ -18,7 +18,7 @@
                 class="segment"
                 [style.flex]="seg.grow"
                 [style.background]="seg.color"
-                [title]="seg.title"
+                [attr.data-tooltip]="seg.title"
               ></div>
             }
           </div>
@@ -35,7 +35,7 @@
               class="segment"
               [style.flex]="seg.grow"
               [style.background]="seg.color"
-              [title]="seg.title"
+              [attr.data-tooltip]="seg.title"
             ></div>
           }
         </div>
@@ -43,7 +43,7 @@
     }
     <div class="legend">
       @for (item of b.legend; track $index) {
-        <span [title]="item.title">
+        <span [attr.data-tooltip]="item.title">
           <i class="swatch" [style.background]="item.color"></i>
           {{ item.text }}
           @if (item.average && !item.averageHidden) {

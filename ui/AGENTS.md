@@ -58,7 +58,10 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   shrink below its content, so what scrolls inside it scrolls there); a dialog never scrolls as a whole, only its
   `.dialog-body .fill`, between its header and its `<footer class="dialog-foot">`. Nothing is sized by the viewport's
   height (`vh`, `dvh`, `h-screen`) except where the window is the parent, on a line marked
-  `// viewport-height-ok: <why>`; `bun run lint:ui` fails on the others (`scripts/viewport-heights.ts`). A variant is a data attribute (`&[data-intent='primary']`), set by the control's directive in
+  `// viewport-height-ok: <why>`; `bun run lint:ui` fails on the others (`scripts/viewport-heights.ts`). A tooltip is a
+  `data-tooltip` attribute, not `title` (which cannot be styled, waits, and never shows for the keyboard or touch):
+  one popover in the top layer (`controls/tooltips.ts`, `.tooltip`) shows it for the mouse and the keyboard's focus,
+  with no component or directive. `title` stays only on an `<option>`, which the browser's own list shows. A variant is a data attribute (`&[data-intent='primary']`), set by the control's directive in
   `ui/src/app/controls/` from a typed input (`<button appButton intent="primary">`, `<span appBadge tone="good">`),
   so templates get type checks. Where HTML or ARIA already says the state, the style reads it instead, with no
   directive: a `.status-line` binds its role (`[attr.role]="n.failed ? 'alert' : 'status'"`) and is styled by it,

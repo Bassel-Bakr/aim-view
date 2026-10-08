@@ -3,7 +3,7 @@
     <button
       type="button"
       class="list-toggle"
-      title="Show or hide the recordings list"
+      data-tooltip="Show or hide the recordings list"
       aria-controls="recordings"
       [attr.aria-expanded]="pages.listOpen()"
       (click)="pages.toggleList()"
@@ -39,7 +39,7 @@
   <button
     type="button"
     class="chip"
-    title="Check the detector's crops: say if it found every target, and fix its shapes"
+    data-tooltip="Check the detector's crops: say if it found every target, and fix its shapes"
     [attr.aria-pressed]="pages.crops()"
     (click)="pages.toggleCrops()"
   >
@@ -55,7 +55,7 @@
         type="button"
         appButton
         class="more"
-        title="The other tools: the labelling queues, storage and folders (on a phone, the model and From a link too)"
+        data-tooltip="The other tools: the labelling queues, storage and folders (on a phone, the model and From a link too)"
         popovertarget="tools-menu"
         #moreButton
       >

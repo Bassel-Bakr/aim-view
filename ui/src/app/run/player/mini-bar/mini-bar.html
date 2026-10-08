@@ -1,11 +1,16 @@
-<button class="mini-button" type="button" title="Back to the player" (click)="toPlayer.emit()">
+<button
+  class="mini-button"
+  type="button"
+  data-tooltip="Back to the player"
+  (click)="toPlayer.emit()"
+>
   <span aria-hidden="true">↑</span>
   <span class="sr-only">Back to the player</span>
 </button>
 <button
   class="mini-button"
   type="button"
-  title="Close the floating video (it stops)"
+  data-tooltip="Close the floating video (it stops)"
   (click)="dismiss.emit()"
 >
   <span aria-hidden="true">✕</span>

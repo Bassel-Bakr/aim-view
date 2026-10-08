@@ -197,6 +197,25 @@
     background: conic-gradient(t.$accent calc(var(--share) * 1turn), t.$border-strong 0);
     mask: radial-gradient(farthest-side, transparent calc(100% - #{t.$line-width-strong}), black 0);
   }
+
+  // The one tooltip (app/controls/tooltips.ts): the data-tooltip words of the part under the pointer or the keyboard's
+  // focus. A popover, so it shows in the top layer and no scroller clips it, placed above its part by CSS anchor
+  // positioning, below when there is no room (where the browser has no anchor positioning, the script places it). It
+  // fades in once the pointer rests (--tooltip-delay) and goes at once.
+  .tooltip {
+    @apply pointer-events-none m-0 max-w-(--tooltip-max-width) rounded-md border border-border-strong bg-surface-3 px-4 py-2 text-xs text-primary;
+
+    inset: auto;
+    margin-block: t.$space-2;
+    position-anchor: --tooltip-anchor;
+    position-area: top;
+    position-try-fallbacks: flip-block;
+    transition: opacity t.$motion-fast t.$tooltip-delay;
+
+    @starting-style {
+      opacity: 0;
+    }
+  }
 }
 
 @keyframes spin {

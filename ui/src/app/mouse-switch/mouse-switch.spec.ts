@@ -39,7 +39,7 @@ describe('MouseSwitch', () => {
     const el = fixture.nativeElement as HTMLElement;
     const button = el.querySelector('[role=switch]') as HTMLButtonElement;
     expect(button.getAttribute('aria-checked')).toBe('false');
-    expect(button.title).toContain('into C:/data/mouse. background throttle not set');
+    expect(button.dataset['tooltip']).toContain('into C:/data/mouse. background throttle not set');
     button.click();
     await answer(routes);
     await fixture.whenStable();

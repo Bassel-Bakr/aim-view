@@ -6,7 +6,7 @@
       class="switch"
       [attr.aria-checked]="on()"
       [disabled]="busy()"
-      [title]="hint()"
+      [attr.data-tooltip]="hint()"
       (click)="toggle()"
     >
       <span class="switch-knob" aria-hidden="true"></span>

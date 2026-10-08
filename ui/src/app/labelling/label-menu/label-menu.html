@@ -1,7 +1,7 @@
 <button
   type="button"
   appButton
-  title="A queue: go through recordings one by one, check the areas found in each, fix them, Save and next. The area finder learns from them."
+  data-tooltip="A queue: go through recordings one by one, check the areas found in each, fix them, Save and next. The area finder learns from them."
   [disabled]="queue.loading()"
   (click)="startQueue()"
 >
@@ -12,7 +12,7 @@
     type="button"
     appButton
     aria-haspopup="dialog"
-    title="The examples the area finder learns from: download them, or load the review server's"
+    data-tooltip="The examples the area finder learns from: download them, or load the review server's"
     (click)="openExamples()"
   >
     Area examples
@@ -51,7 +51,7 @@
           type="button"
           appButton
           intent="primary"
-          title="Choose area_examples.jsonl and area_kinds.json (test_out/vod_app/): each recording's examples and each area type in them replace the ones kept here"
+          data-tooltip="Choose area_examples.jsonl and area_kinds.json (test_out/vod_app/): each recording's examples and each area type in them replace the ones kept here"
           [disabled]="loading()"
           (click)="files.click()"
         >
