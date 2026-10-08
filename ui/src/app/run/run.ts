@@ -9,6 +9,7 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { errorMessage, isClickReport, Recording } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
+import { StatsFiles } from '../platform/stats-files';
 import { FaintCutoff } from '../services/faint-cutoff';
 import { Library } from '../services/library';
 import { modelName, Models } from '../services/models';
@@ -76,6 +77,16 @@ export class Run {
   private readonly models = inject(Models);
   /** The recordings and their videos, for the score change and the video's state. */
   private readonly library = inject(Library);
+
+  /** Whether this mode takes KovaaK's folders from the user (the browser), so a scenario's file can be missing. */
+  private readonly takesFolders = inject(StatsFiles).chooseFolder !== null;
+  /**
+   * Whether the recording's scenario file is missing here (in the browser: KovaaK's stats folder chosen without the
+   * scenarios), so the review tells tracking from clicking by the stats file alone.
+   */
+  protected readonly scenarioMissing = computed(
+    () => this.takesFolders && this.recording().kind === null,
+  );
 
   /** The review's report, or null before there is one (or while it loads or failed). */
   protected readonly report = computed(() =>

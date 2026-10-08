@@ -8,10 +8,23 @@
 use std::path::Path;
 
 use aimview::scenario::{Facts, Kind};
+use aimview::stats_file::StatsFile;
 use serde_json::{Value, json};
 
 use crate::run_window::RunMarks;
 use crate::store::Part;
+
+/// Whether the run was a tracking run: by its scenario's facts, else (its scenario file not here: in the browser, KovaaK's
+/// stats folder chosen without the scenarios) by its stats file, which for a pure tracking scenario counts no kills and
+/// some hits. A tracking scenario whose bots die needs its scenario file to be known as one.
+fn is_tracking(facts: Option<&Facts>, stats_text: &str) -> bool {
+    if let Some(facts) = facts {
+        return facts.kind == Kind::Tracking;
+    }
+    let meta = StatsFile::parse(stats_text).meta;
+    let number = |key: &str| meta.get(key).and_then(|value| value.trim().parse::<f64>().ok());
+    number("Kills") == Some(0.0) && number("Hit Count").is_some_and(|hits| hits > 0.0)
+}
 
 /// A file's name, as the core's review request takes it.
 fn file_name(path: &Path) -> Option<String> {
@@ -45,7 +58,7 @@ pub fn work_out(
         "stats": stats.and_then(|(path, _)| file_name(path)).unwrap_or_default(),
         "hud": hud,
         "run": run.filter(RunMarks::is_set),
-        "tracking": facts.is_some_and(|facts| facts.kind == Kind::Tracking),
+        "tracking": is_tracking(facts, &stats_text),
         "limit": facts.and_then(|facts| facts.limit),
         "reload": facts.and_then(|facts| facts.reload.as_ref()),
         "hitbox": facts.and_then(|facts| facts.hitbox),
@@ -61,4 +74,35 @@ pub fn work_out(
         return Err(error.to_string());
     }
     Ok(Some(outcome["report"].clone()))
+}
+
+/// The run's kind when its scenario file is missing.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stats file's end: its kills and hits.
+    fn stats(kills: u32, hits: u32) -> String {
+        format!(
+            "Kills:,{kills}
+Deaths:,0
+Hit Count:,{hits}
+Miss Count:,10
+Score:,{hits}.0
+"
+        )
+    }
+
+    /// Without facts, no kills and some hits is tracking; kills, or no hits, is not; facts always win.
+    #[test]
+    fn tells_tracking_without_the_scenario_file() {
+        assert!(is_tracking(None, &stats(0, 4663)));
+        assert!(!is_tracking(None, &stats(7, 4663)), "bots died: not known as tracking without the file");
+        assert!(!is_tracking(None, &stats(0, 0)), "no hits at all");
+        assert!(!is_tracking(None, ""), "no stats file");
+        let clicking = Facts { kind: Kind::Static, limit: None, targets: None, reload: None, hitbox: None };
+        assert!(!is_tracking(Some(&clicking), &stats(0, 4663)), "the scenario's facts win");
+        let tracking = Facts { kind: Kind::Tracking, ..clicking };
+        assert!(is_tracking(Some(&tracking), &stats(7, 4663)));
+    }
 }

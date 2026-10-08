@@ -70,6 +70,13 @@
 @if (review.unavailable() ?? review.caveat(); as why) {
   <p class="note">{{ why }}</p>
 }
+@if (scenarioMissing()) {
+  <p class="note">
+    This scenario's file is not in this browser, so the review tells tracking from clicking by its
+    stats file alone, and a tracking run where bots die comes out as clicking. Give your scenarios
+    too: choose KovaaK's FPSAimTrainer folder with Stats folder at the top.
+  </p>
+}
 @if (video(); as v) {
   @if (v.state === 'remuxing') {
     <div class="progress">
