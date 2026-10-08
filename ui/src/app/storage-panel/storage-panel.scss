@@ -1,0 +1,32 @@
+@reference '../../tailwind.css';
+
+@layer components {
+  .dialog {
+    @apply m-auto max-h-(--dialog-max-height) w-(--dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+  }
+
+  .head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  .kept {
+    @apply text-xs text-muted;
+  }
+
+  // the second click: what removing does, then the two choices
+  .confirm {
+    @apply flex flex-wrap items-center justify-end gap-3;
+  }
+
+  .removes {
+    @apply max-w-(--prose-width) text-xs text-secondary;
+  }
+
+  .failed {
+    @apply text-sm text-warning;
+  }
+}

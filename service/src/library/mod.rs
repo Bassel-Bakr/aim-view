@@ -6,9 +6,10 @@
 //! settings.rs: what the user set, the models and the model pick. recordings.rs: the recordings list, a recording's
 //! video and folder, uploads, the scenarios' facts. stats.rs: KovaaK's stats files and each recording's pairing with
 //! one. reviews.rs: the review jobs, the review on show, the run window and the report. names.rs: file names and time
-//! stamps. links.rs: recordings added from a link (yt-dlp). browser.rs: what the browser build's page does for the
-//! library (the review, the area finder, the VODs folder, mouse logs). The areas (areas.rs), the faint-target cut-off
-//! (faint.rs), labelling (labels.rs) and the mouse logs' measures (mouse.rs) are kept beside it.
+//! stamps. usage.rs: what is kept and its size, for the data panel. links.rs: recordings added from a link (yt-dlp).
+//! browser.rs: what the browser build's page does for the library (the review, the area finder, the VODs folder, mouse
+//! logs). The areas (areas.rs), the faint-target cut-off (faint.rs), labelling (labels.rs) and the mouse logs' measures
+//! (mouse.rs) are kept beside it.
 //!
 //! In: the library's `Config` and the API's requests (api.rs). Out: the answers, and what the library keeps
 //! (store.rs: the data folder's files, or its database).
@@ -22,6 +23,7 @@ mod recordings;
 mod reviews;
 mod settings;
 mod stats;
+mod usage;
 
 use std::collections::HashMap;
 use std::fmt;

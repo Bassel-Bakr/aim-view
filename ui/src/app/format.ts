@@ -39,10 +39,21 @@ export function formatSize(bytes: number): string {
   return `${Math.round(bytes / BYTES_PER_MB)} MB`;
 }
 
+/** Bytes in the unit that suits them: "640 KB", "68 MB", "2.4 GB" (decimal, as file sizes are given). */
+export function formatBytes(bytes: number): string {
+  if (bytes < BYTES_PER_MB) return `${Math.round(bytes / BYTES_PER_KB)} KB`;
+  if (bytes < BYTES_PER_GB) return formatSize(bytes);
+  return `${(bytes / BYTES_PER_GB).toFixed(1)} GB`;
+}
+
 /** What a missing value shows as: a dash. */
 const NONE = '–';
+/** Bytes in a kilobyte (decimal, as file sizes are given). */
+const BYTES_PER_KB = 1e3;
 /** Bytes in a megabyte (decimal, as file sizes are given). */
 const BYTES_PER_MB = 1e6;
+/** Bytes in a gigabyte. */
+const BYTES_PER_GB = 1e9;
 /** Milliseconds in a second. */
 const MS_PER_SECOND = 1000;
 /** A share of 1 in percent. */

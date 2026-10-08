@@ -106,7 +106,7 @@ impl Library {
     }
 
     /// models.json: in the models folder, else in the folder above it (python/model).
-    fn models_info(&self) -> Option<Value> {
+    pub(super) fn models_info(&self) -> Option<Value> {
         let here = self.config.models.join("models.json");
         read_json(&here).or_else(|| read_json(&self.config.models.parent()?.join("models.json")))
     }

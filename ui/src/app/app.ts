@@ -12,6 +12,7 @@ import { ModelPanel } from './model-panel/model-panel';
 import { MouseSwitch } from './mouse-switch/mouse-switch';
 import { Recordings } from './recordings/recordings';
 import { Run } from './run/run';
+import { StoragePanel } from './storage-panel/storage-panel';
 import { Library } from './services/library';
 import { Pages } from './services/pages';
 import { Upload } from './upload/upload';
@@ -22,7 +23,17 @@ import { Upload } from './upload/upload';
  */
 @Component({
   selector: 'app-root',
-  imports: [Upload, ModelPanel, LabelMenu, CutoffMenu, MouseSwitch, Recordings, Run, Crops],
+  imports: [
+    Upload,
+    ModelPanel,
+    LabelMenu,
+    CutoffMenu,
+    MouseSwitch,
+    StoragePanel,
+    Recordings,
+    Run,
+    Crops,
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   host: {

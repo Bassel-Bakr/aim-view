@@ -196,6 +196,18 @@ function count(value: number): Uint8Array {
   return out.done();
 }
 
+/**
+ * Whether this browser has the service's database already (its pool's folder): on the first run
+ * it does not, and the data folder's files are imported into it when it opens.
+ */
+export async function databaseMade(): Promise<boolean> {
+  const root = await navigator.storage.getDirectory();
+  return root.getDirectoryHandle(POOL_FOLDER).then(
+    () => true,
+    () => false,
+  );
+}
+
 /** Waits `ms` milliseconds. */
 function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

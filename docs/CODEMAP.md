@@ -144,6 +144,8 @@ rust-analyzer's call hierarchy.
 - `service/src/library/stats.rs`: KovaaK's stats files and each recording's pairing with one (python/retired/server.py:
   stats_index, stats_for, stats_of, stats_info, set_stats): the user's choice (stats.json in the recording's folder),
   else one uploaded beside it, else the stats file of the same scenario whose time is nearest the recording's.
+- `service/src/library/usage.rs`: What the library keeps and how much space each part takes, for the data panel
+  (docs/storage-design.md, "Space and cleanup"), and removing a part the user can do without.
 - `service/src/mouse.rs`: A recording's measures from the raw mouse logs (python/mouse_log.py's, or the desktop app's
   logger's, in the layout's mouse folder): the newest log that covers the recording's run, read by the core
   (src/mouse.rs, as python/mouse_read.py reads it).
@@ -1119,6 +1121,15 @@ stats file of the same scenario whose time is nearest the recording's.
 
 - `Library` methods: `stats_folder`, `stats_for`, `history`, `stats_path`, `stats_info`, `set_stats`.
 
+## service/src/library/usage.rs
+
+What the library keeps and how much space each part takes, for the data panel (docs/storage-design.md, "Space and
+cleanup"), and removing a part the user can do without. In: the store's sizes (store.rs), the data folder's folders and
+the settings. Out: GET /api/storage, {total, parts: [{id, kind, bytes, ...}]}, and POST /api/storage?remove=, after
+which the database gives back the space freed.
+
+- `Library` methods: `storage`, `remove_storage`.
+
 ## service/src/mouse.rs
 
 A recording's measures from the raw mouse logs (python/mouse_log.py's, or the desktop app's logger's, in the layout's
@@ -1225,6 +1236,8 @@ kept for each recording.
   were kept per model.
 - `Item` (enum): One thing the library keeps. Methods: `file_name`.
 - `Store` (trait): Where the library keeps what it keeps (see the module's comment).
+- `ReviewSize` (struct): One model's reviews: the model ("" the old reviews, from before reviews were kept per model),
+  how many recordings it reviewed, and the bytes its reviews keep (compressed in the database).
 - `StatsRun` (struct): A run as its stats file's footer gives it: KovaaK's score, the kills when the file gives them,
   and hits over shots (0 to 1) when it gives both.
 - `StatsRow` (struct): A stats file of KovaaK's as the browser keeps it: its name, size and time of change (to tell a
@@ -1235,7 +1248,7 @@ kept for each recording.
   text only of those a recording used, and every scenario's facts.
 - `Files` (struct): The store as the files in the data folder (disk.rs), laid out as the layout's folders say: today's
   files, byte for byte. Methods: `new`, `path`.
-- Functions: `recording_folder`, `folder_parts`.
+- Functions: `folder_size`, `recording_folder`, `folder_parts`.
 
 ## service/src/video.rs
 

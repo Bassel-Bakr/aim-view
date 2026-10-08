@@ -17,8 +17,10 @@ import { RecordingSource } from '../platform/recording-source';
 import { ReviewEngine } from '../platform/review-engine';
 import { ScoreHistory } from '../platform/score-history';
 import { StatsFiles } from '../platform/stats-files';
+import { StoredData } from '../platform/stored-data';
 import { ServerModels } from './http/server-models';
 import { ServerScoreHistory } from './http/server-score-history';
+import { ServerStoredData } from './http/server-stored-data';
 import { BrowserAreaLabels } from './service/browser-area-labels';
 import { BrowserCropSets } from './service/browser-crop-sets';
 import { BrowserFaintCutoffs } from './service/browser-faint-cutoffs';
@@ -44,6 +46,7 @@ export const MODE: Mode = {
     { provide: RecordingSource, useExisting: BrowserRecordings },
     { provide: StatsFiles, useExisting: BrowserStatsFiles },
     { provide: ScoreHistory, useExisting: ServerScoreHistory },
+    { provide: StoredData, useExisting: ServerStoredData },
     { provide: ReviewEngine, useExisting: BrowserReview },
     { provide: ModelCatalog, useExisting: ServerModels },
     { provide: MouseLogs, useExisting: BrowserMouseLogs },

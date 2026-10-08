@@ -1,6 +1,7 @@
 # Storage: one SQLite database per data folder
 
-Status: steps 1 to 3 done (2026-10-07), step 4 proposed. The prototype that backs it: `prototypes/sqlite_opfs/`
+Status: steps 1 to 3 done (2026-10-07); step 4's data panel done (2026-10-08), its export zip proposed. The
+prototype that backs it: `prototypes/sqlite_opfs/`
 (README.md has its numbers).
 
 ## Why
@@ -147,7 +148,14 @@ Each ends in a check, and each is committed on its own.
    the built-in browser with 40 of the user's stats files and a scenario sent as a batch, the history equal to
    native's for those 40 runs, the pairing, the scenario's kind, the paired text kept across a reload, and a layout-1
    database and the old copies moved on opening.
-4. **The data panel** and **the export zip**, on the interface.
+4. **The data panel** and **the export zip**, on the interface. The data panel is done (2026-10-08): the top bar's
+   Storage button (ui/src/app/storage-panel/, the StoredData contract, GET and POST /api/storage,
+   service/src/library/usage.rs) lists each part with its size, largest first: each model's reviews (and whether
+   models.json still offers the model), the user's marks and areas, the cut-off labels, KovaaK's files the browser
+   keeps, the videos added, the mouse logs, the files from before the database, and the downloaded ffmpeg. Parts the
+   user made are listed but never removed there; the others take a second click, and the database is compacted
+   (VACUUM) after. Browser mode copies its shipped area data into /data only on its first run, so removed old files
+   do not come back. The export zip is still to do.
 
 ## Open questions
 

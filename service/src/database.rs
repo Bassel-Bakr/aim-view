@@ -16,8 +16,8 @@ use crate::config::Folders;
 use crate::library::slug;
 use crate::sql::{Sql, SqlValue};
 use crate::store::{
-    DETECTOR_KEY, Files, IdList, Item, Kovaak, MODELS, Mark, OLD_TRACKS_TAIL_BYTES, Part, ReviewBy, ScenarioRow,
-    StatsRow, StatsRun, Store,
+    DETECTOR_KEY, Files, IdList, Item, Kovaak, MARKS, MODELS, Mark, OLD_TRACKS_TAIL_BYTES, PARTS, Part, ReviewBy,
+    ReviewSize, ScenarioRow, StatsRow, StatsRun, Store,
 };
 
 /// The database's file in the data folder.
@@ -74,12 +74,6 @@ const LIBRARY_ITEMS: [Item<'static>; 8] = [
     Item::CutoffRows,
 ];
 
-/// Every mark a recording can have.
-const MARKS: [Mark; 6] =
-    [Mark::RunWindow, Mark::StatsPick, Mark::Cutoff, Mark::SavedAreas, Mark::FoundAreas, Mark::FoundMaps];
-
-/// Every part a review can have.
-const PARTS: [Part; 4] = [Part::Tracks, Part::Readings, Part::Hud, Part::Kills];
 
 /// The folder in the cut-off folder that holds the labels' crops.
 const CROPS_FOLDER: &str = "train";
@@ -432,6 +426,50 @@ impl Store for Database {
         out
     }
 
+    /// The `review` table by model.
+    fn review_sizes(&self) -> Vec<ReviewSize> {
+        let statement = "SELECT model, COUNT(DISTINCT recording), SUM(length(bytes)) FROM review GROUP BY model";
+        let rows = self.sql().query(statement, &[]).unwrap_or_default();
+        rows.into_iter()
+            .map(|row| ReviewSize {
+                model: text_of(row[0].clone()),
+                recordings: usize::try_from(count_of(&row[1])).unwrap_or(0),
+                bytes: count_of(&row[2]),
+            })
+            .collect()
+    }
+
+    /// Deletes the model's rows.
+    fn remove_reviews(&self, model: &str) -> io::Result<usize> {
+        let mut sql = self.sql();
+        let counted = sql.query("SELECT COUNT(DISTINCT recording) FROM review WHERE model = ?1", &[text(model)])?;
+        sql.execute("DELETE FROM review WHERE model = ?1", &[text(model)])?;
+        Ok(counted.first().map_or(0, |row| usize::try_from(count_of(&row[0])).unwrap_or(0)))
+    }
+
+    /// The `mark` table's bytes.
+    fn marks_size(&self) -> u64 {
+        self.sum("SELECT SUM(length(bytes)) FROM mark", &[])
+    }
+
+    /// The `cutoff_crop` table's bytes and the rows' item.
+    fn cutoff_size(&self) -> u64 {
+        let rows = [text(Item::CutoffRows.file_name())];
+        self.sum("SELECT SUM(length(bytes)) FROM cutoff_crop", &[])
+            + self.sum("SELECT SUM(length(bytes)) FROM library WHERE name = ?1", &rows)
+    }
+
+    /// Its pages' bytes.
+    fn file_size(&self) -> Option<u64> {
+        let pages = self.sum("PRAGMA page_count", &[]);
+        Some(pages * self.sum("PRAGMA page_size", &[]))
+    }
+
+    /// VACUUM: the database file is written again without its free pages.
+    fn compact(&self) -> io::Result<()> {
+        self.sql().batch("VACUUM")
+    }
+
     /// The browser build keeps KovaaK's files here; natively the library reads their folders.
     fn kovaak(&self) -> Option<&dyn Kovaak> {
         if cfg!(feature = "native") { None } else { Some(self) }
@@ -452,15 +490,22 @@ fn real_of(value: &SqlValue) -> Option<f64> {
     }
 }
 
-/// A row's column as a count; 0 when it is not a whole number.
+/// A row's column as a count; 0 when it is not a whole number (a sum is a real when it overflows).
 fn count_of(value: &SqlValue) -> u64 {
     match value {
         SqlValue::Integer(number) => u64::try_from(*number).unwrap_or(0),
+        SqlValue::Real(number) if *number >= 0.0 => *number as u64,
         _ => 0,
     }
 }
 
 impl Database {
+    /// A query's one number (a sum or a count); 0 when it gives none.
+    fn sum(&self, statement: &str, values: &[SqlValue]) -> u64 {
+        let rows = self.sql().query(statement, values).unwrap_or_default();
+        rows.first().and_then(|row| row.first()).map_or(0, count_of)
+    }
+
     /// Runs `statement` once per row's values, all in one transaction, while no one else uses the connection.
     fn insert_all(&self, statement: &str, rows: impl Iterator<Item = Vec<SqlValue>>) -> io::Result<()> {
         let mut sql = self.sql();
@@ -537,6 +582,19 @@ impl Kovaak for Database {
     fn keep_stats_csv(&self, name: &str, csv: &[u8]) -> io::Result<()> {
         let statement = "UPDATE stats_file SET csv = ?1 WHERE name = ?2";
         self.sql().execute(statement, &[SqlValue::Blob(compress(csv)?), text(name)]).map(|_| ())
+    }
+
+    /// The two tables' rows and their bytes.
+    fn kovaak_size(&self) -> io::Result<(usize, usize, u64)> {
+        let count = |table: &str| usize::try_from(self.sum(&format!("SELECT COUNT(*) FROM {table}"), &[])).unwrap_or(0);
+        let bytes = self.sum("SELECT SUM(length(name) + IFNULL(length(csv), 0) + 48) FROM stats_file", &[])
+            + self.sum("SELECT SUM(length(path) + length(facts) + 16) FROM scenario", &[]);
+        Ok((count("stats_file"), count("scenario"), bytes))
+    }
+
+    /// Deletes both tables' rows.
+    fn clear_kovaak(&self) -> io::Result<()> {
+        self.sql().batch("DELETE FROM stats_file; DELETE FROM scenario")
     }
 
     /// The `scenario` table, the user's scenarios first; a row whose facts do not read is left out.

@@ -1,0 +1,57 @@
+<button
+  type="button"
+  appButton
+  aria-haspopup="dialog"
+  title="What Aim View keeps on this computer, how much space each part takes, and removing what you can do without"
+  (click)="open()"
+>
+  Storage
+</button>
+
+<dialog class="dialog" #dialog aria-labelledby="storage-title">
+  <header class="head">
+    <h2 id="storage-title">Storage</h2>
+    <button type="button" appButton (click)="close()">Close</button>
+  </header>
+  @if (data(); as d) {
+    <p class="intro">
+      {{ intro() }} What you made yourself stays; the rest can be removed and comes back when it is
+      needed.
+    </p>
+    <app-data-table
+      class="parts"
+      label="What Aim View keeps"
+      [rows]="rows()"
+      [columns]="columns"
+      [rowId]="rowId"
+      [sortable]="false"
+    >
+      <ng-template appCell="remove" [appCellRows]="rows()" let-row>
+        @if (!row.removable) {
+          <span class="kept">Kept</span>
+        } @else if (row.bytes === 0) {
+          <span class="kept">Empty</span>
+        } @else if (removing() === row.id) {
+          <span class="kept" role="status">Removing…</span>
+        } @else if (confirming() === row.id) {
+          <span class="confirm">
+            <span class="removes">{{ row.removes }}</span>
+            <button type="button" appButton intent="primary" (click)="remove(row.id)">
+              Remove
+            </button>
+            <button type="button" appButton (click)="keep()">Keep</button>
+          </span>
+        } @else {
+          <button type="button" appButton [disabled]="removing() !== null" (click)="ask(row.id)">
+            Remove
+          </button>
+        }
+      </ng-template>
+    </app-data-table>
+    @if (failed(); as why) {
+      <p class="failed" role="alert">{{ why }}</p>
+    }
+  } @else {
+    <p class="intro" role="status">Reading what is kept…</p>
+  }
+</dialog>

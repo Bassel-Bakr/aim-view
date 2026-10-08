@@ -16,6 +16,7 @@ import { RecordingSource } from '../platform/recording-source';
 import { ReviewEngine } from '../platform/review-engine';
 import { ScoreHistory } from '../platform/score-history';
 import { StatsFiles } from '../platform/stats-files';
+import { StoredData } from '../platform/stored-data';
 import { ServerAreaLabels } from './http/server-area-labels';
 import { ServerCropSets } from './http/server-crop-sets';
 import { ServerFaintCutoffs } from './http/server-faint-cutoffs';
@@ -25,6 +26,7 @@ import { ServerMouseLogs } from './http/server-mouse-logs';
 import { ServerRecordings } from './http/server-recordings';
 import { ServerReview } from './http/server-review';
 import { ServerScoreHistory } from './http/server-score-history';
+import { ServerStoredData } from './http/server-stored-data';
 import { ServerStatsFiles } from './http/server-stats-files';
 
 /**
@@ -39,6 +41,7 @@ export const MODE: Mode = {
     { provide: RecordingSource, useExisting: ServerRecordings },
     { provide: StatsFiles, useExisting: ServerStatsFiles },
     { provide: ScoreHistory, useExisting: ServerScoreHistory },
+    { provide: StoredData, useExisting: ServerStoredData },
     { provide: ReviewEngine, useExisting: ServerReview },
     { provide: ModelCatalog, useExisting: ServerModels },
     { provide: MouseLogs, useExisting: ServerMouseLogs },

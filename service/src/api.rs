@@ -213,6 +213,7 @@ fn get_answer(library: &Library, route: &Route) -> Answer<Value> {
         }
         "/api/mouse" => id().and_then(|id| library.mouse_measures(&id)),
         "/api/cutoff_labels" => library.cutoff_labels_count(),
+        "/api/storage" => library.storage(),
         #[cfg(not(feature = "native"))]
         "/api/kovaak_files" => library.kovaak_files(),
         "/api/info" => Ok(json!({ "detector": library.model(), "device": library.config().device.name() })),
@@ -265,6 +266,10 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/faint_submit" => id().and_then(|id| library.submit_faint(&id, offset(route.query("offset"))?)),
         "/api/area_examples" => library.set_examples(body),
         "/api/area_kinds_file" => library.set_kinds_file(body),
+        "/api/storage" => {
+            let part = route.query("remove").ok_or_else(|| Failure::bad("remove= is missing"));
+            part.and_then(|part| library.remove_storage(&part))
+        }
         "/api/crop_answer" => crop_ids(route).and_then(|(page, id)| library.save_crop_answer(&page, &id, body)),
         "/api/crop_import" => page(route).and_then(|page| library.import_crop_answers(&page, body)),
         #[cfg(not(feature = "native"))]

@@ -26,7 +26,7 @@ import {
   ServiceTask,
   VodsMount,
 } from './service-messages';
-import { ServiceDatabase } from './service-database';
+import { databaseMade, ServiceDatabase } from './service-database';
 import { HandleRequest, OpenFailed, ServiceModule } from './service-module';
 
 /** The shipped area finder data the first run starts from, when /data has none of its own. */
@@ -152,8 +152,13 @@ async function privateFolder(name: string): Promise<FileSystemDirectoryHandle> {
   return app.getDirectoryHandle(name, { create: true });
 }
 
-/** The shipped area finder data copied into /data where /data has none (the first run). */
+/**
+ * The shipped area finder data copied into /data where /data has none, on the first run only: the
+ * database imports them then, and keeps them after (removing the old files must not bring them
+ * back).
+ */
 async function fillShipped(dataUrl: string): Promise<void> {
+  if (await databaseMade()) return;
   for (const name of SHIPPED) {
     if (await mounts.exists(`/data/${name}`)) continue;
     const res = await fetch(new URL(name, dataUrl)).catch(() => null);
