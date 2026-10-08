@@ -35,6 +35,19 @@
     @apply flex flex-wrap items-center gap-4;
   }
 
+  // the Kind menu, its word beside it
+  .kind {
+    @apply flex items-center gap-3;
+  }
+
+  .kind-label {
+    @apply text-xs text-muted;
+  }
+
+  .kind-select {
+    @apply min-h-(--control-height) rounded-md border border-border-strong bg-surface-2 px-4 text-primary;
+  }
+
   .note {
     @apply mb-6 text-xs text-muted;
   }

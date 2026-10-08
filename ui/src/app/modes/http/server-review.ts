@@ -1,13 +1,14 @@
 /**
  * Server mode's `ReviewEngine`, which the desktop app uses too and browser mode extends. In: the
- * review service's /api/report, /api/tracks, /api/analyse, /api/job, /api/cancel and /api/run.
+ * review service's /api/report, /api/tracks, /api/analyse, /api/job, /api/cancel, /api/run and
+ * /api/kind.
  * Out: each recording's report, tracks, review job and run window, for the run page.
  */
 
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
 import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Job, Report, RunMarks, Tracks } from '../../api';
+import { Job, KindChange, Report, RunKind, RunMarks, Tracks } from '../../api';
 import { ReviewEngine } from '../../platform/review-engine';
 
 /**
@@ -110,5 +111,10 @@ export class ServerReview implements ReviewEngine {
   setMarks(id: string, marks: RunMarks | null): Promise<Job> {
     const body: RunMarks = marks ?? { start: null, end: null, length: null };
     return firstValueFrom(this.http.post<Job>('/api/run', body, { params: { id } }));
+  }
+
+  /** Keeps the kind (POST /api/kind; null follows the scenario again) and gives the row's kind now. */
+  setKind(id: string, kind: RunKind | null): Promise<KindChange> {
+    return firstValueFrom(this.http.post<KindChange>('/api/kind', { kind }, { params: { id } }));
   }
 }

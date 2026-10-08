@@ -6,7 +6,7 @@
  */
 
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { errorMessage, isClickReport, Recording } from '../api';
+import { errorMessage, isClickReport, Recording, RunKind } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
 import { StatsFiles } from '../platform/stats-files';
@@ -36,6 +36,22 @@ import { formatClock, RunWindow } from './run-window/run-window';
 import { SpeedChart } from './speed-chart/speed-chart';
 import { StatsFile } from './stats-file/stats-file';
 import { Timeline } from './timeline/timeline';
+
+/** A kind of run in the toolbar's Kind menu: the kind kept, and its words. */
+interface KindOption {
+  /** The kind the service keeps (kind.json). */
+  value: RunKind;
+  /** Its words in the menu. */
+  label: string;
+}
+
+/** The kinds of run the user can choose, the clicking ones first. */
+const KIND_OPTIONS: readonly KindOption[] = [
+  { value: 'static', label: 'Static clicking' },
+  { value: 'dynamic', label: 'Dynamic clicking' },
+  { value: 'switching', label: 'Target switching' },
+  { value: 'tracking', label: 'Tracking' },
+];
 
 /**
  * The open recording: its header, the review's button and progress, the video, a tracking run's
@@ -135,6 +151,18 @@ export class Run {
   });
   /** Whether the stats file panel is open. */
   protected readonly statsOpen = signal(false);
+  /** The kinds of run the Kind menu offers. */
+  protected readonly kinds = KIND_OPTIONS;
+  /**
+   * The Kind menu's first choice, which follows the scenario: it names the scenario's kind when its file gives one
+   * and the user chose none.
+   */
+  protected readonly scenarioKind = computed(() => {
+    const recording = this.recording();
+    const known = recording.kind_pick ? null : recording.kind;
+    const option = KIND_OPTIONS.find((kind) => kind.value === known);
+    return option ? `${option.label} (the scenario's)` : 'From the scenario';
+  });
   /** Whether the run window panel is open. */
   protected readonly windowOpen = signal(false);
   /** The run window's button: the marked times, or what it does when none are. */
@@ -245,6 +273,12 @@ export class Run {
   /** Opens the cut-off's panel, or closes it (it stays while the cut-off is on). */
   protected toggleCutoff(): void {
     this.faint.asked.update((open) => !open);
+  }
+
+  /** Keeps the kind the user picked in the Kind menu: one of KIND_OPTIONS, or '' for the scenario's. */
+  protected chooseKind(select: HTMLSelectElement): void {
+    const kind = KIND_OPTIONS.find((option) => option.value === select.value)?.value ?? null;
+    void this.review.saveKind(kind);
   }
 
   /** Opens or closes the stats file panel. */

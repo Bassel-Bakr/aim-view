@@ -44,6 +44,20 @@
         Cut-off
       </button>
     }
+    <label
+      class="kind"
+      data-tooltip="The kind of run: a tracking run gets a tracking report. It follows the scenario's file; choose one when the scenario is not known (a video's title names none) or is wrong"
+    >
+      <span class="kind-label">Kind</span>
+      <select class="kind-select" #kind (change)="chooseKind(kind)">
+        <option value="" [selected]="!recording().kind_pick">{{ scenarioKind() }}</option>
+        @for (k of kinds; track k.value) {
+          <option [value]="k.value" [selected]="recording().kind_pick === k.value">
+            {{ k.label }}
+          </option>
+        }
+      </select>
+    </label>
     <button
       class="button"
       type="button"

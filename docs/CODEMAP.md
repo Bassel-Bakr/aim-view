@@ -1107,7 +1107,7 @@ names and times. Out: their parts and stamps, for the recordings list, the stats
 The recordings: the list (python/retired/server.py: Library.list), a recording's video from its id and its folder,
 videos and stats files added from the user's computer, and each scenario's facts from its scenario file.
 
-- `Library` methods: `resolve`, `review_dir`, `scenarios`, `recordings`, `upload`, `upload_file`, `spool`.
+- `Library` methods: `resolve`, `review_dir`, `scenarios`, `set_kind`, `recordings`, `upload`, `upload_file`, `spool`.
 
 ## service/src/library/reviews.rs
 

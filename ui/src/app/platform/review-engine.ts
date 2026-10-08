@@ -1,11 +1,11 @@
 /**
  * The ReviewEngine contract: starting, following and cancelling a recording's review, its report,
- * its tracks and its run window. In: each mode's implementation (modes/mode.*.ts). Out: the
+ * its tracks, its run window and the kind of run the user chose. In: each mode's implementation (modes/mode.*.ts). Out: the
  * Review service (services/review.ts), which the run page reads.
  */
 
 import { ResourceRef } from '@angular/core';
-import { Job, Report, RunMarks, Tracks } from '../api';
+import { Job, KindChange, Report, RunKind, RunMarks, Tracks } from '../api';
 
 /**
  * What reviews the recordings: the review server, the review core in the browser, or the desktop app. Each mode
@@ -44,4 +44,10 @@ export abstract class ReviewEngine {
    * (the browser, the desktop app), a review that did not track all of the new one is made again. Resolves to the job.
    */
   abstract setMarks(id: string, marks: RunMarks | null): Promise<Job>;
+
+  /**
+   * Keeps the kind of run the user chose for the recording (null: its scenario's again), which the report reads when
+   * it is next shown. Resolves to the recording's kind now.
+   */
+  abstract setKind(id: string, kind: RunKind | null): Promise<KindChange>;
 }

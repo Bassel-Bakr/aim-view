@@ -251,6 +251,7 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/cancel" => id().and_then(|id| library.cancel(&id)),
         "/api/run" => id().and_then(|id| library.set_marks(&id, &route.body())),
         "/api/stats" => id().and_then(|id| library.set_stats(&id, &route.body())),
+        "/api/kind" => id().and_then(|id| library.set_kind(&id, &route.body())),
         "/api/upload" => upload(library, route),
         #[cfg(feature = "native")]
         "/api/link/formats" => library.link_formats(&route.body()),

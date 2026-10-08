@@ -232,7 +232,7 @@ impl Library {
     /// What a new review of the recording by `model` takes: the scenario's target count, the runs to split it into,
     /// the user's run window (only its part of the video is tracked) and the recording's areas.
     fn review_request(&self, id: &str, video: PathBuf, model: &str) -> Answer<Request> {
-        let facts = self.facts_of(&video);
+        let facts = self.facts_for(id, &video);
         let cap = facts.as_ref().and_then(|facts| facts.targets).unwrap_or(0);
         let threads = std::thread::available_parallelism().map_or(1, |threads| threads.get());
         let runs = crate::review::parts_at_once(threads, self.config.gpu_frames);
@@ -352,7 +352,7 @@ impl Library {
         let (model, by) = self.shown(id);
         let stats = self.stats_of(id, &video);
         let stats_text = stats.as_deref().map(|path| self.stats_bytes(path)).transpose()?;
-        let facts = self.facts_of(&video);
+        let facts = self.facts_for(id, &video);
         let run = Some(RunMarks::read(self.store(), id));
         let faint = Some(self.faint(id));
         let parts = |part: Part| self.review_part(id, &by, part);

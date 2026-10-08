@@ -41,6 +41,7 @@ export type { FlickProfile } from './generated/flick-profile';
 export type { Geometry } from './generated/geometry';
 export type { Issue } from './generated/issue';
 export type { KillParts } from './generated/kill-parts';
+export type { Kind as RunKind } from './generated/kind';
 export type { KillSource as Source } from './generated/kill-source';
 export type { LinkFormat } from './generated/link-format';
 export type { LinkInfo } from './generated/link-info';
@@ -174,8 +175,10 @@ export interface Recording {
   id: string;
   /** The scenario from its file name, or a link's title, or the file's own name. */
   scenario: string;
-  /** The scenario's kind, from KovaaK's scenario files. */
+  /** The run's kind: the user's choice (kind_pick), else its scenario's, from KovaaK's scenario files. */
   kind: Kind | null;
+  /** The kind the user chose for it (kind.json); null or absent when it follows its scenario. */
+  kind_pick?: Kind | null;
   /** The score from its file name; null when the name gives none. */
   score: number | null;
   /** When it was recorded, local time, as KovOBS names it ("2026.10.02-12.34.56"). */
@@ -199,6 +202,14 @@ export interface Recording {
    * looked at yet (they read as none until the whole list is in).
    */
   quick?: boolean;
+}
+
+/** A recording's kind after the user chose one (POST /api/kind): its row's `kind` and `kind_pick`. */
+export interface KindChange {
+  /** The run's kind now: the choice, else its scenario's; null when neither is known. */
+  kind: Kind | null;
+  /** The user's choice; null when it follows its scenario. */
+  kind_pick: Kind | null;
 }
 
 /**

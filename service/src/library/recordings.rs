@@ -10,14 +10,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, PoisonError};
 
-use aimview::scenario::Facts;
+use aimview::scenario::{Facts, Kind};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::names::{free_name, local_stamp, parse_name, parse_titled, parse_video, slug};
 use super::stats::UPLOAD_SOURCE;
-use super::{Answer, Failure, Library, modified, read_kept};
+use super::{Answer, Failure, Library, keep_json, modified, read_kept};
 use crate::disk::Entry;
-use crate::store::Item;
+use crate::store::{Item, Mark};
 
 /// The extensions (lower case) of the files the library takes as videos.
 pub(crate) const VIDEO_TYPES: [&str; 4] = ["mp4", "mkv", "mov", "webm"];
@@ -269,6 +270,50 @@ impl Library {
         self.facts().get(&scenario.to_lowercase()).map_or(Value::Null, |facts| json!(facts.kind))
     }
 
+    /// The kind of run the user chose for a recording (kind.json); None when it follows its scenario.
+    pub(crate) fn kind_pick(&self, id: &str) -> Option<Kind> {
+        read_kept::<KindPick>(self.store(), Item::Mark(id, Mark::KindPick)).map(|pick| pick.kind)
+    }
+
+    /// A recording's row fields for its kind: `kind`, the user's choice else its scenario's (null when neither is
+    /// known), and `kind_pick`, the user's choice (null when it follows the scenario).
+    fn kind_fields(&self, id: &str, scenario: &str, read_pick: bool) -> (Value, Value) {
+        let pick = if read_pick { self.kind_pick(id) } else { None };
+        (pick.map_or_else(|| self.kind(scenario), |kind| json!(kind)), json!(pick))
+    }
+
+    /// The facts the review and the report take for a recording: its scenario's, with the kind the user chose in place
+    /// of the file's; that kind alone when the scenario file is not found (a link's title names no scenario); None when
+    /// neither is known.
+    pub(crate) fn facts_for(&self, id: &str, video: &Path) -> Option<Facts> {
+        let facts = self.facts_of(video);
+        let Some(kind) = self.kind_pick(id) else { return facts };
+        Some(match facts {
+            Some(facts) => Facts { kind, ..facts },
+            None => Facts { kind, limit: None, targets: None, reload: None, hitbox: None },
+        })
+    }
+
+    /// POST /api/kind: the kind of run the user chose for the recording ({kind: "tracking"}), or {kind: null} to follow
+    /// its scenario again. The report is worked out when it is shown, so nothing is reviewed again. Answers the row's
+    /// {kind, kind_pick} as `recordings` gives them.
+    pub fn set_kind(&self, id: &str, body: &Value) -> Answer<Value> {
+        let video = self.resolve(id)?;
+        let item = Item::Mark(id, Mark::KindPick);
+        match body.get("kind").filter(|kind| !kind.is_null()) {
+            None => {
+                let _ = self.store().remove(item);
+            }
+            Some(kind) => {
+                let kind: Kind =
+                    serde_json::from_value(kind.clone()).map_err(|error| Failure::bad(format!("kind: {error}")))?;
+                keep_json(self.store(), item, &KindPick { kind })?;
+            }
+        }
+        let kind = self.facts_for(id, &video).map(|facts| facts.kind);
+        Ok(json!({ "kind": kind, "kind_pick": self.kind_pick(id) }))
+    }
+
     /// The recordings, newest first (python/retired/server.py: Library.list). `quick`: only what each file's name gives
     /// (the scenario, score and time stamp) and the user's marks, newest first by the stamp, each row marked `quick`:
     /// no file is read, no stats file paired, no review looked for, so the page lists them at once and asks for the
@@ -323,8 +368,9 @@ impl Library {
         let metadata = entry.metadata().ok();
         let has_folder = kept.contains(&slug(&id));
         let pick = if has_folder { self.pairing(&id) } else { None };
+        let (kind, kind_pick) = self.kind_fields(&id, &scenario, has_folder);
         Some(json!({
-            "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
+            "id": id, "scenario": scenario, "kind": kind, "kind_pick": kind_pick, "score": score, "stamp": stamp,
             "mtime": metadata.and_then(|data| data.modified()).unwrap_or(0.0),
             "size": metadata.map_or(0, |data| data.len()),
             "stats": self.stats_with(pick, &id, &entry.path()).is_some(),
@@ -348,8 +394,9 @@ impl Library {
             row["uploaded"] = json!(true);
             return row;
         }
+        let (kind, kind_pick) = self.kind_fields(&id, &scenario, true);
         json!({
-            "id": id, "scenario": scenario, "kind": self.kind(&scenario), "score": score, "stamp": stamp,
+            "id": id, "scenario": scenario, "kind": kind, "kind_pick": kind_pick, "score": score, "stamp": stamp,
             "mtime": modified(path), "size": crate::disk::metadata(path).map_or(0, |data| data.len()),
             "stats": self.stats_of(&id, path).is_some(), "uploaded": true, "analysed": self.reviewed(&id),
             "not_aim": not_aim.contains(&id),
@@ -426,6 +473,13 @@ impl Library {
 }
 
 /// Uploads: stale bodies removed, a video sent again kept once.
+/// The kind of run the user chose for a recording, as kind.json keeps it.
+#[derive(Serialize, Deserialize)]
+struct KindPick {
+    /// The kind, in place of its scenario's.
+    kind: Kind,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{Config, Layout};
@@ -485,6 +539,36 @@ mod tests {
             .collect();
         kept.sort();
         assert_eq!(kept, ["run (2).mp4", "run.mp4"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The kind the user chooses for a recording is its row's kind and the facts' kind the review and the report take,
+    /// even with no scenario file found (a link's title); choosing none follows the scenario again.
+    #[test]
+    fn a_chosen_kind_wins() {
+        let dir = std::env::temp_dir().join(format!("aimview-kind-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
+        let saved = library.upload("not a scenario at all - 2026.10.08-12.50.56.mp4", None, b"video").unwrap();
+        let id = format!("uploads/{}", saved["saved"].as_str().unwrap());
+        let video = library.resolve(&id).unwrap();
+        let row = |library: &Library| {
+            let rows = library.recordings(false).unwrap();
+            rows.as_array().unwrap().iter().find(|row| row["id"] == id).cloned().unwrap()
+        };
+        assert_eq!(row(&library)["kind"], serde_json::Value::Null);
+        assert!(library.facts_for(&id, &video).is_none());
+        let answer = library.set_kind(&id, &serde_json::json!({ "kind": "tracking" })).unwrap();
+        assert_eq!(answer, serde_json::json!({ "kind": "tracking", "kind_pick": "tracking" }));
+        assert_eq!(
+            (row(&library)["kind"].clone(), row(&library)["kind_pick"].clone()),
+            ("tracking".into(), "tracking".into())
+        );
+        assert_eq!(library.facts_for(&id, &video).map(|facts| facts.kind), Some(aimview::scenario::Kind::Tracking));
+        assert!(library.set_kind(&id, &serde_json::json!({ "kind": "spinning" })).is_err(), "not a kind");
+        library.set_kind(&id, &serde_json::json!({ "kind": null })).unwrap();
+        assert_eq!(row(&library)["kind_pick"], serde_json::Value::Null);
+        assert!(library.facts_for(&id, &video).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

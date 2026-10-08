@@ -30,6 +30,8 @@ pub enum Mark {
     RunWindow,
     /// The stats file the user picked for it (library/stats.rs).
     StatsPick,
+    /// The kind of run the user chose for it, in place of its scenario's (library/recordings.rs).
+    KindPick,
     /// The faint-target cut-off (faint.rs).
     Cutoff,
     /// The areas the user saved for it (areas.rs).
@@ -117,6 +119,7 @@ impl Mark {
         match self {
             Mark::RunWindow => "run.json",
             Mark::StatsPick => "stats.json",
+            Mark::KindPick => "kind.json",
             Mark::Cutoff => "faint.json",
             Mark::SavedAreas => "exclude.json",
             Mark::FoundAreas => "areas.json",
@@ -371,8 +374,15 @@ pub(crate) fn python_text(item: Item<'_>) -> bool {
 /// Every part a review can have.
 pub(crate) const PARTS: [Part; 4] = [Part::Tracks, Part::Readings, Part::Hud, Part::Kills];
 /// Every mark a recording can have.
-pub(crate) const MARKS: [Mark; 6] =
-    [Mark::RunWindow, Mark::StatsPick, Mark::Cutoff, Mark::SavedAreas, Mark::FoundAreas, Mark::FoundMaps];
+pub(crate) const MARKS: [Mark; 7] = [
+    Mark::RunWindow,
+    Mark::StatsPick,
+    Mark::KindPick,
+    Mark::Cutoff,
+    Mark::SavedAreas,
+    Mark::FoundAreas,
+    Mark::FoundMaps,
+];
 
 /// The folder a file goes in, made when missing.
 fn make_parent(path: &Path) -> io::Result<()> {

@@ -5,7 +5,7 @@
  */
 
 import { computed, effect, inject, Service, signal } from '@angular/core';
-import { errorMessage, Job, RunMarks } from '../api';
+import { errorMessage, Job, RunKind, RunMarks } from '../api';
 import { ReviewEngine } from '../platform/review-engine';
 import { Library } from './library';
 
@@ -89,6 +89,22 @@ export class Review {
     this.watcher++;
     try {
       this.job.set(await this.engine.cancel(id));
+    } catch (error) {
+      this.job.set({ stage: 'error', error: errorMessage(error) });
+    }
+  }
+
+  /**
+   * Keeps the kind of run the user chose for the open recording (null: its scenario's again), puts it in the list,
+   * and reads the report again, which is worked out with it (a tracking or a clicking report).
+   */
+  async saveKind(kind: RunKind | null): Promise<void> {
+    const id = this.library.selectedId();
+    if (!id) return;
+    try {
+      const change = await this.engine.setKind(id, kind);
+      this.library.source.patch(id, change);
+      this.report.reload();
     } catch (error) {
       this.job.set({ stage: 'error', error: errorMessage(error) });
     }
