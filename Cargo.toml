@@ -73,6 +73,16 @@ lto = false
 codegen-units = 16
 incremental = true
 
+# `bun run server` and the pane's review server: release with thin LTO in place of the whole-program one, so a rebuild
+# after a service change takes 22 s, not 78, and a review runs as fast (av1 11.8 s against 12.4; without LTO 19 s,
+# since the hot loops need the core inlined across crates). The same output byte for byte (docs/BENCH.md). The shipped
+# server (release.yml) stays release.
+[profile.local]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = true
+
 # `cargo flamegraph --profile profiling` and the heap profile (service's `dhat-heap` feature): release with its
 # symbols, so a profile names each function (docs/HOT_PATHS.md)
 [profile.profiling]

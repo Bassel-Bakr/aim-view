@@ -8,7 +8,8 @@
         "run",
         "-p",
         "aimview-server",
-        "--release",
+        "--profile",
+        "local",
         "--",
         "--port",
         "8770"

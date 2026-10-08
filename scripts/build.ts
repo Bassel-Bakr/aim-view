@@ -3,9 +3,11 @@
  * (ui-assets.ts --release: the core and the browser's service as WebAssembly, the models) beside the UI's lint (an
  * error in either stops the build), then each mode's Angular
  * build (angular.json: production plus the mode's configuration), all at once when there are several, each in its
- * own process. Each step's time goes in the costs log (scripts/costs.ts, docs/COSTS.md).
+ * own process. Each step's time goes in the costs log (scripts/costs.ts, docs/COSTS.md). --quick builds the
+ * WebAssembly with the quick profile (ui-assets.ts without --release: no whole-program optimization, about 6 s after a
+ * Rust change against 38 s): for a build used on this computer; a shipped build (release.yml) leaves it out.
  * In: the modes asked for. Out: ui/generated/ and ui/dist/<mode>/.
- * Usage: bun scripts/build.ts [browser] [server] [desktop] [--one-at-a-time] [--data]   (no mode: all three)
+ * Usage: bun scripts/build.ts [browser] [server] [desktop] [--one-at-a-time] [--data] [--quick]   (no mode: all three)
  */
 import { join } from 'node:path';
 import { step } from './costs';
@@ -21,6 +23,8 @@ const asked = args.filter((arg) => MODES.includes(arg));
 const modes = asked.length ? asked : MODES;
 /** Whether the Angular builds run one after another instead of all at once. */
 const oneAtATime = args.includes('--one-at-a-time');
+/** Whether the WebAssembly is built with the quick profile, for a build used on this computer only. */
+const quick = args.includes('--quick');
 
 /** Runs a command; its output is shown when it ends, so builds running at once do not mix their lines. */
 async function run(command: string[], cwd: string): Promise<void> {
@@ -41,10 +45,14 @@ function angular(mode: string): Promise<void> {
   return step('build: Angular (production)', () => run(command, join(ROOT, 'ui')), { mode });
 }
 
-/** The assets the modes need (ui-assets.ts, release), timed there step by step. */
+/**
+ * The assets the modes need (ui-assets.ts: release, or quick with --quick, both without the area data unless --data),
+ * timed there step by step.
+ */
 async function assets(): Promise<void> {
-  const data = args.includes('--data') ? ['--data'] : [];
-  const command = ['bun', 'scripts/ui-assets.ts', '--release', '--modes', modes.join(','), ...data];
+  const data = args.includes('--data') ? ['--data'] : ['--no-data'];
+  const profile = quick ? [] : ['--release'];
+  const command = ['bun', 'scripts/ui-assets.ts', ...profile, '--modes', modes.join(','), ...data];
   const child = Bun.spawn(command, { cwd: ROOT, stdio: ['inherit', 'inherit', 'inherit'] });
   if ((await child.exited) !== 0) throw new Error('the assets failed');
 }
@@ -65,4 +73,4 @@ await step('build', async () => {
   } else {
     for (const mode of modes) await angular(mode);
   }
-}, { modes: modes.join(','), ...(modes.length > 1 ? { angular: together ? 'at once' : 'one at a time' } : {}) });
+}, { modes: modes.join(','), ...(quick ? { assets: 'quick' } : {}), ...(modes.length > 1 ? { angular: together ? 'at once' : 'one at a time' } : {}) });

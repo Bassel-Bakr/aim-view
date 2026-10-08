@@ -53,6 +53,7 @@ Measured from 2026-10-02 to 2026-10-04, before 4b7ddc4. Remeasure only for a cha
 | av1 (2560x1440), whole review, native | the desktop app, DirectML | 12.7 s |
 | av1, whole review, native, with the HUD | the service, DirectML | 11.0 s |
 | The byte-compare's reviews (the track example above) | DirectML, at 4b7ddc4 / at 38101cb | av1 with stats 13.0 and 12.7 s / 11.7 s; without stats 11.4 s; flower 13.9 s (`timing.txt` beside each) |
+| av1, whole review, native, by cargo profile (2026-10-08, 433f4a8) | the track example, large_v13e4, DirectML, 2 runs each; `test_out/bench_profile/<profile>/` | release (full LTO) 12.8 and 11.9 s; `local` with thin LTO 11.8 s; without LTO 19.0 and 19.2 s. All three outputs equal byte for byte |
 | av1, whole review, browser | WebGPU, 4 frames a call | 15.6 to 16 s |
 | av1, 0:20 to 0:40 window | browser / native | 7.2 s / 6.7 s |
 | h264_1920_tv, whole review, browser | WebGPU | 14.0 s |

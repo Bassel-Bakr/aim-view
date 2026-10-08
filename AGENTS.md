@@ -50,7 +50,7 @@ python python/model/crop_check/make_page.py <page> <set> <crops>   # crops for t
 bun run dev                             # the UI in browser mode, http://localhost:4200/
 bun run dev:server                      # the UI in server mode (needs the server)
 bun run dev:server:lan                  # the same, open to the local network
-bun run build                           # every mode's build into ui/dist/ (build:<mode> for one)
+bun run build                           # every mode's build into ui/dist/ (build:<mode> for one; --quick: quick WebAssembly, for this computer)
 bun run costs                           # docs/COSTS.md's measured table again, from test_out/costs.jsonl
 bun run app                             # the desktop app (Tauri 2, desktop/)
 bun run build:app                       # its installer, in target/release/bundle/nsis/
