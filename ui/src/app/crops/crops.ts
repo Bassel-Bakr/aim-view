@@ -6,7 +6,6 @@
 
 import { Component, computed, inject, signal } from '@angular/core';
 import { CropAnswers, CropPage, CropSet, CropVerdict } from '../api';
-import { Button } from '../controls/button';
 import { CropSets } from '../platform/crop-sets';
 import { CropDraft, CropNote, messageOf } from './crop-draft';
 import { CropStage } from './crop-stage/crop-stage';
@@ -34,7 +33,7 @@ const SUGGESTION_WORDS = {
  */
 @Component({
   selector: 'app-crops',
-  imports: [Button, CropStage, CropTools],
+  imports: [CropStage, CropTools],
   templateUrl: './crops.html',
   styleUrl: './crops.scss',
 })

@@ -18,8 +18,6 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { Badge } from '../controls/badge';
-import { Button } from '../controls/button';
 import { Kind, Recording } from '../api';
 import { KIND_LABELS } from '../format';
 import { Library } from '../services/library';
@@ -67,8 +65,6 @@ function rowHeight(): number {
     CdkVirtualForOf,
     DecimalPipe,
     StampPipe,
-    Badge,
-    Button,
   ],
   host: { '(document:keydown)': 'focusSearch($event)' },
   templateUrl: './recordings.html',

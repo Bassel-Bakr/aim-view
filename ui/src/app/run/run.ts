@@ -6,7 +6,6 @@
  */
 
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { Button } from '../controls/button';
 import { isClickReport, Recording } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
@@ -59,7 +58,6 @@ import { Timeline } from './timeline/timeline';
     FaintCutoffPanel,
     TrackReport,
     MousePanel,
-    Button,
     QueueBar,
     AreaBar,
     AreaCanvas,

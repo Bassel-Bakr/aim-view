@@ -4,7 +4,6 @@
  */
 
 import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
-import { Button } from '../controls/button';
 import { DEVICE_LABELS, Models } from '../services/models';
 import { ModelChoice } from './model-choice/model-choice';
 
@@ -13,7 +12,7 @@ import { ModelChoice } from './model-choice/model-choice';
  * own), where another one can be picked.
  */
 @Component({
-  imports: [Button, ModelChoice],
+  imports: [ModelChoice],
   selector: 'app-model-panel',
   templateUrl: './model-panel.html',
   styleUrl: './model-panel.scss',

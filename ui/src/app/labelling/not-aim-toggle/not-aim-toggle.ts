@@ -5,7 +5,6 @@
 
 import { Component, inject, input, signal } from '@angular/core';
 import { Recording } from '../../api';
-import { Button } from '../../controls/button';
 import { LabelQueue } from '../../services/label-queue';
 
 /**
@@ -15,7 +14,6 @@ import { LabelQueue } from '../../services/label-queue';
  */
 @Component({
   selector: 'app-not-aim-toggle',
-  imports: [Button],
   templateUrl: './not-aim-toggle.html',
 })
 export class NotAimToggle {

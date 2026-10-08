@@ -6,7 +6,6 @@
 import { Component, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { form, FormField, maxLength, required } from '@angular/forms/signals';
 import { AreaKind } from '../../../api';
-import { Button } from '../../../controls/button';
 import { AreaDraft } from '../area-draft';
 
 /** A kind's name and what it is, as the form edits them. */
@@ -23,7 +22,7 @@ export interface KindFields {
  */
 @Component({
   selector: 'app-kind-form',
-  imports: [Button, FormField],
+  imports: [FormField],
   templateUrl: './kind-form.html',
   styleUrl: './kind-form.scss',
 })

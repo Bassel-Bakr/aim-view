@@ -11,6 +11,8 @@
     placeholder="What it is (optional)"
     [formField]="fields.about"
   />
-  <button type="submit" appButton [disabled]="fields().invalid() || saving()">Save type</button>
-  <button type="button" appButton (click)="closed.emit()">Cancel</button>
+  <button class="button" type="submit" [disabled]="fields().invalid() || saving()">
+    Save type
+  </button>
+  <button class="button" type="button" (click)="closed.emit()">Cancel</button>
 </form>

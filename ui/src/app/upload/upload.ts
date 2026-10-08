@@ -6,7 +6,6 @@
  */
 
 import { Component, DestroyRef, DOCUMENT, inject, input, signal } from '@angular/core';
-import { Button } from '../controls/button';
 import { errorMessage } from '../api';
 import { StatsFiles } from '../platform/stats-files';
 import { Library } from '../services/library';
@@ -19,7 +18,7 @@ import { UploadState } from './upload-state';
  * Where they go is the mode's (RecordingSource). A stats file dropped alone pairs with the open recording.
  */
 @Component({
-  imports: [Button, LinkForm],
+  imports: [LinkForm],
   selector: 'app-upload',
   templateUrl: './upload.html',
   styleUrl: './upload.scss',

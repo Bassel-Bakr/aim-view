@@ -7,9 +7,11 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { Recording, Report, Source } from '../../api';
-import { Badge, BadgeTone } from '../../controls/badge';
 import { formatSize } from '../../format';
 import { StampPipe } from '../../stamp-pipe';
+
+/** The source badge's tone (themes/controls.scss `.badge`, data-tone): neutral, or good. */
+type SourceTone = 'neutral' | 'good';
 
 /** Where a review's kills came from, as its label says it. */
 const SOURCES: Record<Source, string> = {
@@ -30,7 +32,7 @@ const SOURCE_DETAILS: Record<Source, string> = {
 /** The open recording's title and data source, and its score, time and size. */
 @Component({
   selector: 'app-run-header',
-  imports: [Badge, DecimalPipe, StampPipe],
+  imports: [DecimalPipe, StampPipe],
   templateUrl: './run-header.html',
   styleUrl: './run-header.scss',
 })
@@ -57,7 +59,7 @@ export class RunHeader {
     return source ? SOURCE_DETAILS[source] : null;
   });
   /** Good when the kills are the stats file's, as exact as the review gets. */
-  protected readonly sourceTone = computed<BadgeTone>(() =>
+  protected readonly sourceTone = computed<SourceTone>(() =>
     this.report()?.summary.info.source === 'stats' ? 'good' : 'neutral',
   );
 }

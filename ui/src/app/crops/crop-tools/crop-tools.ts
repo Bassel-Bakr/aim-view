@@ -6,7 +6,6 @@
 
 import { Component, computed, inject } from '@angular/core';
 import { Shape, ShapeKind, ShapeRole } from '../../api';
-import { Button } from '../../controls/button';
 import { CropDraft } from '../crop-draft';
 import { evened, turnedBy } from '../../shapes/shape-geometry';
 import { showing, SideShown } from '../../shapes/solid-geometry';
@@ -75,7 +74,6 @@ interface RoleChoice {
  */
 @Component({
   selector: 'app-crop-tools',
-  imports: [Button],
   templateUrl: './crop-tools.html',
   styleUrl: './crop-tools.scss',
 })

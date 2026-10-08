@@ -5,8 +5,6 @@
  */
 
 import { Component, computed, inject, signal } from '@angular/core';
-import { Badge } from '../../controls/badge';
-import { Button } from '../../controls/button';
 import { Device, errorMessage } from '../../api';
 import { DataCell, DataHeader } from '../../data-table/data-cell';
 import { DataColumn } from '../../data-table/data-column';
@@ -48,7 +46,7 @@ const RUNS_ON: Record<Device, string> = {
  */
 @Component({
   selector: 'app-model-choice',
-  imports: [Button, Badge, DataTable, DataCell, DataHeader],
+  imports: [DataTable, DataCell, DataHeader],
   templateUrl: './model-choice.html',
   styleUrl: './model-choice.scss',
 })

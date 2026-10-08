@@ -7,7 +7,6 @@
 
 import { Component, inject } from '@angular/core';
 import { errorMessage } from '../../api';
-import { Button } from '../../controls/button';
 import { FolderAction } from '../../platform/recording-source';
 import { StatsFiles } from '../../platform/stats-files';
 import { Library } from '../../services/library';
@@ -19,7 +18,6 @@ import { UploadState } from '../upload-state';
  */
 @Component({
   selector: 'app-folder-picks',
-  imports: [Button],
   templateUrl: './folder-picks.html',
   styleUrl: './folder-picks.scss',
 })

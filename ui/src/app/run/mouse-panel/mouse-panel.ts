@@ -6,7 +6,6 @@
  */
 
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { Button } from '../../controls/button';
 import { errorMessage, Recording } from '../../api';
 import { DataColumn } from '../../data-table/data-column';
 import { DataTable } from '../../data-table/data-table';
@@ -192,7 +191,7 @@ export function mouseNotes(run: MouseRun): string {
  * Where the browser reads the logs, the user adds the log here; the desktop app finds its own.
  */
 @Component({
-  imports: [Button, DataTable],
+  imports: [DataTable],
   selector: 'app-mouse-panel',
   templateUrl: './mouse-panel.html',
   styleUrl: './mouse-panel.scss',

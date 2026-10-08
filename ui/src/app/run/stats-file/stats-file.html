@@ -1,7 +1,7 @@
 <section class="tool-panel" id="stats-file" aria-labelledby="stats-file-title">
   <header class="tool-panel-head">
     <h3 class="tool-panel-title" id="stats-file-title">Stats file</h3>
-    <button type="button" appButton (click)="closed.emit()">Close</button>
+    <button class="button" type="button" (click)="closed.emit()">Close</button>
   </header>
   <p class="tool-panel-intro">
     KovaaK's writes a stats file for each challenge run, with its kills, shots and score. The review
@@ -32,19 +32,24 @@
       </dl>
     }
     <div class="actions">
-      <button type="button" appButton [disabled]="saving()" (click)="file.click()">
+      <button class="button" type="button" [disabled]="saving()" (click)="file.click()">
         {{ p.file ? 'Choose another .csv' : 'Choose a .csv' }}
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         [disabled]="saving() || p.how === 'none' || (!stats.searches() && !p.file)"
         (click)="choose(null)"
       >
         No stats file
       </button>
       @if (stats.searches()) {
-        <button type="button" appButton [disabled]="saving() || !chosen()" (click)="findAgain()">
+        <button
+          class="button"
+          type="button"
+          [disabled]="saving() || !chosen()"
+          (click)="findAgain()"
+        >
           Find it by name and time
         </button>
       }
@@ -78,11 +83,11 @@
             <span class="scenario" [attr.data-tooltip]="r.scenario">{{ r.scenario }}</span>
           }
           @if (r.inUse) {
-            <span appBadge tone="good">in use</span>
+            <span class="badge" data-tone="good">in use</span>
           } @else {
             <button
+              class="button"
               type="button"
-              appButton
               [attr.aria-label]="'Use the stats file ' + r.name"
               [disabled]="saving() || pairing.isLoading()"
               (click)="choose(r.name)"

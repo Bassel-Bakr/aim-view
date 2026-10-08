@@ -1,5 +1,5 @@
-// The app's controls, shared by every page, as component classes. A variant is a data attribute, set by the
-// control's directive from a typed input (src/app/controls/): a variant's selector is more specific than the base, so
+// The app's controls, shared by every page, as component classes. A variant is a data attribute or an ARIA role the
+// template writes (scripts/control-values.ts checks the values): a variant's selector is more specific than the base, so
 // it overrides the base without any class merging, and a utility on the element still wins (the utilities layer comes
 // after this one). A global stylesheet of its own (angular.json), Sass first, then Tailwind: @reference gives @apply
 // the token theme.
@@ -134,7 +134,7 @@
 
   // A line saying how an action went. Its ARIA role says whether it failed, for screen readers and for this style
   // alike: role="status" while it went well, role="alert" once it failed (the template binds it; the role-values lint,
-  // scripts/status-lines.ts, checks the values). It owns the line's color; a component's own class may set its size
+  // scripts/control-values.ts, checks the values). It owns the line's color; a component's own class may set its size
   // and layout. data-tone="muted": a quiet hint.
   .status-line {
     @apply text-sm text-secondary;
@@ -203,18 +203,12 @@
   // positioning, below when there is no room (where the browser has no anchor positioning, the script places it). It
   // fades in once the pointer rests (--tooltip-delay) and goes at once.
   .tooltip {
-    @apply pointer-events-none m-0 max-w-(--tooltip-max-width) rounded-md border border-border-strong bg-surface-3 px-4 py-2 text-xs text-primary;
+    @apply pointer-events-none inset-auto mx-0 my-2 max-w-(--tooltip-max-width) rounded-md border border-border-strong bg-surface-3 px-4 py-2 text-xs text-primary transition-opacity delay-(--tooltip-delay) duration-(--motion-fast) starting:opacity-0;
 
-    inset: auto;
-    margin-block: t.$space-2;
+    // Tailwind has no anchor-positioning utilities
     position-anchor: --tooltip-anchor;
     position-area: top;
     position-try-fallbacks: flip-block;
-    transition: opacity t.$motion-fast t.$tooltip-delay;
-
-    @starting-style {
-      opacity: 0;
-    }
   }
 }
 

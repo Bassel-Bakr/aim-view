@@ -14,9 +14,9 @@
   <div class="toolbar">
     @if (!review.unavailable()) {
       <button
+        class="button"
         type="button"
         aria-controls="run-window"
-        appButton
         data-tooltip="Where the run starts and ends: the review measures only that part"
         [attr.aria-expanded]="windowOpen()"
         (click)="toggleWindow()"
@@ -24,9 +24,9 @@
         {{ windowLabel() }}
       </button>
       <button
+        class="button"
         type="button"
         aria-controls="area-editor"
-        appButton
         data-tooltip="The parts of the screen the review ignores (a webcam, an overlay) and what each is. Save, and a reviewed run is tracked again with them; the area finder learns from them"
         [attr.aria-expanded]="areas.open()"
         (click)="toggleAreas()"
@@ -34,9 +34,9 @@
         Excluded areas
       </button>
       <button
+        class="button"
         type="button"
         aria-controls="faint-cutoff"
-        appButton
         data-tooltip="This recording's faint-target cut-off: leave out the tracks the model is far less sure of (wall seams), and Submit it as labels for the detector"
         [attr.aria-expanded]="faint.shown()"
         (click)="toggleCutoff()"
@@ -45,9 +45,9 @@
       </button>
     }
     <button
+      class="button"
       type="button"
       aria-controls="stats-file"
-      appButton
       [attr.aria-expanded]="statsOpen()"
       (click)="toggleStats()"
     >
@@ -55,9 +55,9 @@
     </button>
     @if (!review.unavailable()) {
       <button
+        class="button"
         type="button"
-        appButton
-        [intent]="recording().analysed ? 'normal' : 'primary'"
+        [attr.data-intent]="recording().analysed ? 'normal' : 'primary'"
         [disabled]="review.running() || notHere()"
         (click)="startReview()"
       >
@@ -88,7 +88,7 @@
           <span aria-hidden="true">{{ v.total ? v.done + ' / ' + v.total + ' MB' : '' }}</span>
         </span>
       </div>
-      <button type="button" appButton (click)="cancelDownload()">Cancel</button>
+      <button class="button" type="button" (click)="cancelDownload()">Cancel</button>
     </div>
   } @else if (v.state === 'not-downloaded') {
     <p class="note" role="alert">Could not download the video: {{ v.error }}</p>
@@ -118,7 +118,7 @@
       </span>
     </div>
     @if (review.running()) {
-      <button type="button" appButton (click)="cancelReview()">Cancel</button>
+      <button class="button" type="button" (click)="cancelReview()">Cancel</button>
     }
   </div>
 }

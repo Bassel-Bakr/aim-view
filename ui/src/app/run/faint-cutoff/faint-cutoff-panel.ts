@@ -7,7 +7,6 @@
 
 import { Component, computed, inject, signal } from '@angular/core';
 import { errorMessage } from '../../api';
-import { Button } from '../../controls/button';
 import { FaintCutoffs } from '../../platform/faint-cutoffs';
 import { FaintCutoff } from '../../services/faint-cutoff';
 import { FaintQueue } from '../../services/faint-queue';
@@ -32,7 +31,6 @@ const STEP = 0.01;
  */
 @Component({
   selector: 'app-faint-cutoff',
-  imports: [Button],
   templateUrl: './faint-cutoff-panel.html',
   styleUrl: './faint-cutoff-panel.scss',
 })

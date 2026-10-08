@@ -13,8 +13,8 @@
     <span class="actions">
       @if (canAddFolder) {
         <button
+          class="button"
           type="button"
-          appButton
           data-tooltip="Add a check folder make_page.py wrote: the browser keeps a copy"
           (click)="folderInput.click()"
         >
@@ -23,8 +23,8 @@
         <input #folderInput type="file" webkitdirectory hidden (change)="addFolder(folderInput)" />
       }
       <button
+        class="button"
         type="button"
-        appButton
         data-tooltip="Save this folder's answers as one file, to import on the review server"
         [disabled]="!draft.folder()"
         (click)="exportAnswers()"
@@ -32,8 +32,8 @@
         Export
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         data-tooltip="Load answers a browser exported: a crop's newer answer wins"
         [disabled]="!draft.folder()"
         (click)="importInput.click()"
@@ -125,11 +125,11 @@
   @if (draft.mode() === 'fix') {
     <app-crop-tools class="bar-tools" />
     <div class="bar-row">
-      <button type="button" appButton (click)="draft.cancel()">Cancel</button>
+      <button class="button" type="button" (click)="draft.cancel()">Cancel</button>
       <button
+        class="button"
         type="button"
-        appButton
-        intent="primary"
+        data-intent="primary"
         [disabled]="draft.busy()"
         (click)="draft.saveFix()"
       >
@@ -139,9 +139,9 @@
   } @else {
     <div class="bar-row">
       <button
+        class="button"
         type="button"
-        appButton
-        intent="primary"
+        data-intent="primary"
         [disabled]="!draft.crop() || draft.busy()"
         (click)="draft.judge('right')"
       >
@@ -149,8 +149,7 @@
       </button>
       <button
         type="button"
-        appButton
-        class="verdict-wrong"
+        class="button verdict-wrong"
         data-tooltip="Fix the shapes: draw, move, join, remove"
         [disabled]="!draft.crop() || draft.busy()"
         (click)="draft.fix()"
@@ -158,8 +157,8 @@
         Wrong
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         [disabled]="!draft.crop() || draft.busy()"
         (click)="draft.judge('unsure')"
       >
@@ -167,20 +166,20 @@
       </button>
     </div>
     <div class="bar-row">
-      <button type="button" appButton [disabled]="draft.index() === 0" (click)="draft.go(-1)">
+      <button class="button" type="button" [disabled]="draft.index() === 0" (click)="draft.go(-1)">
         Back
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         [disabled]="draft.index() >= draft.list().length - 1"
         (click)="draft.go(1)"
       >
         Next
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         [disabled]="draft.answered() === draft.list().length"
         (click)="draft.nextUnchecked()"
       >

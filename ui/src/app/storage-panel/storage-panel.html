@@ -1,6 +1,6 @@
 <button
+  class="button"
   type="button"
-  appButton
   aria-haspopup="dialog"
   data-tooltip="What Aim View keeps on this computer, how much space each part takes, and removing what you can do without"
   (click)="open()"
@@ -11,7 +11,7 @@
 <dialog class="dialog" #dialog aria-labelledby="storage-title">
   <header class="dialog-head">
     <h2 id="storage-title">Storage</h2>
-    <button type="button" appButton (click)="close()">Close</button>
+    <button class="button" type="button" (click)="close()">Close</button>
   </header>
   <div class="dialog-body fill">
     @if (data(); as d) {
@@ -37,13 +37,18 @@
           } @else if (confirming() === row.id) {
             <span class="confirm">
               <span class="removes">{{ row.removes }}</span>
-              <button type="button" appButton intent="primary" (click)="remove(row.id)">
+              <button class="button" type="button" data-intent="primary" (click)="remove(row.id)">
                 Remove
               </button>
-              <button type="button" appButton (click)="keep()">Keep</button>
+              <button class="button" type="button" (click)="keep()">Keep</button>
             </span>
           } @else {
-            <button type="button" appButton [disabled]="removing() !== null" (click)="ask(row.id)">
+            <button
+              class="button"
+              type="button"
+              [disabled]="removing() !== null"
+              (click)="ask(row.id)"
+            >
               Remove
             </button>
           }

@@ -7,7 +7,6 @@
 
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { errorMessage } from '../api';
-import { Button } from '../controls/button';
 import { DataCell } from '../data-table/data-cell';
 import { DataColumn } from '../data-table/data-column';
 import { DataTable } from '../data-table/data-table';
@@ -97,7 +96,7 @@ function rowId(row: StorageRow): string {
 
 /** What the app keeps, in the top bar; it opens the parts and their sizes, where one can be removed. */
 @Component({
-  imports: [Button, DataTable, DataCell, ShareSection],
+  imports: [DataTable, DataCell, ShareSection],
   selector: 'app-storage-panel',
   templateUrl: './storage-panel.html',
   styleUrl: './storage-panel.scss',

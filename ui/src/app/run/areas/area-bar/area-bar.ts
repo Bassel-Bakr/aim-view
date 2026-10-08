@@ -7,7 +7,6 @@
 
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { AreaKind, Recording } from '../../../api';
-import { Button } from '../../../controls/button';
 import { NotAimToggle } from '../../../labelling/not-aim-toggle/not-aim-toggle';
 import { Review } from '../../../services/review';
 import { AreaDraft } from '../area-draft';
@@ -29,7 +28,7 @@ export interface KindFormState {
  */
 @Component({
   selector: 'app-area-bar',
-  imports: [Button, KindForm, NotAimToggle],
+  imports: [KindForm, NotAimToggle],
   templateUrl: './area-bar.html',
   styleUrl: './area-bar.scss',
 })

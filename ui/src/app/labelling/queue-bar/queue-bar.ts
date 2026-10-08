@@ -5,7 +5,6 @@
 
 import { Component, computed, inject, input } from '@angular/core';
 import { Recording } from '../../api';
-import { Button } from '../../controls/button';
 import { LabelQueue } from '../../services/label-queue';
 
 /**
@@ -15,7 +14,6 @@ import { LabelQueue } from '../../services/label-queue';
  */
 @Component({
   selector: 'app-queue-bar',
-  imports: [Button],
   templateUrl: './queue-bar.html',
   styleUrl: './queue-bar.scss',
 })

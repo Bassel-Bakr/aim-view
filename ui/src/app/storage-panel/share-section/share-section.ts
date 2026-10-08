@@ -6,7 +6,6 @@
 
 import { Component, computed, inject, signal } from '@angular/core';
 import { errorMessage, Recording } from '../../api';
-import { Button } from '../../controls/button';
 import { DataCell } from '../../data-table/data-cell';
 import { DataColumn } from '../../data-table/data-column';
 import { DataTable } from '../../data-table/data-table';
@@ -24,7 +23,7 @@ function recordingId(recording: Recording): string {
 
 /** The reviewed recordings to pick from, the picks, and the export and opening they start. */
 @Component({
-  imports: [Button, DataTable, DataCell],
+  imports: [DataTable, DataCell],
   selector: 'app-share-section',
   templateUrl: './share-section.html',
   styleUrl: './share-section.scss',

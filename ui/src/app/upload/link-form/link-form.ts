@@ -7,7 +7,6 @@
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { form, FormField, pattern, required } from '@angular/forms/signals';
 import { errorMessage, LinkFormat, LinkInfo } from '../../api';
-import { Button } from '../../controls/button';
 import { formatSize } from '../../format';
 import { Library } from '../../services/library';
 
@@ -57,7 +56,7 @@ export function qualityLabel(format: LinkFormat): string {
  * lists the recording and opens it while it downloads (RecordingSource.addLink).
  */
 @Component({
-  imports: [Button, FormField],
+  imports: [FormField],
   selector: 'app-link-form',
   templateUrl: './link-form.html',
   styleUrl: './link-form.scss',

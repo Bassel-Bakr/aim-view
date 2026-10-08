@@ -25,8 +25,7 @@
 @if (library.source.clearable && library.source.recordings().length) {
   <button
     type="button"
-    appButton
-    class="clear"
+    class="button clear"
     data-tooltip="Empties the list in this browser; the files stay where they are."
     (click)="clearList()"
   >
@@ -76,20 +75,20 @@
             <span>{{ kindLabels[r.kind] }}</span>
           }
           @if (r.analysed) {
-            <span appBadge tone="good">reviewed</span>
+            <span class="badge" data-tone="good">reviewed</span>
           }
           @if (r.uploaded) {
-            <span appBadge>uploaded</span>
+            <span class="badge">uploaded</span>
           }
           @if (r.local) {
-            <span appBadge>in this browser</span>
+            <span class="badge">in this browser</span>
           }
           <!-- the quick list has not looked for the stats file yet: no badge until it has -->
           @if (!r.stats && !r.quick) {
-            <span appBadge>no stats</span>
+            <span class="badge">no stats</span>
           }
           @if (r.not_aim) {
-            <span appBadge>not an aim trainer</span>
+            <span class="badge">not an aim trainer</span>
           }
         </div>
       </div>

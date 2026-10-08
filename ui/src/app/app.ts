@@ -6,7 +6,6 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, effect, ElementRef, inject, untracked, viewChild } from '@angular/core';
-import { Button } from './controls/button';
 import { Crops } from './crops/crops';
 import { CutoffMenu } from './cutoff-menu/cutoff-menu';
 import { LabelMenu } from './labelling/label-menu/label-menu';
@@ -34,7 +33,6 @@ const MENU_GAP_PX = 4;
   selector: 'app-root',
   imports: [
     NgTemplateOutlet,
-    Button,
     Upload,
     FolderPicks,
     LinkForm,

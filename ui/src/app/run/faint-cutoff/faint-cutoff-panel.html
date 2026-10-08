@@ -2,7 +2,7 @@
   <header class="tool-panel-head">
     <h3 class="tool-panel-title" id="faint-cutoff-title">Faint-target cut-off</h3>
     @if (!inQueue()) {
-      <button type="button" appButton (click)="close()">Close</button>
+      <button class="button" type="button" (click)="close()">Close</button>
     }
   </header>
   <p class="tool-panel-intro">
@@ -88,25 +88,25 @@
         Recording {{ queue.position() + 1 }} of {{ queue.length() }}
       </span>
       <button
+        class="button"
         type="button"
-        appButton
-        intent="primary"
+        data-intent="primary"
         [disabled]="!faint.has() || faint.submitting()"
         (click)="submitAndNext()"
       >
         Submit and next
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         data-tooltip="Leave this recording out of the queue from now on, and open the next"
         (click)="skipRecording()"
       >
         Skip
       </button>
       <button
+        class="button"
         type="button"
-        appButton
         data-tooltip="End the queue; this recording stays open"
         (click)="stopQueue()"
       >
@@ -114,8 +114,8 @@
       </button>
     } @else {
       <button
+        class="button"
         type="button"
-        appButton
         data-tooltip="Save this cut-off and write it as labels for the detector: the tracks it leaves out are not targets, the ones it keeps are"
         [disabled]="!faint.has() || faint.submitting()"
         (click)="submitCutoff()"
@@ -128,8 +128,8 @@
     <div class="labels">
       <span class="labels-count">{{ labelsText() }}</span>
       <button
+        class="button"
         type="button"
-        appButton
         data-tooltip="A zip of checked.jsonl and train/, as the review server writes them in test_out/vod_model/hand/cutoff/: unzip it into a folder of its own there, and training reads it as it reads the server's"
         [disabled]="zipping() || !store.count().crops"
         (click)="downloadLabels()"

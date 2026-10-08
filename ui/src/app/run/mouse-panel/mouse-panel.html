@@ -4,17 +4,22 @@
       <h3 class="title" id="mouse-title">From the mouse log</h3>
       <div class="actions">
         @if (logs.adds) {
-          <button type="button" appButton [disabled]="busy()" (click)="file.click()">
+          <button class="button" type="button" [disabled]="busy()" (click)="file.click()">
             {{ shown() ? 'Add another log' : 'Add the mouse log' }}
           </button>
           @if (shown()) {
-            <button type="button" appButton [disabled]="busy()" (click)="forgetLog()">
+            <button class="button" type="button" [disabled]="busy()" (click)="forgetLog()">
               Forget the log
             </button>
           }
         }
         @if (logs.logs) {
-          <button type="button" appButton [disabled]="measures.isLoading()" (click)="readAgain()">
+          <button
+            class="button"
+            type="button"
+            [disabled]="measures.isLoading()"
+            (click)="readAgain()"
+          >
             Read again
           </button>
         }

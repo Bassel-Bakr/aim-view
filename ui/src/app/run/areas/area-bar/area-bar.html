@@ -2,8 +2,8 @@
   <header class="tool-panel-head">
     <h3 class="tool-panel-title" id="area-editor-title">Excluded areas</h3>
     <button
+      class="button"
       type="button"
-      appButton
       data-tooltip="Close the editor without saving (in the labelling queue, end the queue)"
       (click)="draft.cancel()"
     >
@@ -38,15 +38,20 @@
       </select>
     </label>
     <button
+      class="button"
       type="button"
-      appButton
       data-tooltip="Change this type’s name or description; areas keep it"
       [disabled]="selectedKind() === null"
       (click)="editKind()"
     >
       Edit type
     </button>
-    <button type="button" appButton [disabled]="selectedKind() === null" (click)="draft.remove()">
+    <button
+      class="button"
+      type="button"
+      [disabled]="selectedKind() === null"
+      (click)="draft.remove()"
+    >
       Remove
     </button>
     @if (kindForm(); as f) {
@@ -57,9 +62,9 @@
   </div>
   <div class="actions">
     <button
+      class="button"
       type="button"
-      appButton
-      intent="primary"
+      data-intent="primary"
       [attr.data-tooltip]="
         saveBlocked() ??
         'Keep these areas: the area finder learns from them, and a reviewed run is tracked again with them'
@@ -70,8 +75,8 @@
       {{ draft.busy() === 'save' ? 'Saving…' : draft.queued() ? 'Save and next' : 'Save' }}
     </button>
     <button
+      class="button"
       type="button"
-      appButton
       [attr.data-tooltip]="
         draft.finderMissing ??
         'Your areas from a recording with the same layout, else the areas found in this one'
@@ -82,8 +87,8 @@
       {{ draft.busy() === 'find' ? 'Finding…' : 'Find areas' }}
     </button>
     <button
+      class="button"
       type="button"
-      appButton
       [attr.data-tooltip]="
         draft.finderMissing ??
         'Find this recording’s areas itself, without copying another recording’s'
@@ -94,8 +99,8 @@
       {{ draft.busy() === 'detect' ? 'Finding…' : 'Detect fresh' }}
     </button>
     <button
+      class="button"
       type="button"
-      appButton
       data-tooltip="KovOBS’s layout: the areas the review ignores by default"
       [disabled]="!draft.ready() || draft.busy() !== null"
       (click)="draft.useLayout()"
@@ -103,8 +108,8 @@
       KovOBS layout
     </button>
     <button
+      class="button"
       type="button"
-      appButton
       data-tooltip="Remove every area"
       [disabled]="!draft.ready()"
       (click)="draft.clear()"

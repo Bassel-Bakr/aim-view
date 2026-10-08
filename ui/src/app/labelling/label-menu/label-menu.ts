@@ -6,7 +6,6 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
-import { Button } from '../../controls/button';
 import { LabelQueue, QueueNote } from '../../services/label-queue';
 
 /**
@@ -16,7 +15,7 @@ import { LabelQueue, QueueNote } from '../../services/label-queue';
  */
 @Component({
   selector: 'app-label-menu',
-  imports: [Button, DecimalPipe],
+  imports: [DecimalPipe],
   templateUrl: './label-menu.html',
   styleUrl: './label-menu.scss',
 })

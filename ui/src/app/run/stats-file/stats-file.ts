@@ -6,8 +6,6 @@
  */
 
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
-import { Badge } from '../../controls/badge';
-import { Button } from '../../controls/button';
 import {
   errorMessage,
   Recording,
@@ -80,7 +78,6 @@ export interface PairingFor {
  * again with it.
  */
 @Component({
-  imports: [Button, Badge],
   selector: 'app-stats-file',
   templateUrl: './stats-file.html',
   styleUrl: './stats-file.scss',

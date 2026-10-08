@@ -23,7 +23,6 @@ import {
   viewChild,
 } from '@angular/core';
 import { isClickReport, Report, Tracks } from '../../api';
-import { Button } from '../../controls/button';
 import { Playback, RATES } from '../playback';
 import { FlickFocus } from '../flick-focus';
 import { clock } from '../track';
@@ -120,7 +119,7 @@ export function markPositions(report: Report | null, duration: number): number[]
  */
 @Component({
   selector: 'app-player',
-  imports: [Button, MiniBar],
+  imports: [MiniBar],
   templateUrl: './player.html',
   styleUrl: './player.scss',
   host: {

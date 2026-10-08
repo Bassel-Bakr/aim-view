@@ -6,7 +6,6 @@
 
 import { Component, computed, inject, linkedSignal, output } from '@angular/core';
 import { RunMarks } from '../../api';
-import { Button } from '../../controls/button';
 import { Review } from '../../services/review';
 import { Playback } from '../playback';
 
@@ -38,7 +37,6 @@ export function formatClock(seconds: number): string {
  */
 @Component({
   selector: 'app-run-window',
-  imports: [Button],
   templateUrl: './run-window.html',
   styleUrl: './run-window.scss',
 })

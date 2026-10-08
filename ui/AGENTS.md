@@ -61,12 +61,13 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   `// viewport-height-ok: <why>`; `bun run lint:ui` fails on the others (`scripts/viewport-heights.ts`). A tooltip is a
   `data-tooltip` attribute, not `title` (which cannot be styled, waits, and never shows for the keyboard or touch):
   one popover in the top layer (`controls/tooltips.ts`, `.tooltip`) shows it for the mouse and the keyboard's focus,
-  with no component or directive. `title` stays only on an `<option>`, which the browser's own list shows. A variant is a data attribute (`&[data-intent='primary']`), set by the control's directive in
-  `ui/src/app/controls/` from a typed input (`<button appButton intent="primary">`, `<span appBadge tone="good">`),
-  so templates get type checks. Where HTML or ARIA already says the state, the style reads it instead, with no
-  directive: a `.status-line` binds its role (`[attr.role]="n.failed ? 'alert' : 'status'"`) and is styled by it,
-  as a `.chip` is by `aria-pressed`. `bun run lint:ui` checks those values (`scripts/status-lines.ts`), and fails on a
-  long `@apply` (5 classes or more) in 3 stylesheets or more: it belongs in one shared class. A variant's
+  with no component or directive. `title` stays only on an `<option>`, which the browser's own list shows.
+  A control is its class, and a variant a data attribute or an ARIA role written in the template, with no
+  directive: `<button class="button" data-intent="primary">`, `<span class="badge" data-tone="good">`, and a
+  `.status-line` bound to its role (`[attr.role]="n.failed ? 'alert' : 'status'"`), styled by it as a `.chip` is by
+  `aria-pressed`. `bun run lint:ui` checks those values (`scripts/control-values.ts`, where each control's attributes
+  and values are listed), and fails on a long `@apply` (5 classes or more) in 3 stylesheets or more: it belongs in
+  one shared class. The old directives (`appButton`, `appBadge`) are in `ui/retired/controls/`. A variant's
   selector is more specific than the base, so it overrides it with no class merging. A class name must not be a
   Tailwind utility (`table`, `grid`, `hidden`, `table-row`, `table-cell`), or Tailwind adds the utility too. The old
   tailwind-variants modules are in `ui/retired/themes/`.

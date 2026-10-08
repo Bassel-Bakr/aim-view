@@ -29,8 +29,8 @@
 </div>
 <div class="tool-row">
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="One target made of the selected shapes (a head and a body)"
     [disabled]="chosen().length < 2"
     (click)="join()"
@@ -38,8 +38,8 @@
     Join
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="Each selected shape a target of its own"
     [disabled]="!chosen().length"
     (click)="splitApart()"
@@ -47,8 +47,8 @@
     Split
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="In front of every other shape: it hides what it covers"
     [disabled]="!chosen().length"
     (click)="bring(true)"
@@ -56,8 +56,8 @@
     Front
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="Behind every other shape: what covers it hides it"
     [disabled]="!chosen().length"
     (click)="bring(false)"
@@ -66,8 +66,7 @@
   </button>
   <button
     type="button"
-    appButton
-    class="tool-toggle"
+    class="button tool-toggle"
     data-tooltip="Not a target: something in front (a pillar, a health bar) that hides what is behind it"
     [attr.aria-pressed]="hiding()"
     [disabled]="!chosen().length"
@@ -76,8 +75,8 @@
     Hides
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="A model shape is crossed out (no target there); a drawn one is deleted"
     [disabled]="!chosen().length"
     (click)="remove()"
@@ -85,8 +84,8 @@
     Remove
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="A copy of the selected shapes, a little down and to the right, to drag into place (Ctrl+D)"
     [disabled]="!chosen().length"
     (click)="draft.duplicate()"
@@ -94,8 +93,8 @@
     Duplicate
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="Both sides the same: a perfect circle or square (also: hold Shift while drawing or resizing)"
     [disabled]="!chosen().length"
     (click)="evenSides()"
@@ -103,8 +102,8 @@
     Equal sides
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="Turn the selected shapes 15° to the left, each about its middle"
     aria-label="Turn left 15°"
     [disabled]="!chosen().length"
@@ -113,8 +112,8 @@
     ↺ 15°
   </button>
   <button
+    class="button"
     type="button"
-    appButton
     data-tooltip="Turn the selected shapes 15° to the right, each about its middle"
     aria-label="Turn right 15°"
     [disabled]="!chosen().length"
@@ -124,8 +123,7 @@
   </button>
   <button
     type="button"
-    appButton
-    class="tool-toggle"
+    class="button tool-toggle"
     data-tooltip="A side dragged moves its opposite side too, so the shape keeps its middle (also: hold Alt)"
     [attr.aria-pressed]="draft.mirroring()"
     (click)="toggleMirroring()"
@@ -134,8 +132,7 @@
   </button>
   <button
     type="button"
-    appButton
-    class="tool-toggle"
+    class="button tool-toggle"
     data-tooltip="A drag moves the view instead of drawing; taps still select (also: two fingers, Space and drag, or the mouse's middle or right button)"
     [attr.aria-pressed]="draft.panning()"
     (click)="togglePanning()"
@@ -147,8 +144,8 @@
   <div class="tool-row">
     <span class="tool-label">Corners</span>
     <button
+      class="button"
       type="button"
-      appButton
       data-tooltip="Undo the corners placed by hand: the shape is its box again (its size and turn as the box round it)"
       (click)="unplace()"
     >
@@ -161,8 +158,8 @@
     <span id="crop-tumble-label" class="tool-label">3D turn</span>
     @for (s of sidesShown; track s.side) {
       <button
+        class="button"
         type="button"
-        appButton
         [attr.data-tooltip]="
           'Turn the selected 3D shapes ' + TURN_STEP + '° so more of their ' + s.side + ' shows'
         "
@@ -172,8 +169,8 @@
       </button>
     }
     <button
+      class="button"
       type="button"
-      appButton
       data-tooltip="Turn the selected 3D shapes to face the camera squarely (their turn on screen stays)"
       (click)="faceCamera()"
     >

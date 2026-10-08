@@ -1,6 +1,6 @@
 <button
+  class="button"
   type="button"
-  appButton
   data-tooltip="A queue: go through recordings one by one, check the areas found in each, fix them, Save and next. The area finder learns from them."
   [disabled]="queue.loading()"
   (click)="startQueue()"
@@ -9,8 +9,8 @@
 </button>
 @if (store) {
   <button
+    class="button"
     type="button"
-    appButton
     aria-haspopup="dialog"
     data-tooltip="The examples the area finder learns from: download them, or load the review server's"
     (click)="openExamples()"
@@ -26,7 +26,7 @@
   <dialog class="dialog" #dialog aria-labelledby="examples-title">
     <header class="dialog-head">
       <h2 id="examples-title">Area examples</h2>
-      <button type="button" appButton (click)="closeExamples()">Close</button>
+      <button class="button" type="button" (click)="closeExamples()">Close</button>
     </header>
     <div class="dialog-body fill">
       <p class="dialog-intro">
@@ -45,12 +45,14 @@
     <footer class="dialog-foot">
       <div class="actions">
         @for (name of store.fileNames; track name) {
-          <button type="button" appButton (click)="downloadFile(name)">Download {{ name }}</button>
+          <button class="button" type="button" (click)="downloadFile(name)">
+            Download {{ name }}
+          </button>
         }
         <button
+          class="button"
           type="button"
-          appButton
-          intent="primary"
+          data-intent="primary"
           data-tooltip="Choose area_examples.jsonl and area_kinds.json (test_out/vod_app/): each recording's examples and each area type in them replace the ones kept here"
           [disabled]="loading()"
           (click)="files.click()"

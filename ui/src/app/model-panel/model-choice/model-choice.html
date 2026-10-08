@@ -54,10 +54,10 @@
         <span class="column">
           {{ c.label }}
           @if (c.isDefault) {
-            <span appBadge>default</span>
+            <span class="badge">default</span>
           }
           @if (c.inUse) {
-            <span appBadge tone="good">in use</span>
+            <span class="badge" data-tone="good">in use</span>
           }
         </span>
       }
@@ -78,7 +78,7 @@
         @if (c?.inUse) {
           <span class="muted">In use</span>
         } @else if (c?.available) {
-          <button type="button" appButton [disabled]="switching()" (click)="use(name)">
+          <button class="button" type="button" [disabled]="switching()" (click)="use(name)">
             Use {{ c?.useLabel }}
           </button>
         } @else {
@@ -117,7 +117,7 @@
             @if (c.inUse) {
               <span class="muted">In use</span>
             } @else if (c.available) {
-              <button type="button" appButton [disabled]="switching()" (click)="use(c.name)">
+              <button class="button" type="button" [disabled]="switching()" (click)="use(c.name)">
                 Use {{ c.useLabel }}
               </button>
             } @else {
