@@ -487,14 +487,8 @@ fn stats_text(path: &Path) -> Result<Vec<u8>, Failure> {
     std::fs::read(path).map_err(|error| Failure::from(format!("{}: {error}", path.display())))
 }
 
-/// The video reviewed as the app reviews a recording (python-bindings' `review_video`, retired): the files in --out,
-/// the report worked out from them unless --no-report.
-fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
-    let [video] = line.free.as_slice() else { return Err(Failure::bad("review takes one video")) };
-    let video = PathBuf::from(video);
-    let out = line.path("out").ok_or_else(|| Failure::bad("review needs --out <folder>"))?;
-    let model = review_model(library, line);
-    let areas = review_areas(library, line, &video)?;
+/// The scenario's facts --kind, --limit (seconds) and --cap (targets) give, none without --kind; and the cap.
+fn review_facts(line: &Line) -> Result<(Option<Facts>, Option<usize>), Failure> {
     let cap: Option<usize> = line.number("cap")?;
     let limit: Option<f64> = line.number("limit")?;
     let facts = line.one("kind").map(kind).transpose()?.map(|kind| Facts {
@@ -504,6 +498,18 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         reload: None,
         hitbox: None,
     });
+    Ok((facts, cap))
+}
+
+/// The video reviewed as the app reviews a recording (python-bindings' `review_video`, retired): the files in --out,
+/// the report worked out from them unless --no-report.
+fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
+    let [video] = line.free.as_slice() else { return Err(Failure::bad("review takes one video")) };
+    let video = PathBuf::from(video);
+    let out = line.path("out").ok_or_else(|| Failure::bad("review needs --out <folder>"))?;
+    let model = review_model(library, line);
+    let areas = review_areas(library, line, &video)?;
+    let (facts, cap) = review_facts(line)?;
     let window = review_window(line)?;
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     let request = Request {
