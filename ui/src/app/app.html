@@ -46,14 +46,48 @@
     Crops
   </button>
   @if (!pages.crops()) {
-    <app-model-panel />
-    <app-label-menu />
-    <app-cutoff-menu />
-    <app-mouse-switch />
-    <app-storage-panel />
-    <app-upload class="upload" />
+    @if (!pages.narrow()) {
+      <app-model-panel />
+      <app-mouse-switch />
+    }
+    @if (pages.toolsMenu()) {
+      <button
+        type="button"
+        appButton
+        class="more"
+        title="The other tools: the labelling queues, storage and folders (on a phone, the model and From a link too)"
+        popovertarget="tools-menu"
+        #moreButton
+      >
+        More <span aria-hidden="true">▾</span>
+      </button>
+      <div
+        class="tools-menu"
+        popover
+        id="tools-menu"
+        #toolsMenu
+        (beforetoggle)="placeMenu(moreButton, toolsMenu)"
+      >
+        @if (pages.narrow()) {
+          <app-model-panel />
+          <app-mouse-switch />
+          <app-link-form />
+        }
+        <ng-container *ngTemplateOutlet="tools" />
+      </div>
+    } @else {
+      <ng-container *ngTemplateOutlet="tools" />
+    }
+    <app-upload class="upload" [withLink]="!pages.narrow()" />
   }
 </header>
+<!-- The less-used tools: in the top bar when it has room, else in its More menu -->
+<ng-template #tools>
+  <app-label-menu />
+  <app-cutoff-menu />
+  <app-storage-panel />
+  <app-folder-picks />
+</ng-template>
 @if (pages.crops()) {
   <!-- The Crops page loads when it is first opened -->
   @defer (on immediate) {

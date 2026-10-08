@@ -5,8 +5,12 @@
     @apply size-(--icon-size-sm);
   }
 
+  // The note takes what the buttons leave and shrinks to nothing: its width never pushes the buttons (contain), and
+  // its text sits beside them
   .busy {
-    @apply flex min-w-0 items-center gap-3;
+    @apply flex min-w-0 flex-auto items-center justify-end gap-3;
+
+    contain: inline-size;
   }
 
   .note {
@@ -15,6 +19,12 @@
 
   .failed {
     @apply truncate text-xs text-warning;
+  }
+
+  :host > :is(.note, .failed) {
+    @apply min-w-0 flex-auto text-right;
+
+    contain: inline-size;
   }
 
   .drop-zone {

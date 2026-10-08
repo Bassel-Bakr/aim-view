@@ -1,12 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
 import { answer, ApiRoutes, NO_SERVER, recording, serverMode } from './fake-api';
+import { Pages } from './services/pages';
 
-async function render(routes: ApiRoutes): Promise<HTMLElement> {
+async function render(routes: ApiRoutes, toolsMenu = false): Promise<HTMLElement> {
   TestBed.configureTestingModule({
     imports: [App],
     providers: serverMode(),
   });
+  TestBed.inject(Pages).toolsMenu.set(toolsMenu);
   const fixture = TestBed.createComponent(App);
   await answer(routes);
   await fixture.whenStable();
@@ -50,5 +52,27 @@ describe('App', () => {
     });
     expect(el.querySelector('app-run h2')?.textContent).toContain('Controlsphere');
     expect(el.querySelector('app-run h2')?.textContent).toContain('Stats file');
+  });
+
+  it('shows every tool in the top bar when it has room', async () => {
+    const el = await render({ '/api/models': NO_SERVER, '/api/vods': [] });
+    expect(el.querySelector('.top .more')).toBeNull();
+    expect(el.querySelector('.top > app-storage-panel')).not.toBeNull();
+  });
+
+  it('puts the less-used tools in a More menu when the top bar has no room, keeping Upload', async () => {
+    const el = await render({ '/api/models': NO_SERVER, '/api/vods': [] }, true);
+    const more = el.querySelector('.top .more');
+    expect(more?.getAttribute('popovertarget')).toBe('tools-menu');
+    const menu = el.querySelector('#tools-menu');
+    for (const tool of [
+      'app-label-menu',
+      'app-cutoff-menu',
+      'app-storage-panel',
+      'app-folder-picks',
+    ]) {
+      expect(menu?.querySelector(tool)).not.toBeNull();
+    }
+    expect(el.querySelector('.top > app-upload app-link-form')).not.toBeNull();
   });
 });

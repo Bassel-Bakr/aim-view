@@ -1,0 +1,31 @@
+@if (stats.chooseFolder; as choose) {
+  <button
+    type="button"
+    appButton
+    title="Choose KovaaK's stats folder (FPSAimTrainer\stats) so each VOD finds its stats file, or FPSAimTrainer for your scenarios too. The browser keeps a copy: choose it again after new runs."
+    [disabled]="!!state.opening()"
+    (click)="chooseStatsFolder(statsFolder)"
+  >
+    Stats folder
+  </button>
+  <input
+    #statsFolder
+    type="file"
+    webkitdirectory
+    hidden
+    (change)="pickStatsFolder(statsFolder, choose)"
+    (cancel)="state.opening.set(null)"
+  />
+}
+@if (source.folder(); as f) {
+  <button
+    type="button"
+    appButton
+    [title]="f.detail"
+    [disabled]="f.busy"
+    (click)="f.files ? folder.click() : openFolder(f)"
+  >
+    {{ f.label }}
+  </button>
+  <input #folder type="file" webkitdirectory hidden (change)="pickFolder(folder, f)" />
+}

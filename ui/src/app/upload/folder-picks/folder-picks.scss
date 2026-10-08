@@ -1,0 +1,7 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  :host {
+    @apply flex items-center gap-5;
+  }
+}

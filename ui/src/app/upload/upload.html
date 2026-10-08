@@ -24,39 +24,10 @@
   accept=".mp4,.mkv,.mov,.webm,.csv"
   (change)="pickFiles(file)"
 />
-<app-link-form />
-@if (source.folder(); as f) {
-  <button
-    type="button"
-    appButton
-    [title]="f.detail"
-    [disabled]="f.busy"
-    (click)="f.files ? folder.click() : openFolder(f)"
-  >
-    {{ f.label }}
-  </button>
-  <input #folder type="file" webkitdirectory hidden (change)="pickFolder(folder, f)" />
+@if (withLink()) {
+  <app-link-form />
 }
-@if (stats.chooseFolder; as choose) {
-  <button
-    type="button"
-    appButton
-    title="Choose KovaaK's stats folder (FPSAimTrainer\stats) so each VOD finds its stats file, or FPSAimTrainer for your scenarios too. The browser keeps a copy: choose it again after new runs."
-    [disabled]="!!opening()"
-    (click)="chooseStatsFolder(statsFolder)"
-  >
-    Stats folder
-  </button>
-  <input
-    #statsFolder
-    type="file"
-    webkitdirectory
-    hidden
-    (change)="pickStatsFolder(statsFolder, choose)"
-    (cancel)="opening.set(null)"
-  />
-}
-@if (busy(); as b) {
+@if (state.busy(); as b) {
   <span class="busy" role="status">
     @if (b.share === null) {
       <span class="spinner" aria-hidden="true"></span>
@@ -65,7 +36,7 @@
     }
     <span class="note">{{ b.text }}</span>
   </span>
-} @else if (note(); as n) {
+} @else if (state.note(); as n) {
   <span [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">{{
     n.text
   }}</span>

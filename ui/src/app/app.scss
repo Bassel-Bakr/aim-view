@@ -49,10 +49,17 @@
 }
 
 @layer components {
+  // Its tools never shrink: past the screen's width the bar scrolls sideways rather than letting them run into each
+  // other (the More menu keeps that for screens narrower than any the tokens expect)
   .top {
-    @apply flex min-w-0 items-center gap-7 border-b border-border px-6;
+    @apply flex min-w-0 items-center gap-7 overflow-x-auto border-b border-border px-6;
 
     background: l.$surface-bar;
+    scrollbar-width: none;
+
+    > :not(.upload) {
+      @apply flex-none;
+    }
   }
 
   .brand {
@@ -71,8 +78,25 @@
     @apply size-(--icon-size);
   }
 
+  // Takes the rest of the bar, its buttons at the right end; only its note shrinks (upload.scss)
   .upload {
-    @apply flex min-w-0 flex-1 flex-row-reverse items-center gap-5;
+    @apply flex flex-auto flex-row-reverse items-center gap-5;
+  }
+
+  // In the top layer, placed under its button (App.placeMenu); each tool's buttons one to a row
+  .tools-menu {
+    @apply fixed m-0 w-(--top-bar-menu-width) max-w-full flex-col gap-4 rounded-md border border-border-strong bg-surface-2 p-4 text-primary;
+
+    inset: auto;
+    box-shadow: l.$top-bar-menu-shadow;
+
+    &:popover-open {
+      @apply flex;
+    }
+
+    > * {
+      @apply flex flex-col items-stretch gap-4;
+    }
   }
 
   // The main area measures its own width: the run page puts the flick list beside the video when there is room
@@ -91,8 +115,8 @@
   }
 }
 
-// A narrow screen (a phone): one column; the recordings list is a drawer over the page, the top bar scrolls sideways
-// rather than spilling over, and the brand is its logo alone
+// A narrow screen (a phone): one column; the recordings list is a drawer over the page, the top bar is tighter, and
+// the brand is its logo alone
 @media (width <= l.$narrow-width) {
   @layer components {
     :host,
@@ -110,13 +134,7 @@
     }
 
     .top {
-      @apply gap-5 overflow-x-auto px-4;
-
-      scrollbar-width: none;
-
-      > * {
-        @apply flex-none;
-      }
+      @apply gap-5 px-4;
     }
 
     .brand-name {

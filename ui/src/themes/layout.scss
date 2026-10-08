@@ -10,6 +10,12 @@
   // At this width and below (a phone) the app takes its narrow layout: the recordings list is a drawer over the page.
   // pages.ts reads it; $narrow-width below is the same value, for media queries, which cannot read a variable.
   --narrow-width: 767px;
+  // At this width and below the top bar has no room for every tool (about 1,420 px, and the desktop's Mouse log): the
+  // less-used ones go in its More menu (pages.ts)
+  --top-bar-full-width: 1599px;
+  // The top bar's More menu: one tool to a row, over the page
+  --top-bar-menu-width: 240px;
+  --top-bar-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
   // The recordings drawer stays over the page's own layers (the video, its overlay, the floating player)
   --layer-drawer: 30;
   // The main area's side padding on a narrow screen
@@ -22,5 +28,6 @@ $surface-bar: var(--surface-bar);
 $empty-width: var(--empty-width);
 $empty-offset: var(--empty-offset);
 $narrow-width: 767px;
+$top-bar-menu-shadow: var(--top-bar-menu-shadow);
 $layer-drawer: var(--layer-drawer);
 $main-narrow-padding: var(--main-narrow-padding);
