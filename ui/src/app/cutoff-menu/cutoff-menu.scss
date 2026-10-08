@@ -7,10 +7,6 @@
   }
 
   .note {
-    @apply min-w-0 truncate text-xs text-secondary;
-  }
-
-  .failed {
-    @apply min-w-0 truncate text-xs text-warning;
+    @apply min-w-0 truncate text-xs;
   }
 }

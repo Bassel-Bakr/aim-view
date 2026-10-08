@@ -8,7 +8,5 @@
   Cut-off queue
 </button>
 @if (queue.note(); as n) {
-  <span [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">{{
-    n.text
-  }}</span>
+  <span class="note status-line" [attr.role]="n.failed ? 'alert' : 'status'">{{ n.text }}</span>
 }

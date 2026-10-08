@@ -88,6 +88,48 @@
     @apply mt-3 text-xs text-muted;
   }
 
+  // A modal dialog (a <dialog> opened with showModal): its box, its header row (the title and the close button), and
+  // the words that say what it is for. A dialog of another width sets only its width in its own SCSS.
+  .dialog {
+    @apply m-auto max-h-(--dialog-max-height) w-(--dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+  }
+
+  // A tool panel on the run page, where a run's inputs are corrected (excluded areas, the faint-target cut-off, the
+  // run window, the stats file): its box, its header row, its title and its words.
+  .tool-panel {
+    @apply mb-7 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
+  }
+
+  .dialog-head,
+  .tool-panel-head {
+    @apply flex items-center justify-between gap-7;
+  }
+
+  .tool-panel-title {
+    @apply m-0;
+  }
+
+  .dialog-intro,
+  .tool-panel-intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  // A line saying how an action went. Its ARIA role says whether it failed, for screen readers and for this style
+  // alike: role="status" while it went well, role="alert" once it failed (the template binds it; the role-values lint,
+  // scripts/status-lines.ts, checks the values). It owns the line's color; a component's own class may set its size
+  // and layout. data-tone="muted": a quiet hint.
+  .status-line {
+    @apply text-sm text-secondary;
+
+    &[data-tone='muted'] {
+      @apply text-muted;
+    }
+
+    &[role='alert'] {
+      @apply text-warning;
+    }
+  }
+
   // A label in an outlined pill: a run's kind, its data source, the model in use.
   .pill {
     @apply rounded-pill border border-border-strong px-4 py-1 text-xs font-regular text-secondary;

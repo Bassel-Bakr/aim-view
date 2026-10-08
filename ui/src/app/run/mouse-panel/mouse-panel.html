@@ -25,7 +25,7 @@
     @if (measures.isLoading()) {
       <p class="hint" role="status">Reading the mouse log…</p>
     } @else if (measures.error(); as e) {
-      <p class="failed" role="alert">Could not read the mouse log: {{ e.message }}</p>
+      <p class="status-line" role="alert">Could not read the mouse log: {{ e.message }}</p>
     } @else if (run(); as r) {
       <p class="source">{{ source() }}</p>
       @if (r.log.throttled) {
@@ -59,7 +59,7 @@
         </div>
       </details>
     } @else if (shown(); as s) {
-      <p class="failed" role="alert">{{ s.file ?? 'The mouse log' }}: {{ s.error }}</p>
+      <p class="status-line" role="alert">{{ s.file ?? 'The mouse log' }}: {{ s.error }}</p>
     } @else if (logs.adds) {
       <p class="hint">
         No mouse log for this run. A raw mouse log (python/mouse_log.py, or the desktop app's Mouse
@@ -74,7 +74,11 @@
       </p>
     }
     @if (message(); as m) {
-      <p [class]="m.failed ? 'failed' : 'hint'" [attr.role]="m.failed ? 'alert' : 'status'">
+      <p
+        class="status-hint status-line"
+        data-tone="muted"
+        [attr.role]="m.failed ? 'alert' : 'status'"
+      >
         {{ m.text }}
       </p>
     }

@@ -53,9 +53,13 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   (`.screen { @apply relative overflow-hidden rounded-lg; }`), and the template names it (`class="screen"`). A
   component's SCSS starts with `@reference` to `tailwind.css`, so `@apply` reaches the token theme (Sass compiles
   first, then Tailwind). The shared controls are global classes in `ui/src/themes/controls.scss` (`.button`, `.badge`,
-  `.chip`, `.card`, `.pill`, `.segmented`, `.switch`, `.section-note`, `.color-swatch`). A variant is a data attribute
-  (`&[data-intent='primary']`), set by the control's directive in `ui/src/app/controls/` from a typed input
-  (`<button appButton intent="primary">`, `<span appBadge tone="good">`), so templates get type checks. A variant's
+  `.chip`, `.card`, `.pill`, `.segmented`, `.switch`, `.section-note`, `.color-swatch`, `.dialog`, `.tool-panel`,
+  `.status-line`). A variant is a data attribute (`&[data-intent='primary']`), set by the control's directive in
+  `ui/src/app/controls/` from a typed input (`<button appButton intent="primary">`, `<span appBadge tone="good">`),
+  so templates get type checks. Where HTML or ARIA already says the state, the style reads it instead, with no
+  directive: a `.status-line` binds its role (`[attr.role]="n.failed ? 'alert' : 'status'"`) and is styled by it,
+  as a `.chip` is by `aria-pressed`. `bun run lint:ui` checks those values (`scripts/status-lines.ts`), and fails on a
+  long `@apply` (5 classes or more) in 3 stylesheets or more: it belongs in one shared class. A variant's
   selector is more specific than the base, so it overrides it with no class merging. A class name must not be a
   Tailwind utility (`table`, `grid`, `hidden`, `table-row`, `table-cell`), or Tailwind adds the utility too. The old
   tailwind-variants modules are in `ui/retired/themes/`.

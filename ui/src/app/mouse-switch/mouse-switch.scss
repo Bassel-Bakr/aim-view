@@ -6,10 +6,6 @@
   }
 
   .status {
-    @apply truncate text-xs text-muted;
-  }
-
-  .failed {
-    @apply truncate text-xs text-warning;
+    @apply truncate text-xs;
   }
 }

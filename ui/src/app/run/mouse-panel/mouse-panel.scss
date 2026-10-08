@@ -45,7 +45,12 @@
     @apply max-w-(--prose-width) text-xs text-muted;
   }
 
-  .failed {
-    @apply text-sm text-warning;
+  // a hint while nothing failed, in the usual size once it did
+  .status-hint {
+    @apply max-w-(--prose-width) text-xs;
+
+    &[role='alert'] {
+      @apply max-w-none text-sm;
+    }
   }
 }

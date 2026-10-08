@@ -37,9 +37,7 @@
     <span class="note">{{ b.text }}</span>
   </span>
 } @else if (state.note(); as n) {
-  <span [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">{{
-    n.text
-  }}</span>
+  <span class="status status-line" [attr.role]="n.failed ? 'alert' : 'status'">{{ n.text }}</span>
 }
 @if (dragging()) {
   <div class="drop-zone" aria-hidden="true">

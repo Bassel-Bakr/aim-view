@@ -1,18 +1,6 @@
 @reference '../../tailwind.css';
 
 @layer components {
-  .dialog {
-    @apply m-auto max-h-(--dialog-max-height) w-(--dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
-  }
-
-  .head {
-    @apply flex items-center justify-between gap-7;
-  }
-
-  .intro {
-    @apply max-w-(--prose-width) text-sm text-secondary;
-  }
-
   .kept {
     @apply text-xs text-muted;
   }
@@ -24,9 +12,5 @@
 
   .removes {
     @apply max-w-(--prose-width) text-xs text-secondary;
-  }
-
-  .failed {
-    @apply text-sm text-warning;
   }
 }

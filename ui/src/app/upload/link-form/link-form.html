@@ -9,7 +9,7 @@
 </button>
 
 <dialog class="dialog" #dialog aria-labelledby="link-title">
-  <header class="head">
+  <header class="dialog-head">
     <h2 id="link-title">From a link</h2>
     <button type="button" appButton (click)="close()">Close</button>
   </header>
@@ -51,7 +51,7 @@
       {{ b }}…
     </p>
   } @else if (problem(); as p) {
-    <p class="failed" role="alert">{{ p }}</p>
+    <p class="status-line" role="alert">{{ p }}</p>
   } @else if (info(); as i) {
     <p class="status" role="status">{{ i.title }}</p>
   }

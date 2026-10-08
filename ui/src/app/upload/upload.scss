@@ -17,8 +17,8 @@
     @apply truncate text-xs text-secondary;
   }
 
-  .failed {
-    @apply truncate text-xs text-warning;
+  .status {
+    @apply truncate text-xs;
   }
 
   :host > :is(.note, .failed) {

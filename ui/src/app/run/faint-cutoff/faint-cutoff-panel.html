@@ -1,11 +1,11 @@
-<section class="panel" id="faint-cutoff" aria-labelledby="faint-cutoff-title">
-  <header class="head">
-    <h3 class="title" id="faint-cutoff-title">Faint-target cut-off</h3>
+<section class="tool-panel" id="faint-cutoff" aria-labelledby="faint-cutoff-title">
+  <header class="tool-panel-head">
+    <h3 class="tool-panel-title" id="faint-cutoff-title">Faint-target cut-off</h3>
     @if (!inQueue()) {
       <button type="button" appButton (click)="close()">Close</button>
     }
   </header>
-  <p class="intro">
+  <p class="tool-panel-intro">
     Leave out the tracks the detector is far less sure of than of this recording's targets: wall
     seams and tiles. A track is left out when its score lies more than the offset below the
     recording's targets. A tracking run's numbers are measured again without them; the video, the
@@ -138,11 +138,11 @@
       </button>
     </div>
     @if (zipFailed(); as why) {
-      <p class="failed" role="alert">{{ why }}</p>
+      <p class="status-line" role="alert">{{ why }}</p>
     }
   }
   @if (faint.note(); as n) {
-    <p [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">
+    <p class="status-line" [attr.role]="n.failed ? 'alert' : 'status'">
       {{ n.text }}
     </p>
   }

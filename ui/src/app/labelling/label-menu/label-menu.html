@@ -19,18 +19,16 @@
   </button>
 }
 @if (queue.note(); as n) {
-  <span [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">{{
-    n.text
-  }}</span>
+  <span class="note status-line" [attr.role]="n.failed ? 'alert' : 'status'">{{ n.text }}</span>
 }
 
 @if (store) {
   <dialog class="dialog" #dialog aria-labelledby="examples-title">
-    <header class="head">
+    <header class="dialog-head">
       <h2 id="examples-title">Area examples</h2>
       <button type="button" appButton (click)="closeExamples()">Close</button>
     </header>
-    <p class="intro">
+    <p class="dialog-intro">
       The area finder learns from the areas you save: each saved area is an example of its type, and
       each area it found that you removed is an example of none. Here they stay in this browser.
       Download them as the review server's files to keep them or to use them there
@@ -59,7 +57,7 @@
       <input #files type="file" multiple hidden accept=".jsonl,.json" (change)="loadFiles(files)" />
     </div>
     @if (status(); as s) {
-      <p [class]="s.failed ? 'failed' : 'note'" [attr.role]="s.failed ? 'alert' : 'status'">
+      <p class="note status-line" [attr.role]="s.failed ? 'alert' : 'status'">
         {{ s.text }}
       </p>
     }

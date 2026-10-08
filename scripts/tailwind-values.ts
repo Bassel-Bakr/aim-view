@@ -5,6 +5,8 @@
  * variable (`w-(--sidebar-width)`) and arbitrary variants (`data-[intent=primary]:`) are fine. In:
  * ui/src's SCSS (@apply), templates (class="...") and components (host classes). Out: each class
  * that breaks the rule, with its file and line, and exit code 1 when there is one.
+ * It also fails on a long @apply copied across stylesheets (MIN_SHARED_CLASSES classes or more, in
+ * MIN_COPIES files or more): that look belongs in one shared class in themes/controls.scss.
  * Usage: bun scripts/tailwind-values.ts (bun run lint:ui runs it).
  */
 import { Glob } from 'bun';
@@ -62,14 +64,57 @@ export function findingsIn(file: string, text: string): Finding[] {
   return out;
 }
 
+/** The fewest classes in an @apply that counts as a look worth sharing. */
+const MIN_SHARED_CLASSES = 5;
+/** The fewest stylesheets the same @apply may be in before it must be shared. */
+const MIN_COPIES = 3;
+/** An @apply's class list. */
+const APPLY = /@apply\s+([^;]+);/g;
+
+/** One @apply copied across stylesheets: its classes and the files it is in. */
+interface Copied {
+  /** The classes, sorted and joined by spaces. */
+  classes: string;
+  /** The stylesheets, below ui/src. */
+  files: string[];
+}
+
+/**
+ * The long @apply lists (MIN_SHARED_CLASSES classes or more) found in MIN_COPIES stylesheets or
+ * more, from each stylesheet's path and text. The order of the classes does not matter.
+ */
+export function copiedApplies(sheets: Map<string, string>): Copied[] {
+  const filesByClasses = new Map<string, Set<string>>();
+  for (const [file, text] of sheets) {
+    for (const match of text.matchAll(APPLY)) {
+      const names = match[1].trim().split(/\s+/);
+      if (names.length < MIN_SHARED_CLASSES) continue;
+      const classes = names.sort().join(' ');
+      filesByClasses.set(classes, (filesByClasses.get(classes) ?? new Set()).add(file));
+    }
+  }
+  return [...filesByClasses]
+    .filter(([, files]) => files.size >= MIN_COPIES)
+    .map(([classes, files]) => ({ classes, files: [...files].sort() }));
+}
+
 if (import.meta.main) {
   const findings: Finding[] = [];
+  const sheets = new Map<string, string>();
   for (const file of FILES.scanSync(SOURCES)) {
     if (file.includes('generated')) continue;
-    findings.push(...findingsIn(file, readFileSync(join(SOURCES, file), 'utf8')));
+    const text = readFileSync(join(SOURCES, file), 'utf8');
+    findings.push(...findingsIn(file, text));
+    if (file.endsWith('.scss')) sheets.set(file, text);
   }
   for (const { file, line, name } of findings)
     console.error(`ui/src/${file}:${line}: ${name} takes an arbitrary value; use a token`);
-  if (findings.length) process.exit(1);
-  console.log('tailwind values: every class reaches a token');
+  const copies = copiedApplies(sheets);
+  for (const { classes, files } of copies)
+    console.error(
+      `@apply ${classes} is in ${files.length} stylesheets (${files.join(', ')}); ` +
+        'make it one class in themes/controls.scss',
+    );
+  if (findings.length || copies.length) process.exit(1);
+  console.log('tailwind values: every class reaches a token, and no long @apply is copied');
 }

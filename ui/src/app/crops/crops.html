@@ -51,7 +51,7 @@
   </header>
 
   @if (working(); as w) {
-    <p [class]="w.failed ? 'failed' : 'note'" [attr.role]="w.failed ? 'alert' : 'status'">
+    <p class="note status-line" [attr.role]="w.failed ? 'alert' : 'status'">
       {{ w.text }}
     </p>
   }
@@ -115,7 +115,7 @@
   }
 
   @if (draft.note(); as n) {
-    <p [class]="n.failed ? 'failed' : 'note'" [attr.role]="n.failed ? 'alert' : 'status'">
+    <p class="note status-line" [attr.role]="n.failed ? 'alert' : 'status'">
       {{ n.text }}
     </p>
   }

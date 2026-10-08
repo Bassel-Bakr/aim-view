@@ -55,11 +55,7 @@
   }
 
   .note {
-    @apply text-xs text-secondary;
-  }
-
-  .failed {
-    @apply text-xs text-warning;
+    @apply text-xs;
   }
 
   // The answers on top; moving through the crops on a row of its own, so Back is not beside Right

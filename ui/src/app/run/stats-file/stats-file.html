@@ -1,9 +1,9 @@
-<section class="panel" id="stats-file" aria-labelledby="stats-file-title">
-  <header class="head">
-    <h3 class="title" id="stats-file-title">Stats file</h3>
+<section class="tool-panel" id="stats-file" aria-labelledby="stats-file-title">
+  <header class="tool-panel-head">
+    <h3 class="tool-panel-title" id="stats-file-title">Stats file</h3>
     <button type="button" appButton (click)="closed.emit()">Close</button>
   </header>
-  <p class="intro">
+  <p class="tool-panel-intro">
     KovaaK's writes a stats file for each challenge run, with its kills, shots and score. The review
     matches the kills in the video with it. The file is named after the scenario and the time the
     run ended.
@@ -15,7 +15,7 @@
     </div>
   }
   @if (pairing.error(); as e) {
-    <p class="failed" role="alert">Could not load the stats files: {{ e.message }}</p>
+    <p class="status-line" role="alert">Could not load the stats files: {{ e.message }}</p>
   }
   @if (shown(); as p) {
     <p class="current">
@@ -104,7 +104,11 @@
   }
 
   @if (message(); as m) {
-    <p [class]="m.failed ? 'failed' : 'hint'" [attr.role]="m.failed ? 'alert' : 'status'">
+    <p
+      class="status-hint status-line"
+      data-tone="muted"
+      [attr.role]="m.failed ? 'alert' : 'status'"
+    >
       {{ m.text }}
     </p>
   }

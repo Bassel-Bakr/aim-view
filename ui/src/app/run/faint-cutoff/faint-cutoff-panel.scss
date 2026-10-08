@@ -3,22 +3,6 @@
 @reference '../../../tailwind.css';
 
 @layer components {
-  .panel {
-    @apply mb-7 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
-  }
-
-  .head {
-    @apply flex items-center justify-between gap-7;
-  }
-
-  .title {
-    @apply m-0;
-  }
-
-  .intro {
-    @apply max-w-(--prose-width) text-sm text-secondary;
-  }
-
   .fields {
     @apply flex flex-wrap items-end gap-7;
   }
@@ -90,11 +74,8 @@
     @apply text-sm text-secondary;
   }
 
-  .note {
-    @apply text-sm text-secondary;
-  }
-
-  .failed {
-    @apply text-sm text-attention-text;
+  // a failure here reads in the panel's attention color, not the usual warning
+  .status-line[role='alert'] {
+    @apply text-attention-text;
   }
 }

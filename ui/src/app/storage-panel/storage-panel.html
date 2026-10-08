@@ -9,12 +9,12 @@
 </button>
 
 <dialog class="dialog" #dialog aria-labelledby="storage-title">
-  <header class="head">
+  <header class="dialog-head">
     <h2 id="storage-title">Storage</h2>
     <button type="button" appButton (click)="close()">Close</button>
   </header>
   @if (data(); as d) {
-    <p class="intro">
+    <p class="dialog-intro">
       {{ intro() }} What you made yourself stays; the rest can be removed and comes back when it is
       needed.
     </p>
@@ -49,10 +49,10 @@
       </ng-template>
     </app-data-table>
     @if (failed(); as why) {
-      <p class="failed" role="alert">{{ why }}</p>
+      <p class="status-line" role="alert">{{ why }}</p>
     }
   } @else {
-    <p class="intro" role="status">Reading what is kept…</p>
+    <p class="dialog-intro" role="status">Reading what is kept…</p>
   }
   <app-share-section />
 </dialog>

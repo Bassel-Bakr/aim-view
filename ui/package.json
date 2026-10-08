@@ -7,7 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "lint": "ng lint && bun ../scripts/tailwind-values.ts",
+    "lint": "ng lint && bun ../scripts/tailwind-values.ts && bun ../scripts/status-lines.ts",
     "format": "prettier --write --cache .",
     "format:check": "prettier --check --cache ."
   },

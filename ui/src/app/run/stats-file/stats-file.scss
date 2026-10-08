@@ -1,22 +1,6 @@
 @reference '../../../tailwind.css';
 
 @layer components {
-  .panel {
-    @apply mb-7 flex flex-col gap-5 rounded-lg border border-border bg-surface-1 px-9 py-7;
-  }
-
-  .head {
-    @apply flex items-center justify-between gap-7;
-  }
-
-  .title {
-    @apply m-0;
-  }
-
-  .intro {
-    @apply max-w-(--prose-width) text-sm text-secondary;
-  }
-
   .setup {
     @apply flex flex-col gap-3 rounded-md border border-border-strong px-6 py-5;
   }
@@ -73,7 +57,12 @@
     @apply text-xs text-muted;
   }
 
-  .failed {
-    @apply text-sm text-warning;
+  // a hint while nothing failed, in the usual size once it did
+  .status-hint {
+    @apply text-xs;
+
+    &[role='alert'] {
+      @apply text-sm;
+    }
   }
 }

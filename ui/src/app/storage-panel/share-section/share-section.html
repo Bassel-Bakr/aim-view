@@ -56,7 +56,7 @@
     <p class="note" role="status">Working…</p>
   }
   @if (said(); as text) {
-    <p [class]="failed() ? 'failed' : 'note'" [attr.role]="failed() ? 'alert' : 'status'">
+    <p class="status-line" [attr.role]="failed() ? 'alert' : 'status'">
       {{ text }}
     </p>
   }
