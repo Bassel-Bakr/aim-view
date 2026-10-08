@@ -743,6 +743,23 @@ pub fn track_motion(
     out
 }
 
+/// The what-ifs' changes, as the run page's headings; the tracking checks (src/track_checks.rs) find theirs by them.
+pub const GET_BACK: &str = "Get back on twice as fast";
+/// See `GET_BACK`.
+pub const NO_SLIPS: &str = "Don't slip";
+/// See `GET_BACK`.
+pub const NO_LEADING: &str = "Don't lead";
+/// See `GET_BACK`.
+pub const NO_TRAILING: &str = "Don't trail";
+/// See `GET_BACK`.
+pub const NOT_THROWN: &str = "Don't get thrown by its turns";
+/// See `GET_BACK`.
+pub const EVERY_DIRECTION: &str = "Track every direction like your best one";
+/// See `GET_BACK`.
+pub const BEST_TEN_SECONDS: &str = "Keep up your best 10 seconds all run";
+/// See `GET_BACK`.
+pub const FASTER_SWITCH: &str = "Get onto the next bot 100 ms faster";
+
 /// One what-if estimate: how much of the run's time on target one change would add (a share of the run).
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -1101,7 +1118,7 @@ fn nearest_and_inside(frames: &[TrackFrame], hitbox: Option<Hitbox>) -> (Box<[Ne
 }
 
 /// A tracking run's summary with only its stats file's facts filled in.
-fn unmeasured_summary(meta: &HashMap<String, String>, source: KillSource) -> TrackSummary {
+pub(crate) fn unmeasured_summary(meta: &HashMap<String, String>, source: KillSource) -> TrackSummary {
     let number =
         |key: &str| meta.get(key).filter(|value| !value.is_empty()).and_then(|value| value.trim().parse::<f64>().ok());
     let (hits, misses) = (number("Hit Count"), number("Miss Count"));
@@ -1341,19 +1358,19 @@ fn what_if(summary: &TrackSummary, tracking: &[bool], on: &[bool], losses: &[usi
         }
     };
     let lost = losses.iter().sum::<usize>() as f64;
-    add("Get back on twice as fast", lost / 2.0, "Half the time off the bot in drops longer than 0.1 s.".into());
+    add(GET_BACK, lost / 2.0, "Half the time off the bot in drops longer than 0.1 s.".into());
     let slips = (tracked - count_true(on) as f64 - lost).max(0.0);
-    add("Don't slip", slips, "The time off the bot in slips shorter than 0.1 s.".into());
+    add(NO_SLIPS, slips, "The time off the bot in slips shorter than 0.1 s.".into());
     if let Some(off) = summary.motion.as_ref().and_then(|motion| motion.counts.as_ref()).map(|counts| &counts.frames) {
-        add("Don't lead", off.ahead as f64, "The time off the bot ahead of it, past its leading edge.".into());
-        add("Don't trail", off.behind as f64, "The time off the bot behind it, trailing it.".into());
+        add(NO_LEADING, off.ahead as f64, "The time off the bot ahead of it, past its leading edge.".into());
+        add(NO_TRAILING, off.behind as f64, "The time off the bot behind it, trailing it.".into());
         add(
-            "Don't get thrown by its turns",
+            NOT_THROWN,
             off.turns as f64,
             "The time off the bot in the 0.4 s after each of its direction changes.".into(),
         );
         add(
-            "Track every direction like your best one",
+            EVERY_DIRECTION,
             off.directions,
             "Each direction of the bot's motion brought up to the time on target of your best one (among those it \
              moved in 5% of the time or more)."
@@ -1362,7 +1379,7 @@ fn what_if(summary: &TrackSummary, tracking: &[bool], on: &[bool], losses: &[usi
     }
     if let (Some(best), Some(on_target)) = (best_ten_seconds(on, tracking, fps), summary.on_target) {
         add(
-            "Keep up your best 10 seconds all run",
+            BEST_TEN_SECONDS,
             (best - on_target) * tracked,
             format!("Your best 10 seconds were {}% on target.", (100.0 * best).round_ties_even()),
         );
@@ -1370,7 +1387,7 @@ fn what_if(summary: &TrackSummary, tracking: &[bool], on: &[bool], losses: &[usi
     if !summary.switches.is_empty() {
         let total: usize = summary.switches.iter().map(|switch| switch[1] - switch[0]).sum();
         add(
-            "Get onto the next bot 100 ms faster",
+            FASTER_SWITCH,
             (summary.switches.len() as f64 * FASTER_SWITCH_S * fps).min(total as f64),
             "100 ms less per switch between bots.".into(),
         );

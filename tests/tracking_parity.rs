@@ -5,7 +5,7 @@
 use std::fs;
 
 mod common;
-use common::{Diff, TrackingInputs, compare, parity_root, read};
+use common::{Diff, TrackingInputs, compare, parity_root, read, without_tracking_checks};
 
 /// The parity cases of tracking runs with Python's reports. flower_crosshair (python/retired/tests/fixtures.py
 /// --crosshair): flower's tracks with the valorant run's crosshair
@@ -28,7 +28,7 @@ fn tracking_review_matches_python() {
             eprintln!("no {}", dir.display());
             continue;
         };
-        let want = read(&dir.join("report.json"));
+        let want = without_tracking_checks(read(&dir.join("report.json")));
         let got = inputs.review(&want, &facts, None);
         let mut diff = Diff::default();
         compare("report.json", &got, &want, &mut diff);

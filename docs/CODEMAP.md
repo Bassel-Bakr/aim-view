@@ -72,6 +72,8 @@ rust-analyzer's call hierarchy.
   `_fitts`, `judge`).
 - `src/track.rs`: Tracking: the detector's boxes kept or dropped per frame (python/retired/review.py: `track_model`'s
   `keep`), and the targets of each frame given ids that follow them from frame to frame (`link`).
+- `src/track_checks.rs`: A tracking run's checks: each a Work on / Fine verdict, like a clicking run's (src/summary.rs
+  `judge`).
 - `src/tracker.rs`: The track step for one recording, or one run of it (a recording split into runs, reviewed at once):
   each frame's boxes kept or dropped (raw boxes kept too), its excluded areas watched for pop-ups, then the frames where
   a pop-up is off kept again, and all linked when the frames are in.
@@ -789,6 +791,12 @@ targets of each frame given ids that follow them from frame to frame (`link`).
 - Functions: `keep`, `reopen`, `view_shift_between`, `spikes`, `link`.
 - Constants: `REVIEW_VERSION`.
 
+## src/track_checks.rs
+
+A tracking run's checks: each a Work on / Fine verdict, like a clicking run's (src/summary.rs `judge`).
+
+- Functions: `judge`.
+
 ## src/tracker.rs
 
 The track step for one recording, or one run of it (a recording split into runs, reviewed at once): each frame's boxes
@@ -831,6 +839,8 @@ from the tracks and the camera's turn.
   where the kills come from, and the bots' hitbox (None: the crosshair is on a target within INSIDE_MARGIN_DEG of its
   box).
 - Functions: `track_motion`, `stats_length`, `countdown_end`, `track_summary`.
+- Constants: `GET_BACK`, `NO_SLIPS`, `NO_LEADING`, `NO_TRAILING`, `NOT_THROWN`, `EVERY_DIRECTION`, `BEST_TEN_SECONDS`,
+  `FASTER_SWITCH`.
 
 ## src/typescript.rs
 

@@ -56,7 +56,7 @@ const DIRECTION_COLUMNS: readonly DataColumn<DirectionRow>[] = [
 /**
  * A clicking run's report under the video: the whole run's cards (or the picked kill's, with the
  * run's medians), the run at a glance, the kills by distance and by direction, and what would raise
- * the score. Where the time goes and the checks are beside the video (click-side).
+ * the score. Where the time goes and the checks are beside the video (run-side).
  */
 @Component({
   imports: [DataTable, FlickProfileChart, RunCharts, WhatIfSection],

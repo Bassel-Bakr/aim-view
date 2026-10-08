@@ -22,13 +22,13 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 39.5 s | 37.8 s | 2 | 2026-10-07, b9f96dc+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 13.2 s | 13.2 s | 18 | 2026-10-08, b578cb1+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 22.9 s | 13.2 s | 19 | 2026-10-08, 97115eb+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 6 s | 6.0 s | 23 | 2026-10-08, b578cb1+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 15.1 s | 6.0 s | 24 | 2026-10-08, 97115eb+ |
 | assets: core wasm (cargo) | profile release | 39.4 s | 37.7 s | 2 | 2026-10-07, b9f96dc+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O0 | 7.2 s | 7.3 s | 7 | 2026-10-08, b578cb1+ |
+| assets: wasm-opt (Asyncify) | level -O0 | 7.6 s | 7.3 s | 8 | 2026-10-08, 97115eb+ |
 | assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 64.7 s | 62.5 s | 2 | 2026-10-08, 4303844+ |
 | build | modes browser | 143.3 s | 143.3 s | 1 | 2026-10-08, 4303844+ |
@@ -39,10 +39,10 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 3.7 s | 4.2 s | 4 | 2026-10-07, 78c5844+ |
 | build: lint | - | 4.1 s | 4.1 s | 1 | 2026-10-08, 4303844+ |
-| lint:ui | - | 4.7 s | 4.4 s | 46 | 2026-10-08, a386e9e+ |
+| lint:ui | - | 7.2 s | 4.5 s | 47 | 2026-10-08, 97115eb+ |
 | rust-tests | profile quick | 28.4 s | 28.4 s | 9 | 2026-10-08, 6d5bc9d+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 8.7 s | 8.8 s | 36 | 2026-10-08, 8556b56+ |
+| test:ui | - | 20.3 s | 9.0 s | 37 | 2026-10-08, 97115eb+ |
 | tokens | - | 0.5 s | 0.4 s | 7 | 2026-10-08, a386e9e+ |
 <!-- costs:end -->
 

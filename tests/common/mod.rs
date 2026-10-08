@@ -106,6 +106,15 @@ pub fn rename_key(value: &mut Value, path: &str, name: &str) {
     }
 }
 
+/// A tracking report of Python's without its checks: Python's tracking reports have none (`issues: []`), while the
+/// core's have its own (src/track_checks.rs), which no Python output can be compared with.
+pub fn without_tracking_checks(mut report: Value) -> Value {
+    if let Some(object) = report.as_object_mut() {
+        object.remove("issues");
+    }
+    report
+}
+
 /// A JSON file's value; panics when it cannot be read or is not JSON.
 pub fn read(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()

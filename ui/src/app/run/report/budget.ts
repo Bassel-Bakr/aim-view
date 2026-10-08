@@ -4,7 +4,7 @@
  *
  * In: the clicking summary's average kill (`budget`, the core's `KillParts`), a picked flick's own
  * parts and forced reload time, and the run's reloads.
- * Out: the "Where the time goes" panel's bars and legend (click-side), the kill parts and their
+ * Out: the "Where the time goes" panel's bars and legend (run-side), the kill parts and their
  * colors that the run charts share, and a kill's micro for the cards and the kills table.
  */
 
@@ -172,7 +172,7 @@ export interface BudgetBar {
   thin: boolean;
   /**
    * Kept for its height only, so the box does not jump when a kill is picked; the template
-   * (click-side.html) keeps its space but does not show it.
+   * (run-side.html) keeps its space but does not show it.
    */
   hidden: boolean;
   /** The steps, in order. */

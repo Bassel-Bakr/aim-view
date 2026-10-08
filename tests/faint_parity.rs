@@ -11,7 +11,7 @@ use aimview::track::Tracks;
 use serde_json::{Value, json};
 
 mod common;
-use common::{Diff, TrackingInputs, compare, parity_root, read};
+use common::{Diff, TrackingInputs, compare, parity_root, read, without_tracking_checks};
 
 /// The parity cases of tracking runs with Python's cut-off reports.
 const CASES: [&str; 5] = ["spectral", "flower", "pokeball5", "controlsphere", "aethercontrol"];
@@ -39,7 +39,7 @@ fn tracking_review_with_the_cut_off_matches_python() {
                 eprintln!("no {}", path.display());
                 continue;
             }
-            let want = read(&path);
+            let want = without_tracking_checks(read(&path));
             let faint = FaintSetting { on: true, offset: offset.parse().unwrap() };
             let got = inputs.review(&want, &facts, Some(faint));
             let mut diff = Diff::default();

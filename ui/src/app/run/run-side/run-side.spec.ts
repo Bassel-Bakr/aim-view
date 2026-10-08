@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ClickReport as ClickReportData, Flick } from '../../api';
 import { answer, serverMode } from '../../fake-api';
 import { FlickFocus } from '../flick-focus';
-import { ClickSide } from './click-side';
+import { RunSide } from './run-side';
 
 const FLICK = {
   kill_number: 4,
@@ -35,12 +35,12 @@ const REPORT = {
   },
 } as unknown as ClickReportData;
 
-describe('ClickSide', () => {
+describe('RunSide', () => {
   it("lists the checks to work on first, and shows where the picked kill's time went", async () => {
     TestBed.configureTestingModule({
       providers: serverMode(),
     });
-    const fixture = TestBed.createComponent(ClickSide);
+    const fixture = TestBed.createComponent(RunSide);
     fixture.componentRef.setInput('report', REPORT);
     await answer({ '/api/vods': [] });
     await fixture.whenStable();

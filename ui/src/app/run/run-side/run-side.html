@@ -72,36 +72,38 @@
   </section>
 }
 
-<section class="panel" aria-label="Checks">
-  <div class="panel-head">
-    <h3 class="panel-title">Checks</h3>
-    <span class="panel-hint"
-      >{{ toWorkOn() }} to work on · {{ issues().length - toWorkOn() }} fine</span
-    >
-  </div>
-  @for (i of issues(); track i.title) {
-    <details class="check">
-      <summary class="check-line">
-        <span class="flag" [attr.data-flag]="i.flag">
-          {{ i.flag === 'attention' ? 'Work on' : 'Fine' }}
-        </span>
-        <span>
-          <span class="check-title">{{ i.title }}</span>
-          <span class="check-value">{{ i.value }}</span>
-        </span>
-      </summary>
-      <p class="check-why">
-        @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
-          Costliest picks:
-          @for (c of pathing()?.costliest; track c.flick.kill_number; let last = $last) {
-            <button class="link" type="button" (click)="focus.play(c.flick)">
-              kill {{ c.flick.kill_number }}
-            </button>
-            {{ c.cost }}{{ last ? '.' : ',' }}
+@if (issues().length) {
+  <section class="panel" aria-label="Checks">
+    <div class="panel-head">
+      <h3 class="panel-title">Checks</h3>
+      <span class="panel-hint"
+        >{{ toWorkOn() }} to work on · {{ issues().length - toWorkOn() }} fine</span
+      >
+    </div>
+    @for (i of issues(); track i.title) {
+      <details class="check">
+        <summary class="check-line">
+          <span class="flag" [attr.data-flag]="i.flag">
+            {{ i.flag === 'attention' ? 'Work on' : 'Fine' }}
+          </span>
+          <span>
+            <span class="check-title">{{ i.title }}</span>
+            <span class="check-value">{{ i.value }}</span>
+          </span>
+        </summary>
+        <p class="check-why">
+          @if (i.title === 'Pathing' && pathing()?.costliest?.length) {
+            Costliest picks:
+            @for (c of pathing()?.costliest; track c.flick.kill_number; let last = $last) {
+              <button class="link" type="button" (click)="focus.play(c.flick)">
+                kill {{ c.flick.kill_number }}
+              </button>
+              {{ c.cost }}{{ last ? '.' : ',' }}
+            }
           }
-        }
-        {{ i.why }}
-      </p>
-    </details>
-  }
-</section>
+          {{ i.why }}
+        </p>
+      </details>
+    }
+  </section>
+}

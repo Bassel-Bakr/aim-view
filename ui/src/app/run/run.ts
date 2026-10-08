@@ -16,7 +16,7 @@ import { modelName, Models } from '../services/models';
 import { AreaBar } from './areas/area-bar/area-bar';
 import { AreaCanvas } from './areas/area-canvas/area-canvas';
 import { AreaDraft } from './areas/area-draft';
-import { ClickSide } from './click-side/click-side';
+import { RunSide } from './run-side/run-side';
 import { FlickList } from './flick-list/flick-list';
 import { Headline } from './headline/headline';
 import { jobProgress } from './job-progress';
@@ -67,7 +67,7 @@ const KIND_OPTIONS: readonly KindOption[] = [
     FlickList,
     SpeedChart,
     ClickReport,
-    ClickSide,
+    RunSide,
     Headline,
     ProgressChart,
     KillLanes,

@@ -592,7 +592,7 @@ fn ms_number(seconds: f64) -> String {
 }
 
 /// A share as a whole percentage, without the sign.
-fn percent_number(share: f64) -> String {
+pub(crate) fn percent_number(share: f64) -> String {
     fixed(PERCENT * share, 0)
 }
 
@@ -607,7 +607,7 @@ fn truthy(value: Option<f64>) -> Option<f64> {
 }
 
 /// One check: flagged for attention, or fine.
-fn check(issue: u32, title: &'static str, value: String, attention: bool, why: impl Into<String>) -> Issue {
+pub(crate) fn check(issue: u32, title: &'static str, value: String, attention: bool, why: impl Into<String>) -> Issue {
     let flag = if attention { Flag::Attention } else { Flag::Fine };
     Issue { issue, title, value, flag, why: why.into() }
 }

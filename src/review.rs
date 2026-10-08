@@ -486,7 +486,7 @@ pub struct TrackReport {
     pub stats: Option<String>,
     /// The run's summary (src/tracking.rs): time on target, switches, motion and what-ifs among others.
     pub summary: TrackSummary,
-    /// Always empty: the checks are a clicking run's.
+    /// The tracking checks (src/track_checks.rs): a Work on or Fine verdict on each habit the what-ifs measure.
     pub issues: Vec<Issue>,
     /// Always empty: a tracking run has no flicks.
     pub flicks: Vec<Measure>,
@@ -648,11 +648,12 @@ pub fn review_tracking(
     };
     let mut summary = track_summary(&measured, &facts);
     summary.faint = cut;
+    let issues = crate::track_checks::judge(&summary);
     Ok(TrackReport {
         video: video.into(),
         stats: stats.map(Into::into),
         summary,
-        issues: Vec::new(),
+        issues,
         flicks: Vec::new(),
         mode: Mode::Track,
         paths: BTreeMap::new(),

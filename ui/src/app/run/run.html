@@ -184,8 +184,8 @@
       <app-speed-chart [report]="cr" />
     }
   </div>
-  @if (clickReport(); as cr) {
-    <app-click-side class="side" [report]="cr" />
+  @if (report(); as r) {
+    <app-run-side class="side" [report]="r" />
   }
 </div>
 <!-- The scenario's past scores load when the page is scrolled to them -->
