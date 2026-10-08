@@ -85,8 +85,9 @@
    * Widths for variants: max-narrow: is a phone's screen (themes/layout.scss --narrow-width is its last width, 767px),
    * @max-stack: a run page too narrow for the flick list beside the video. Literal values: media and container
    * queries cannot read a variable. The main area is the container (app.scss .main). The data table's card widths
-   * stay in themes/data-table.scss: they switch a whole set of nested rules, not utilities.
+   * stay in themes/data-table.scss: they switch a whole set of nested rules, not utilities. The stack width went from
+   * 1080px to 1048px when the sidebar grew by 32px, so a window keeps the side column where it had it.
    */
   --breakpoint-narrow: 768px;
-  --container-stack: 1080px;
+  --container-stack: 1048px;
 }
