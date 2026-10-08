@@ -6,46 +6,46 @@
   color-scheme: dark;
 
   // Surfaces, from the page (0) up: the frame, panels, cards, and a selected or hovered row
-  --surface-0: #0d0f12;
-  --surface-1: #111418;
-  --surface-2: #161a1f;
-  --surface-3: #1e242c;
+  --surface-0: oklch(0.168 0.007 258.4);
+  --surface-1: oklch(0.19 0.009 255.6);
+  --surface-2: oklch(0.216 0.012 254.1);
+  --surface-3: oklch(0.258 0.017 255.7);
 
   // Text
-  --text-primary: #e6e9ee;
-  --text-secondary: #c2c8d2;
-  --text-muted: #8d96a5;
+  --text-primary: oklch(0.933 0.007 260.7);
+  --text-secondary: oklch(0.831 0.015 260.7);
+  --text-muted: oklch(0.671 0.025 260.7);
 
   // Lines
-  --border: #22272f;
-  --border-strong: #2e3540;
-  --grid: #1e2329;
-  --axis: #2e3540;
-  --backdrop: rgba(0, 0, 0, 0.6);
+  --border: oklch(0.271 0.017 259.8);
+  --border-strong: oklch(0.327 0.022 259.4);
+  --grid: oklch(0.254 0.014 253.1);
+  --axis: oklch(0.327 0.022 259.4);
+  --backdrop: oklch(0 0 0 / 0.6);
 
   // Roles. Accent: the app's cyan (actions, the selection, the main series). Attention: what to work on (coral).
-  --accent: #36c5e0;
-  --accent-hover: #7fddee;
-  --accent-soft: rgba(54, 197, 224, 0.12);
-  --accent-pressed: rgba(54, 197, 224, 0.2);
-  --value: #7fddee;
-  --good-soft: rgba(91, 212, 154, 0.14);
-  --good-text: #5bd49a;
-  --warning: #f0a33a;
-  --attention: #ff7a66;
-  --attention-text: #ff9c8c;
-  --attention-line: #5a2e28;
-  --on-attention: #1a0b08;
-  --on-accent: #071216;
+  --accent: oklch(0.7614 0.1215 213.62);
+  --accent-hover: oklch(0.845 0.092 210.5);
+  --accent-soft: oklch(0.7614 0.1215 213.62 / 0.12);
+  --accent-pressed: oklch(0.7614 0.1215 213.62 / 0.2);
+  --value: oklch(0.845 0.092 210.5);
+  --good-soft: oklch(0.786 0.138 159.8 / 0.14);
+  --good-text: oklch(0.786 0.138 159.8);
+  --warning: oklch(0.7738 0.1465 70.19);
+  --attention: oklch(0.731 0.166 30.3);
+  --attention-text: oklch(0.79 0.122 29.9);
+  --attention-line: oklch(0.357 0.066 28.9);
+  --on-attention: oklch(0.171 0.027 32.6);
+  --on-accent: oklch(0.174 0.018 222.6);
 
   // Chart series
-  --series-1: #36c5e0;
-  --series-2: #ff7a66;
-  --series-3: #3fbf8a;
-  --series-4: #f0a33a;
-  --series-5: #d55181;
+  --series-1: oklch(0.7614 0.1215 213.62);
+  --series-2: oklch(0.731 0.166 30.3);
+  --series-3: oklch(0.7212 0.1366 161.81);
+  --series-4: oklch(0.7738 0.1465 70.19);
+  --series-5: oklch(0.622 0.171 0.8);
   // A quiet bar beside a loud one (a kill time under a second, beside the ones over it)
-  --series-quiet: #2f7f8f;
+  --series-quiet: oklch(0.555 0.08 213.3);
 
   // On and off the target: the overlay, the timeline and their legends
   --on-target: var(--series-3);
@@ -111,8 +111,8 @@
   --swatch-size: 10px;
   --scrollbar-size: 10px;
   // The scrollbar's thumb: plain to see on every surface, lighter under the pointer
-  --scrollbar-thumb: #4a525e;
-  --scrollbar-thumb-hover: #6b7482;
+  --scrollbar-thumb: oklch(0.436 0.022 258.4);
+  --scrollbar-thumb-hover: oklch(0.556 0.024 259.2);
   --swatch-radius: 2px;
   --disabled-opacity: 0.5;
   --switch-width: 26px;

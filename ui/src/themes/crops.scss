@@ -3,30 +3,30 @@
 
 @mixin tokens {
   // A shape's line, by what it is: the model's, drawn, a head, a body, an occluder (hides what is behind it)
-  --crop-model: #f2c94c;
-  --crop-drawn: #4cc9f0;
-  --crop-head: #ff7eb6;
-  --crop-body: #7bd88f;
-  --crop-occluder: #b39dff;
+  --crop-model: oklch(0.8496 0.1463 90.49);
+  --crop-drawn: oklch(0.782 0.121 222.5);
+  --crop-head: oklch(0.756 0.167 354.5);
+  --crop-body: oklch(0.806 0.136 149.5);
+  --crop-occluder: oklch(0.754 0.139 293.1);
   // A model box crossed out (no target there), and the box round a joined target
-  --crop-crossed: rgba(255, 92, 92, 0.9);
-  --crop-target: rgba(255, 255, 255, 0.85);
+  --crop-crossed: oklch(0.691 0.199 23.9 / 0.9);
+  --crop-target: oklch(1 0 0 / 0.85);
   // Under every line, so it shows on any wall
-  --crop-under: rgba(0, 0, 0, 0.6);
+  --crop-under: oklch(0 0 0 / 0.6);
   // The pixels the targets show, as the training data will have them
-  --crop-visible: rgba(76, 201, 240, 0.3);
-  --crop-handle: #fff;
+  --crop-visible: oklch(0.782 0.121 222.5 / 0.3);
+  --crop-handle: oklch(1 0 0);
   // a solid's faces: lit toward the light, shaded away from it
-  --crop-face-light: rgba(255, 255, 255, 0.35);
-  --crop-face-shade: rgba(0, 0, 0, 0.35);
+  --crop-face-light: oklch(1 0 0 / 0.35);
+  --crop-face-shade: oklch(0 0 0 / 0.35);
   --crop-line-width: 1.5;
   --crop-line-width-selected: 3;
   --crop-handle-radius: 5;
 
   // The Wrong button: red, apart from Right's cyan
-  --crop-wrong: #d9363e;
-  --crop-wrong-hover: #e85a60;
-  --crop-on-wrong: #fff;
+  --crop-wrong: oklch(0.586 0.199 23.5);
+  --crop-wrong-hover: oklch(0.654 0.176 20.9);
+  --crop-on-wrong: oklch(1 0 0);
 
   // The page: its widest, and the progress meter's height
   --crop-page-width: 560px;

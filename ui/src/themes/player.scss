@@ -7,8 +7,8 @@
   --player-room-below: 260px;
   // In full screen the video never gets smaller than this, however much the panels and controls take
   --player-full-min-height: 270px;
-  --player-screen: #000;
-  --player-shadow: 0 1px 0 var(--border), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --player-screen: oklch(0 0 0);
+  --player-shadow: 0 1px 0 var(--border), 0 8px 24px oklch(0 0 0 / 0.35);
   --seek-height: 20px;
   --kill-mark-width: 1px;
   --kill-mark-height: 5px;
@@ -16,23 +16,23 @@
   // The video floating in the page's corner while the player is scrolled away (floating-player.ts)
   --mini-player-width: min(360px, 55vw);
   --mini-player-inset: 16px;
-  --mini-player-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  --mini-bar-bg: rgba(0, 0, 0, 0.6);
-  --pip-background: #000;
+  --mini-player-shadow: 0 12px 32px oklch(0 0 0 / 0.55);
+  --mini-bar-bg: oklch(0 0 0 / 0.6);
+  --pip-background: oklch(0 0 0);
 
   --overlay-font: var(--font-size-xs) var(--font-family);
-  --overlay-crosshair: rgba(255, 255, 255, 0.35);
-  --overlay-other-target: rgba(255, 255, 255, 0.4);
+  --overlay-crosshair: oklch(1 0 0 / 0.35);
+  --overlay-other-target: oklch(1 0 0 / 0.4);
   --overlay-ring: var(--warning);
-  --overlay-label-bg: rgba(0, 0, 0, 0.6);
-  --overlay-label-text: #fff;
+  --overlay-label-bg: oklch(0 0 0 / 0.6);
+  --overlay-label-text: oklch(1 0 0);
   --overlay-line-width: 1;
   --overlay-line-width-strong: 2;
   --overlay-fastest: var(--on-target);
   --overlay-mine: var(--off-target);
   --overlay-order-font: var(--font-weight-strong) 8px var(--font-family);
   --overlay-path-width: 1.8;
-  --overlay-legend-bg: rgba(0, 0, 0, 0.5);
+  --overlay-legend-bg: oklch(0 0 0 / 0.5);
 }
 
 $room-below: var(--player-room-below);

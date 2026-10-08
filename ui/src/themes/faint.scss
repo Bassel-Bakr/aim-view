@@ -14,13 +14,13 @@
   --faint-tick-size: 10px;
   --faint-offset-width: 160px;
   // On the video: a left-out track's dashed ring, the picked track, and the scores' labels
-  --overlay-faint-ring: rgba(255, 255, 255, 0.6);
+  --overlay-faint-ring: oklch(1 0 0 / 0.6);
   --overlay-faint-picked: var(--warning);
   --overlay-faint-ring-radius: 9;
-  --overlay-faint-label-bg: rgba(0, 0, 0, 0.55);
-  --overlay-faint-hover-bg: rgba(0, 0, 0, 0.75);
-  --overlay-faint-text: #fff;
-  --overlay-faint-text-out: rgba(255, 255, 255, 0.6);
+  --overlay-faint-label-bg: oklch(0 0 0 / 0.55);
+  --overlay-faint-hover-bg: oklch(0 0 0 / 0.75);
+  --overlay-faint-text: oklch(1 0 0);
+  --overlay-faint-text-out: oklch(1 0 0 / 0.6);
 }
 
 $kept: var(--faint-kept);
