@@ -44,7 +44,8 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   colors and fonts from the same CSS variables. Every standalone color and every font size is in `theme.scss`: its
   base colors (`--white`, `--cyan`, `--orange`...) and its font scale. Any other color, a role in `theme.scss` or a
   module's token, is built from them (`var(--yellow)`, `oklch(from var(--black) l c h / 0.6)`, `color-mix(...)` of
-  tokens), never a color of its own; `bun run lint:ui` fails on one (`scripts/tailwind-values.ts`).
+  tokens), never a color of its own; `bun run lint:ui` fails on one (`scripts/tailwind-values.ts`). A derived color
+  only one component uses can stay in that component's SCSS, beside the parts it colors.
 - **Tailwind on the tokens.** `ui/src/tailwind.css` maps Tailwind 4's theme onto the tokens (`@theme inline reference`,
   Tailwind's own scales off), so a class can only reach a token: `bg-surface-1`, `text-muted`, `p-4` (4 x `--space-1`),
   `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`: `bun run lint:ui` fails on one

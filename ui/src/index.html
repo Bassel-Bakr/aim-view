@@ -6,6 +6,13 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <script>
+      // The theme the viewer chose (app/services/theme.ts keeps it), on the page before its first paint
+      try {
+        const theme = localStorage.getItem('aimview.theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
   </head>
   <body>
     <app-root></app-root>

@@ -28,7 +28,7 @@ import { FlickFocus } from '../flick-focus';
 import { clock } from '../track';
 import { PathCost } from '../fastest-path/path-cost';
 import { FaintCutoff } from '../../services/faint-cutoff';
-import { drawFaint, FaintStyle, pointedTrack, readFaintStyle } from '../faint-cutoff/faint-overlay';
+import { drawFaint, pointedTrack, readFaintStyle } from '../faint-cutoff/faint-overlay';
 import {
   drawClick,
   drawPaths,
@@ -40,6 +40,7 @@ import {
 import { listenQuietly } from '../../services/listen-quietly';
 import { FloatingPlayer } from './floating-player';
 import { MiniBar } from './mini-bar/mini-bar';
+import { Theme } from '../../services/theme';
 
 /** The local storage key that keeps "Show the tracked target" across visits ('0' is off). */
 const OVERLAY_KEY = 'aimview-overlay';
@@ -203,10 +204,18 @@ export class Player {
   protected readonly end = computed(() =>
     clock(this.playback.duration() || 0).replace(/\.\d$/, ''),
   );
-  /** The overlay's colors and fonts, read from the CSS variables on the first draw. */
-  private style: OverlayStyle | null = null;
-  /** The cut-off overlay's colors and fonts, read from the CSS variables on its first draw. */
-  private faintStyle: FaintStyle | null = null;
+  /** The color scheme: the colors below are read again when it changes. */
+  private readonly theme = inject(Theme);
+  /** The overlay's colors and fonts, read from the CSS variables on the first draw in each color scheme. */
+  private readonly style = computed(() => {
+    this.theme.scheme();
+    return readOverlayStyle(this.canvas().nativeElement);
+  });
+  /** The cut-off overlay's colors and fonts, read from the CSS variables on its first draw in each color scheme. */
+  private readonly faintStyle = computed(() => {
+    this.theme.scheme();
+    return readFaintStyle(this.canvas().nativeElement);
+  });
   /** The seek bar is being dragged: the frames leave its value alone. */
   private seeking = false;
 
@@ -225,6 +234,8 @@ export class Player {
       this.faint.highlight();
       this.faint.showScores();
       this.faint.hover();
+      this.style();
+      this.faintStyle();
       untracked(() => this.draw(this.playback.time));
     });
   }
@@ -278,10 +289,9 @@ export class Player {
     context.clearRect(0, 0, widthPx, heightPx);
     const report = this.report();
     if (!report || this.editing()) return;
-    this.style ??= readOverlayStyle(canvas);
     const frame = Math.round(seconds * report.fps);
     const scale = widthPx / report.geometry.W;
-    this.drawReview(context, report, frame, scale, this.style);
+    this.drawReview(context, report, frame, scale, this.style());
     this.drawCutoff(context, frame, scale);
   }
 
@@ -318,8 +328,7 @@ export class Player {
     const all = this.faint.allTracks();
     const faintScores = this.faint.scores();
     if (!report || !all || !faintScores || !this.faint.has()) return;
-    this.faintStyle ??= readFaintStyle(this.canvas().nativeElement);
-    drawFaint(context, report, all, frame, scale, this.faintStyle, {
+    drawFaint(context, report, all, frame, scale, this.faintStyle(), {
       scores: faintScores.scores,
       dropped: this.faint.dropped(),
       highlight: this.faint.highlight(),

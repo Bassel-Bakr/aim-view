@@ -42,6 +42,7 @@ import {
   StagePicture,
   StagePlace,
 } from './crop-paint';
+import { Theme } from '../../services/theme';
 
 /** A point on the stage, in CSS pixels from its top left. */
 type ScreenPoint = [x: number, y: number];
@@ -173,8 +174,13 @@ export class CropStage {
   private pinch: StagePinch | null = null;
   /** Starts the peek once a finger has been held PEEK_MS without moving. */
   private peekTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The color scheme: the colors below are read again when it changes. */
+  private readonly theme = inject(Theme);
   /** The colors and sizes the drawing uses, read from the CSS once. */
-  private style: CropStyle | null = null;
+  private readonly style = computed(() => {
+    this.theme.scheme();
+    return readCropStyle(this.canvas().nativeElement);
+  });
   /** The core's last view of the scene, drawn while the next one is worked out. */
   private lastView: SceneView | null = null;
   /** The tinted mask of the last view, made again only when the view changes. */
@@ -218,6 +224,7 @@ export class CropStage {
       this.zoom();
       this.sketch();
       this.peeking();
+      this.style();
       untracked(() => this.draw());
     });
   }
@@ -235,8 +242,8 @@ export class CropStage {
     context.clearRect(0, 0, side, side);
     const crop = this.draft.crop();
     if (!crop) return;
-    this.style ??= readCropStyle(canvas);
-    paintStage(context, this.picture(crop, this.style), this.place(), this.style);
+    const style = this.style();
+    paintStage(context, this.picture(crop, style), this.place(), style);
   }
 
   /** What to draw: the core's last view stands while the next one is worked out, so the mask never blinks. */

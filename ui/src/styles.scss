@@ -27,6 +27,18 @@
   @include table.tokens;
 }
 
+// The light theme over the tokens: chosen (data-theme="light"), or the system's when nothing is chosen (the Theme
+// service, app/services/theme.ts, sets data-theme; index.html sets it before the first paint)
+:root[data-theme='light'] {
+  @include t.light-tokens;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    @include t.light-tokens;
+  }
+}
+
 // Page-wide element styles go in Tailwind's base layer and component styles in its components layer, so a utility
 // class on an element always wins over both.
 @layer base {

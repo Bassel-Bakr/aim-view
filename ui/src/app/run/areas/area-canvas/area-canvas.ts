@@ -5,6 +5,7 @@
  */
 
 import {
+  computed,
   afterNextRender,
   afterRenderEffect,
   Component,
@@ -19,7 +20,6 @@ import { AreaRect } from '../../../api';
 import { listenQuietly } from '../../../services/listen-quietly';
 import { AreaDraft } from '../area-draft';
 import {
-  AreaStyle,
   cursorFor,
   DRAG_PX,
   dragArea,
@@ -32,6 +32,7 @@ import {
   ScreenSize,
   SharePoint,
 } from '../area-geometry';
+import { Theme } from '../../../services/theme';
 
 /**
  * An area held by the pointer: which, its edges (null: moved whole), where the press was, and the
@@ -82,8 +83,13 @@ export class AreaCanvas {
   private readonly grip = signal<AreaGrip | null>(null);
   /** The area being drawn, or null. */
   private readonly sketch = signal<AreaSketch | null>(null);
+  /** The color scheme: the colors below are read again when it changes. */
+  private readonly theme = inject(Theme);
   /** The areas' drawing style, read from the tokens on the first draw. */
-  private style: AreaStyle | null = null;
+  private readonly style = computed(() => {
+    this.theme.scheme();
+    return readAreaStyle(this.canvas().nativeElement);
+  });
 
   /**
    * Draws again when the canvas is resized or the areas, selection, kinds or pointer change, and
@@ -103,6 +109,7 @@ export class AreaCanvas {
       this.draft.kinds();
       this.grip();
       this.sketch();
+      this.style();
       untracked(() => this.draw());
     });
   }
@@ -141,7 +148,6 @@ export class AreaCanvas {
     if (!context) return;
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     context.clearRect(0, 0, size.width, size.height);
-    this.style ??= readAreaStyle(canvas);
     const sketch = this.sketch();
     const grip = this.grip();
     const drawing: AreaRect | null = sketch && [
@@ -160,7 +166,7 @@ export class AreaCanvas {
         kindName: (id) => this.draft.kindName(id),
       },
       size,
-      this.style,
+      this.style(),
     );
   }
 

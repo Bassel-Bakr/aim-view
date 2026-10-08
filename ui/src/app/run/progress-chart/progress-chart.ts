@@ -36,7 +36,8 @@ import {
   SAME_RUN_S,
   stampSeconds,
 } from './progress-chart-model';
-import { drawProgressChart, HistoryStyle, readStyle } from './progress-chart-drawing';
+import { drawProgressChart, readStyle } from './progress-chart-drawing';
+import { Theme } from '../../services/theme';
 
 /**
  * Every past score of the run's scenario, from KovaaK's stats files, over the days it was played:
@@ -97,8 +98,13 @@ export class ProgressChart {
     source: this.recording,
     computation: () => null,
   });
+  /** The color scheme: the colors below are read again when it changes. */
+  private readonly theme = inject(Theme);
   /** The chart's colors and sizes, read from the tokens on the first draw. */
-  private style: HistoryStyle | null = null;
+  private readonly style = computed(() => {
+    this.theme.scheme();
+    return readStyle(this.canvas().nativeElement);
+  });
 
   /**
    * Starts watching the canvas's size and the pointer after the first render; redraws on change.
@@ -107,6 +113,7 @@ export class ProgressChart {
     afterNextRender(() => this.follow());
     afterRenderEffect(() => {
       this.model();
+      this.style();
       untracked(() => this.draw());
     });
   }
@@ -144,7 +151,7 @@ export class ProgressChart {
     const context = canvas.getContext('2d');
     if (!context) return;
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    const style = (this.style ??= readStyle(canvas));
+    const style = this.style();
     drawProgressChart(context, model, style);
   }
 
@@ -157,7 +164,7 @@ export class ProgressChart {
       model,
       event.clientX - bounds.left,
       event.clientY - bounds.top,
-      this.style?.reach ?? 0,
+      this.style().reach,
     );
   }
 

@@ -34,6 +34,17 @@
   --rose: oklch(0.622 0.171 0.8); // the fifth chart series
   --pink: oklch(0.756 0.167 354.5); // a crop's head shape
   --purple: oklch(0.754 0.139 293.1); // a crop's occluder
+  // The light theme's roles: each keeps its hue and is as light as WCAG contrast on the light surfaces allows (4.5:1
+  // for text, 3:1 for a chart's marks)
+  --cyan-deep: oklch(0.535 0.093 213.62); // the accent on a light page
+  --cyan-deeper: oklch(0.475 0.083 213.62); // that accent under the pointer
+  --cyan-pale: oklch(0.8 0.06 213.3); // a quiet bar on a light page
+  --green-dark: oklch(0.53 0.12 159.8); // good, as text on a light page
+  --teal-dark: oklch(0.625 0.137 161.81); // the third chart series on a light page
+  --amber-dark: oklch(0.55 0.118 70.19); // a warning on a light page
+  --coral-deep: oklch(0.66 0.166 30.3); // attention on a light page
+  --brick: oklch(0.555 0.122 29.9); // attention as text on a light page
+  --coral-pale: oklch(0.86 0.05 28.9); // attention as a line on a light page
 
   // Surfaces, from the page (0) up: the frame, panels, cards, and a selected or hovered row
   --surface-0: oklch(0.168 0.007 258.4);
@@ -80,8 +91,8 @@
   --series-quiet: var(--cyan-dark);
 
   // On and off the target: the overlay, the timeline and their legends
-  --on-target: var(--series-3);
-  --off-target: var(--series-2);
+  --on-target: var(--teal);
+  --off-target: var(--coral);
 
   // Space: --space-N is 2N pixels
   --space-1: 2px;
@@ -162,6 +173,43 @@
   --motion-spin: 0.8s;
   // How long the pointer rests on a part before its tooltip shows
   --tooltip-delay: 0.5s;
+}
+
+// The light theme: the page's roles for a light page (styles.scss applies it when chosen, or when the system is light
+// and nothing is chosen). Only what differs from the dark theme is here: the base colors, the colors over the video and
+// the crops, and every token built from a role stay as they are.
+@mixin light-tokens {
+  color-scheme: light;
+
+  --surface-0: oklch(0.968 0.004 258);
+  --surface-1: oklch(0.995 0.002 258);
+  --surface-2: oklch(0.978 0.004 258);
+  --surface-3: oklch(0.935 0.008 258);
+  --surface-bar: oklch(0.945 0.005 258);
+  --text-primary: oklch(0.24 0.015 260);
+  --text-secondary: oklch(0.38 0.02 260);
+  --text-muted: oklch(0.52 0.025 260.7);
+  --border: oklch(0.885 0.008 258);
+  --border-strong: oklch(0.81 0.012 258);
+  --grid: oklch(0.915 0.006 258);
+  --axis: oklch(0.81 0.012 258);
+  --backdrop: oklch(from var(--black) l c h / 0.35);
+  --accent: var(--cyan-deep);
+  --accent-hover: var(--cyan-deeper);
+  --value: var(--cyan-deep);
+  --good-text: var(--green-dark);
+  --warning: var(--amber-dark);
+  --attention: var(--coral-deep);
+  --attention-text: var(--brick);
+  --attention-line: var(--coral-pale);
+  --on-accent: var(--white);
+  --series-1: var(--cyan-deep);
+  --series-2: var(--coral-deep);
+  --series-3: var(--teal-dark);
+  --series-4: var(--amber-dark);
+  --series-quiet: var(--cyan-pale);
+  --scrollbar-thumb: oklch(0.78 0.012 258);
+  --scrollbar-thumb-hover: oklch(0.68 0.014 258);
 }
 
 $surface-0: var(--surface-0);

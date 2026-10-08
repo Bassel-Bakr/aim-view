@@ -15,7 +15,7 @@
   --faint-offset-width: 160px;
   // On the video: a left-out track's dashed ring, the picked track, and the scores' labels
   --overlay-faint-ring: oklch(from var(--white) l c h / 0.6);
-  --overlay-faint-picked: var(--warning);
+  --overlay-faint-picked: var(--amber);
   --overlay-faint-ring-radius: 9;
   --overlay-faint-label-bg: oklch(from var(--black) l c h / 0.55);
   --overlay-faint-hover-bg: oklch(from var(--black) l c h / 0.75);

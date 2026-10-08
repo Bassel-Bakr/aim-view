@@ -22,7 +22,8 @@ import {
 import { TrackReport, Tracks } from '../../api';
 import { Playback } from '../playback';
 import { describe, timeline } from '../track';
-import { drawTimeline, readTimelineStyle, TimelineStyle } from './timeline-drawing';
+import { drawTimeline, readTimelineStyle } from './timeline-drawing';
+import { Theme } from '../../services/theme';
 
 /** Seconds the arrow keys move. */
 const STEP_SECONDS = 1;
@@ -63,14 +64,20 @@ export class Timeline {
   protected readonly runSeconds = computed(() =>
     Math.round(this.data().frameCount / this.data().fps),
   );
+  /** The color scheme: the colors below are read again when it changes. */
+  private readonly theme = inject(Theme);
   /** The timeline's colors and sizes, read from the tokens on the first draw. */
-  private style: TimelineStyle | null = null;
+  private readonly style = computed(() => {
+    this.theme.scheme();
+    return readTimelineStyle(this.canvas().nativeElement);
+  });
 
   /** Starts following the video after the first render, and redraws when the run's data changes. */
   constructor() {
     afterNextRender(() => this.follow());
     afterRenderEffect(() => {
       this.data();
+      this.style();
       untracked(() => this.draw());
     });
   }
@@ -124,8 +131,7 @@ export class Timeline {
     const context = canvas.getContext('2d');
     if (!context) return;
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    this.style ??= readTimelineStyle(canvas);
-    drawTimeline(context, this.data(), widthPx, heightPx, this.style);
+    drawTimeline(context, this.data(), widthPx, heightPx, this.style());
     this.moveHead(this.playback.time);
   }
 

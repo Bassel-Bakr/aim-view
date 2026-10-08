@@ -101,6 +101,15 @@
     }
   }
 
+  // The theme menu: narrower, its choices one to a row, the one in force marked
+  .theme-menu {
+    @apply w-(--theme-menu-width) gap-2;
+  }
+
+  .theme-option {
+    @apply flex-row aria-checked:border-accent aria-checked:text-accent;
+  }
+
   // The main area measures its own width: the run page puts the flick list beside the video when there is room
   .main {
     @apply min-w-0 overflow-y-auto px-9 pt-8 pb-32;
