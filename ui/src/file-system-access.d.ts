@@ -29,8 +29,26 @@ interface DirectoryPickerOptions {
   mode?: FileSystemPermissionMode;
 }
 
-/** The page's window, with Chromium's folder picker. */
+/** A kind of file the save dialog offers: its description and its types and extensions. */
+interface SaveFileType {
+  /** What the files are, in words. */
+  description: string;
+  /** Each media type and the extensions that go with it. */
+  accept: Record<string, string[]>;
+}
+
+/** The save dialog's options: the name it suggests and the kinds of file it offers. */
+interface SaveFilePickerOptions {
+  /** The file name the dialog suggests. */
+  suggestedName?: string;
+  /** The kinds of file it offers. */
+  types?: SaveFileType[];
+}
+
+/** The page's window, with Chromium's folder picker and save dialog. */
 interface Window {
   /** Asks the user to pick a folder; missing in browsers without the picker. */
   showDirectoryPicker?(options?: DirectoryPickerOptions): Promise<FileSystemDirectoryHandle>;
+  /** Asks the user where to save a file; missing in browsers without the dialog. */
+  showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
 }

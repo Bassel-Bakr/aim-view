@@ -5,6 +5,7 @@
  * and what the service keeps (GET /api/kovaak_files). Out: the batches, only for files new or
  * changed since they were sent.
  */
+import { encodeBatch } from '../web-files/file-batch';
 import { ChosenFile } from './service-messages';
 
 /** The most files in one batch. */
@@ -13,10 +14,6 @@ const BATCH_FILES = 1000;
 const BATCH_BYTES = 8 * 1024 * 1024;
 /** Milliseconds in a second: a File's time is in ms, the service's in seconds. */
 const MS_PER_SECOND = 1000;
-/** A u32's bytes. */
-const U32_BYTES = 4;
-/** An f64's bytes. */
-const F64_BYTES = 8;
 /** Where stats files are in /kovaak. */
 const STATS = 'stats/';
 
@@ -51,37 +48,6 @@ export function freshFiles(files: readonly ChosenFile[], kept: KovaakKept): Chos
     const row = known.get(path);
     return !row || row[1] !== file.size || row[2] !== seconds(file);
   });
-}
-
-/**
- * A batch as the service reads it: per file [u32 path length][path, UTF-8][f64 time in seconds]
- * [u32 length][bytes], little-endian.
- */
-export async function encodeBatch(files: readonly ChosenFile[]): Promise<Uint8Array> {
-  const parts = await Promise.all(
-    files.map(async ({ path, file }) => ({
-      path: new TextEncoder().encode(path),
-      modified: seconds(file),
-      bytes: new Uint8Array(await file.arrayBuffer()),
-    })),
-  );
-  const size = parts.reduce(
-    (sum, part) => sum + U32_BYTES * 2 + F64_BYTES + part.path.length + part.bytes.length,
-    0,
-  );
-  const out = new Uint8Array(size);
-  const view = new DataView(out.buffer);
-  let at = 0;
-  for (const part of parts) {
-    view.setUint32(at, part.path.length, true);
-    out.set(part.path, at + U32_BYTES);
-    at += U32_BYTES + part.path.length;
-    view.setFloat64(at, part.modified, true);
-    view.setUint32(at + F64_BYTES, part.bytes.length, true);
-    out.set(part.bytes, at + F64_BYTES + U32_BYTES);
-    at += F64_BYTES + U32_BYTES + part.bytes.length;
-  }
-  return out;
 }
 
 /** Sends the files in batches through `post`, one after another; resolves to how many it sent. */

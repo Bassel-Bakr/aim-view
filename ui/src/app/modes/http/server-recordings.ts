@@ -112,6 +112,13 @@ export class ServerRecordings implements RecordingSource {
     return this.links().get(id)?.video ?? this.ready(id);
   }
 
+  /** The recording's video as the service keeps it, read from where the player streams it. */
+  async videoFile(id: string): Promise<Blob> {
+    const response = await fetch(this.streamUrl(id));
+    if (!response.ok) throw new Error(`The video of ${id} could not be read (${response.status})`);
+    return response.blob();
+  }
+
   /** Where the player streams a recording from. */
   protected streamUrl(id: string): string {
     return `/video?id=${encodeURIComponent(id)}`;

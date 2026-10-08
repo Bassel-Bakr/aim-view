@@ -1,7 +1,8 @@
 /**
  * The top bar's Storage button and its dialog (`StoragePanel`): what the app keeps, each part's
- * size, and removing a part the user can do without, after a second click. In: the StoredData
- * contract. Out: the dialog, and the removals it asks for.
+ * size, and removing a part the user can do without, after a second click; then sharing
+ * recordings (share-section/). In: the StoredData contract. Out: the dialog, and the removals it
+ * asks for.
  */
 
 import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
@@ -12,6 +13,7 @@ import { DataColumn } from '../data-table/data-column';
 import { DataTable } from '../data-table/data-table';
 import { formatBytes } from '../format';
 import { KeptData, KeptPart, StoredData } from '../platform/stored-data';
+import { ShareSection } from './share-section/share-section';
 
 /** A part as the table shows it: its name, what it holds, its size, and whether it can go. */
 export interface StorageRow {
@@ -95,7 +97,7 @@ function rowId(row: StorageRow): string {
 
 /** What the app keeps, in the top bar; it opens the parts and their sizes, where one can be removed. */
 @Component({
-  imports: [Button, DataTable, DataCell],
+  imports: [Button, DataTable, DataCell, ShareSection],
   selector: 'app-storage-panel',
   templateUrl: './storage-panel.html',
   styleUrl: './storage-panel.scss',

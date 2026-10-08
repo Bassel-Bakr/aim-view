@@ -1,6 +1,6 @@
 # Storage: one SQLite database per data folder
 
-Status: steps 1 to 3 done (2026-10-07); step 4's data panel done (2026-10-08), its export zip proposed. The
+Status: steps 1 to 3 done (2026-10-07); step 4 (the data panel and the export zip) done (2026-10-08). The
 prototype that backs it: `prototypes/sqlite_opfs/`
 (README.md has its numbers).
 
@@ -155,7 +155,14 @@ Each ends in a check, and each is committed on its own.
    keeps, the videos added, the mouse logs, the files from before the database, and the downloaded ffmpeg. Parts the
    user made are listed but never removed there; the others take a second click, and the database is compacted
    (VACUUM) after. Browser mode copies its shipped area data into /data only on its first run, so removed old files
-   do not come back. The export zip is still to do.
+   do not come back. The export zip is done too (2026-10-08): the Storage dialog's Share section picks reviewed
+   recordings and writes one zip (service/src/library/export.rs gives each recording's reviews, marks, stats file
+   and scenario facts through POST /api/export; the page adds the videos, streamed, ui/src/app/modes/web-files/
+   zip-stream.ts, zip64), to a file the user picks or as a download. Opening one (zip-read.ts slices the zip, so a
+   video is never read whole) adds each recording that has its video as an upload with its stats file, then its
+   reviews, marks and facts (POST /api/import). Checked in the built-in browser: a recording exported with its
+   video, its review and uploads removed, then the zip opened gave back the same 1 MB of tracks byte for byte, its
+   run window and its 7 saved areas; Python's zipfile reads the writer's zips.
 
 ## Open questions
 

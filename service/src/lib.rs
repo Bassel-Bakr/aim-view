@@ -18,6 +18,7 @@
 
 pub mod api;
 pub mod areas;
+pub mod batch;
 pub mod config;
 pub mod crops;
 pub mod database;

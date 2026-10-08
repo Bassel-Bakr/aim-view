@@ -1,4 +1,5 @@
-import { encodeBatch, freshFiles, KovaakKept, sendBatches } from './kovaak-batch';
+import { encodeBatch } from '../web-files/file-batch';
+import { freshFiles, KovaakKept, sendBatches } from './kovaak-batch';
 import { ChosenFile } from './service-messages';
 
 /** A chosen file at `path` with `text` and a time in ms. */

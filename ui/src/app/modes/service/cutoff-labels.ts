@@ -11,7 +11,7 @@ import { HttpClient, httpResource } from '@angular/common/http';
 import { computed, inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { CutoffLabelsCount } from '../../platform/faint-cutoffs';
-import { encodeBatch } from './kovaak-batch';
+import { encodeBatch } from '../web-files/file-batch';
 
 /** The name the labels download as. */
 export const LABELS_FILE = 'cutoff.zip';

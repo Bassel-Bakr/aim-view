@@ -153,6 +153,11 @@ export class BrowserRecordings extends ServerRecordings {
     if (await opening.catch(() => false)) this.list.reload();
   }
 
+  /** The recording's video as the page's mounts keep it (the VODs folder or the uploads). */
+  override videoFile(id: string): Promise<Blob> {
+    return this.files.read(recordingPath(id));
+  }
+
   /**
    * A link's video, a video added or opened here; else it is read from the mounts, and null until
    * it is.

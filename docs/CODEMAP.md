@@ -87,6 +87,8 @@ rust-analyzer's call hierarchy.
   method, path and query, Range header and body in (`ApiRequest`), the status, headers and body out (`ApiResponse`).
 - `service/src/areas.rs`: The areas a review leaves out (python/retired/server.py: exclude, set_exclude, kinds,
   save_kind, find_areas, labelled): a webcam, another player's overlay.
+- `service/src/batch.rs`: Files sent in one body, both ways between the page and the service: each [u32 path
+  length][path, UTF-8][f64 time of change, seconds since 1970][u32 length][bytes], little-endian.
 - `service/src/bin/aimview-tool.rs`: aimview-tool: the review service's library and its native review from the command
   line, for the Python scripts (python/aimview_tools.py runs it).
 - `service/src/config.rs`: What a library needs to know (`Config`): where it keeps its files, the user's folders (the
@@ -124,6 +126,8 @@ rust-analyzer's call hierarchy.
   finder itself and sends what they give, which is kept as the native review keeps it; it adds raw mouse logs, chooses
   the VODs folder (a folder it mounted), sends KovaaK's files the user chose, read once, and the detector labels a
   cut-off's submit made.
+- `service/src/library/export.rs`: Recordings shared as one zip (docs/storage-design.md, "Export"): what the service
+  keeps of each, for the page to write into the zip beside the videos, and what the page gives back when it opens one.
 - `service/src/library/links.rs`: Recordings added from a link: a video's page on a site yt-dlp reads (YouTube, Twitch,
   Medal, Streamable...) or a video file's address.
 - `service/src/library/mod.rs`: The library: the user's recordings (the VODs folder and the uploads), KovaaK's stats
@@ -893,6 +897,16 @@ a webcam, another player's overlay.
   `set_examples`, `fix_examples`.
 - Functions: `kovobs_areas`, `tracked_areas`.
 
+## service/src/batch.rs
+
+Files sent in one body, both ways between the page and the service: each [u32 path length][path, UTF-8][f64 time of
+change, seconds since 1970][u32 length][bytes], little-endian. The page sends KovaaK's files and the cut-off's labels
+this way (library/browser.rs) and an export's recording to open (library/export.rs); the service answers an export with
+one. The page's side is ui/src/app/modes/service/kovaak-batch.ts. In: a body. Out: its files, or a body.
+
+- `BatchFile` (struct): One file of a batch.
+- Functions: `read`, `push`.
+
 ## service/src/bin/aimview-tool.rs
 
 aimview-tool: the review service's library and its native review from the command line, for the Python scripts
@@ -1047,6 +1061,13 @@ state.
 
 - `Library` methods: `choose_vods`, `page_progress`, `review_done`, `keep_found`, `keep_mouse_log`, `kovaak_files`,
   `add_kovaak_files`, `add_cutoff_labels`, `kovaak_changed`.
+
+## service/src/library/export.rs
+
+Recordings shared as one zip (docs/storage-design.md, "Export"): what the service keeps of each, for the page to write
+into the zip beside the videos, and what the page gives back when it opens one. The same in every mode.
+
+- `Library` methods: `export`, `import_recording`.
 
 ## service/src/library/links.rs
 

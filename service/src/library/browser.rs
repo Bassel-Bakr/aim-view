@@ -22,10 +22,6 @@ use crate::store::{Item, ScenarioRow, StatsRow};
 const STATS_PREFIX: &str = "stats/";
 /// Where scenario files are in /kovaak: the user's, and the workshop's (one folder per item).
 const SCENARIO_PREFIXES: [&str; 2] = ["scenarios/", "workshop/"];
-/// A u32's bytes in a batch.
-const U32_BYTES: usize = 4;
-/// An f64's bytes in a batch.
-const F64_BYTES: usize = 8;
 /// The rows of a submit's cut-off labels in its batch (POST /api/cutoff_labels).
 const ROWS_FILE: &str = "rows.json";
 /// Where a cut-off label's crop is, as its row names it.
@@ -57,47 +53,6 @@ struct PageCutoffRow {
 fn is_crop_path(path: &str) -> bool {
     path.strip_prefix(CROP_FOLDER)
         .is_some_and(|name| name.ends_with(".npz") && !name.contains(['/', '\\']) && !name.starts_with('.'))
-}
-
-/// One file of a batch the page sends (POST /api/kovaak_files).
-struct BatchFile<'a> {
-    /// Its path in /kovaak (stats/<name>, scenarios/<name>.sce, workshop/<item>/<name>.sce).
-    path: &'a str,
-    /// Its time of change in seconds since 1970.
-    modified: f64,
-    /// Its bytes.
-    bytes: &'a [u8],
-}
-
-/// A batch's files: each [u32 path length][path, UTF-8][f64 time of change][u32 length][bytes], little-endian; a
-/// batch that ends early or names a path that is not UTF-8 is refused (400).
-fn batch_files(body: &[u8]) -> Answer<Vec<BatchFile<'_>>> {
-    let mut rest = body;
-    let mut files = Vec::new();
-    while !rest.is_empty() {
-        let path_len = take_u32(&mut rest)?;
-        let path =
-            std::str::from_utf8(take(&mut rest, path_len)?).map_err(|_| Failure::bad("a path that is not UTF-8"))?;
-        let modified = f64::from_le_bytes(take(&mut rest, F64_BYTES)?.try_into().unwrap_or_default());
-        let len = take_u32(&mut rest)?;
-        files.push(BatchFile { path, modified, bytes: take(&mut rest, len)? });
-    }
-    Ok(files)
-}
-
-/// The first `len` bytes of `rest`, which then starts after them; a batch that ends early is refused (400).
-fn take<'a>(rest: &mut &'a [u8], len: usize) -> Answer<&'a [u8]> {
-    if rest.len() < len {
-        return Err(Failure::bad("the batch of KovaaK's files ends early"));
-    }
-    let (part, after) = rest.split_at(len);
-    *rest = after;
-    Ok(part)
-}
-
-/// A little-endian u32 from the start of `rest` (see `take`).
-fn take_u32(rest: &mut &[u8]) -> Answer<usize> {
-    Ok(u32::from_le_bytes(take(rest, U32_BYTES)?.try_into().unwrap_or_default()) as usize)
 }
 
 /// A review the page ran (POST /api/reviewed): the files the native review writes, the area finder's find in the key
@@ -270,7 +225,7 @@ impl Library {
         }))
     }
 
-    /// POST /api/kovaak_files: a batch of KovaaK's files the user chose, read once (`batch_files`): each stats file's
+    /// POST /api/kovaak_files: a batch of KovaaK's files the user chose, read once (batch.rs): each stats file's
     /// run and each scenario file's facts are kept, each kind in one transaction, and both are read again when next
     /// needed; the whole text is kept too of each stats file one of the user's recordings pairs with (by name and
     /// time), so its report needs the folder no more. Other paths are left out. Answers how many of each it kept.
@@ -279,7 +234,7 @@ impl Library {
             self.store().kovaak().ok_or_else(|| Failure::from("KovaaK's files are not kept here".to_string()))?;
         let (mut stats, mut scenarios, mut texts) = (Vec::new(), Vec::new(), Vec::new());
         let recorded = self.recorded_runs();
-        for file in batch_files(body)? {
+        for file in crate::batch::read(body)? {
             let size = file.bytes.len() as u64;
             if let Some(name) = file.path.strip_prefix(STATS_PREFIX) {
                 let run = super::stats::run_of_file(file.bytes);
@@ -301,12 +256,12 @@ impl Library {
         Ok(json!({ "stats": stats.len(), "scenarios": scenarios.len() }))
     }
 
-    /// POST /api/cutoff_labels: a submit's detector labels the page made (`batch_files`): its crops (train/<name>.npz),
+    /// POST /api/cutoff_labels: a submit's detector labels the page made (batch.rs): its crops (train/<name>.npz),
     /// each kept in place of any of the same name, and its rows (rows.json, a list), written after the rows before as
     /// the native submit writes them, so a later submit's rows win. Answers how many crops and rows it kept.
     pub fn add_cutoff_labels(&self, body: &[u8]) -> Answer<Value> {
         let (mut crops, mut rows) = (0, Vec::<PageCutoffRow>::new());
-        for file in batch_files(body)? {
+        for file in crate::batch::read(body)? {
             if file.path == ROWS_FILE {
                 rows = serde_json::from_slice(file.bytes)
                     .map_err(|error| Failure::bad(format!("{ROWS_FILE}: {error}")))?;
@@ -335,7 +290,7 @@ impl Library {
     /// again when next needed.
     pub fn kovaak_changed(&self) -> Answer<Value> {
         self.forget_stats();
-        *self.facts.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        self.forget_facts();
         Ok(json!({ "changed": true }))
     }
 }

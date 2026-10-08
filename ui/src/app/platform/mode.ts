@@ -4,10 +4,13 @@
  */
 
 import { HttpFeature, HttpFeatureKind } from '@angular/common/http';
-import { Provider } from '@angular/core';
+import { InjectionToken, Provider } from '@angular/core';
 
 /** The three ways the app runs: everything in the browser, with the review server, or as the desktop app. */
 export type ModeName = 'browser' | 'server' | 'desktop';
+
+/** Which mode the app runs in (an export's manifest says it). */
+export const MODE_NAME = new InjectionToken<ModeName>('MODE_NAME');
 
 /**
  * A way of running the app: the services it provides for the contracts in platform/ (RecordingSource, StatsFiles,

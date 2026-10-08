@@ -76,6 +76,9 @@ pub enum Item<'a> {
     AreaExamples,
     /// The areas last saved for an added recording (areas.rs).
     UploadAreas,
+    /// The scenarios' facts that opened exports brought (library/export.rs), by lower-case name: used for a scenario
+    /// this computer has no file of.
+    ImportedScenarios,
     /// A list of recording ids the user marked (labels.rs, faint.rs).
     Ids(IdList),
     /// A recording's mark, by its id.
@@ -96,6 +99,7 @@ impl<'a> Item<'a> {
             Item::AreaKinds => "area_kinds.json",
             Item::AreaExamples => "area_examples.jsonl",
             Item::UploadAreas => "exclude_uploads.json",
+            Item::ImportedScenarios => "imported_scenarios.json",
             Item::Ids(IdList::NotAimTrainer) => "not_aim_trainer.json",
             Item::Ids(IdList::LabelSkipped) => "label_skipped.json",
             Item::Ids(IdList::FaintSkipped) => "faint_skipped.json",
@@ -329,7 +333,12 @@ impl Files {
     pub fn path(&self, item: Item<'_>) -> PathBuf {
         let name = item.file_name();
         match item {
-            Item::Settings | Item::AreaKinds | Item::AreaExamples | Item::UploadAreas | Item::Ids(_) => {
+            Item::Settings
+            | Item::AreaKinds
+            | Item::AreaExamples
+            | Item::UploadAreas
+            | Item::ImportedScenarios
+            | Item::Ids(_) => {
                 self.folders.files.join(name)
             }
             Item::Mark(id, _) => recording_folder(&self.folders, id).join(name),
@@ -351,7 +360,7 @@ pub(crate) fn python_text(item: Item<'_>) -> bool {
     match item {
         Item::AreaKinds | Item::AreaExamples | Item::UploadAreas | Item::Ids(_) | Item::CutoffRows => true,
         Item::Mark(_, mark) => matches!(mark, Mark::Cutoff | Mark::SavedAreas | Mark::FoundAreas),
-        Item::Settings | Item::ReviewPart(..) | Item::CutoffCrop(_) => false,
+        Item::Settings | Item::ImportedScenarios | Item::ReviewPart(..) | Item::CutoffCrop(_) => false,
     }
 }
 

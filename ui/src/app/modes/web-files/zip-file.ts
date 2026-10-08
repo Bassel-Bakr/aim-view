@@ -85,15 +85,18 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
-/** The CRC-32 a zip keeps for each file. */
-export function crc32(data: Uint8Array): number {
-  let crc = U32_ALL;
+/**
+ * The CRC-32 a zip keeps for each file; with `previous`, the CRC-32 of what came before followed by
+ * `data` (a file read in parts).
+ */
+export function crc32(data: Uint8Array, previous = 0): number {
+  let crc = (previous ^ U32_ALL) >>> 0;
   for (const byte of data) crc = CRC_TABLE[(crc ^ byte) & BYTE_MASK] ^ (crc >>> BITS_PER_BYTE);
   return (crc ^ U32_ALL) >>> 0;
 }
 
 /** The bytes compressed as raw deflate, as a zip holds them. */
-async function deflateRaw(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+export async function deflateRaw(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
   const body = new Response(data).body;
   if (!body) throw new Error('The bytes could not be read for compression');
   const packed = body.pipeThrough(new CompressionStream('deflate-raw'));

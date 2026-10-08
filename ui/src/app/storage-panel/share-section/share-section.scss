@@ -1,0 +1,48 @@
+@reference '../../../tailwind.css';
+
+@layer components {
+  .share {
+    @apply flex flex-col gap-4 border-t border-border pt-6;
+  }
+
+  .title {
+    @apply font-display text-h3 font-bold text-primary;
+  }
+
+  .intro {
+    @apply max-w-(--prose-width) text-sm text-secondary;
+  }
+
+  .actions {
+    @apply flex flex-wrap items-center gap-5;
+  }
+
+  .check {
+    @apply cursor-pointer text-sm text-secondary;
+
+    input {
+      @apply mr-2 accent-accent;
+    }
+  }
+
+  .pick {
+    @apply accent-accent;
+  }
+
+  // the file input's label, drawn as the shared button (themes/controls.scss .button)
+  .open {
+    @apply cursor-pointer;
+
+    &[aria-disabled='true'] {
+      @apply pointer-events-none opacity-50;
+    }
+  }
+
+  .note {
+    @apply text-sm text-secondary;
+  }
+
+  .failed {
+    @apply text-sm text-warning;
+  }
+}

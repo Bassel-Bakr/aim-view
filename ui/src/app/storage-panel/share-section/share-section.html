@@ -1,0 +1,63 @@
+<section class="share" aria-labelledby="share-title">
+  <h3 id="share-title" class="title">Share recordings</h3>
+  <p class="intro">
+    Export reviewed recordings as one zip, with their reviews, stats files and marks, to send them
+    to someone else. Opening an export adds its recordings that came with their videos.
+  </p>
+  @if (reviewed().length) {
+    <app-data-table
+      class="recordings"
+      label="Reviewed recordings to export"
+      [rows]="reviewed()"
+      [columns]="columns"
+      [rowId]="recordingId"
+    >
+      <ng-template appCell="pick" [appCellRows]="reviewed()" let-recording>
+        <input
+          type="checkbox"
+          class="pick"
+          [checked]="picked().has(recording.id)"
+          [attr.aria-label]="'Export ' + recording.scenario"
+          (change)="toggle(recording.id)"
+        />
+      </ng-template>
+    </app-data-table>
+  } @else {
+    <p class="intro">No recording has a review yet.</p>
+  }
+  <div class="actions">
+    <label class="check">
+      <input type="checkbox" [checked]="videos()" (change)="videos.set(!videos())" />
+      Include the videos ({{ bytes(videoBytes()) }})
+    </label>
+    <button
+      type="button"
+      appButton
+      intent="primary"
+      [disabled]="!picked().size || share() !== null"
+      (click)="exportPicked()"
+    >
+      Export {{ picked().size || '' }}
+    </button>
+    <label class="button open" [attr.aria-disabled]="share() !== null">
+      Open an export
+      <input
+        type="file"
+        class="sr-only"
+        accept=".zip,application/zip"
+        [disabled]="share() !== null"
+        (change)="openFile($event)"
+      />
+    </label>
+  </div>
+  @if (share(); as s) {
+    <p class="note" role="status">Working… {{ percent(s) }}</p>
+  } @else if (share() === 0) {
+    <p class="note" role="status">Working…</p>
+  }
+  @if (said(); as text) {
+    <p [class]="failed() ? 'failed' : 'note'" [attr.role]="failed() ? 'alert' : 'status'">
+      {{ text }}
+    </p>
+  }
+</section>

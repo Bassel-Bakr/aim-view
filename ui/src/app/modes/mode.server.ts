@@ -8,7 +8,8 @@ import { withXhr } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
 import { CropSets } from '../platform/crop-sets';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
-import { Mode } from '../platform/mode';
+import { Exports } from '../platform/exports';
+import { Mode, MODE_NAME } from '../platform/mode';
 import { Labelling } from '../platform/labelling';
 import { ModelCatalog } from '../platform/model-catalog';
 import { MouseLogs } from '../platform/mouse-logs';
@@ -26,6 +27,7 @@ import { ServerMouseLogs } from './http/server-mouse-logs';
 import { ServerRecordings } from './http/server-recordings';
 import { ServerReview } from './http/server-review';
 import { ServerScoreHistory } from './http/server-score-history';
+import { ServerExports } from './http/server-exports';
 import { ServerStoredData } from './http/server-stored-data';
 import { ServerStatsFiles } from './http/server-stats-files';
 
@@ -42,6 +44,8 @@ export const MODE: Mode = {
     { provide: StatsFiles, useExisting: ServerStatsFiles },
     { provide: ScoreHistory, useExisting: ServerScoreHistory },
     { provide: StoredData, useExisting: ServerStoredData },
+    { provide: MODE_NAME, useValue: 'server' },
+    { provide: Exports, useExisting: ServerExports },
     { provide: ReviewEngine, useExisting: ServerReview },
     { provide: ModelCatalog, useExisting: ServerModels },
     { provide: MouseLogs, useExisting: ServerMouseLogs },

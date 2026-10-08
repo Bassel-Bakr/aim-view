@@ -15,7 +15,8 @@ use serde_json::{Value, json};
 
 use super::names::{free_name, local_stamp, parse_name, parse_titled, parse_video, slug};
 use super::stats::UPLOAD_SOURCE;
-use super::{Answer, Failure, Library, modified};
+use crate::store::Item;
+use super::{Answer, Failure, Library, modified, read_kept};
 use crate::disk::Entry;
 
 /// The extensions (lower case) of the files the library takes as videos.
@@ -203,20 +204,32 @@ impl Library {
         crate::store::recording_folder(&self.folders, id)
     }
 
-    /// Each scenario's facts by lower-case name, from the scenario folders' files, read once.
+    /// Each scenario's facts by lower-case name, read once: from the scenario folders' files (in the browser, what it
+    /// keeps of them), then for a scenario none of them has, the facts an opened export brought (library/export.rs).
     pub(crate) fn facts(&self) -> Arc<HashMap<String, Facts>> {
         let mut cached = self.facts.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(facts) = cached.as_ref() {
             return facts.clone();
         }
-        // the browser keeps each scenario file's facts instead of the files
-        if let Some(kovaak) = self.store().kovaak() {
-            let stem = |path: &str| Path::new(path).file_stem().map(|stem| stem.to_string_lossy().to_lowercase());
-            let rows = kovaak.scenarios().unwrap_or_default();
-            let by_name = Arc::new(rows.into_iter().filter_map(|row| Some((stem(&row.path)?, row.facts))).collect());
-            *cached = Some(Arc::clone(&by_name));
-            return by_name;
+        let mut by_name = match self.store().kovaak() {
+            Some(kovaak) => {
+                let stem = |path: &str| Path::new(path).file_stem().map(|stem| stem.to_string_lossy().to_lowercase());
+                let rows = kovaak.scenarios().unwrap_or_default();
+                rows.into_iter().filter_map(|row| Some((stem(&row.path)?, row.facts))).collect()
+            }
+            None => self.scenario_files_facts(),
+        };
+        let imported: HashMap<String, Facts> = read_kept(self.store(), Item::ImportedScenarios).unwrap_or_default();
+        for (name, facts) in imported {
+            by_name.entry(name).or_insert(facts);
         }
+        let by_name = Arc::new(by_name);
+        *cached = Some(by_name.clone());
+        by_name
+    }
+
+    /// Each scenario's facts by lower-case name, from the scenario folders' files (a later folder's file wins).
+    fn scenario_files_facts(&self) -> HashMap<String, Facts> {
         let mut files: Vec<PathBuf> = Vec::new();
         for folder in &self.config.scenarios {
             push_scenario_files(folder, &mut files);
@@ -232,9 +245,12 @@ impl Library {
             let name = path.file_stem().map(|stem| stem.to_string_lossy().to_lowercase()).unwrap_or_default();
             by_name.insert(name, aimview::scenario::facts(&aimview::scenario::text_of(&bytes)));
         }
-        let by_name = Arc::new(by_name);
-        *cached = Some(by_name.clone());
         by_name
+    }
+
+    /// Forgets the scenarios' facts read: they are read again when next needed.
+    pub(super) fn forget_facts(&self) {
+        *self.facts.lock().unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     /// Every scenario's facts by lower-case name, as JSON (aimview-tool scenarios).

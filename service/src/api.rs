@@ -145,6 +145,12 @@ fn special_answer(library: &Library, route: &Route) -> Option<ApiResponse> {
             Err(failure) => json_response(Err(failure)),
         });
     }
+    if route.post && route.path == "/api/export" {
+        return Some(match library.export(route.request.body) {
+            Ok(bytes) => ApiResponse::new(OK, "application/octet-stream", bytes),
+            Err(failure) => json_response(Err(failure)),
+        });
+    }
     if !route.post && route.path == "/api/cutoff_labels" && !route.flag("count") {
         return Some(match library.cutoff_labels_zip() {
             Ok(bytes) => ApiResponse::new(OK, "application/zip", bytes),
@@ -266,6 +272,7 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
         "/api/faint_submit" => id().and_then(|id| library.submit_faint(&id, offset(route.query("offset"))?)),
         "/api/area_examples" => library.set_examples(body),
         "/api/area_kinds_file" => library.set_kinds_file(body),
+        "/api/import" => id().and_then(|id| library.import_recording(&id, body)),
         "/api/storage" => {
             let part = route.query("remove").ok_or_else(|| Failure::bad("remove= is missing"));
             part.and_then(|part| library.remove_storage(&part))

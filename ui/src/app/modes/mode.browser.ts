@@ -9,7 +9,8 @@ import { withInterceptors } from '@angular/common/http';
 import { AreaLabels } from '../platform/area-labels';
 import { CropSets } from '../platform/crop-sets';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
-import { Mode } from '../platform/mode';
+import { Exports } from '../platform/exports';
+import { Mode, MODE_NAME } from '../platform/mode';
 import { Labelling } from '../platform/labelling';
 import { ModelCatalog } from '../platform/model-catalog';
 import { MouseLogs } from '../platform/mouse-logs';
@@ -20,6 +21,7 @@ import { StatsFiles } from '../platform/stats-files';
 import { StoredData } from '../platform/stored-data';
 import { ServerModels } from './http/server-models';
 import { ServerScoreHistory } from './http/server-score-history';
+import { ServerExports } from './http/server-exports';
 import { ServerStoredData } from './http/server-stored-data';
 import { BrowserAreaLabels } from './service/browser-area-labels';
 import { BrowserCropSets } from './service/browser-crop-sets';
@@ -47,6 +49,8 @@ export const MODE: Mode = {
     { provide: StatsFiles, useExisting: BrowserStatsFiles },
     { provide: ScoreHistory, useExisting: ServerScoreHistory },
     { provide: StoredData, useExisting: ServerStoredData },
+    { provide: MODE_NAME, useValue: 'browser' },
+    { provide: Exports, useExisting: ServerExports },
     { provide: ReviewEngine, useExisting: BrowserReview },
     { provide: ModelCatalog, useExisting: ServerModels },
     { provide: MouseLogs, useExisting: BrowserMouseLogs },

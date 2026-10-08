@@ -136,6 +136,8 @@ export abstract class RecordingSource {
   abstract lasting(id: string): boolean;
   /** Adds recordings from this computer, each with its stats .csv when one is among the files. */
   abstract add(files: readonly File[]): Promise<AddResult>;
+  /** The recording's video file as it is kept (for an export), read when asked. */
+  abstract videoFile(id: string): Promise<Blob>;
   /**
    * What a link offers (a video's page on YouTube, Twitch, Medal and the other sites yt-dlp reads, or a video file's
    * address): its title and the qualities to choose from, best first; none for a plain video file.
