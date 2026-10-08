@@ -342,6 +342,7 @@ export type JobStage =
   | 'looking'
   | 'tracking'
   | 'linking'
+  | 'checking'
   | 'ffmpeg'
   | 'reading the HUD'
   | 'camera'

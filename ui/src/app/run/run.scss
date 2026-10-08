@@ -57,8 +57,9 @@
     @apply mb-0 flex-1;
   }
 
+  // glides at an even pace to each new reading, so the bar moves on between them instead of jumping
   .fill {
-    @apply absolute inset-y-0 left-0 bg-accent;
+    @apply absolute inset-y-0 left-0 bg-accent transition-all duration-(--motion-progress) ease-linear;
   }
 
   .progress-text {

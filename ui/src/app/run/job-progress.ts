@@ -27,6 +27,7 @@ const STAGES: Record<JobStage, string> = {
   looking: 'Looking at the key frames',
   tracking: 'Tracking the targets',
   linking: 'Linking the tracks',
+  checking: 'Checking the kills in the frames',
   ffmpeg: 'Getting FFmpeg (once)',
   'reading the HUD': 'Reading the session HUD',
   camera: "Reading the camera's turn",
@@ -38,6 +39,12 @@ const STAGES: Record<JobStage, string> = {
   error: 'The review failed',
   cancelled: 'Cancelled: the review shown before is kept',
 };
+
+/**
+ * The stages after the frames are all read: the bar stays full (checking counts its frames from
+ * 0 again, and the browser's linking reports no frames).
+ */
+const AFTER_FRAMES = new Set<JobStage>(['linking', 'checking', 'done']);
 
 /**
  * The progress line of a review job, or null when there is none. While it tracks and when it is
@@ -58,7 +65,7 @@ export function jobProgress(job: Job): JobProgress | null {
         : frames && job.total
           ? `${job.done} / ${job.total} frames`
           : '',
-    fraction: job.stage === 'done' ? 1 : job.total ? (job.done ?? 0) / job.total : 0,
+    fraction: AFTER_FRAMES.has(job.stage) ? 1 : job.total ? (job.done ?? 0) / job.total : 0,
     failed,
   };
 }

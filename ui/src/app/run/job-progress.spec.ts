@@ -30,6 +30,13 @@ describe('jobProgress', () => {
     expect(progress?.stage).toBe("Reading the camera's turn");
   });
 
+  it('names the kill check and keeps the bar full once the frames are read', () => {
+    const progress = jobProgress({ stage: 'checking', done: 0, total: 10 });
+    expect(progress?.stage).toBe('Checking the kills in the frames');
+    expect(progress?.fraction).toBe(1);
+    expect(jobProgress({ stage: 'linking', done: 0, total: 0 })?.fraction).toBe(1);
+  });
+
   it('shows nothing without a job', () => {
     expect(jobProgress({ stage: 'none' })).toBeNull();
   });

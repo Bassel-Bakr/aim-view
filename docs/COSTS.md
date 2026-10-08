@@ -22,9 +22,9 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 39.5 s | 37.8 s | 2 | 2026-10-07, b9f96dc+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 16.1 s | 15.3 s | 15 | 2026-10-08, 6d5bc9d+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 0.2 s | 11.7 s | 17 | 2026-10-08, 76fcad6+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 8.7 s | 7.2 s | 20 | 2026-10-08, 6d5bc9d+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 0.2 s | 4.3 s | 22 | 2026-10-08, 76fcad6+ |
 | assets: core wasm (cargo) | profile release | 39.4 s | 37.7 s | 2 | 2026-10-07, b9f96dc+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
@@ -39,11 +39,11 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 3.7 s | 4.2 s | 4 | 2026-10-07, 78c5844+ |
 | build: lint | - | 4.1 s | 4.1 s | 1 | 2026-10-08, 4303844+ |
-| lint:ui | - | 4.5 s | 4.8 s | 40 | 2026-10-08, 86f38d2+ |
+| lint:ui | - | 4.7 s | 4.8 s | 41 | 2026-10-08, 76fcad6+ |
 | rust-tests | profile quick | 28.4 s | 28.4 s | 9 | 2026-10-08, 6d5bc9d+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 8.8 s | 8.9 s | 32 | 2026-10-08, 86f38d2+ |
-| tokens | - | 0.4 s | 0.4 s | 4 | 2026-10-08, ffe2d2b+ |
+| test:ui | - | 9.1 s | 8.9 s | 33 | 2026-10-08, 76fcad6+ |
+| tokens | - | 0.4 s | 0.4 s | 5 | 2026-10-08, 76fcad6+ |
 <!-- costs:end -->
 
 ## Recorded by hand
