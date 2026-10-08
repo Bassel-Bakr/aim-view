@@ -1,5 +1,5 @@
-import { ModelList } from '../api';
-import { modelTable } from './model-table';
+import { Model, ModelList } from '../api';
+import { byRecommendation, modelTable } from './model-table';
 
 const LIST: ModelList = {
   chosen: 'small_v13',
@@ -83,5 +83,38 @@ describe('modelTable', () => {
       ['small_v9', 'PyTorch file only', false],
     ]);
     expect(table.notes).toBe('Recordings no model trained on. Per frame.');
+  });
+});
+
+describe('byRecommendation', () => {
+  /** A model by its name, acceptance date and whether it can run here. */
+  const model = (name: string, accepted?: string, available = true, isDefault = false): Model => ({
+    name,
+    label: name,
+    available,
+    default: isDefault,
+    ...(accepted ? { accepted: `${accepted}: python/model/reports/accept_${name}.json` } : {}),
+  });
+
+  it('puts the default first, then what can run, the newest accepted first, then the rest in their order', () => {
+    // models.json's order: the order the models came in
+    const models = [
+      model('full_v3'),
+      model('full_v6', '2026-10-05'),
+      model('full_v8_s3', '2026-10-05'),
+      model('large_v11', '2026-10-06'),
+      model('large_v13e4', '2026-10-06', true, true),
+      model('hand'),
+      model('gpu_only', '2026-10-07', false),
+    ];
+    expect(byRecommendation(models).map((item) => item.name)).toEqual([
+      'large_v13e4',
+      'large_v11',
+      'full_v8_s3',
+      'full_v6',
+      'full_v3',
+      'hand',
+      'gpu_only',
+    ]);
   });
 });

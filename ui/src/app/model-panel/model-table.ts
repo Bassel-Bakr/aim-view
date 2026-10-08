@@ -58,7 +58,7 @@ export interface ModelColumn {
 
 /** The models side by side (one column each), how they were measured, and the older models in a list under them. */
 export interface ModelTable {
-  /** The models side by side, in models.json's order. */
+  /** The models side by side, the most recommended first (byRecommendation). */
   columns: ModelColumn[];
   /** The measures, one row each. */
   rows: ModelRow[];
@@ -151,12 +151,33 @@ function checkRow(check: Check, models: Model[]): ModelRow {
   );
 }
 
+/** The date at the start of a model's acceptance (YYYY-MM-DD), or '' when the gate never accepted it. */
+function acceptedOn(model: Model): string {
+  return /^\d{4}-\d{2}-\d{2}/.exec(model.accepted ?? '')?.[0] ?? '';
+}
+
+/**
+ * The models, the most recommended first: the default; then those that can run here before those that cannot; then
+ * the ones the acceptance gate passed, the most recently accepted first (on one day, the one models.json lists later,
+ * as it lists models in the order they came); then the rest, in models.json's order.
+ */
+export function byRecommendation(models: Model[]): Model[] {
+  const position = new Map(models.map((model, index) => [model, index]));
+  return [...models].sort(
+    (a, b) =>
+      Number(b.default === true) - Number(a.default === true) ||
+      Number(b.available) - Number(a.available) ||
+      acceptedOn(b).localeCompare(acceptedOn(a)) ||
+      (acceptedOn(a) ? 1 : -1) * ((position.get(b) ?? 0) - (position.get(a) ?? 0)),
+  );
+}
+
 /**
  * The model panel's table: what each model was trained on, is best and weak at, its result on every check, its speed
  * on each runtime and its size. Older models (each replaced by a newer one) are listed apart.
  */
 export function modelTable(list: ModelList): ModelTable {
-  const main = list.models.filter((model) => !model.older);
+  const main = byRecommendation(list.models.filter((model) => !model.older));
   const speed = (key: keyof ModelSpeed) => main.map((model) => model.speed_ms?.[key] ?? null);
   const ms = (value: number) => plain(`${value} ms`);
   return {

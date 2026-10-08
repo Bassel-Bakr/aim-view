@@ -105,6 +105,11 @@ export interface Model {
   default?: boolean;
   /** Listed under the table of models instead of in it. */
   older?: boolean;
+  /**
+   * When it passed the acceptance gate (python/model/accept.py), and its report: "2026-10-06: <report> ..."; absent
+   * for a model that did not.
+   */
+  accepted?: string;
   /** How many parameters it has. */
   params?: number;
   /** Its fp32 ONNX file's size, in kilobytes; null when it has only a PyTorch file. */
