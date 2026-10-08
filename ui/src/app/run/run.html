@@ -122,6 +122,12 @@
     }
   </div>
 }
+@if (reportError(); as why) {
+  <div class="report-error">
+    <p class="status-line" role="alert">The review could not be read: {{ why }}</p>
+    <button class="button" type="button" (click)="readReportAgain()">Try again</button>
+  </div>
+}
 @if (headline(); as h) {
   <app-headline [tiles]="h" />
 }

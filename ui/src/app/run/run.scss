@@ -40,6 +40,11 @@
   }
 
   // a progress bar with its Cancel button beside it
+  // the review could not be read: why, and a button to read it again
+  .report-error {
+    @apply mb-5 flex flex-wrap items-center gap-x-5 gap-y-2;
+  }
+
   .progress-line {
     @apply mb-7 flex items-center gap-3;
   }

@@ -39,10 +39,10 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 3.7 s | 4.2 s | 4 | 2026-10-07, 78c5844+ |
 | build: lint | - | 4.1 s | 4.1 s | 1 | 2026-10-08, 4303844+ |
-| lint:ui | - | 4.5 s | 4.5 s | 35 | 2026-10-08, ffe2d2b+ |
+| lint:ui | - | 4.8 s | 4.5 s | 36 | 2026-10-08, b38bfb6+ |
 | rust-tests | profile quick | 23.3 s | 28.0 s | 7 | 2026-10-08, 88ca3b4+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 9 s | 9.0 s | 27 | 2026-10-08, ffe2d2b+ |
+| test:ui | - | 9.3 s | 9.2 s | 28 | 2026-10-08, b38bfb6+ |
 | tokens | - | 0.4 s | 0.4 s | 4 | 2026-10-08, ffe2d2b+ |
 <!-- costs:end -->
 

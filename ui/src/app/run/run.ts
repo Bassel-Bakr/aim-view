@@ -6,7 +6,7 @@
  */
 
 import { Component, computed, inject, input, signal } from '@angular/core';
-import { isClickReport, Recording } from '../api';
+import { errorMessage, isClickReport, Recording } from '../api';
 import { formatPercent } from '../format';
 import { QueueBar } from '../labelling/queue-bar/queue-bar';
 import { FaintCutoff } from '../services/faint-cutoff';
@@ -191,6 +191,15 @@ export class Run {
     return chosen && by !== chosen ? `Review with ${modelName(chosen)}` : 'Review again';
   });
 
+  /**
+   * Why the review could not be read, in the service's words (such as a stats file this browser no longer has: choose
+   * KovaaK's stats folder again); null when it was read, or is being read.
+   */
+  protected readonly reportError = computed(() => {
+    const error = this.review.report.error();
+    return error ? errorMessage(error) : null;
+  });
+
   /** The review job's progress line, or null when there is no job. */
   protected readonly progress = computed(() => jobProgress(this.review.job()));
 
@@ -200,6 +209,11 @@ export class Run {
    */
   protected startReview(): void {
     void this.review.analyse(this.recording().analysed && !this.unmeasured());
+  }
+
+  /** Reads the review again, after what kept it from being read is put right. */
+  protected readReportAgain(): void {
+    this.review.report.reload();
   }
 
   /** Cancels the running review; the review shown before stays. */
