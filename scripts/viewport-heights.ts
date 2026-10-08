@@ -60,7 +60,8 @@ export function findingsIn(file: string, text: string): Finding[] {
 if (import.meta.main) {
   const findings: Finding[] = [];
   for (const file of FILES.scanSync(SOURCES)) {
-    if (file.includes('generated')) continue;
+    // generated copies: the stylesheets they come from carry the markers (app/tokens/tokens.ts from bun run tokens)
+    if (file.includes('generated') || file.replace(/\\/g, '/').startsWith('app/tokens/')) continue;
     findings.push(...findingsIn(file, readFileSync(join(SOURCES, file), 'utf8')));
   }
   for (const { file, line, text } of findings)

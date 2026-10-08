@@ -3,6 +3,7 @@
   "scripts": {
     "assets": "bun scripts/ui-assets.ts",
     "types": "bun scripts/ui-types.ts",
+    "tokens": "bun scripts/costs.ts run tokens -- bun scripts/ui-tokens.ts",
     "dev": "bun run dev:browser",
     "dev:browser": "bun run assets && bun run --cwd ui start --configuration browser",
     "dev:server": "bun run assets && bun run --cwd ui start --configuration server",

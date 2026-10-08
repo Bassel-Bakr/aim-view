@@ -24,7 +24,7 @@ const ATTRIBUTE = /([^\s=>"]+)(?:\s*=\s*"([^"]*)")?/g;
 const LITERAL = /'([^']*)'/g;
 
 /** One attribute of a control: the values the style knows, and whether the control must have it. */
-interface ControlAttribute {
+export interface ControlAttribute {
   /** The values its style knows. */
   values: string[];
   /** Whether every element of the control must carry it. */
@@ -32,7 +32,7 @@ interface ControlAttribute {
 }
 
 /** Each control's class and the attributes its style reads. */
-const CONTROLS: Record<string, Record<string, ControlAttribute>> = {
+export const CONTROLS: Record<string, Record<string, ControlAttribute>> = {
   // a line saying how an action went: its role says whether it failed
   'status-line': { role: { values: ['status', 'alert'], required: true }, 'data-tone': { values: ['secondary', 'muted'] } },
   // a button: the one main action on a page is primary

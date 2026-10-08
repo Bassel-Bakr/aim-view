@@ -66,6 +66,7 @@ cargo test --profile quick              # the Rust tests, against Python's resul
 python scripts/extract_module.py <src.py> <out.py> <name> ...  # copies a module's definitions and what they use
 bun run assets                          # the core as WebAssembly, the models and the area data into ui/generated/
 bun run types                           # the UI's types from the Rust structs, after changing one the UI reads
+bun run tokens                          # ui/src/app/tokens/tokens.ts from the stylesheets, after changing a token
 bun scripts/next-version.ts [--notes]   # the next release's version (release.yml publishes on a push to main)
 ```
 
