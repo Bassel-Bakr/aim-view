@@ -811,7 +811,7 @@ python python/model/test_model.py
 
 The benchmark runs each ONNX file in a fresh process at 1, 4 and 8 threads (load time, latency, peak memory, cores)
 and each checkpoint on the GPU at batch 1 and 16, on a real frame. It writes `test_out/vod_model/bench.json`, and the
-raw frame files the browser and native tests read.
+raw frame files the browser test reads.
 
 ## 8. Deployment prototypes
 
@@ -836,19 +836,4 @@ python python/model/web/serve_static.py --port 8772
 
 Open `http://127.0.0.1:8772/python/model/web/`. The table fills in; the same numbers are in `window.results`.
 
-**Native (A).** Rust, from `python/model/rust`. tract (pure Rust, the default build):
-
-```bash
-cargo build --release
-./target/release/kovobs-detect.exe ../exports/detector_small_fp32.onnx
-```
-
-ONNX Runtime through the `ort` crate (downloads a static ONNX Runtime once, about 341 MB):
-
-```bash
-cargo build --release --features ort
-./target/release/kovobs-detect.exe --backend ort --threads 4 ../exports/detector_small_fp32.onnx
-```
-
-Each run prints the detections, whether they match Python's (`bench_expected.json`), load time, latency, cores and
-peak memory. The WASM build and every option are in [rust/README.md](rust/README.md).
+**Native (A).** The Rust prototype (`python/model/rust/`) was removed on 2026-10-08, once the service's own detector (`service/src/detector.rs`) answered its question; it is in git history up to ae329f2.

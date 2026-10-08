@@ -11,7 +11,7 @@ publish = false
 # WebAssembly, which browser mode runs in a worker. The detector prototype keeps its own build until its code moves
 # into src/.
 members = ["browser-service", "desktop", "service", "server"]
-exclude = ["python/model/rust", "prototypes/gpu_decode"]
+exclude = ["prototypes/gpu_decode"]
 
 [workspace.lints.rust]
 # AGENTS.md, "Readable code": every public item has a doc comment

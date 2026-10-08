@@ -83,4 +83,3 @@ needs to move into the file.
 These copies still use the constant 0.3 and no map, so they review a model with other settings differently:
 
 - `python/model/infer.py` `THRESHOLD` (`decode_np` and the runners), which `python/review.py` and the eval scripts use.
-- `python/model/rust/src/decode.rs` `THRESHOLD`, the KovOBS prototype.

@@ -196,8 +196,7 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review
   through the app's native pipeline, and the gate's numbers come from the core (the old Python review retired).
 - Open: showing as much information as possible (after the redesign); moving targets on themes other than
-  dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; wiring the detector into KovOBS (the
-  Rust prototype in `python/model/rust/` becomes the start of the core's detector); with a stats file, flicks lost to
+  dark-on-light; thin capsules; tiled-wall seams; hand-checked ground truth; with a stats file, flicks lost to
   the tracks: `appearances` now joins a target's pieces by its own speed too (a target that moves on its own, as Bounce
   180's spheres, got a new track every frame or two), and a kill's target may be its blob's radius plus 0.25 degrees
   from the crosshair (a big target hit at its rim), so Bounce 180 Sparky Jumbo went from 100 of 107 kills and 87 flicks

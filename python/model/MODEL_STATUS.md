@@ -205,7 +205,7 @@ Decoding on the GPU was also slower next to the detector (16.2 s against 11.9 s)
 ### Native in Rust (KovOBS)
 
 `rust/` is a small Rust program (edition 2024, like KovOBS) with one `Detector` trait and two runtimes. Both give
-the Python detections to 0.0004 px. Details and the KovOBS wiring plan are in [rust/README.md](rust/README.md).
+the Python detections to 0.0004 px. The prototype, with its details and the KovOBS wiring plan, was removed on 2026-10-08, once the service's own detector (`service/src/detector.rs`) answered its question; it is in git history up to ae329f2.
 
 | Runtime | Load | ms per frame (small fp32) | Peak memory | Adds to the exe |
 | --- | --- | --- | --- | --- |
