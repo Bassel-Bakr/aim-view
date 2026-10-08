@@ -140,13 +140,32 @@ export const DIRECTION_ARROWS: Record<Direction, string> = {
   'down-right': '↘',
 };
 
+/** How a flick landed: on the target, short of it, or past its far edge. */
+export type LandingKind = 'on target' | 'underflick' | 'overflick';
+
+/** Where a flick landed: its kind, and the degrees short of the target or past its far edge (null on target). */
+export interface Landing {
+  /** On target, an underflick or an overflick. */
+  kind: LandingKind;
+  /** The degrees still to go (an underflick) or past the far edge (an overflick); null on target. */
+  degrees: number | null;
+}
+
 /**
- * Where a flick landed, against a target of radius `radiusDeg`: on target, an underflick (the
- * degrees still to go) or an overflick (the degrees past the far edge). `endLeft` is how far along
- * the way to the target was left when the flick ended, in degrees (below 0: past it).
+ * Where a flick landed, against a target of radius `radiusDeg`. `endLeft` is how far along the way
+ * to the target was left when the flick ended, in degrees (below 0: past it).
+ */
+export function landing(endLeft: number, radiusDeg: number): Landing {
+  if (endLeft > radiusDeg) return { kind: 'underflick', degrees: endLeft };
+  if (endLeft < -radiusDeg) return { kind: 'overflick', degrees: -endLeft - radiusDeg };
+  return { kind: 'on target', degrees: null };
+}
+
+/**
+ * Where a flick landed, in words: on target, an underflick (the degrees still to go) or an
+ * overflick (the degrees past the far edge); see `landing`.
  */
 export function formatEnded(endLeft: number, radiusDeg: number): string {
-  if (endLeft > radiusDeg) return `underflick ${endLeft.toFixed(1)}°`;
-  if (endLeft < -radiusDeg) return `overflick ${(-endLeft - radiusDeg).toFixed(1)}°`;
-  return 'on target';
+  const { kind, degrees } = landing(endLeft, radiusDeg);
+  return degrees === null ? kind : `${kind} ${degrees.toFixed(1)}°`;
 }

@@ -33,8 +33,14 @@
   // A number card, in the run page's headline format (run/headline): what it is in small capitals, the value large,
   // and a line under it. A clicking run's: label, value, detail (the run's median, or a detail). A tracking run's:
   // title, reading, a detail, and why it matters.
+  // Its lines are rows of the cards' grid (subgrid), so a title on two lines moves down every value in its row, not
+  // only its own
   .card {
-    @apply block min-w-(--card-min-width) rounded-lg border border-border bg-surface-2 px-6 py-5;
+    @apply row-span-3 grid min-w-(--card-min-width) grid-rows-subgrid gap-y-0 rounded-lg border border-border bg-surface-2 px-6 py-5;
+
+    &:has(.card-why) {
+      @apply row-span-4;
+    }
   }
 
   .card-label,
@@ -42,9 +48,11 @@
     @apply block text-xs font-strong tracking-wide text-balance wrap-break-word text-muted uppercase;
   }
 
+  // One line: a value that wrapped would change its row's height as another kill is picked; one too long for its card
+  // ends in an ellipsis, its whole text in its tooltip
   .card-value,
   .card-reading {
-    @apply block font-display text-kpi leading-tight font-bold text-balance wrap-break-word tabular-nums;
+    @apply block truncate font-display text-kpi leading-tight font-bold tabular-nums;
   }
 
   // An empty line keeps its height, so every card is as tall as the others

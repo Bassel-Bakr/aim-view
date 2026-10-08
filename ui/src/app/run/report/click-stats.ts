@@ -23,7 +23,7 @@ import {
   DIRECTION_ARROWS,
   formatCount,
   formatDegrees,
-  formatEnded,
+  landing,
   formatMs,
   formatPercent,
   formatSeconds,
@@ -154,6 +154,17 @@ export function runStats(
 }
 
 /**
+ * The kill's Flick landed card: the degrees short or past as the value, and which of the two under
+ * it, so the value stays short enough for one line; on target says so as the value.
+ */
+function landedCard(flick: Flick, radiusDeg: number): Stat {
+  const { kind, degrees } = landing(flick.end_left, radiusDeg);
+  return degrees === null
+    ? { label: 'Flick landed', value: kind, detail: '' }
+    : { label: 'Flick landed', value: `${degrees.toFixed(1)}°`, detail: kind };
+}
+
+/**
  * One kill's cards, each with the run's median under it where there is one. `pathCost` is the
  * kill's Pathing card value, already in words.
  */
@@ -171,7 +182,7 @@ export function killStats(
     { label: 'TTK', value: formatMs(flick.total), detail: run(formatMs(summary.median_interval)) },
     { label: 'Reaction', value: formatMs(flick.react), detail: run(formatMs(summary.react)) },
     { label: 'Flick', value: formatMs(flick.flick), detail: run(formatMs(summary.flick)) },
-    { label: 'Flick landed', value: formatEnded(flick.end_left, summary.radius), detail: '' },
+    landedCard(flick, summary.radius),
     { label: 'Confirmation', value: formatMs(flick.still), detail: run(formatMs(summary.still)) },
     {
       label: 'Flick speed',

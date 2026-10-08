@@ -82,7 +82,7 @@ describe('click stats', () => {
     expect(stats[0].value).toBe('12.3°');
     expect(stats[1].value).toBe('↑');
     expect(stats[2]).toEqual({ label: 'TTK', value: '500 ms', detail: 'run 425 ms' });
-    expect(stats[5]).toMatchObject({ label: 'Flick landed', value: 'underflick 1.2°' });
+    expect(stats[5]).toEqual({ label: 'Flick landed', value: '1.2°', detail: 'underflick' });
     expect(stats[10]).toMatchObject({ label: 'Pathing', value: '+40 ms' });
     expect(stats[11]).toMatchObject({
       label: 'Micro',

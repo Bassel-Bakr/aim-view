@@ -4,9 +4,7 @@
       <div class="card" [attr.data-tooltip]="s.why">
         <span class="card-title">{{ s.label }}</span>
         <span class="card-reading">{{ s.value }}</span>
-        @if (s.detail) {
-          <span class="card-detail">{{ s.detail }}</span>
-        }
+        <span class="card-detail">{{ s.detail }}</span>
         <span class="card-why">{{ s.why }}</span>
       </div>
     }
@@ -32,9 +30,7 @@
           <div class="card" [attr.data-tooltip]="s.why">
             <span class="card-title">{{ s.label }}</span>
             <span class="card-reading">{{ s.value }}</span>
-            @if (s.detail) {
-              <span class="card-detail">{{ s.detail }}</span>
-            }
+            <span class="card-detail">{{ s.detail }}</span>
             <span class="card-why">{{ s.why }}</span>
           </div>
         }
