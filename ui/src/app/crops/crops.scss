@@ -9,7 +9,7 @@
 
   // The scrollbar's room is kept, so the stage does not move when the tools appear under it
   .page {
-    @apply mx-auto flex w-full max-w-(--crop-page-width) min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pt-6 pb-8;
+    @apply mx-auto flex w-full max-w-(--crop-page-width) min-w-0 flex-col gap-5 overflow-y-auto px-6 pt-6 pb-8;
 
     scrollbar-gutter: stable;
   }

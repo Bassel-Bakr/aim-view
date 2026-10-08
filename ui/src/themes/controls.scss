@@ -88,10 +88,28 @@
     @apply mt-3 text-xs text-muted;
   }
 
+  // A part that takes the room its parent leaves: in a flex column it grows into the free space, and in a flex column
+  // or a grid row it may shrink below its content (a flex or grid item's minimum height is its content's otherwise),
+  // so a scroller inside it scrolls instead of stretching the page. The parents above it need a definite height too:
+  // the page's grid, or each one a .fill itself.
+  .fill {
+    @apply min-h-0 flex-1;
+  }
+
   // A modal dialog (a <dialog> opened with showModal): its box, its header row (the title and the close button), and
-  // the words that say what it is for. A dialog of another width sets only its width in its own SCSS.
+  // the words that say what it is for. A dialog of another width sets only its width in its own SCSS. The dialog does
+  // not scroll: its body (.dialog-body .fill) does, between the header and the footer, which stay in view.
   .dialog {
-    @apply m-auto max-h-(--dialog-max-height) w-(--dialog-width) max-w-full flex-col gap-5 overflow-y-auto rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+    @apply m-auto max-h-(--dialog-max-height) w-(--dialog-width) max-w-full flex-col gap-5 overflow-clip rounded-lg border border-border-strong bg-surface-1 p-11 text-primary backdrop:bg-backdrop open:flex;
+  }
+
+  // the margin and padding cancel out, and keep room for the focus rings the scroller would clip
+  .dialog-body {
+    @apply -m-2 flex flex-col gap-5 overflow-y-auto p-2;
+  }
+
+  .dialog-foot {
+    @apply flex flex-col gap-5;
   }
 
   // A tool panel on the run page, where a run's inputs are corrected (excluded areas, the faint-target cut-off, the

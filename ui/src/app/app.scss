@@ -8,7 +8,9 @@
       'top top' l.$top-bar-height
       'side main' minmax(0, 1fr)
       / l.$sidebar-width minmax(0, 1fr);
-    height: 100vh;
+    // the visible viewport: on a phone, 100vh is the height with the browser's toolbar hidden, and the bottom of
+    // the page would sit under it
+    height: 100dvh;
   }
 
   // The recordings list closed: the run page takes the whole width

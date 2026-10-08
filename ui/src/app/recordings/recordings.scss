@@ -47,7 +47,7 @@
   }
 
   .list {
-    @apply -mx-2 min-h-0 flex-1 overflow-y-auto px-2;
+    @apply -mx-2 overflow-y-auto px-2;
 
     outline-offset: calc(-1 * #{t.$focus-offset});
   }

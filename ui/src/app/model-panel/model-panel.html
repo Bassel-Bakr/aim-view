@@ -17,13 +17,15 @@
     <h2 id="models-title">Models</h2>
     <button type="button" appButton (click)="close()">Close</button>
   </header>
-  <p class="dialog-intro">
-    The model finds the targets in every frame; the review measures your aim from what it finds. New
-    reviews use the model you pick. Each recording keeps its reviews by other models, so switching
-    back is instant.
-  </p>
-  <!-- The models and the choice load on their own (fetched ahead when the page is idle) when it first opens, and stay -->
-  @defer (when opened(); prefetch on idle) {
-    <app-model-choice #choice />
-  }
+  <div class="dialog-body fill">
+    <p class="dialog-intro">
+      The model finds the targets in every frame; the review measures your aim from what it finds.
+      New reviews use the model you pick. Each recording keeps its reviews by other models, so
+      switching back is instant.
+    </p>
+    <!-- The models and the choice load on their own (fetched ahead when the page is idle) when it first opens, and stay -->
+    @defer (when opened(); prefetch on idle) {
+      <app-model-choice #choice />
+    }
+  </div>
 </dialog>

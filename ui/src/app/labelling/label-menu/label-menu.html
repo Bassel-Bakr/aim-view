@@ -28,38 +28,49 @@
       <h2 id="examples-title">Area examples</h2>
       <button type="button" appButton (click)="closeExamples()">Close</button>
     </header>
-    <p class="dialog-intro">
-      The area finder learns from the areas you save: each saved area is an example of its type, and
-      each area it found that you removed is an example of none. Here they stay in this browser.
-      Download them as the review server's files to keep them or to use them there
-      (test_out/vod_app/), or load the server's files to start from what you labelled there.
-    </p>
-    @if (count(); as c) {
-      <p class="count">
-        {{ c.examples | number }} examples from {{ c.recordings | number }} recordings,
-        {{ c.kinds }} area types
+    <div class="dialog-body fill">
+      <p class="dialog-intro">
+        The area finder learns from the areas you save: each saved area is an example of its type,
+        and each area it found that you removed is an example of none. Here they stay in this
+        browser. Download them as the review server's files to keep them or to use them there
+        (test_out/vod_app/), or load the server's files to start from what you labelled there.
       </p>
-    }
-    <div class="actions">
-      @for (name of store.fileNames; track name) {
-        <button type="button" appButton (click)="downloadFile(name)">Download {{ name }}</button>
+      @if (count(); as c) {
+        <p class="count">
+          {{ c.examples | number }} examples from {{ c.recordings | number }} recordings,
+          {{ c.kinds }} area types
+        </p>
       }
-      <button
-        type="button"
-        appButton
-        intent="primary"
-        title="Choose area_examples.jsonl and area_kinds.json (test_out/vod_app/): each recording's examples and each area type in them replace the ones kept here"
-        [disabled]="loading()"
-        (click)="files.click()"
-      >
-        Load files
-      </button>
-      <input #files type="file" multiple hidden accept=".jsonl,.json" (change)="loadFiles(files)" />
     </div>
-    @if (status(); as s) {
-      <p class="note status-line" [attr.role]="s.failed ? 'alert' : 'status'">
-        {{ s.text }}
-      </p>
-    }
+    <footer class="dialog-foot">
+      <div class="actions">
+        @for (name of store.fileNames; track name) {
+          <button type="button" appButton (click)="downloadFile(name)">Download {{ name }}</button>
+        }
+        <button
+          type="button"
+          appButton
+          intent="primary"
+          title="Choose area_examples.jsonl and area_kinds.json (test_out/vod_app/): each recording's examples and each area type in them replace the ones kept here"
+          [disabled]="loading()"
+          (click)="files.click()"
+        >
+          Load files
+        </button>
+        <input
+          #files
+          type="file"
+          multiple
+          hidden
+          accept=".jsonl,.json"
+          (change)="loadFiles(files)"
+        />
+      </div>
+      @if (status(); as s) {
+        <p class="note status-line" [attr.role]="s.failed ? 'alert' : 'status'">
+          {{ s.text }}
+        </p>
+      }
+    </footer>
   </dialog>
 }

@@ -13,57 +13,59 @@
     <h2 id="link-title">From a link</h2>
     <button type="button" appButton (click)="close()">Close</button>
   </header>
-  <form class="link-form" aria-label="From a link" (submit)="addLink($event)">
-    <input
-      class="field"
-      type="url"
-      aria-label="Link"
-      placeholder="YouTube, Twitch, Medal, or a video file's address"
-      [formField]="fields.url"
-      (paste)="readPasted()"
-    />
-    <button
-      type="submit"
-      appButton
-      intent="primary"
-      [disabled]="fields.url().invalid() || !!busy()"
-    >
-      Add
-    </button>
-  </form>
-  @if (choices().length) {
-    <label class="quality">
-      <span>Quality</span>
-      <select class="field" [formField]="fields.format">
-        @for (c of choices(); track c.id) {
-          <option [value]="c.id">{{ c.label }}</option>
-        }
-      </select>
-    </label>
-    <p class="section-note">
-      The sharpest source and the highest frame rate review best: the detector and the HUD reader
-      see more, and flick times are finer.
-    </p>
-  }
-  @if (busy(); as b) {
-    <p class="status" role="status">
-      <span class="spinner" aria-hidden="true"></span>
-      {{ b }}…
-    </p>
-  } @else if (problem(); as p) {
-    <p class="status-line" role="alert">{{ p }}</p>
-  } @else if (info(); as i) {
-    <p class="status" role="status">{{ i.title }}</p>
-  }
-  @if (server; as s) {
-    <label class="quality">
-      <span>Server for links</span>
-      <input class="field" type="url" aria-label="Server for links" [formField]="s" />
-    </label>
-    <p class="section-note">
-      This browser downloads a video file's address itself when the site allows it. Other links
-      (YouTube, Twitch, Medal...) go through the Aim View server on this computer: start it with bun
-      run server.
-    </p>
-  }
+  <div class="dialog-body fill">
+    <form class="link-form" aria-label="From a link" (submit)="addLink($event)">
+      <input
+        class="field"
+        type="url"
+        aria-label="Link"
+        placeholder="YouTube, Twitch, Medal, or a video file's address"
+        [formField]="fields.url"
+        (paste)="readPasted()"
+      />
+      <button
+        type="submit"
+        appButton
+        intent="primary"
+        [disabled]="fields.url().invalid() || !!busy()"
+      >
+        Add
+      </button>
+    </form>
+    @if (choices().length) {
+      <label class="quality">
+        <span>Quality</span>
+        <select class="field" [formField]="fields.format">
+          @for (c of choices(); track c.id) {
+            <option [value]="c.id">{{ c.label }}</option>
+          }
+        </select>
+      </label>
+      <p class="section-note">
+        The sharpest source and the highest frame rate review best: the detector and the HUD reader
+        see more, and flick times are finer.
+      </p>
+    }
+    @if (busy(); as b) {
+      <p class="status" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        {{ b }}…
+      </p>
+    } @else if (problem(); as p) {
+      <p class="status-line" role="alert">{{ p }}</p>
+    } @else if (info(); as i) {
+      <p class="status" role="status">{{ i.title }}</p>
+    }
+    @if (server; as s) {
+      <label class="quality">
+        <span>Server for links</span>
+        <input class="field" type="url" aria-label="Server for links" [formField]="s" />
+      </label>
+      <p class="section-note">
+        This browser downloads a video file's address itself when the site allows it. Other links
+        (YouTube, Twitch, Medal...) go through the Aim View server on this computer: start it with
+        bun run server.
+      </p>
+    }
+  </div>
 </dialog>

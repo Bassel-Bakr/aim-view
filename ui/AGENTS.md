@@ -54,7 +54,9 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   component's SCSS starts with `@reference` to `tailwind.css`, so `@apply` reaches the token theme (Sass compiles
   first, then Tailwind). The shared controls are global classes in `ui/src/themes/controls.scss` (`.button`, `.badge`,
   `.chip`, `.card`, `.pill`, `.segmented`, `.switch`, `.section-note`, `.color-swatch`, `.dialog`, `.tool-panel`,
-  `.status-line`). A variant is a data attribute (`&[data-intent='primary']`), set by the control's directive in
+  `.status-line`, `.fill`). A part that takes the room left in a flex column or a grid row is a `.fill` (it may
+  shrink below its content, so what scrolls inside it scrolls there); a dialog never scrolls as a whole, only its
+  `.dialog-body .fill`, between its header and its `<footer class="dialog-foot">`. A variant is a data attribute (`&[data-intent='primary']`), set by the control's directive in
   `ui/src/app/controls/` from a typed input (`<button appButton intent="primary">`, `<span appBadge tone="good">`),
   so templates get type checks. Where HTML or ARIA already says the state, the style reads it instead, with no
   directive: a `.status-line` binds its role (`[attr.role]="n.failed ? 'alert' : 'status'"`) and is styled by it,
