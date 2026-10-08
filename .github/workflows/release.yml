@@ -84,8 +84,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun install --frozen-lockfile
         working-directory: ui
+      # a lint error or a failing UI test stops the release (the release job needs this one)
+      - run: bun run --cwd ui lint
       - run: bun scripts/stamp-version.ts ${{ needs.version.outputs.version }}
       - run: bun run build:browser
+      # after the build, which makes the assets (the core's WebAssembly, the models) the tests may load
+      - run: bun run --cwd ui test --watch=false
       - name: Package
         run: |
           cd ui/dist/browser/browser
