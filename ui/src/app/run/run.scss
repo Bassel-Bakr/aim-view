@@ -10,6 +10,9 @@
   .side {
     flex: 0 1 r.$side-width;
     min-width: r.$side-min-width;
+
+    // too narrow for both side by side (the stack width, tailwind.css): it goes under the video
+    @apply @max-stack:flex-none;
   }
 }
 
@@ -57,8 +60,10 @@
     @apply relative flex gap-3 px-6 text-xs leading-12;
   }
 
+  // Too narrow for both side by side: the side column goes under the video. Both take the page's width: aligned to the
+  // start, a column would be as wide as its widest content (the video and the canvases, up to the player's width)
   .stage {
-    @apply flex items-start gap-7;
+    @apply flex items-start gap-7 @max-stack:flex-col @max-stack:items-stretch;
   }
 
   // all the width the side column leaves
@@ -68,18 +73,5 @@
 
   .report {
     @apply block;
-  }
-
-  // Too narrow for both side by side: the side column goes under the video. Both take the page's width: aligned to the
-  // start, a column would be as wide as its widest content (the video and the canvases, up to the player's width). Last
-  // in the file, so it overrides the rules above
-  @container (max-width: #{r.$stack-width}) {
-    .stage {
-      @apply flex-col items-stretch;
-    }
-
-    .side {
-      @apply flex-none;
-    }
   }
 }

@@ -5,7 +5,11 @@
  * colors, sizes and fonts are switched off (--*: initial), so a class can only reach a token. Plain CSS, not SCSS:
  * Tailwind 4 does not run through Sass.
  */
-@import 'tailwindcss';
+/*
+ * Class names are looked for in ui/src only: the docs and the retired code (in git, never shipped) name classes too,
+ * which would otherwise ship as CSS (AGENTS.md's p-[13px] did).
+ */
+@import 'tailwindcss' source('.');
 
 @theme inline reference {
   --*: initial;
@@ -76,4 +80,13 @@
   --leading-tight: var(--line-height-tight);
   --tracking-tight: var(--letter-spacing-tight);
   --tracking-wide: var(--letter-spacing-wide);
+
+  /*
+   * Widths for variants: max-narrow: is a phone's screen (themes/layout.scss --narrow-width is its last width, 767px),
+   * @max-stack: a run page too narrow for the flick list beside the video. Literal values: media and container
+   * queries cannot read a variable. The main area is the container (app.scss .main). The data table's card widths
+   * stay in themes/data-table.scss: they switch a whole set of nested rules, not utilities.
+   */
+  --breakpoint-narrow: 768px;
+  --container-stack: 1080px;
 }

@@ -58,9 +58,6 @@ $side-min-width: var(--side-min-width);
 $flick-list-stacked-height: var(--flick-list-stacked-height);
 $flick-list-cell-padding: var(--flick-list-cell-padding);
 $flick-list-inset: var(--flick-list-inset);
-// Below this width of the run page the flick list goes under the video. A container query cannot read a CSS
-// variable, so this one value is Sass only.
-$stack-width: 1080px;
 $speed-chart-height: var(--speed-chart-height);
 $chart-line-width: var(--chart-line-width);
 $chart-dash: var(--chart-dash);

@@ -21,9 +21,9 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 39.5 s | 37.8 s | 2 | 2026-10-07, b9f96dc+ |
 | assets | profile wasm-dev, modes browser | 52.9 s | 49.8 s | 3 | 2026-10-08, ef0ad29+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 0.2 s | 0.3 s | 5 | 2026-10-08, ef0ad29+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 2.8 s | 0.3 s | 6 | 2026-10-08, 025d9f0+ |
 | assets: core and service wasm (cargo) | profile release | 57.1 s | 28.7 s | 2 | 2026-10-07, 78c5844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 0.2 s | 5.4 s | 8 | 2026-10-08, ef0ad29+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 2.7 s | 2.7 s | 9 | 2026-10-08, 025d9f0+ |
 | assets: core wasm (cargo) | profile release | 39.4 s | 37.7 s | 2 | 2026-10-07, b9f96dc+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
@@ -35,10 +35,10 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode browser | 6 s | 6.0 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 3.7 s | 4.2 s | 4 | 2026-10-07, 78c5844+ |
-| lint:ui | - | 4 s | 4.0 s | 8 | 2026-10-08, ef0ad29+ |
+| lint:ui | - | 5.9 s | 5.9 s | 9 | 2026-10-08, 025d9f0+ |
 | rust-tests | profile quick | 42.7 s | 25.2 s | 5 | 2026-10-08, ef0ad29+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 8.9 s | 8.8 s | 4 | 2026-10-08, ef0ad29+ |
+| test:ui | - | 12.6 s | 8.9 s | 5 | 2026-10-08, 025d9f0+ |
 <!-- costs:end -->
 
 ## Recorded by hand

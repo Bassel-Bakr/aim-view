@@ -44,8 +44,11 @@ The rules for work under `ui/`. The project's other rules are in the root `AGENT
   colors and fonts from the same CSS variables.
 - **Tailwind on the tokens.** `ui/src/tailwind.css` maps Tailwind 4's theme onto the tokens (`@theme inline reference`,
   Tailwind's own scales off), so a class can only reach a token: `bg-surface-1`, `text-muted`, `p-4` (4 x `--space-1`),
-  `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`. Page-wide element styles are in `@layer base`, named
-  classes in `@layer components`, so a utility on an element always wins.
+  `w-(--sidebar-width)`. No arbitrary values such as `p-[13px]`: `bun run lint:ui` fails on one
+  (`scripts/tailwind-values.ts`). Two widths are variants: `max-narrow:` (a phone) and `@max-stack:` (a run page too
+  narrow for the flick list beside the video, measured on the main area). Tailwind looks for class names in `ui/src`
+  only, so the docs and `ui/retired/` add no CSS. Page-wide element styles are in `@layer base`, named classes in
+  `@layer components`, so a utility on an element always wins.
 - **Named classes in SCSS, variants as data attributes.** Each part of a component is a class in its own SCSS
   (`.screen { @apply relative overflow-hidden rounded-lg; }`), and the template names it (`class="screen"`). A
   component's SCSS starts with `@reference` to `tailwind.css`, so `@apply` reaches the token theme (Sass compiles
