@@ -85,6 +85,9 @@ export class Timeline {
   private follow(): void {
     const box = this.box().nativeElement;
     const stop = this.playback.onFrame((seconds) => this.moveHead(seconds));
+    // the width now, from the layout: a resize observer first calls back on the next frame drawn, which a page not on
+    // screen does not draw
+    this.widthPx.set(Math.round(box.clientWidth));
     const resize = new ResizeObserver(([entry]) =>
       this.widthPx.set(Math.round(entry.contentRect.width)),
     );

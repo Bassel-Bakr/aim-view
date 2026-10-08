@@ -122,6 +122,10 @@ export class ProgressChart {
   /** The chart follows its own size; the pointer shows a run's tip, and a click opens it. */
   private follow(): void {
     const box = this.box().nativeElement;
+    // the size now, from the layout: a resize observer first calls back on the next frame drawn, which a page not on
+    // screen does not draw
+    const { width, height } = this.chart().nativeElement.getBoundingClientRect();
+    this.size.set({ width, height });
     const resize = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       this.size.set({ width, height });
