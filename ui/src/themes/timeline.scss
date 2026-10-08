@@ -8,6 +8,10 @@
   --timeline-head: var(--warning);
   --timeline-death: var(--text-primary);
   --timeline-font: var(--font-size-xs) var(--font-family);
+  // the scale's labels over the chart: on the page's own surface, so they read in both themes
+  --timeline-label-bg: oklch(from var(--surface-0) l c h / 0.75);
+  --timeline-label-height: 14px;
+  --timeline-dash: 3 4;
   --timeline-swatch: var(--swatch-size);
   --timeline-swatch-radius: var(--swatch-radius);
   // The kill lanes: the labels' column, the height, the kills' lane and its marks, and each kill time's bar (px)
@@ -23,6 +27,9 @@
 $height: var(--timeline-height);
 $head-width: var(--timeline-head-width);
 $head: var(--timeline-head);
+$death: var(--timeline-death);
+$label-bg: var(--timeline-label-bg);
+$dash: var(--timeline-dash);
 $swatch: var(--timeline-swatch);
 $swatch-radius: var(--timeline-swatch-radius);
 $lanes-height: var(--kill-lanes-height);

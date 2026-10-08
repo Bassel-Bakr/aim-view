@@ -51,6 +51,60 @@
     @apply block size-full;
   }
 
+  // The shapes' colors (timeline-model.ts gives the shapes): the grid, the distance areas (the furthest light behind
+  // the average), the strip by state, the deaths, the seconds and the scale's labels
+  .grid {
+    @apply stroke-grid;
+
+    &[data-dashed] {
+      stroke-dasharray: tl.$dash;
+    }
+  }
+
+  .area {
+    @apply fill-off-target;
+
+    &[data-kind='furthest'] {
+      @apply opacity-35;
+    }
+
+    &[data-kind='mean'] {
+      @apply opacity-90;
+    }
+  }
+
+  .strip {
+    &[data-state='no-bot'] {
+      @apply fill-grid;
+    }
+
+    &[data-state='on'] {
+      @apply fill-on-target;
+    }
+
+    &[data-state='off'] {
+      @apply fill-off-target;
+    }
+
+    &[data-state='switching'] {
+      @apply fill-muted;
+    }
+  }
+
+  .death {
+    fill: tl.$death;
+  }
+
+  .second {
+    @apply fill-secondary text-xs;
+  }
+
+  .scale-label {
+    @apply absolute left-0 px-2 text-xs leading-(--timeline-label-height) text-secondary;
+
+    background: tl.$label-bg;
+  }
+
   .head {
     @apply absolute top-1 bottom-9;
   }

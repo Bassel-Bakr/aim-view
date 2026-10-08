@@ -3,8 +3,8 @@
  *
  * In: the tracking report and its tracks (run.ts), the video's time (Playback), and the user's
  * pointer and keys.
- * Out: the timeline drawn on a canvas (timeline-drawing.ts) with the playhead over it; the pointer
- * and the keys seek the video.
+ * Out: the timeline as SVG (its shapes from timeline-model.ts, its colors from the stylesheet) with the playhead
+ * over it; the pointer and the keys seek the video.
  */
 
 import {
@@ -16,14 +16,14 @@ import {
   ElementRef,
   inject,
   input,
+  signal,
   untracked,
   viewChild,
 } from '@angular/core';
 import { TrackReport, Tracks } from '../../api';
 import { Playback } from '../playback';
 import { describe, timeline } from '../track';
-import { drawTimeline, readTimelineStyle } from './timeline-drawing';
-import { canvasStyle } from '../../services/theme';
+import { timelineChart } from './timeline-model';
 
 /** Seconds the arrow keys move. */
 const STEP_SECONDS = 1;
@@ -51,8 +51,6 @@ export class Timeline {
   private readonly destroyRef = inject(DestroyRef);
   /** The timeline's box: the slider that takes the pointer and the keys. */
   private readonly box = viewChild.required<ElementRef<HTMLElement>>('box');
-  /** The canvas the timeline is drawn on. */
-  private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('chart');
   /** The playhead, moved on every frame outside the template. */
   private readonly head = viewChild.required<ElementRef<HTMLElement>>('head');
   /** The tip that describes the moment under the pointer. */
@@ -64,16 +62,20 @@ export class Timeline {
   protected readonly runSeconds = computed(() =>
     Math.round(this.data().frameCount / this.data().fps),
   );
-  /** The timeline's colors and sizes, read from the tokens on the first draw. */
-  private readonly style = canvasStyle(() => this.canvas().nativeElement, readTimelineStyle);
+  /** The chart's width on screen, in CSS pixels: the timeline is laid out per pixel column. */
+  private readonly widthPx = signal(0);
+  /** The timeline's shapes, once the chart has a width. */
+  protected readonly chart = computed(() => {
+    const widthPx = this.widthPx();
+    return widthPx ? timelineChart(this.data(), widthPx) : null;
+  });
 
-  /** Starts following the video after the first render, and redraws when the run's data changes. */
+  /** Starts following the video after the first render, and places the playhead when the chart changes. */
   constructor() {
     afterNextRender(() => this.follow());
     afterRenderEffect(() => {
-      this.data();
-      this.style();
-      untracked(() => this.draw());
+      this.chart();
+      untracked(() => this.moveHead(this.playback.time));
     });
   }
 
@@ -83,7 +85,9 @@ export class Timeline {
   private follow(): void {
     const box = this.box().nativeElement;
     const stop = this.playback.onFrame((seconds) => this.moveHead(seconds));
-    const resize = new ResizeObserver(() => this.draw());
+    const resize = new ResizeObserver(([entry]) =>
+      this.widthPx.set(Math.round(entry.contentRect.width)),
+    );
     resize.observe(box);
     let dragging = false;
     const down = (event: PointerEvent) => {
@@ -109,25 +113,6 @@ export class Timeline {
       box.removeEventListener('pointerup', up);
       box.removeEventListener('pointerleave', leave);
     });
-  }
-
-  /**
-   * Sizes the canvas to its box at the screen's pixel ratio, draws the timeline and puts the
-   * playhead at the video's time; nothing while the canvas has no width.
-   */
-  private draw(): void {
-    const canvas = this.canvas().nativeElement;
-    const widthPx = canvas.clientWidth;
-    const heightPx = canvas.clientHeight;
-    if (!widthPx) return;
-    const pixelRatio = devicePixelRatio || 1;
-    canvas.width = Math.round(widthPx * pixelRatio);
-    canvas.height = Math.round(heightPx * pixelRatio);
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    drawTimeline(context, this.data(), widthPx, heightPx, this.style());
-    this.moveHead(this.playback.time);
   }
 
   /** The frame (counted from the run's start) under the pointer. */

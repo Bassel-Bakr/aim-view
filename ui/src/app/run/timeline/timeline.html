@@ -16,7 +16,40 @@
   [attr.aria-valuemax]="runSeconds()"
   (keydown)="moveWithKeys($event)"
 >
-  <canvas class="chart" #chart aria-hidden="true"></canvas>
+  @if (chart(); as c) {
+    <svg class="chart" aria-hidden="true" [attr.viewBox]="'0 0 ' + c.width + ' ' + c.height">
+      @for (line of c.grid; track line.y) {
+        <line
+          class="grid"
+          [attr.data-dashed]="line.dashed ? '' : null"
+          x1="0"
+          [attr.x2]="c.width"
+          [attr.y1]="line.y"
+          [attr.y2]="line.y"
+        />
+      }
+      <path class="area" data-kind="furthest" [attr.d]="c.furthest" />
+      <path class="area" data-kind="mean" [attr.d]="c.mean" />
+      <path class="strip" data-state="no-bot" [attr.d]="c.strip.noBot" />
+      <path class="strip" data-state="on" [attr.d]="c.strip.on" />
+      <path class="strip" data-state="off" [attr.d]="c.strip.off" />
+      <path class="strip" data-state="switching" [attr.d]="c.strip.switching" />
+      <path class="death" [attr.d]="c.deaths" />
+      @for (second of c.seconds; track second.text) {
+        <text
+          class="second"
+          [attr.x]="second.x"
+          [attr.y]="c.secondsY"
+          [attr.text-anchor]="second.anchor"
+        >
+          {{ second.text }}
+        </text>
+      }
+    </svg>
+    @for (label of c.scale; track label.text) {
+      <span class="scale-label" [style.top.px]="label.top">{{ label.text }}</span>
+    }
+  }
   <div #head class="head" hidden aria-hidden="true"></div>
   <div class="tip" #tip hidden aria-hidden="true"></div>
 </div>
