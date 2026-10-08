@@ -33,7 +33,7 @@ export class Playback {
   /** Whether the video is paused; the player sets it from the video's own events. */
   readonly paused = signal(true);
   /** The playback speed (one of RATES, or what the browser's own controls set). */
-  readonly rate = signal(0.25);
+  readonly rate = signal(1);
   /** The video's length in seconds (0 before it loads); the player sets it. */
   readonly duration = signal(0);
   /** The time of the frame on screen, in seconds; not a signal, since it changes every frame. */
