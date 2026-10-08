@@ -32,7 +32,7 @@
   --crop-page-width: 560px;
   --crop-meter-height: 4px;
   // A fix's tools in the answer bar: at most this share of the screen, the rest scrolls
-  --crop-tools-max-height: 45dvh;
+  --crop-tools-max-height: 45dvh; // viewport-height-ok: under half a phone screen
 }
 
 $crop-wrong: var(--crop-wrong);

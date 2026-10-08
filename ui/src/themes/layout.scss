@@ -6,7 +6,7 @@
   // The top bar: a shade darker than the page, like a title bar
   --surface-bar: #0a0c0f;
   --empty-width: 560px;
-  --empty-offset: 12vh;
+  --empty-offset: 12vh; // viewport-height-ok: a margin, not a height
   // At this width and below (a phone) the app takes its narrow layout: the recordings list is a drawer over the page.
   // pages.ts reads it; $narrow-width below is the same value, for media queries, which cannot read a variable.
   --narrow-width: 767px;

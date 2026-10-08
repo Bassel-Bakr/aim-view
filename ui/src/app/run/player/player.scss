@@ -11,6 +11,7 @@
   .screen {
     --screen-ratio: 16 / 9;
 
+    // viewport-height-ok: the video fits the window, with the controls under it
     width: min(100%, (100dvh - p.$room-below) * var(--screen-ratio));
     margin-inline: auto;
     aspect-ratio: var(--screen-ratio);

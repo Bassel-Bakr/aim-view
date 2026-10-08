@@ -114,14 +114,14 @@
   // black
   .pip-body {
     display: grid;
-    min-height: 100vh;
+    min-height: 100vh; // viewport-height-ok: the picture-in-picture window is the page
     margin: 0;
     background: player.$pip-background;
     place-items: center;
 
     // the player's video, as large as the window allows, its overlay over it
     > .screen {
-      width: min(100vw, 100vh * var(--screen-ratio));
+      width: min(100vw, 100vh * var(--screen-ratio)); // viewport-height-ok: fits that window
       margin: auto;
       border-radius: 0;
       box-shadow: none;

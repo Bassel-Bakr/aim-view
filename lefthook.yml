@@ -23,7 +23,7 @@ pre-commit:
             run: bunx eslint --cache --cache-location .angular/cache/eslint-hook --no-warn-ignored {staged_files}
           - name: ui-styles
             glob: 'ui/src/**/*.{scss,css,html,ts}'
-            run: bun scripts/tailwind-values.ts && bun scripts/status-lines.ts
+            run: bun scripts/tailwind-values.ts && bun scripts/status-lines.ts && bun scripts/viewport-heights.ts
           - name: ruff
             glob: '*.py'
             run: python -m ruff check --quiet {staged_files}

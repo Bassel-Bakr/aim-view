@@ -2,7 +2,7 @@
 
 @mixin tokens {
   --dialog-width: 1040px;
-  --dialog-max-height: 88vh;
+  --dialog-max-height: 88dvh; // viewport-height-ok: a modal is over the window
   --examples-dialog-width: 640px;
   --link-dialog-width: 640px;
   --model-prose-width: 240px;
