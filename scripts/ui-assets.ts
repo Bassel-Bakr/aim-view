@@ -44,8 +44,13 @@ const forBrowser = modes.includes('browser');
 const profile = release ? 'release' : 'wasm-dev';
 /** Where cargo puts the WebAssembly modules of that profile. */
 const built = join(ROOT, 'target', 'wasm32-unknown-unknown', profile);
-/** wasm-opt's optimization level: -O2 for --release; the quick build's -O1 gives the same size in half the time. */
-const level = release ? '-O2' : '-O1';
+/**
+ * wasm-opt's optimization level: -O2 for --release (the shipped build). Dev builds take -O0 (7 s against -O1's 44 s,
+ * docs/COSTS.md): Asyncify unoptimized, a module twice the size whose requests take 1 to 1.9 times as long
+ * (measured 2026-10-08: a scenario's history 38 ms against 20, a review's tracks 12 ms against 8, start 418 ms
+ * against 364); the review itself runs in the core's module, which wasm-opt does not touch.
+ */
+const level = release ? '-O2' : '-O0';
 /** The WebAssembly features rustc's output uses, which wasm-opt must keep. */
 const features = [
   '--enable-simd',

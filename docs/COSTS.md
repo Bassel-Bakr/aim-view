@@ -20,14 +20,15 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | --- | --- | --- | --- | --- | --- |
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 39.5 s | 37.8 s | 2 | 2026-10-07, b9f96dc+ |
-| assets | profile wasm-dev, modes browser | 53.2 s | 51.3 s | 4 | 2026-10-08, c063741+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 51.3 s | 0.3 s | 8 | 2026-10-08, d12d258+ |
+| assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 0.3 s | 0.3 s | 9 | 2026-10-08, f61190c+ |
 | assets: core and service wasm (cargo) | profile release | 57.1 s | 28.7 s | 2 | 2026-10-07, 78c5844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 7.2 s | 2.7 s | 12 | 2026-10-08, d12d258 |
+| assets: core and service wasm (cargo) | profile wasm-dev | 0.2 s | 0.2 s | 14 | 2026-10-08, f61190c+ |
 | assets: core wasm (cargo) | profile release | 39.4 s | 37.7 s | 2 | 2026-10-07, b9f96dc+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O1 | 44 s | 44.8 s | 7 | 2026-10-08, d12d258+ |
+| assets: wasm-opt (Asyncify) | level -O0 | 7 s | 7.0 s | 2 | 2026-10-08, f61190c+ |
+| assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 60.3 s | 60.3 s | 1 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular at once | 63.3 s | 34.2 s | 2 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular one at a time | 182.7 s | 182.7 s | 1 | 2026-10-07, 78c5844+ |
