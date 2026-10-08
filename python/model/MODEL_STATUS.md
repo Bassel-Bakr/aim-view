@@ -663,6 +663,28 @@ and large_v11's 141) and kept the robots (Smoothbot 45 flicks against 46). Expor
 | Video alone, static: recall, precision | 0.9537, 0.9695 | 0.9396, 0.9691 | 0.0100, 0.0073 |
 | Gate | PASS | | |
 
+## Automatic labels scored against the checked crops (2026-10-08)
+
+Before labelling more recordings without anyone drawing, `label_score.py` scored the labellers against every crop the
+user checked by eye (data_moving_themes 405, data_mined 110, hand_small 46, teacher_robots 104). "pixels" is
+build_auto_labels.py's pixel rules with the target's color learned from the recording's other checked crops (as it
+would be learned from a recording's kills), the crop's own left out. "model" is the model whose boxes the user checked
+then (full_v3 on the themes and mined sets; on hand_small and teacher_robots its boxes are the ones shown, so it is no
+independent score there). "agree" is the pixel boxes a model box matches (IoU 0.5). Recall, precision, and the median
+box error |dx|, |dy|, |dw|, |dh| in pixels:
+
+| Set | model | pixels | agree |
+| --- | --- | --- | --- |
+| themes, all 405 | 0.90, 0.83; 0.7 0.6 1.6 1.3 | 0.86, 0.84; 0.3 0.4 1.0 1.1 | 0.81, 0.99; 0.3 0.35 0.9 1.1 |
+| mined 110 | 0.80, 0.86 | 0.55, 0.76 | 0.54, 1.00 |
+| small targets 46 | (shown) | 0.86, 0.69 | 0.75, 1.00 |
+| robots 104 | (shown) | 0.04, 0.01 | 0.04, 1.00 |
+
+Where the two agree, 417 of 420 boxes are right, and the boxes are tighter than the model's (the user's own finding that
+full_v3's boxes run big). The pixels alone are no labeller: extra boxes on small targets (0.69 precision), and nothing on
+robots, whose many colors no one color covers (the teacher labels those). So an automatic batch can split in two: the
+agreed boxes, checked by a sample, and everything else, checked whole.
+
 ## Current best model
 
 **large_v13e4** (2026-10-06, "large_v12 and large_v13" above), threshold 0.3, and on tracking runs weaker boxes at the
