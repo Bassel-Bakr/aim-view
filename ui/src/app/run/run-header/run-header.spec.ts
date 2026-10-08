@@ -1,11 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { ClickReport, Report, Source } from '../../api';
+import { ClickReport, Report, Source, TrackReport } from '../../api';
 import { recording } from '../../fake-api';
 import { RunHeader } from './run-header';
 
 /** A report whose kills came from the source. */
 function from(source: Source): Report {
   return { mode: 'click', summary: { info: { source } } } as ClickReport;
+}
+
+/** A tracking run's report whose score and deaths came from the source. */
+function trackedFrom(source: Source): Report {
+  return { mode: 'track', summary: { info: { source } } } as TrackReport;
 }
 
 async function label(report: Report | null, stats = true): Promise<HTMLElement> {
@@ -29,6 +34,17 @@ describe('RunHeader', () => {
       'Kills from the video alone (no score, shots or accuracy)',
     );
     expect(video.dataset['tone']).toBe('neutral');
+  });
+
+  it('says where a tracking run’s score came from, not its kills', async () => {
+    expect((await label(trackedFrom('stats'))).textContent?.trim()).toBe(
+      'Score from the stats file',
+    );
+    const video = await label(trackedFrom('video'));
+    expect(video.textContent?.trim()).toBe('From the video alone (no score or accuracy)');
+    expect(video.dataset['tooltip']).toBe(
+      'The time on the target measured in the video alone: no score or accuracy',
+    );
   });
 
   it('says whether there is a stats file before there is a review', async () => {
