@@ -47,6 +47,32 @@
     @apply block size-full;
   }
 
+  // The shapes' colors (kill-lanes-model.ts gives the shapes): the line between the lanes, each kill's mark, and its
+  // time as a bar, coral past a second, the picked kill's mark and bar apart
+  .lane-line {
+    @apply fill-grid;
+  }
+
+  .mark {
+    @apply fill-accent;
+
+    &[data-tone='picked'] {
+      @apply fill-primary;
+    }
+  }
+
+  .bar {
+    @apply fill-series-quiet;
+
+    &[data-tone='long'] {
+      @apply fill-attention;
+    }
+
+    &[data-tone='picked'] {
+      @apply fill-primary;
+    }
+  }
+
   .head {
     @apply absolute inset-y-0;
   }

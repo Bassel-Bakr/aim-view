@@ -3,8 +3,8 @@
  *
  * In: the clicking report, the video's time (Playback), the picked kill (FlickFocus) and the user's
  * pointer and arrow keys.
- * Out: the lanes drawn on a canvas (kill-lanes-drawing.ts) with the playhead over them; a click
- * plays a kill or seeks the video.
+ * Out: the lanes as SVG (their shapes from kill-lanes-model.ts, their colors from the stylesheet) with the
+ * playhead over them; a click plays a kill or seeks the video.
  */
 
 import {
@@ -23,8 +23,7 @@ import { ClickReport, Flick } from '../../api';
 import { formatCount, formatDegrees, formatMs } from '../../format';
 import { FlickFocus } from '../flick-focus';
 import { Playback } from '../playback';
-import { drawKillLanes, readStyle } from './kill-lanes-drawing';
-import { canvasStyle } from '../../services/theme';
+import { killLanes } from './kill-lanes-model';
 
 /** How near a kill the pointer must be to pick it, in pixels. */
 const PICK_DISTANCE = 6;
@@ -52,8 +51,6 @@ export class KillLanes {
   private readonly destroyRef = inject(DestroyRef);
   /** The lanes' box: the slider that takes the pointer and the keys. */
   private readonly box = viewChild.required<ElementRef<HTMLElement>>('box');
-  /** The canvas the lanes are drawn on. */
-  private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('lanes');
   /** The playhead, moved on every frame outside the template. */
   private readonly head = viewChild.required<ElementRef<HTMLElement>>('head');
   /** The tip that names the kill under the pointer. */
@@ -70,21 +67,17 @@ export class KillLanes {
       (last ? last.kill_frame / report.fps + STEP_SECONDS : STEP_SECONDS)
     );
   });
-  /** The lanes' colors and sizes, read from the tokens on the first draw. */
-  private readonly style = canvasStyle(() => this.canvas().nativeElement, readStyle);
+  /** The lanes' shapes: each kill's mark and bar, the picked one apart. */
+  protected readonly lanes = computed(() =>
+    killLanes(this.report(), this.seconds(), this.focus.selected()),
+  );
 
-  /**
-   * Starts following the video after the first render, and redraws when the kills or the pick
-   * change.
-   */
+  /** Starts following the video after the first render, and places the playhead when the run's length changes. */
   constructor() {
     afterNextRender(() => this.follow());
     afterRenderEffect(() => {
-      this.report();
       this.seconds();
-      this.focus.selected();
-      this.style();
-      untracked(() => this.draw());
+      untracked(() => this.moveHead(this.playback.time));
     });
   }
 
@@ -92,8 +85,6 @@ export class KillLanes {
   private follow(): void {
     const box = this.box().nativeElement;
     const stop = this.playback.onFrame((seconds) => this.moveHead(seconds));
-    const resize = new ResizeObserver(() => this.draw());
-    resize.observe(box);
     let dragging = false;
     const down = (event: PointerEvent) => {
       const near = this.flickNear(event);
@@ -117,40 +108,11 @@ export class KillLanes {
     box.addEventListener('pointerleave', leave);
     this.destroyRef.onDestroy(() => {
       stop();
-      resize.disconnect();
       box.removeEventListener('pointerdown', down);
       box.removeEventListener('pointermove', move);
       box.removeEventListener('pointerup', up);
       box.removeEventListener('pointerleave', leave);
     });
-  }
-
-  /**
-   * Sizes the canvas to its box at the screen's pixel ratio, draws the lanes and puts the playhead
-   * at the video's time; nothing while the canvas has no width.
-   */
-  private draw(): void {
-    const canvas = this.canvas().nativeElement;
-    const widthPx = canvas.clientWidth;
-    const heightPx = canvas.clientHeight;
-    if (!widthPx) return;
-    const pixelRatio = devicePixelRatio || 1;
-    canvas.width = Math.round(widthPx * pixelRatio);
-    canvas.height = Math.round(heightPx * pixelRatio);
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    const style = this.style();
-    drawKillLanes(
-      context,
-      this.report(),
-      widthPx,
-      heightPx,
-      this.seconds(),
-      this.focus.selected(),
-      style,
-    );
-    this.moveHead(this.playback.time);
   }
 
   /** Puts the playhead at `seconds` into the run, and tells assistive tech the slider's value. */

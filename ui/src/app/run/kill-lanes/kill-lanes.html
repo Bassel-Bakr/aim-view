@@ -17,7 +17,30 @@
   [attr.aria-valuemax]="seconds()"
   (keydown)="moveWithKeys($event)"
 >
-  <canvas class="lanes" #lanes aria-hidden="true"></canvas>
+  @let m = lanes();
+  <svg class="lanes" aria-hidden="true">
+    <rect class="lane-line" x="0" width="100%" [attr.y]="m.split" height="1" />
+    @for (k of m.kills; track k.flick.kill_number) {
+      <rect
+        class="mark"
+        [attr.data-tone]="k.picked ? 'picked' : null"
+        [attr.x]="k.atPercent + '%'"
+        [attr.y]="m.markTop"
+        [attr.width]="m.markWidth"
+        [attr.height]="m.markHeight"
+        [attr.transform]="'translate(' + -m.markWidth / 2 + ' 0)'"
+      />
+      <rect
+        class="bar"
+        [attr.data-tone]="k.tone"
+        [attr.x]="k.atPercent + '%'"
+        [attr.y]="k.barTop"
+        [attr.width]="m.barWidth"
+        [attr.height]="k.barHeight"
+        [attr.transform]="'translate(' + -m.barWidth / 2 + ' 0)'"
+      />
+    }
+  </svg>
   <div #head class="head" hidden aria-hidden="true"></div>
   <div class="tip" #tip hidden aria-hidden="true"></div>
 </div>
