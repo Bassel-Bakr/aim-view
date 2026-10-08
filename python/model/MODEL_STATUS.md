@@ -869,7 +869,13 @@ crosshair that the automatic labels miss, which those crops count as false.
   Colosseum Robots was dropped for more labels than targets. More robot recordings are needed.
 - **Thin capsules.** The model splits a thin capsule into short boxes and can leave its end unboxed; on Centering II
   (a capsule a few pixels wide) the time on target reads 0.46 for an accuracy of 0.59. Small targets held under the
-  crosshair in tracking (Pasu Track Smaller, Pokeball 1w2ts) also read low, by 0.12 to 0.15.
+  crosshair in tracking (Pasu Track Smaller, Pokeball 1w2ts) also read low, by 0.12 to 0.15. With large_v13e4
+  (2026-10-08, `test_out/fixed_map_test/`) the two Centering II runs read +0.011 and +0.020 of their accuracy; the low
+  ones are now Pasu Track Smaller -0.121, Plaza Palace Easy -0.105, Pokeball 1w2ts -0.163 and Smoothness Trainer Robot
+  -0.185, cause open. **Not the fixed map:** on those runs it holds only the crosshair at the center. On the runs whose
+  held target is in it (thin capsules, Pole Long Dodge, Flower's health bar), the model needs it: a map made from
+  frames with no target at the crosshair halved Centering II's time on target (0.61 to 0.31) and made the 17 runs'
+  mean |gap| 0.092 against 0.058.
 - **Tiled walls.** small_v13 marks far fewer seams than small_v11 on 1wall 6targets extra small 889.26, but one
   corner seam still scores 0.35, and when fewer targets than the scenario's count are on screen, the cap keeps it.
 - **One resolution tested.** Frames are scaled to 1280 × 720. Other sizes work if both sides are multiples of 16, but
