@@ -2,12 +2,12 @@
  * The page's color theme: the viewer's choice (System, Light or Dark), kept in this browser's storage, and the scheme
  * in force (light or dark: the choice, or the system's under System). The choice is the root's data-theme, which
  * styles.scss puts the light tokens under (and index.html sets before the first paint); System removes it, so the
- * system's prefers-color-scheme decides. A canvas keeps the colors it read from the tokens as a computed of the
- * scheme, so it reads them again, and redraws, after a change. In: the top bar's theme menu.
- * Out: data-theme on the page's root, and the scheme.
+ * system's prefers-color-scheme decides. canvasStyle() gives a canvas the colors and fonts it reads from the tokens,
+ * read again after a change, so a chart never deals with the theme itself. In: the top bar's theme menu.
+ * Out: data-theme on the page's root, the scheme, and canvasStyle().
  */
 
-import { computed, DestroyRef, DOCUMENT, inject, Service, signal } from '@angular/core';
+import { computed, DestroyRef, DOCUMENT, inject, Service, Signal, signal } from '@angular/core';
 
 /** The viewer's choice: follow the system, or one scheme always. */
 export type ThemeChoice = 'system' | 'light' | 'dark';
@@ -75,4 +75,20 @@ export class Theme {
       return 'system';
     }
   }
+}
+
+/**
+ * A canvas's colors and fonts: what `read` takes from the tokens in force on the canvas, read again after a theme
+ * change. Make it a field (it needs an injection context) and read it in the canvas's draw effect, which then redraws
+ * after a change too.
+ */
+export function canvasStyle<E extends Element, T>(
+  canvas: () => E,
+  read: (element: E) => T,
+): Signal<T> {
+  const theme = inject(Theme);
+  return computed(() => {
+    theme.scheme();
+    return read(canvas());
+  });
 }

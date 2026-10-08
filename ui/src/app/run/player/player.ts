@@ -40,7 +40,7 @@ import {
 import { listenQuietly } from '../../services/listen-quietly';
 import { FloatingPlayer } from './floating-player';
 import { MiniBar } from './mini-bar/mini-bar';
-import { Theme } from '../../services/theme';
+import { canvasStyle } from '../../services/theme';
 
 /** The local storage key that keeps "Show the tracked target" across visits ('0' is off). */
 const OVERLAY_KEY = 'aimview-overlay';
@@ -204,18 +204,10 @@ export class Player {
   protected readonly end = computed(() =>
     clock(this.playback.duration() || 0).replace(/\.\d$/, ''),
   );
-  /** The color scheme: the colors below are read again when it changes. */
-  private readonly theme = inject(Theme);
-  /** The overlay's colors and fonts, read from the CSS variables on the first draw in each color scheme. */
-  private readonly style = computed(() => {
-    this.theme.scheme();
-    return readOverlayStyle(this.canvas().nativeElement);
-  });
-  /** The cut-off overlay's colors and fonts, read from the CSS variables on its first draw in each color scheme. */
-  private readonly faintStyle = computed(() => {
-    this.theme.scheme();
-    return readFaintStyle(this.canvas().nativeElement);
-  });
+  /** The overlay's colors and fonts, read from the CSS variables (again after a theme change). */
+  private readonly style = canvasStyle(() => this.canvas().nativeElement, readOverlayStyle);
+  /** The cut-off overlay's colors and fonts, read from the CSS variables (again after a theme change). */
+  private readonly faintStyle = canvasStyle(() => this.canvas().nativeElement, readFaintStyle);
   /** The seek bar is being dragged: the frames leave its value alone. */
   private seeking = false;
 

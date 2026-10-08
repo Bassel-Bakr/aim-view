@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Theme, THEME_STORAGE_KEY } from './theme';
+import { canvasStyle, Theme, THEME_STORAGE_KEY } from './theme';
 
 describe('Theme', () => {
   afterEach(() => {
@@ -31,5 +31,22 @@ describe('Theme', () => {
     expect(theme.scheme()).toBe('light');
     theme.choose('dark');
     expect(theme.scheme()).toBe('dark');
+  });
+
+  it("reads a canvas's colors once per scheme", () => {
+    const theme = TestBed.inject(Theme);
+    theme.choose('dark');
+    const canvas = document.createElement('canvas');
+    let reads = 0;
+    const style = TestBed.runInInjectionContext(() =>
+      canvasStyle(
+        () => canvas,
+        () => ({ scheme: theme.scheme(), read: ++reads }),
+      ),
+    );
+    expect(style()).toEqual({ scheme: 'dark', read: 1 });
+    expect(style().read).toBe(1);
+    theme.choose('light');
+    expect(style()).toEqual({ scheme: 'light', read: 2 });
   });
 });

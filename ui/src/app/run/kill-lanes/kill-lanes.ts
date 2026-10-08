@@ -24,7 +24,7 @@ import { formatCount, formatDegrees, formatMs } from '../../format';
 import { FlickFocus } from '../flick-focus';
 import { Playback } from '../playback';
 import { drawKillLanes, readStyle } from './kill-lanes-drawing';
-import { Theme } from '../../services/theme';
+import { canvasStyle } from '../../services/theme';
 
 /** How near a kill the pointer must be to pick it, in pixels. */
 const PICK_DISTANCE = 6;
@@ -70,13 +70,8 @@ export class KillLanes {
       (last ? last.kill_frame / report.fps + STEP_SECONDS : STEP_SECONDS)
     );
   });
-  /** The color scheme: the colors below are read again when it changes. */
-  private readonly theme = inject(Theme);
   /** The lanes' colors and sizes, read from the tokens on the first draw. */
-  private readonly style = computed(() => {
-    this.theme.scheme();
-    return readStyle(this.canvas().nativeElement);
-  });
+  private readonly style = canvasStyle(() => this.canvas().nativeElement, readStyle);
 
   /**
    * Starts following the video after the first render, and redraws when the kills or the pick

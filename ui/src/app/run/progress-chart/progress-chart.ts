@@ -37,7 +37,7 @@ import {
   stampSeconds,
 } from './progress-chart-model';
 import { drawProgressChart, readStyle } from './progress-chart-drawing';
-import { Theme } from '../../services/theme';
+import { canvasStyle } from '../../services/theme';
 
 /**
  * Every past score of the run's scenario, from KovaaK's stats files, over the days it was played:
@@ -98,13 +98,8 @@ export class ProgressChart {
     source: this.recording,
     computation: () => null,
   });
-  /** The color scheme: the colors below are read again when it changes. */
-  private readonly theme = inject(Theme);
   /** The chart's colors and sizes, read from the tokens on the first draw. */
-  private readonly style = computed(() => {
-    this.theme.scheme();
-    return readStyle(this.canvas().nativeElement);
-  });
+  private readonly style = canvasStyle(() => this.canvas().nativeElement, readStyle);
 
   /**
    * Starts watching the canvas's size and the pointer after the first render; redraws on change.

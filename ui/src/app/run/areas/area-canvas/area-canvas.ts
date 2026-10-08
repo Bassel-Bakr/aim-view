@@ -5,7 +5,6 @@
  */
 
 import {
-  computed,
   afterNextRender,
   afterRenderEffect,
   Component,
@@ -32,7 +31,7 @@ import {
   ScreenSize,
   SharePoint,
 } from '../area-geometry';
-import { Theme } from '../../../services/theme';
+import { canvasStyle } from '../../../services/theme';
 
 /**
  * An area held by the pointer: which, its edges (null: moved whole), where the press was, and the
@@ -83,13 +82,8 @@ export class AreaCanvas {
   private readonly grip = signal<AreaGrip | null>(null);
   /** The area being drawn, or null. */
   private readonly sketch = signal<AreaSketch | null>(null);
-  /** The color scheme: the colors below are read again when it changes. */
-  private readonly theme = inject(Theme);
   /** The areas' drawing style, read from the tokens on the first draw. */
-  private readonly style = computed(() => {
-    this.theme.scheme();
-    return readAreaStyle(this.canvas().nativeElement);
-  });
+  private readonly style = canvasStyle(() => this.canvas().nativeElement, readAreaStyle);
 
   /**
    * Draws again when the canvas is resized or the areas, selection, kinds or pointer change, and

@@ -23,7 +23,7 @@ import { TrackReport, Tracks } from '../../api';
 import { Playback } from '../playback';
 import { describe, timeline } from '../track';
 import { drawTimeline, readTimelineStyle } from './timeline-drawing';
-import { Theme } from '../../services/theme';
+import { canvasStyle } from '../../services/theme';
 
 /** Seconds the arrow keys move. */
 const STEP_SECONDS = 1;
@@ -64,13 +64,8 @@ export class Timeline {
   protected readonly runSeconds = computed(() =>
     Math.round(this.data().frameCount / this.data().fps),
   );
-  /** The color scheme: the colors below are read again when it changes. */
-  private readonly theme = inject(Theme);
   /** The timeline's colors and sizes, read from the tokens on the first draw. */
-  private readonly style = computed(() => {
-    this.theme.scheme();
-    return readTimelineStyle(this.canvas().nativeElement);
-  });
+  private readonly style = canvasStyle(() => this.canvas().nativeElement, readTimelineStyle);
 
   /** Starts following the video after the first render, and redraws when the run's data changes. */
   constructor() {

@@ -42,7 +42,7 @@ import {
   StagePicture,
   StagePlace,
 } from './crop-paint';
-import { Theme } from '../../services/theme';
+import { canvasStyle } from '../../services/theme';
 
 /** A point on the stage, in CSS pixels from its top left. */
 type ScreenPoint = [x: number, y: number];
@@ -174,13 +174,8 @@ export class CropStage {
   private pinch: StagePinch | null = null;
   /** Starts the peek once a finger has been held PEEK_MS without moving. */
   private peekTimer: ReturnType<typeof setTimeout> | undefined;
-  /** The color scheme: the colors below are read again when it changes. */
-  private readonly theme = inject(Theme);
   /** The colors and sizes the drawing uses, read from the CSS once. */
-  private readonly style = computed(() => {
-    this.theme.scheme();
-    return readCropStyle(this.canvas().nativeElement);
-  });
+  private readonly style = canvasStyle(() => this.canvas().nativeElement, readCropStyle);
   /** The core's last view of the scene, drawn while the next one is worked out. */
   private lastView: SceneView | null = null;
   /** The tinted mask of the last view, made again only when the view changes. */
