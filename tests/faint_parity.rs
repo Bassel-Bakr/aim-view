@@ -1,10 +1,13 @@
 //! The faint-target cut-off (src/faint.rs, review.rs) against Python's: python/retired/tests/fixtures.py --faint writes
 //! test_out/parity/<case>/faint/<offset>/report.json (a tracking review with the cut-off on) and
 //! test_out/parity/faint/<recording>.json (the scores, the cut and the labels of every recording the user set a
-//! cut-off for). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative).
+//! cut-off for). Everything that is not a number must be equal; numbers within 1e-9 of Python's (relative). Each
+//! recording's tracks, which Python read from its review in the data folder, are kept in test_out/parity/faint_tracks/
+//! too: the Storage panel can remove those reviews (2026-10-08 it did), and the test needs the very tracks Python
+//! read.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use aimview::faint::{CutoffCrop, CutoffRequest, FaintSetting, TrackScore, cutoff_crops, faint_scores, without_faint};
 use aimview::track::Tracks;
@@ -71,6 +74,13 @@ fn compare_crops(name: &str, crops: &[CutoffCrop], wanted: &[Value], diff: &mut 
     }
 }
 
+/// The tracks Python read for a recording's cut-off: the copy in test_out/parity/faint_tracks/ (named as the case's
+/// file), else the review the case names in the data folder.
+fn faint_tracks(case: &Path, want: &Value) -> PathBuf {
+    let kept = parity_root().join("faint_tracks").join(case.file_name().unwrap());
+    if kept.exists() { kept } else { PathBuf::from(want["tracks"].as_str().unwrap()) }
+}
+
 /// For every recording the user set a cut-off for: the tracks' scores, the level, the cut, the targets left and the
 /// label crops equal Python's.
 #[test]
@@ -81,7 +91,7 @@ fn the_users_cut_offs_match_python() {
     };
     for entry in list.flatten() {
         let want = read(&entry.path());
-        let tracks: Tracks = serde_json::from_value(read(Path::new(want["tracks"].as_str().unwrap()))).unwrap();
+        let tracks: Tracks = serde_json::from_value(read(&faint_tracks(&entry.path(), &want))).unwrap();
         let near = want["near"].as_f64().unwrap();
         let offset = want["offset"].as_f64().unwrap();
         let name = entry.file_name().to_string_lossy().into_owned();
