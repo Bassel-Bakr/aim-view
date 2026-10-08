@@ -21,13 +21,13 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 39.5 s | 37.8 s | 2 | 2026-10-07, b9f96dc+ |
 | assets | profile wasm-dev, modes browser | 53.2 s | 51.3 s | 4 | 2026-10-08, c063741+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 0.2 s | 0.3 s | 7 | 2026-10-08, c063741+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 51.3 s | 0.3 s | 8 | 2026-10-08, d12d258+ |
 | assets: core and service wasm (cargo) | profile release | 57.1 s | 28.7 s | 2 | 2026-10-07, 78c5844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 0.2 s | 2.7 s | 11 | 2026-10-08, c063741+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 7.2 s | 2.7 s | 12 | 2026-10-08, d12d258 |
 | assets: core wasm (cargo) | profile release | 39.4 s | 37.7 s | 2 | 2026-10-07, b9f96dc+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O1 | 45.1 s | 44.8 s | 6 | 2026-10-08, c063741+ |
+| assets: wasm-opt (Asyncify) | level -O1 | 44 s | 44.8 s | 7 | 2026-10-08, d12d258+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 60.3 s | 60.3 s | 1 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular at once | 63.3 s | 34.2 s | 2 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular one at a time | 182.7 s | 182.7 s | 1 | 2026-10-07, 78c5844+ |
@@ -53,6 +53,7 @@ times that step.
 | --- | --- | --- | --- | --- |
 | `cargo build --profile release --target wasm32-unknown-unknown` (the core, inside `bun run assets --release`) | the core as WebAssembly with whole-program optimization | about 55 s after a Rust change; `wasm-dev` (the dev assets) about 9 s; measured since: 36.1 s alone, 57.1 s with the service in the same cargo run (the table above) | 5fac078 | Cargo.toml, `[profile.wasm-dev]` |
 | `wasm-opt --asyncify` on the browser's service (inside `bun run assets`) | Binaryen's Asyncify, so the service's file calls can wait on the page | `-O2` (release) 67 s, `-O1` (dev) 37 s, every run until 2026-10-07 (60.3 s measured since); now skipped when its input is unchanged | edc88e7 | scripts/ui-assets.ts |
+| Browser mode: choosing KovaaK's stats folder the first time | each of the 72,127 stats files (401 MB) read once and its run sent to the service in batches (kovaak-batch.ts), kept in the database | 6.1 s to send and keep, once the files were in the page (reading them from the folder not included); choosing it again 0.8 s, nothing sent; the database 14.5 MB (8.3 MB of it the stats files' rows) against 401 MB of packs before; /api/kovaak_files 0.35 s, a scenario's history (117 runs) 0.6 s | 2026-10-08, d12d258 | the built-in browser (Chromium), files served from the stats folder |
 | `bun run build` before scripts/build.ts | the assets with `--release` three times (one per mode), each wiping ui/generated/ and running `wasm-opt -O2` again, then the three Angular builds one after another | about 306 s after a Rust change (the first assets 162 s, two more `wasm-opt` runs, the Angular builds 20 s); about 205 s with nothing changed | 2026-10-07, 78c5844+ (worked out from the measured steps) | package.json before scripts/build.ts |
 | `bun run build` now | the assets once (one cargo run for the core and the service, `wasm-opt` only when the service changed), the three Angular builds at once | 5.1 s with nothing changed; 63.3 s after a Rust change that leaves the service's module as it was; about 60 s more when `wasm-opt` has to run | 2026-10-07, 78c5844+ | the measured table above |
 | `bun run build:server`, `build:desktop` now | the core alone (no service, no `wasm-opt`), one Angular build | 39.9 s after a Rust change (server); the browser-only files (onnxruntime 40 MB, the service, the models) no longer go in: ui/dist/server 51 to 5.2 MB, ui/dist/desktop 68 to 5.2 MB | 2026-10-07, 78c5844+ | the measured table above |

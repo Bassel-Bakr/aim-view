@@ -147,7 +147,10 @@ Each ends in a check, and each is committed on its own.
    are sent once and marked moved. A new review made in the browser was not run (the pane was not drawing). KovaaK's files were moved later the same day (version 2, above): checked in
    the built-in browser with 40 of the user's stats files and a scenario sent as a batch, the history equal to
    native's for those 40 runs, the pairing, the scenario's kind, the paired text kept across a reload, and a layout-1
-   database and the old copies moved on opening.
+   database and the old copies moved on opening. On 2026-10-08 all 72,127 of the user's stats files (401 MB) were
+   sent the same way: 6.1 s once in the page, a 14.5 MB database, nothing sent when chosen again (docs/COSTS.md); a
+   new review on WebGPU (6.6 s) was kept in the database and its report read back. Not tried: the move of a real
+   401 MB pack set (only the user's own Chrome has one).
 4. **The data panel** and **the export zip**, on the interface. The data panel is done (2026-10-08): the top bar's
    Storage button (ui/src/app/storage-panel/, the StoredData contract, GET and POST /api/storage,
    service/src/library/usage.rs) lists each part with its size, largest first: each model's reviews (and whether
