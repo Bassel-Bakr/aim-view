@@ -30,7 +30,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use aimview::mouse::{self as reader, MouseLog};
 use serde_json::{Value, json};
 
-use aimview_service::mouse::utc_offset_at;
+use aimview_service::disk::utc_offset_at;
 use aimview_service::{Answer, Failure};
 
 /// Nanoseconds in a second.

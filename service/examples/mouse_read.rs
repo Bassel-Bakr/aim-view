@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use aimview::mouse::{self as reader, Options, ReadOutcome, ReadRequest};
-use aimview_service::mouse::utc_offset_at;
+use aimview_service::disk::utc_offset_at;
 
 /// Nanoseconds in a second: the log's header gives its start in nanoseconds since 1970.
 const NS_PER_S: f64 = 1e9;

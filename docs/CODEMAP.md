@@ -1176,10 +1176,10 @@ which the database gives back the space freed.
 A recording's measures from the raw mouse logs (python/mouse_log.py's, or the desktop app's logger's, in the layout's
 mouse folder): the newest log that covers the recording's run, read by the core (src/mouse.rs, as python/mouse_read.py
 reads it). In: the recording's stats file and the mouse folder's logs. Out: the run's measures, which /api/mouse
-answers. Also this computer's offset from UTC, for the logs' and the stats files' clocks.
+answers.
 
 - `Library` methods: `mouse_measures`.
-- Functions: `utc_offset_at`, `measures_in`.
+- Functions: `measures_in`.
 
 ## service/src/npz.rs
 

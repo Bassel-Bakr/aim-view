@@ -194,9 +194,87 @@ mod imp {
         std::process::id()
     }
 
-    /// This computer's offset from UTC in seconds at a moment (seconds since 1970): mouse.rs's.
+    /// Windows' time calls, for `utc_offset_at`.
+    #[cfg(windows)]
+    mod win {
+        /// Seconds from 1601 (FILETIME's start) to 1970 (Unix time's).
+        pub const FILETIME_TO_UNIX_S: i64 = 11_644_473_600;
+        /// FILETIME's 100 ns steps in a second.
+        pub const FILETIME_STEPS_PER_S: i64 = 10_000_000;
+
+        /// Windows' SYSTEMTIME: a date and time in parts.
+        #[repr(C)]
+        #[derive(Default)]
+        pub struct SystemTime {
+            /// The year, as 2026.
+            pub year: u16,
+            /// The month, 1 to 12.
+            pub month: u16,
+            /// The day of the week, 0 (Sunday) to 6.
+            pub weekday: u16,
+            /// The day of the month, 1 to 31.
+            pub day: u16,
+            /// The hour, 0 to 23.
+            pub hour: u16,
+            /// The minute, 0 to 59.
+            pub minute: u16,
+            /// The second, 0 to 59.
+            pub second: u16,
+            /// The millisecond, 0 to 999.
+            pub ms: u16,
+        }
+
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            /// A FILETIME (100 ns steps since 1601) in parts; 0 when it fails.
+            pub fn FileTimeToSystemTime(file_time: *const u64, system_time: *mut SystemTime) -> i32;
+            /// Parts back to a FILETIME; 0 when it fails.
+            pub fn SystemTimeToFileTime(system_time: *const SystemTime, file_time: *mut u64) -> i32;
+            /// A UTC time in parts as local time in a time zone (null: the computer's), daylight saving time included; 0
+            /// when it fails.
+            pub fn SystemTimeToTzSpecificLocalTime(
+                zone: *const std::ffi::c_void,
+                utc: *const SystemTime,
+                local: *mut SystemTime,
+            ) -> i32;
+        }
+    }
+
+    /// This computer's offset from UTC (local minus UTC, seconds) at a moment (seconds since 1970), daylight saving time
+    /// included, as Python's local time conversions take it: Windows' time zone, or on Linux and macOS the system's (TZ,
+    /// else /etc/localtime), read by the C library's localtime_r. 0 where it cannot be read. (The browser build reads the
+    /// browser's.)
     pub fn utc_offset_at(secs: f64) -> i64 {
-        crate::mouse::utc_offset_at(secs)
+        #[cfg(unix)]
+        {
+            unsafe extern "C" {
+                /// Reads the time zone from TZ or the system: POSIX's (the libc crate declares it only for Windows).
+                fn tzset();
+            }
+            let time = secs.floor() as libc::time_t;
+            // SAFETY: tm is plain data that localtime_r fills; tzset reads the time zone (nothing here changes TZ)
+            let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+            unsafe { tzset() };
+            if !unsafe { libc::localtime_r(&time, &mut tm) }.is_null() {
+                return tm.tm_gmtoff as i64;
+            }
+        }
+        #[cfg(windows)]
+        {
+            let file_time = ((secs.floor() as i64 + win::FILETIME_TO_UNIX_S) * win::FILETIME_STEPS_PER_S) as u64;
+            let (mut utc, mut local, mut back) = (win::SystemTime::default(), win::SystemTime::default(), 0u64);
+            // SAFETY: each call reads and writes the structs it is given
+            let ok = unsafe {
+                win::FileTimeToSystemTime(&file_time, &mut utc) != 0
+                    && win::SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local) != 0
+                    && win::SystemTimeToFileTime(&local, &mut back) != 0
+            };
+            if ok {
+                return (back as i64 - file_time as i64).div_euclid(win::FILETIME_STEPS_PER_S);
+            }
+        }
+        let _ = secs;
+        0
     }
 }
 
@@ -532,5 +610,39 @@ mod imp {
     pub fn utc_offset_at(secs: f64) -> i64 {
         // SAFETY: a plain call to the host
         i64::from(unsafe { host_utc_offset(secs) })
+    }
+}
+
+/// The time zone's offset.
+#[cfg(all(test, feature = "native"))]
+mod tests {
+    use super::*;
+
+    /// This computer's offset now is a whole number of quarter hours.
+    #[test]
+    fn offsets_are_whole_quarter_hours() {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+        assert_eq!(utc_offset_at(now) % 900, 0);
+    }
+
+    /// Off Windows the offset follows the system's time zone and its daylight saving time: New York's (as a POSIX TZ,
+    /// which needs no time zone files), in a child process of this test, so no other test sees TZ change.
+    #[cfg(unix)]
+    #[test]
+    fn offsets_follow_the_time_zone() {
+        if std::env::var_os("AIMVIEW_TZ_CHILD").is_some() {
+            assert_eq!(utc_offset_at(1_704_067_200.0), -5 * 3600, "2024-01-01 00:00 UTC: EST");
+            assert_eq!(utc_offset_at(1_719_792_000.0), -4 * 3600, "2024-07-01 00:00 UTC: EDT");
+            assert_eq!(crate::library::local_stamp(1_719_792_000.0), "2024.06.30-20.00.00");
+            return;
+        }
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "disk::tests::offsets_follow_the_time_zone"])
+            .env("AIMVIEW_TZ_CHILD", "1")
+            .env("TZ", "EST5EDT,M3.2.0,M11.1.0")
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && said.contains("1 passed"), "{said}{}", String::from_utf8_lossy(&out.stderr));
     }
 }

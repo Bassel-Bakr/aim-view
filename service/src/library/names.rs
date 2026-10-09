@@ -4,10 +4,6 @@
 //! links.
 
 use std::path::{Path, PathBuf};
-#[cfg(windows)]
-use std::sync::OnceLock;
-#[cfg(windows)]
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A file-name time stamp's form (yyyy.mm.dd-hh.mm.ss): its separators in their places; each 0 is a number's digit.
 const STAMP_FORM: &[u8; 19] = b"0000.00.00-00.00.00";
@@ -29,12 +25,6 @@ const SECONDS_PER_HOUR: i64 = 3600;
 const SECONDS_PER_MINUTE: i64 = 60;
 /// The minutes in an hour.
 const MINUTES_PER_HOUR: i64 = 60;
-/// Seconds from 1970-01-01 to 2000-01-01.
-#[cfg(windows)]
-const UNIX_TO_2000_S: i64 = 946_684_800;
-/// Time zones are whole quarter hours from UTC: the measured offset is rounded to one, in seconds.
-#[cfg(windows)]
-const QUARTER_HOUR_S: i64 = 900;
 
 /// A recording's name as KovOBS writes it: "<scenario> - <score> - <yyyy.mm.dd-hh.mm.ss>.mp4": (scenario, score,
 /// stamp).
@@ -167,69 +157,29 @@ pub fn local_stamp(secs: f64) -> String {
     format!("{year:04}.{month:02}.{day:02}-{hour:02}.{minute:02}.{second:02}")
 }
 
-/// This computer's offset from UTC in seconds for a local stamp: on Windows its time zone's now (read once), elsewhere
-/// the system's time zone's at that time, daylight saving time included (mouse.rs: `utc_offset_at`).
-#[cfg(windows)]
-fn offset_at(_secs: f64) -> i64 {
-    /// The offset, read the first time it is asked for.
-    static OFFSET: OnceLock<i64> = OnceLock::new();
-    *OFFSET.get_or_init(local_offset)
-}
-
-/// This computer's offset from UTC in seconds at `secs` (seconds since 1970), daylight saving time included.
-#[cfg(not(windows))]
+/// This computer's offset from UTC in seconds at `secs` (seconds since 1970), daylight saving time included
+/// (disk.rs: `utc_offset_at`), so a stamp in summer and one in winter each get their own.
 fn offset_at(secs: f64) -> i64 {
     crate::disk::utc_offset_at(secs)
-}
-
-/// This computer's offset from UTC in seconds (its time zone, now): its local time now, read as a stamp, less the
-/// time now, rounded to a quarter hour.
-#[cfg(windows)]
-fn local_offset() -> i64 {
-    /// Windows' SYSTEMTIME: a local date and time in parts.
-    #[repr(C)]
-    struct SystemTimeParts {
-        /// The year, as 2026.
-        year: u16,
-        /// The month, 1 to 12.
-        month: u16,
-        /// The day of the week, 0 (Sunday) to 6.
-        weekday: u16,
-        /// The day of the month, 1 to 31.
-        day: u16,
-        /// The hour, 0 to 23.
-        hour: u16,
-        /// The minute, 0 to 59.
-        minute: u16,
-        /// The second, 0 to 59.
-        second: u16,
-        /// The millisecond, 0 to 999.
-        ms: u16,
-    }
-    unsafe extern "system" {
-        /// Windows' local date and time now (kernel32).
-        fn GetLocalTime(parts: *mut SystemTimeParts);
-    }
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64);
-    let mut parts = SystemTimeParts { year: 0, month: 0, weekday: 0, day: 0, hour: 0, minute: 0, second: 0, ms: 0 };
-    // SAFETY: GetLocalTime fills the struct it is given
-    unsafe { GetLocalTime(&mut parts) };
-    let SystemTimeParts { year, month, day, hour, minute, second, .. } = parts;
-    let stamp = format!("{year:04}.{month:02}.{day:02}-{hour:02}.{minute:02}.{second:02}");
-    match stamp_seconds(&stamp) {
-        Some(local) => {
-            // stamp_seconds counts from 2000-01-01; Unix time from 1970-01-01
-            let local_unix = local as i64 + UNIX_TO_2000_S;
-            ((local_unix - now) as f64 / QUARTER_HOUR_S as f64).round() as i64 * QUARTER_HOUR_S
-        }
-        None => 0,
-    }
 }
 
 /// The names and stamps.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A local stamp takes the offset at its own time, not today's: a winter and a summer time (2024-01-01 and
+    /// 2024-07-01, 00:00 UTC) each read back as the time plus the offset then. Where the time zone keeps daylight
+    /// saving time, the two offsets differ, so one of them is not today's.
+    #[test]
+    fn stamps_take_the_offset_at_their_time() {
+        /// Seconds from 1970-01-01 to 2000-01-01, where `stamp_seconds` counts from.
+        const UNIX_TO_2000_S: f64 = 946_684_800.0;
+        for secs in [1_704_067_200.0, 1_719_792_000.0] {
+            let local_s = stamp_seconds(&local_stamp(secs)).unwrap() + UNIX_TO_2000_S;
+            assert_eq!(local_s - secs, crate::disk::utc_offset_at(secs) as f64, "at {secs}");
+        }
+    }
 
     /// Recordings', stats files' and links' names, stamps (the year 0026 too) and slugs read as Python read them.
     #[test]
