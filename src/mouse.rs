@@ -22,9 +22,12 @@ use std::ops::RangeInclusive;
 
 use serde::{Deserialize, Serialize};
 
+use crate::dates::{days_from_civil, days_in_month};
 use crate::python::{hypot, round};
 use crate::statistics::median;
-use crate::stats_file::lines;
+use crate::stats_file::{
+    CHALLENGE_START, SHOTS_COLUMN, TIME_COLUMN, key_values, lines, table_lines, time_of_day_micros,
+};
 
 /// The file's first bytes ("FFML": Flow Fix's mouse log).
 pub const MAGIC: [u8; 4] = *b"FFML";
@@ -97,13 +100,8 @@ const START_BEFORE_FIRST_KILL_S: f64 = 1.0;
 const NAME_STAMP_PATTERN: &[u8; 19] = b"0000.00.00-00.00.00";
 /// Python's datetime takes years from 1 to this.
 const MAX_YEAR: i64 = 9999;
-/// Howard Hinnant's civil calendar: years in an era (the Gregorian cycle), the days in one, and the days from
-/// 0000-03-01 to 1970-01-01.
-const YEARS_PER_ERA: i64 = 400;
-/// The days in an era of YEARS_PER_ERA years.
-const DAYS_PER_ERA: i64 = 146_097;
-/// The days from 0000-03-01, where the eras count from, to 1970-01-01.
-const DAYS_TO_UNIX_EPOCH: i64 = 719_468;
+/// The largest second Python's `datetime` takes: `strptime` reads 60 and 61, but the time it makes fails on them.
+const MAX_DATETIME_SECOND: i64 = 59;
 /// Python's `format(x, "g")`: 6 significant digits, in fixed point for exponents from -4 up to that.
 const G_SIGNIFICANT_DIGITS: i32 = 6;
 /// The least exponent `format(x, "g")` writes in fixed point; a smaller one is written in scientific notation.
@@ -1018,28 +1016,6 @@ pub struct StatsRun {
     pub scenario: String,
 }
 
-/// Days since 1970-01-01 of a civil date (Howard Hinnant's `days_from_civil`, counting years from March so that a
-/// leap day ends the year).
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(YEARS_PER_ERA);
-    let year_of_era = year - era * YEARS_PER_ERA;
-    // the days before the month, counted from March: its lengths follow (153 * month + 2) / 5
-    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * DAYS_PER_ERA + day_of_era - DAYS_TO_UNIX_EPOCH
-}
-
-/// The days in a month (1 to 12) of a year of the Gregorian calendar.
-fn days_in_month(year: i64, month: i64) -> i64 {
-    match month {
-        2 if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 => 29,
-        2 => 28,
-        4 | 6 | 9 | 11 => 30,
-        _ => 31,
-    }
-}
-
 /// The date in a stats file's name ("... - 2026.09.30-04.55.23 Stats.csv"), as local seconds since 1970; None when
 /// the name's first such stamp is no valid date.
 fn name_stamp(name: &str) -> Option<i64> {
@@ -1060,33 +1036,6 @@ fn name_stamp(name: &str) -> Option<i64> {
         && minute < 60
         && second < 60;
     valid.then(|| days_from_civil(year, month, day) * SECONDS_PER_DAY + hour * 3600 + minute * 60 + second)
-}
-
-/// Whether every character of `text` is an ASCII digit (true when it has none).
-fn all_digits(text: &str) -> bool {
-    text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-/// A time of day as `strptime(text, "%H:%M:%S.%f")` reads it (the fraction 1 to 6 digits), in microseconds; None
-/// where it fails.
-fn clock_micros(text: &str) -> Option<i64> {
-    let (hours_minutes_seconds, fraction) = text.split_once('.')?;
-    let mut parts = hours_minutes_seconds.split(':');
-    let mut field = |max: i64| -> Option<i64> {
-        let digits = parts.next()?;
-        if digits.is_empty() || digits.len() > 2 || !all_digits(digits) {
-            return None;
-        }
-        let value: i64 = digits.parse().ok()?;
-        (value <= max).then_some(value)
-    };
-    let (hours, minutes, seconds) = (field(23)?, field(59)?, field(59)?);
-    let fraction_read = !fraction.is_empty() && fraction.len() <= 6 && all_digits(fraction);
-    if parts.next().is_some() || !fraction_read {
-        return None;
-    }
-    let micros: i64 = format!("{fraction:0<6}").parse().ok()?;
-    Some(((hours * 60 + minutes) * 60 + seconds) * MICROS_PER_SECOND + micros)
 }
 
 /// Python's `int(text)` for plain decimal text.
@@ -1112,7 +1061,7 @@ impl StatsClock {
     /// A time of day as the file writes it ("%H:%M:%S.%f"), as seconds since 1970; an error when it does not read.
     fn epoch_s(&self, time_of_day: &str) -> Result<f64, String> {
         let time_of_day = time_of_day.trim();
-        let time_of_day_micros = clock_micros(time_of_day)
+        let time_of_day_micros = time_of_day_micros(time_of_day, MAX_DATETIME_SECOND)
             .ok_or_else(|| format!("time data {time_of_day:?} does not match format '%H:%M:%S.%f'"))?;
         let written_micros = self.written_s * MICROS_PER_SECOND;
         let day_micros = self.written_s.div_euclid(SECONDS_PER_DAY) * SECONDS_PER_DAY * MICROS_PER_SECOND;
@@ -1134,16 +1083,14 @@ impl StatsClock {
 /// The kill table's rows, after its header and up to the first blank line.
 fn read_kills(lines: &[&str], clock: &StatsClock) -> Result<Vec<StatsKill>, String> {
     let mut kills = Vec::new();
-    for line in lines.iter().skip(1) {
-        if line.trim().is_empty() {
-            break;
-        }
+    // every line of the table, where the stats file's own reading skips those that do not start with a digit
+    for line in table_lines(lines) {
         let cells: Vec<&str> = line.split(',').collect();
         let unreadable = || format!("a kill row the reader cannot read: {line:?}");
         let number = py_int(cells[0]).ok_or_else(unreadable)?;
-        let local_time = cells.get(1).ok_or_else(unreadable)?.to_string();
+        let local_time = cells.get(TIME_COLUMN).ok_or_else(unreadable)?.to_string();
         let epoch_s = clock.epoch_s(&local_time)?;
-        let shots = cells.get(5).and_then(|cell| py_int(cell)).ok_or_else(unreadable)?;
+        let shots = cells.get(SHOTS_COLUMN).and_then(|cell| py_int(cell)).ok_or_else(unreadable)?;
         kills.push(StatsKill { number, local_time, epoch_s, shots });
     }
     Ok(kills)
@@ -1180,14 +1127,14 @@ fn stats_sensitivity(meta: &HashMap<&str, &str>) -> Result<Option<Sensitivity>, 
 pub fn read_stats(name: &str, text: &str, utc_offset: i64) -> Result<StatsRun, String> {
     let lines = lines(text);
     // the "Key:,value" lines (a later line wins)
-    let meta: HashMap<&str, &str> = lines.iter().filter_map(|line| line.split_once(":,")).collect();
+    let meta = key_values(&lines);
     let written_s =
         name_stamp(name).ok_or("the stats file name holds no date (expected '... - 2026.09.30-04.55.23 Stats.csv')")?;
     let clock = StatsClock { written_s, utc_offset };
     let kills = read_kills(&lines, &clock)?;
     let shots = weapon_shots(&lines)?;
     let sensitivity = stats_sensitivity(&meta)?;
-    let start_epoch_s = match meta.get("Challenge Start") {
+    let start_epoch_s = match meta.get(CHALLENGE_START) {
         Some(start) => clock.epoch_s(start)?,
         None => {
             let first = kills.first().ok_or("the stats file has no kills and no challenge start")?;

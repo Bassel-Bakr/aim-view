@@ -2,16 +2,17 @@
 //!
 //! In: the file's text (the service finds a run's file in KovaaK's stats folder: service/src/library/stats.rs). Out:
 //! each kill's time and shots for the clicking review (review.rs), and the challenge's start for the tracking review
-//! (tracking.rs); the mouse log (mouse.rs) splits its own text into lines with `lines`.
+//! (tracking.rs); the mouse log's reader (mouse.rs) reads its own way from the same lines, "Key:,value" lines, kill
+//! table, columns and times of day.
 
 use std::collections::HashMap;
 
 /// The "Key:,value" line that says when the challenge started, as a time of day ("%H:%M:%S.%f").
-const CHALLENGE_START: &str = "Challenge Start";
+pub(crate) const CHALLENGE_START: &str = "Challenge Start";
 /// The kill table's column of each kill's time of day (from 0: the second column, "Timestamp").
-const TIME_COLUMN: usize = 1;
+pub(crate) const TIME_COLUMN: usize = 1;
 /// The kill table's column of each kill's shots (the sixth).
-const SHOTS_COLUMN: usize = 5;
+pub(crate) const SHOTS_COLUMN: usize = 5;
 /// The kill table's column of each kill's hits (the seventh).
 const HITS_COLUMN: usize = 6;
 /// The largest hour "%H" reads.
@@ -74,8 +75,19 @@ pub(crate) fn lines(text: &str) -> Vec<&str> {
     out
 }
 
-/// A time of day as "%H:%M:%S.%f" reads it, in microseconds since midnight; None when the text is not one.
-fn micros(text: &str) -> Option<i64> {
+/// The "Key:,value" lines' values by their keys (a later line wins).
+pub(crate) fn key_values<'a>(lines: &[&'a str]) -> HashMap<&'a str, &'a str> {
+    lines.iter().filter_map(|line| line.split_once(":,")).collect()
+}
+
+/// The kill table's lines: those after the file's header line, up to the first blank line (later tables follow it).
+pub(crate) fn table_lines<'a>(lines: &[&'a str]) -> impl Iterator<Item = &'a str> {
+    lines.iter().skip(1).take_while(|line| !line.trim().is_empty()).copied()
+}
+
+/// A time of day as "%H:%M:%S.%f" reads it, in microseconds since midnight, with its second at most `max_second`
+/// (MAX_SECOND for `strptime`; Python's `datetime` takes up to 59); None when the text is not one.
+pub(crate) fn time_of_day_micros(text: &str, max_second: i64) -> Option<i64> {
     let (clock, fraction) = text.split_once('.')?;
     let mut fields = clock.split(':');
     let mut field = |max: i64| -> Option<i64> {
@@ -85,7 +97,7 @@ fn micros(text: &str) -> Option<i64> {
         let value: i64 = well_formed.then(|| digits.parse().ok())??;
         (value <= max).then_some(value)
     };
-    let (hours, minutes, seconds) = (field(MAX_HOUR)?, field(MAX_MINUTE)?, field(MAX_SECOND)?);
+    let (hours, minutes, seconds) = (field(MAX_HOUR)?, field(MAX_MINUTE)?, field(max_second)?);
     if fields.next().is_some()
         || fraction.is_empty()
         || fraction.len() > FRACTION_DIGITS
@@ -102,28 +114,18 @@ impl StatsFile {
     /// start with a digit, up to the first blank line). Never fails: a file with no table gives no rows.
     pub fn parse(text: &str) -> StatsFile {
         let lines = lines(text);
-        let mut meta = HashMap::new();
-        for line in &lines {
-            if let Some((key, value)) = line.split_once(":,") {
-                meta.insert(key.to_string(), value.to_string());
-            }
-        }
+        let meta = key_values(&lines).into_iter().map(|(key, value)| (key.to_string(), value.to_string())).collect();
         // the kill rows are the first table, up to its blank line (later tables can also start with a digit)
-        let mut rows = Vec::new();
-        for line in lines.iter().skip(1) {
-            if line.trim().is_empty() {
-                break;
-            }
-            if line.starts_with(|first: char| first.is_ascii_digit()) {
-                rows.push(line.split(',').map(str::to_string).collect());
-            }
-        }
+        let rows = table_lines(&lines)
+            .filter(|line| line.starts_with(|first: char| first.is_ascii_digit()))
+            .map(|line| line.split(',').map(str::to_string).collect())
+            .collect();
         StatsFile { meta, rows }
     }
 
     /// When the challenge started, in microseconds since midnight; None when the file lacks the line or its time.
     pub fn start_micros(&self) -> Option<i64> {
-        micros(self.meta.get(CHALLENGE_START)?)
+        time_of_day_micros(self.meta.get(CHALLENGE_START)?, MAX_SECOND)
     }
 
     /// The shots each kill took (the table's sixth column); an error names the first row without them.
@@ -144,14 +146,15 @@ impl StatsFile {
     /// time or shots.
     pub fn kills(&self) -> Result<StatsKills, String> {
         let start = self.meta.get(CHALLENGE_START).ok_or("no Challenge Start in the stats file")?;
-        let start_micros = micros(start).ok_or_else(|| format!("Challenge Start is not a time: {start}"))?;
+        let start_micros =
+            time_of_day_micros(start, MAX_SECOND).ok_or_else(|| format!("Challenge Start is not a time: {start}"))?;
         let times = self
             .rows
             .iter()
             .map(|row| {
                 let kill_micros = row
                     .get(TIME_COLUMN)
-                    .and_then(|cell| micros(cell))
+                    .and_then(|cell| time_of_day_micros(cell, MAX_SECOND))
                     .ok_or_else(|| format!("a kill row without a time: {row:?}"))?;
                 // a run is far shorter than a day: a kill before the start in the day is after midnight
                 Ok((kill_micros - start_micros).rem_euclid(MICROS_PER_DAY) as f64 / MICROS_PER_SECOND as f64)

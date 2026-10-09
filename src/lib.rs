@@ -11,6 +11,7 @@ pub mod areas;
 pub mod camera;
 pub mod capped;
 pub mod convert;
+pub mod dates;
 pub mod detect;
 pub mod faint;
 pub mod fixed;

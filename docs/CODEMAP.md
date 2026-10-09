@@ -16,6 +16,8 @@ rust-analyzer's call hierarchy.
 - `src/convert.rs`: A decoded frame (YUV 4:2:0, any size) converted as ffmpeg 8.1 converts it for the review:
   `scale=1280:720:flags=area` to `rgb24` (the detector's input) or `yuv420p` (the fixed map's), byte for byte as the
   ffmpeg CLI does on x86-64 (the old review, python/retired/review.py: `rgb_frames`, `_frames`).
+- `src/dates.rs`: Civil dates (year, month, day of the Gregorian calendar) as days since 1970-01-01 and back, by Howard
+  Hinnant's algorithms, which count years from March so that a leap day ends the year.
 - `src/detect.rs`: The detector model's output maps as boxes (python/model/infer.py: `decode_np`, for the `_u8in` and
   `_fp32` exports, whose score map already holds only the peaks).
 - `src/faint.rs`: The faint-target cut-off (python/retired/review.py: `faint_scores`, `without_faint`;
@@ -363,6 +365,13 @@ where it has them.
 - `Converter` (struct): Converts a recording's frames: built once per recording (its size and color tags), then one call
   per frame. Methods: `new`, `with_kernels`, `without_shortcut`, `rgb24`, `yuv420p`, `luma`.
 - Constants: `DST_W`, `DST_H`.
+
+## src/dates.rs
+
+Civil dates (year, month, day of the Gregorian calendar) as days since 1970-01-01 and back, by Howard Hinnant's
+algorithms, which count years from March so that a leap day ends the year.
+
+- Functions: `days_from_civil`, `civil_from_days`, `days_in_month`.
 
 ## src/detect.rs
 
