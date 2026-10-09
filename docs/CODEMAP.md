@@ -27,9 +27,22 @@ rust-analyzer's call hierarchy.
   model), found in the recording's key frames.
 - `src/geometry.rs`: The frame's geometry at the size the review works in (1280 x 720): where the crosshair is, and how
   a pixel maps to an angle from it (python/retired/review.py: `W`, `H`, `CX`, `CY`, `K`, `to_deg`, `to_px`).
-- `src/hud.rs`: A recording's on-screen HUD, read frame by frame for a run without a stats file (python/hud.py's
+- `src/hud/glyphs.rs`: What each frame keeps of the HUD (src/hud/mod.rs): its value rows' glyphs, each row's kept once
+  while it stays the same from frame to frame, so a long recording stays small (`GlyphStore`).
+- `src/hud/layout.rs`: Where the HUD's boxes and their text rows are (src/hud/mod.rs): the grey levels and ink of a
+  scaled region, KovaaK's session box found in the key frames' median (a flood fill from a patch of the box's level) and
+  its value rows, and each row's glyphs cut apart; Aim Lab's POINTS and TIME boxes' glyphs too.
+- `src/hud/mod.rs`: A recording's on-screen HUD, read frame by frame for a run without a stats file (python/hud.py's
   algorithm): KovaaK's session box (Kill Count, and Accuracy as hits/shots) or, when there is none, Aim Lab's POINTS and
   TIME boxes.
+- `src/hud/reading.rs`: Reading the HUD's counts (src/hud/mod.rs): the digits learned from the recording itself (the
+  glyphs' shapes, and KovaaK's Kill Count counting up one kill at a time, Aim Lab's timer down one second at a time),
+  then the Kill Count's kill frames, the Accuracy line's shots and hits, or Aim Lab's POINTS steps.
+- `src/hud/scale.rs`: The HUD's scaling (src/hud/mod.rs): a frame's region resampled as ffmpeg's `scale` filter does
+  (area, bilinear and bicubic taps along each axis), the glyphs cut from it made GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX, and a
+  limited-range Y stretched to 0..255.
+- `src/hud/watch.rs`: The HUD watch (src/hud/mod.rs): the key frames' layout, then each frame's glyphs, a run part at a
+  time, its part saved as JSON and the parts joined, then the reading.
 - `src/kill_check.rs`: The kills the video alone gives (matching.rs `match_video`), checked in the frames round them: a
   target that dies leaves wall where it was, while a target the tracking only lost, or a crosshair the detector boxed,
   still shows there.
@@ -425,7 +438,22 @@ angle from it (python/retired/review.py: `W`, `H`, `CX`, `CY`, `K`, `to_deg`, `t
 - Functions: `overlay_shares`, `degrees`, `blob_radius_deg`, `radians`, `to_deg`, `to_px`.
 - Constants: `W`, `H`, `CX`, `CY`, `K`, `OVERLAY`.
 
-## src/hud.rs
+## src/hud/glyphs.rs
+
+What each frame keeps of the HUD (src/hud/mod.rs): its value rows' glyphs, each row's kept once while it stays the same
+from frame to frame, so a long recording stays small (`GlyphStore`).
+
+## src/hud/layout.rs
+
+Where the HUD's boxes and their text rows are (src/hud/mod.rs): the grey levels and ink of a scaled region, KovaaK's
+session box found in the key frames' median (a flood fill from a patch of the box's level) and its value rows, and each
+row's glyphs cut apart; Aim Lab's POINTS and TIME boxes' glyphs too.
+
+- `SessionRows` (struct): KovaaK's session box as python/hud.py's layout finds it, for the area finder (src/areas.rs):
+  the columns of its text rows and the top of the first row and the bottom of the last, in the scaled region (BW x BH:
+  the pixels of a 2560 x 1440 frame, from its top left corner).
+
+## src/hud/mod.rs
 
 A recording's on-screen HUD, read frame by frame for a run without a stats file (python/hud.py's algorithm): KovaaK's
 session box (Kill Count, and Accuracy as hits/shots) or, when there is none, Aim Lab's POINTS and TIME boxes. It gives
@@ -436,9 +464,24 @@ KovaaK's Kill Count counts up one kill at a time, Aim Lab's timer down one secon
 - `HudFinal` (struct): The run's totals as the HUD shows them at the end: the kills counted, and the hits and shots
   (None where the Accuracy line was not read).
 - `HudReading` (struct): What the HUD read (python/hud.py: read() and read_aimlab()).
-- `SessionRows` (struct): KovaaK's session box as python/hud.py's layout finds it, for the area finder (src/areas.rs):
-  the columns of its text rows and the top of the first row and the bottom of the last, in the scaled region (BW x BH:
-  the pixels of a 2560 x 1440 frame, from its top left corner).
+
+## src/hud/reading.rs
+
+Reading the HUD's counts (src/hud/mod.rs): the digits learned from the recording itself (the glyphs' shapes, and
+KovaaK's Kill Count counting up one kill at a time, Aim Lab's timer down one second at a time), then the Kill Count's
+kill frames, the Accuracy line's shots and hits, or Aim Lab's POINTS steps.
+
+## src/hud/scale.rs
+
+The HUD's scaling (src/hud/mod.rs): a frame's region resampled as ffmpeg's `scale` filter does (area, bilinear and
+bicubic taps along each axis), the glyphs cut from it made GLYPH_WIDTH_PX x GLYPH_HEIGHT_PX, and a limited-range Y
+stretched to 0..255.
+
+## src/hud/watch.rs
+
+The HUD watch (src/hud/mod.rs): the key frames' layout, then each frame's glyphs, a run part at a time, its part saved
+as JSON and the parts joined, then the reading.
+
 - `HudPart` (struct): A run part's share of the watch (a review split into run parts: each part's watch reads its own
   frames, the page joins them).
 - `HudKeys` (struct): What a watch reads in the key frames (`HudWatch::keys`): KovaaK's box, None without one, and its
@@ -625,7 +668,7 @@ The reloads a clicking run's magazine forced (src/scenario.rs: `AmmoRules`), wor
 ## src/review.rs
 
 The review of a run (python/retired/review.py: `review`): a clicking run's flicks, or a tracking run's time on the
-target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without a
+target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud/); without a
 readable HUD, from the video alone. In: a request (`review_json`: the run's tracks, its stats file, what the video read
 and the user's run marks), which the service builds in every mode (service/src/report.rs). Out: the report as JSON
 (report.json), which the run page shows.

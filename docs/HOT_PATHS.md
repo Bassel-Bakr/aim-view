@@ -49,7 +49,7 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 | Pop-up areas | src/popup.rs `AreaWatch::add` | 0.33 ms on a frame it looks at, every second frame (`popup/add_look`) | |
 | Camera watch | src/camera.rs `CameraWatch::add`, `reading` | 1.04 ms `camera/add` (the FFTs about 0.14 ms of it, survey); `reading` 0.3 µs `camera/reading` | its own thread or worker: off the critical path (about 2.9 s a run against about 6 s) |
 | Countdown test | src/camera.rs `countdown_showing` | 1.3 µs `camera/countdown_showing`, 3 times a frame | |
-| HUD watch | src/hud.rs `HudWatch::add` | 0.21 ms at 2560x1440 `hud/add_2560`, 0.32 ms at 1080p `hud/add_1920` (scaling and the range table); an earlier measure gave 0.33 ms on a busy HUD (vox) | its own thread or worker; the whole av1 review with it: 15.6 s in the browser, 11.0 s natively |
+| HUD watch | src/hud/watch.rs `HudWatch::add` | 0.21 ms at 2560x1440 `hud/add_2560`, 0.32 ms at 1080p `hud/add_1920` (scaling and the range table); an earlier measure gave 0.33 ms on a busy HUD (vox) | its own thread or worker; the whole av1 review with it: 15.6 s in the browser, 11.0 s natively |
 
 ## Every key frame (25 on av1)
 
@@ -57,7 +57,7 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 | --- | --- | --- | --- |
 | Contrast map | src/fixed.rs `contrast`, `walls` | 2.8 ms `fixed/contrast` (4.9 ms before each pixel read its block's wall, survey) | bit-equal to Python's; natively computed once a key frame and shared by the fixed map and the area finder (service/src/review.rs); the browser's area finder computes its own in its worker |
 | The fixed map's count | src/fixed.rs `FixedMap::add` | 4.8 ms with the contrast `fixed/add` (through the 25 key frames, so it pays their memory traffic) | |
-| The HUD's key frames | src/hud.rs | 34 ms for the 25 key frames and the layout `hud/keys_2560` | |
+| The HUD's key frames | src/hud/watch.rs, layout.rs | 34 ms for the 25 key frames and the layout `hud/keys_2560` | |
 
 ## Once a review
 
@@ -68,8 +68,8 @@ on a recording of 1,200 frames or more (src/session.rs), so two decoders work in
 | Kill check | src/kill_check.rs `KillCheck`; service/src/review.rs `check_kills` | av1 with large_v13e4 (2026-10-07): 0:20 to 0:40 8.1 s with the check against 5.9 without (10.4 before the parts), through ffmpeg 9.4 s (16.5 before); the whole video 15.5 s (16.1 before) | the frames from the first the check needs to the last, decoded again in parts at once as the review's runs are (`split_runs`), the same evidence byte for byte; before, one decoder from the video's start (about 4.6 s a run, 245 s against 181 s for 14 of the video-alone runs with large_v11). The whole video gains little: the GPU's decoder is the limit there. Only without a stats file. It is the decoding: with large_v11, 1wall 2targets xsmall (6,038 frames) 11.5 s without the check, 15.9 s with it; through ffmpeg (`--gpu-frames off`) 11.8 s and 23.4 s. Decoding the frames it does not need without converting them or reading them back from the GPU, and ffmpeg's select filter piping only those it needs, saved 0 to 0.8 s (tried 2026-10-06, not kept). Checking in the first pass is not possible as it stands: the places after a kill move with the tracks' view shift, which `link` works out at the end from every frame's boxes |
 | Measure | src/measure.rs | 0.31 ms `measure/measure_av1` (0.48 ms at 9cbcbf7; already 0.31 ms just before the arrival's segment test, which costs nothing measurable) | |
 | The report | src/review.rs, summary.rs | with the stats file 14.1 ms `report/clicks_av1`; from the HUD 13.4 ms `report/hud_av1`; the service's request, JSON in and out, 18.2 ms `report/json_av1`; a tracking run 2.1 ms `report/tracking_flower` | the desktop app's whole report request on av1 (66 kills) took 283 ms, the browser's for a saved review 251 ms (before the one backend): mostly reading the files and the request, not the work |
-| HUD layout median | src/hud.rs, the per-pixel median over the key frames | 17 ms (survey) | a 256-bin histogram measured 11.6 ms; inside `hud/keys_2560` |
-| HUD finish | src/hud.rs `HudWatch::finish` | 20 to 40 ms (an earlier measure) | |
+| HUD layout median | src/hud/layout.rs `median_of_keys`, the per-pixel median over the key frames | 17 ms (survey) | a 256-bin histogram measured 11.6 ms; inside `hud/keys_2560` |
+| HUD finish | src/hud/watch.rs `HudWatch::finish` | 20 to 40 ms (an earlier measure) | |
 | Camera's excluded pixels | src/camera.rs `excluded` | 4.4 ms `camera/excluded` | |
 | Area finder's finish | src/areas.rs `AreaFinder::finish` | 49 ms `areas/finish_av1` (52 to 133 ms natively in an earlier measure, median 81) | |
 

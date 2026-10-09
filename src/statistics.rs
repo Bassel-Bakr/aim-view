@@ -2,7 +2,7 @@
 //! its order of operations reaches a result).
 //!
 //! In: a run's values (times, distances, speeds). Out: the summaries (summary.rs, what_if.rs), the measures
-//! (measure.rs, matching.rs), the tracking summary (tracking.rs), the HUD's reading (hud.rs) and the mouse log
+//! (measure.rs, matching.rs), the tracking summary (tracking.rs), the HUD's reading (hud/reading.rs) and the mouse log
 //! (mouse.rs).
 
 /// The mean: the values added in order, divided by their count. NaN when there are none.

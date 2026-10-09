@@ -97,7 +97,7 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   empty ones), and track again when a new window reaches past the tracked one. The core measures a tracking run from it
   as Python does (review.rs `run_window`). av1 with 0:20 to 0:40: the same boxes and camera readings inside the window
   as the whole review, 7.2 s against 14.2 s in the browser, 6.7 s against 10.4 s natively.
-  Runs without a stats file, in the browser and the desktop app: every review also reads the HUD (src/hud.rs: KovaaK's
+  Runs without a stats file, in the browser and the desktop app: every review also reads the HUD (src/hud/: KovaaK's
   session box, else Aim Lab's POINTS and TIME boxes, the digits learned from the recording) beside the camera watch,
   from each frame's Y plane; the runs' HUD parts are joined like the camera's. Without a stats file the kills, shots
   and hits come from the HUD, else from the video alone (matching.rs `match_video`; review.rs `KillTimes`), and the

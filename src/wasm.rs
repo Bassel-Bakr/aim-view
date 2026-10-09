@@ -114,7 +114,7 @@ pub unsafe extern "C" fn fixed_finish(fixed: *mut FixedMap, out: *mut u8) {
     unsafe { std::slice::from_raw_parts_mut(out, DST_W * DST_H) }.copy_from_slice(&fixed.map());
 }
 
-/// A HUD watch (src/hud.rs) for a recording of `width` x `height` pixels; `full`: its Y spans 0..255.
+/// A HUD watch (src/hud/) for a recording of `width` x `height` pixels; `full`: its Y spans 0..255.
 #[unsafe(no_mangle)]
 pub extern "C" fn hud_new(width: usize, height: usize, full: u32) -> *mut crate::hud::HudWatch {
     Box::into_raw(Box::new(crate::hud::HudWatch::new(width, height, full != 0)))

@@ -4,7 +4,7 @@
 //! In: the review's frames, 1280 x 720 YUV 4:2:0 (`convert::Converter::yuv420p`, the same bytes ffmpeg gives Python):
 //! the run's key frames, or the frames `sample_frames` picks when it has few (service/src/review.rs and finder.rs feed
 //! them natively, the page's area finder worker through src/wasm.rs); KovaaK's session box as the HUD watch finds it
-//! (src/hud.rs); and, for naming, the areas the user saved (exclude.json) and the examples they gave
+//! (src/hud/); and, for naming, the areas the user saved (exclude.json) and the examples they gave
 //! (area_examples.jsonl). Out: the found areas and the maps they came from (`Found`, kept as areas.json), the areas
 //! proposed for a recording (`find`), and the examples the user's saved areas give (`learn`, `merge`), to
 //! service/src/areas.rs and the WebAssembly exports.

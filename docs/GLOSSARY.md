@@ -21,7 +21,7 @@ code").
 - **Kill times.** Where a run's kills come from: the stats file, the HUD, or the video alone. `KillTimes` (review.rs),
   `KillSource` (matching.rs).
 - **HUD.** The game's on-screen counters: KovaaK's session box (kill count, hits and shots), or Aim Lab's POINTS and
-  TIME boxes. `HudWatch`, `HudReading` (hud.rs).
+  TIME boxes. `HudWatch` (hud/watch.rs), `HudReading` (hud/mod.rs).
 - **Countdown bar.** KovaaK's bar before a run starts. A recording may not show it. Read by `CameraWatch` (camera.rs).
 - **Review version.** The version of the review that made a report. An older one is outdated. `REVIEW_VERSION`
   (track.rs).

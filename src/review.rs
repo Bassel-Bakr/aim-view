@@ -1,5 +1,5 @@
 //! The review of a run (python/retired/review.py: `review`): a clicking run's flicks, or a tracking run's time on the
-//! target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud.rs); without
+//! target. The kills come from the run's stats file; without one, from the HUD read in the video (src/hud/); without
 //! a readable HUD, from the video alone. In: a request (`review_json`: the run's tracks, its stats file, what the video
 //! read and the user's run marks), which the service builds in every mode (service/src/report.rs). Out: the report as
 //! JSON (report.json), which the run page shows.
