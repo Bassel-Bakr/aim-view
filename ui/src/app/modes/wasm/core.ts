@@ -17,38 +17,14 @@ export interface CoreExports {
   alloc(len: number): number;
   /** Frees what one alloc call reserved. */
   dealloc(ptr: number, len: number): void;
-  /** A tracker with count excluded areas ([x0, y0, x1, y1] f64 shares); cap: targets, 0: none. */
-  tracker_new(areas: number, count: number, cap: number): number;
-  /** As tracker_new, with a byte per area, 1 for the end screen (excluded only while it shows). */
-  tracker_new_ends(areas: number, ends: number, count: number, cap: number): number;
-  /** A tracker with KovOBS's layout excluded; cap: the scenario's target count, 0 for none. */
-  tracker_new_kovobs(cap: number): number;
-  /** The model's settings file for the tracker; gives a text: empty when read, else why not. */
-  tracker_set_model(tracker: number, text: number, len: number): number;
-  /** The frame the next boxes are from, RGB at 1280 x 720: its areas are watched for pop-ups. */
-  tracker_watch(tracker: number, rgb: number): void;
-  /** One frame's detector maps: score (gh x gw), reg (4 x gh x gw), f32; gives the boxes kept. */
-  tracker_push_maps(tracker: number, score: number, reg: number, gw: number, gh: number): number;
-  /** Links the frames and frees the tracker; gives tracks.json's frames as a text. */
-  tracker_finish(tracker: number): number;
-  /** The tracker's run starts at this frame of the recording; call before its first frame. */
-  tracker_start_at(tracker: number, first: number): void;
-  /** The run's part as JSON text (src/tracker.rs `TrackPart`); frees the tracker. */
-  tracker_part(tracker: number): number;
-  /** The next run's part (tracker_part's JSON) after the frames it has; gives the frames added. */
-  tracker_add_part(tracker: number, part: number, len: number): number;
   /** A converter for w x h YUV 4:2:0 frames; matrix from `matrixNumber`, full 1 for pc range. */
   converter_new(w: number, h: number, matrix: number, full: number): number;
   /** One frame as RGB at 1280 x 720 into out (1280 * 720 * 3 bytes). */
   converter_rgb24(converter: number, yuv: number, len: number, out: number): void;
   /** One frame as YUV 4:2:0 at 1280 x 720 into out (1280 * 720 * 3 / 2 bytes). */
   converter_yuv420p(converter: number, yuv: number, len: number, out: number): void;
-  /** The 720p luma from the Y plane alone into out: the Y bytes converter_yuv420p gives. */
-  converter_luma(converter: number, y: number, len: number, out: number): void;
   /** The 720p RGB rows the countdown test reads, as from + (to << 16). */
   camera_rgb_rows(): number;
-  /** The review's version (src/track.rs `REVIEW_VERSION`), kept with a review's tracks. */
-  review_version(): number;
   /** Frees a converter. */
   converter_free(converter: number): void;
   /** A fixed map builder, fed the key frames. */
@@ -57,44 +33,14 @@ export interface CoreExports {
   fixed_add(fixed: number, yuv: number): void;
   /** The map into out (1280 * 720 bytes, 1 fixed, 0 not); frees the builder. */
   fixed_finish(fixed: number, out: number): void;
-  /** A scenario file's facts as JSON text: {kind, limit, targets}. */
-  scenario_facts(text: number, len: number): number;
-  /** A run reviewed: the request (src/review.rs `ReviewRequest`) in, {report} or {error} out. */
-  review_report(request: number, len: number): number;
   /** A submitted cut-off's label crops: src/faint.rs `CutoffRequest` in, crops or {error} out. */
   cutoff_crops(request: number, len: number): number;
   /** What a crop's shapes show: {scene, width, height} in, a `SceneView` or {error} out. */
   shapes_visible(request: number, len: number): number;
-  /** A camera watch, its tiles clear of KovOBS's layout and the fixed map (1280 * 720 bytes). */
-  camera_new(fixed: number): number;
-  /** A camera watch with its tiles clear of count excluded areas and the fixed map. */
-  camera_new_areas(areas: number, count: number, fixed: number): number;
-  /** One frame: its 720p YUV 4:2:0 (the luma is read) and its 720p RGB (the countdown bar). */
-  camera_add(camera: number, yuv: number, rgb: number): void;
-  /** The readings {camera, countdown} given the tracks' frames JSON; frees the watch. */
-  camera_finish(camera: number, frames: number, len: number): number;
-  /** The run's part of the watch as JSON text (src/camera.rs `CameraPart`); frees the watch. */
-  camera_part(camera: number): number;
-  /** Frames not reviewed before the first (a review from part way in). */
-  camera_skip(camera: number, frames: number): void;
-  /** The next run's part (camera_part's JSON) after its frames; gives its frames after it. */
-  camera_add_part(camera: number, part: number, len: number): number;
   /** A HUD watch (src/hud.rs) for w x h frames; full 1 when their Y spans 0 to 255. */
   hud_new(w: number, h: number, full: number): number;
   /** One key frame's Y plane, before any frame. */
   hud_add_key(hud: number, y: number, len: number): void;
-  /** One frame's Y plane, in order. */
-  hud_add(hud: number, y: number, len: number): void;
-  /** Frames not reviewed before the first (a review from part way in). */
-  hud_skip(hud: number, frames: number): void;
-  /** The run's part of the watch as JSON text (`HudPart`); frees the watch. */
-  hud_part(hud: number): number;
-  /** The next run's part (hud_part's JSON) after the frames it has; gives its frames after it. */
-  hud_add_part(hud: number, part: number, len: number): number;
-  /** What the HUD read as JSON text (`HudReading`, or null); frees the watch. */
-  hud_finish(hud: number): number;
-  /** A raw mouse log read (src/mouse.rs `ReadRequest`): {run}, {summary} or {error} out. */
-  mouse_read(log: number, logLen: number, request: number, len: number): number;
   /** An area finder (src/areas.rs `AreaFinder`), fed the frames areas_sample picks. */
   areas_new(): number;
   /** One frame, YUV 4:2:0 at 1280 x 720. */
@@ -105,10 +51,6 @@ export interface CoreExports {
   hud_session_box(hud: number): number;
   /** The frames the finder reads: {keys, times, duration} in; null (key frames) or indexes out. */
   areas_sample(input: number, len: number): number;
-  /** The areas to propose: {found, examples, labelled, kinds?} in, the proposal out. */
-  areas_find(input: number, len: number): number;
-  /** Learns from saved areas: the areas and examples in, the new area_examples.jsonl text out. */
-  areas_learn(input: number, len: number): number;
   /** A review from its setup (src/session.rs `Setup`); 0 when unreadable or with no frames. */
   review_new(setup: number, len: number): number;
   /** The model's settings file for the review; gives a text: empty when read, else why not. */

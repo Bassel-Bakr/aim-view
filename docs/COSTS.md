@@ -45,7 +45,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
-| lint:ui | - | 4.7 s | 6.4 s | 51 | 2026-10-09, 1eb73ed+ |
+| lint:ui | - | 4.4 s | 5.5 s | 52 | 2026-10-09, f260ccc+ |
 | review-av1 | profile local | 19.2 s | 19.1 s | 2 | 2026-10-08, 433f4a8+ |
 | review-av1 | profile local-thin | 11.8 s | 26.6 s | 2 | 2026-10-08, 433f4a8+ |
 | review-av1 | profile release | 11.9 s | 12.4 s | 2 | 2026-10-08, 433f4a8+ |
@@ -60,7 +60,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | server-build | profile release, linker link.exe, change edit | 77.7 s | 77.7 s | 1 | 2026-10-08, 433f4a8+ |
 | server-build | profile release, linker rust-lld, change edit | 76.7 s | 76.7 s | 1 | 2026-10-08, 433f4a8+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 9.5 s | 11.9 s | 41 | 2026-10-09, 1eb73ed+ |
+| test:ui | - | 8.3 s | 10.9 s | 42 | 2026-10-09, f260ccc+ |
 | tokens | - | 0.5 s | 0.4 s | 7 | 2026-10-08, a386e9e+ |
 | train | model large_v15 | 197.8 s | 197.8 s | 1 | 2026-10-09, 38ba8e9 |
 <!-- costs:end -->
