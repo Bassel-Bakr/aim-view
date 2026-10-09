@@ -22,14 +22,17 @@ Out:
 - <batch>/agreed/auto_accepted.jsonl: the accepted crops outside the sample, checked_phone's line format (verdict
   "correct", source "auto_accepted", boxes the corrected ones, auto the pixel boxes, model the detector's).
 - <batch>/agreed/second_look.json: the scores, the sweep, and the disputed crops by how strongly they disagree.
-- The page set SET_NAME in <page> (crop_check/make_page.py, through <batch>/second_look_picks.jsonl): the
-  PAGE_LIMIT most disputed crops, the corrected boxes, then the detector's unpaired boxes crossed out.
+- Two sets in <page> (crop_check/make_page.py, through <batch>/<set>_picks.jsonl): SET_NAME, the disputed crops of
+  MIN_PAGE_STRENGTH or more, the corrected boxes, then the detector's unpaired boxes crossed out; and ACCEPTED_SET,
+  ACCEPTED_SAMPLE seeded accepted crops with their corrected boxes, whose answers score the accepted tier on crops
+  the detector was not trained on. The weaker disputed crops are left out ("left_out" in second_look.json).
 
 Usage: python python/model/second_look.py <batch> [--page <folder>] [--checked checked_phone_2.jsonl]
        [--model large_v16e4]
 """
 import argparse
 import json
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -49,12 +52,17 @@ MATCH_IOU = 0.77                # a corrected box is the detector's at this over
 EXTRA_IOU = 0.5                 # an unpaired detector box under this overlap with every corrected box is an extra
 SWEEP_IOU = np.round(np.arange(0.70, 0.865, 0.01), 2)   # the MATCH_IOU values the sweep tries
 MIN_ACCURACY = 0.97             # the share of accepted sample crops that must be right
-PAGE_LIMIT = 150                # the most disputed crops put on the page
+MIN_PAGE_STRENGTH = 0.4         # a disputed crop this strong or more goes on the page; a weaker one (box size only)
+                                # is left out, not training data
+ACCEPTED_SAMPLE = 20            # accepted crops put on the page for the user to check the accepted tier by
+SEED = 0                        # the accepted sample's seed
 THREADS = 4                     # ONNX Runtime's threads
 SET_NAME = "auto_disputed"
 TITLE = "Second look: the labeller and large_v16e4 disagree"
 CROSSED_OUT = "Crossed out: the detector's boxes the labeller does not have. Restore one if it is a target."
 SOURCE = "auto_accepted"
+ACCEPTED_SET = "auto_accepted_sample"
+ACCEPTED_TITLE = "Accepted automatically: a random check"
 
 
 def paired(found, truth, min_iou):
@@ -174,8 +182,28 @@ def pick_line(crop, unpaired, strength, kinds):
             **({"preset": {"remove": list(range(len(crop["fixed_boxes"]), len(boxes)))}} if shown else {})}
 
 
+def make_set(args, name, picks, title, crossed_out=None):
+    """Writes `picks` (picks lines) to <batch>/<name>_picks.jsonl (at the batch's root: make_page reads a pick's file
+    relative to the picks' folder) and makes the page set `name` from them."""
+    path = args.batch / f"{name}_picks.jsonl"
+    path.write_text("".join(json.dumps(pick) + "\n" for pick in picks), encoding="utf-8")
+    command = [sys.executable, str(HERE / "crop_check" / "make_page.py"), str(args.page), name, str(path),
+               "--title", title]
+    subprocess.run(command + (["--crossed-out", crossed_out] if crossed_out else []), check=True)
+
+
+def accepted_pick(crop, kinds):
+    """An accepted crop's picks line for make_page.py: its corrected boxes."""
+    folder, kind = kinds.get(crop["file"].split("/")[1][:10], ("", ""))
+    return {"file": crop["file"], "folder": folder, "kind": kind,
+            "why": ["accepted automatically: the labeller and the detector agree (thin boxes narrowed)"],
+            "boxes": [[round(value, 1) for value in box] for box in crop["fixed_boxes"]],
+            "scores": [round(value, 2) for value in crop["scores"]]}
+
+
 def write_outputs(args, rest, kinds, summary):
-    """auto_accepted.jsonl, the picks and the page set, and second_look.json; the disputed crops' count."""
+    """auto_accepted.jsonl, the page's two sets (the disputed crops of MIN_PAGE_STRENGTH or more, and a seeded sample
+    of ACCEPTED_SAMPLE accepted crops), and second_look.json; the disputed crops' count."""
     accepted, disputed = [], []
     for crop in rest:
         ok, unpaired, strength = second_opinion(crop["fixed_boxes"], crop["found"], MATCH_IOU)
@@ -187,14 +215,15 @@ def write_outputs(args, rest, kinds, summary):
              for crop, _, _ in accepted]
     agreed = args.batch / "agreed"
     (agreed / "auto_accepted.jsonl").write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
-    # at the batch's root: make_page reads a pick's file relative to the picks' folder
-    picks = args.batch / "second_look_picks.jsonl"
-    picks.write_text("".join(json.dumps(pick_line(*item, kinds)) + "\n" for item in disputed[:PAGE_LIMIT]),
-                     encoding="utf-8")
-    subprocess.run([sys.executable, str(HERE / "crop_check" / "make_page.py"), str(args.page), SET_NAME, str(picks),
-                    "--title", TITLE, "--crossed-out", CROSSED_OUT], check=True)
-    summary.update(auto_accepted=len(accepted), disputed=len(disputed), on_page=min(len(disputed), PAGE_LIMIT),
-                   disputed_by_strength=[{"file": crop["file"], "strength": strength}
+    shown = [item for item in disputed if item[2] >= MIN_PAGE_STRENGTH]
+    make_set(args, SET_NAME, [pick_line(*item, kinds) for item in shown], TITLE, CROSSED_OUT)
+    checked = sorted(random.Random(SEED).sample([crop for crop, _, _ in accepted], ACCEPTED_SAMPLE),
+                     key=lambda crop: crop["file"])
+    make_set(args, ACCEPTED_SET, [accepted_pick(crop, kinds) for crop in checked], ACCEPTED_TITLE)
+    summary.update(auto_accepted=len(accepted), disputed=len(disputed), on_page=len(shown),
+                   left_out=len(disputed) - len(shown), accepted_on_page=len(checked),
+                   disputed_by_strength=[{"file": crop["file"], "strength": strength,
+                                          "left_out": strength < MIN_PAGE_STRENGTH}
                                          for crop, _, strength in disputed])
     (agreed / "second_look.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
     return len(disputed)
@@ -239,7 +268,8 @@ def main():
         print(f"match IoU {row['match_iou']:.2f}: sample {row['sample']}, review {row['review']}, "
               f"rest accepted {row['rest_accepted']}")
     share = summary["sample"]["share"]
-    print(f"{disputed} disputed, {summary['on_page']} on the page {args.page}; sample accuracy {share} "
+    print(f"{disputed} disputed, {summary['on_page']} on the page {args.page}, {summary['left_out']} left out, "
+          f"{summary['accepted_on_page']} accepted on the page; sample accuracy {share} "
           f"({'meets' if share is not None and share >= MIN_ACCURACY else 'below'} {MIN_ACCURACY})")
 
 
