@@ -21,13 +21,13 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | accept | model large_v16e4 | 1455.3 s | 1455.3 s | 1 | 2026-10-09, ec76e1d+ |
 | assets | profile release, modes browser | 0.3 s | 68.7 s | 2 | 2026-10-08, 4303844+ |
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
-| assets | profile release, modes server | 0.2 s | 38.5 s | 6 | 2026-10-09, 1a3382e+ |
+| assets | profile release, modes server | 0.2 s | 36.0 s | 7 | 2026-10-09, ec76e1d+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
 | assets | profile wasm-dev, modes browser,server,desktop | 2.6 s | 20.7 s | 25 | 2026-10-09, 724cf2c+ |
 | assets | profile wasm-dev, modes server | 12.4 s | 11.0 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
 | assets: core and service wasm (cargo) | profile wasm-dev | 2.5 s | 13.7 s | 30 | 2026-10-09, 724cf2c+ |
-| assets: core wasm (cargo) | profile release | 0.2 s | 38.5 s | 6 | 2026-10-09, 1a3382e |
+| assets: core wasm (cargo) | profile release | 0.2 s | 35.9 s | 7 | 2026-10-09, ec76e1d |
 | assets: core wasm (cargo) | profile wasm-dev | 12.2 s | 10.9 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
@@ -37,12 +37,12 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build | modes browser | 143.3 s | 143.3 s | 1 | 2026-10-08, 4303844+ |
 | build | modes browser,server,desktop, angular at once | 63.3 s | 34.2 s | 2 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular one at a time | 182.7 s | 182.7 s | 1 | 2026-10-07, 78c5844+ |
-| build | modes server | 10.3 s | 42.3 s | 5 | 2026-10-09, 1a3382e+ |
+| build | modes server | 8.1 s | 42.3 s | 6 | 2026-10-09, ec76e1d+ |
 | build | modes server, assets quick | 35.5 s | 35.5 s | 3 | 2026-10-09, 1eb73ed+ |
 | build: Angular (production) | mode browser | 6.2 s | 6.1 s | 4 | 2026-10-08, 4303844+ |
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
-| build: Angular (production) | mode server | 5.5 s | 6.5 s | 11 | 2026-10-09, 1a3382e+ |
-| build: lint | - | 4.7 s | 4.7 s | 8 | 2026-10-09, 1a3382e+ |
+| build: Angular (production) | mode server | 5.4 s | 5.5 s | 12 | 2026-10-09, ec76e1d+ |
+| build: lint | - | 2.6 s | 4.4 s | 9 | 2026-10-09, ec76e1d+ |
 | cargo test quick workspace | - | 45.3 s | 31.0 s | 2 | 2026-10-09, f4f3d0b+ |
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | export | model large_v16e4 | 82.4 s | 82.4 s | 1 | 2026-10-09, ec76e1d+ |
