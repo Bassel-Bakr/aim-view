@@ -253,6 +253,16 @@ function tracePill(context: CanvasRenderingContext2D, shape: Shape, [dx, dy]: Fa
   context.restore();
 }
 
+/** An oval's turned ellipse as a path, moved by an offset (its far end's: its third face). */
+function traceEllipse(context: CanvasRenderingContext2D, shape: Shape, [dx, dy]: FaceOffset): void {
+  const [cx, cy, width, height] = shape.box;
+  context.moveTo(
+    cx + dx + (width / 2) * Math.cos(radians(shape.angle)),
+    cy + dy + (width / 2) * Math.sin(radians(shape.angle)),
+  );
+  context.ellipse(cx + dx, cy + dy, width / 2, height / 2, radians(shape.angle), 0, 2 * Math.PI);
+}
+
 /**
  * The two lines joining a pill to its far end: its edges along the face, where the line through each side of the pill
  * parallel to the face touches it.
@@ -275,9 +285,9 @@ function pillSides(shape: Shape, [dx, dy]: FaceOffset): CropPoint[] {
 }
 
 /**
- * A shape's outline as a path, the context drawing in crop pixels: a pill as its turned round-ended frame, a box as
- * its turned frame, and with a third face its far end and the edges joining them (a cube's or a cylinder's
- * wireframe).
+ * A shape's outline as a path, the context drawing in crop pixels: a pill as its turned round-ended frame, an oval as
+ * its turned ellipse, a box as its turned frame, and with a third face its far end and the edges joining them (a
+ * cube's or a cylinder's wireframe; an oval's two ellipses only, as the page never gives one a face).
  */
 export function tracePath(context: CanvasRenderingContext2D, shape: Shape): void {
   context.beginPath();
@@ -291,6 +301,11 @@ export function tracePath(context: CanvasRenderingContext2D, shape: Shape): void
   }
   if (shape.solid) {
     traceSolid(context, shape, shape.solid);
+    return;
+  }
+  if (shape.kind === 'ellipse') {
+    traceEllipse(context, shape, [0, 0]);
+    if (shape.face) traceEllipse(context, shape, shape.face);
     return;
   }
   if (shape.kind === 'pill') {

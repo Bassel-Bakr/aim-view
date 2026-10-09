@@ -53,6 +53,7 @@ const TURN_STEP_DEG = 15;
 /** The shape buttons, in the page's order. */
 const SHAPES: readonly ShapeChoice[] = [
   { kind: 'pill', deep: false, name: 'Pill' },
+  { kind: 'ellipse', deep: false, name: 'Oval' },
   { kind: 'box', deep: false, name: 'Box' },
   { kind: 'pill', deep: true, name: '3D pill' },
   { kind: 'box', deep: true, name: '3D box' },

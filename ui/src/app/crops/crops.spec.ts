@@ -225,6 +225,25 @@ describe("the Crops page's perfect circles and squares", () => {
     await click('Equal sides');
     expect(draft.draft()?.shapes.at(-1)?.box).toEqual([130, 140, 30, 30]);
   });
+
+  it('draws an oval with the Oval tool, and makes a selected shape one', async () => {
+    const { draft, click, drag } = await render(fakeServer([]));
+    await click('Wrong');
+    await click('Oval');
+    drag([120, 120], [140, 160]);
+    expect(draft.draft()?.shapes.at(-1)).toMatchObject({
+      kind: 'ellipse',
+      box: [130, 140, 20, 40],
+    });
+    await click('Box');
+    expect(draft.draft()?.shapes.at(-1)?.kind).toBe('box');
+    await click('Oval');
+    expect(draft.draft()?.shapes.at(-1)).toMatchObject({
+      kind: 'ellipse',
+      solid: null,
+      points: null,
+    });
+  });
 });
 
 describe('the Crops page order', () => {

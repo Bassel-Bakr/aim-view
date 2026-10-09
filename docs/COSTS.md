@@ -22,15 +22,15 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 38.5 s | 37.3 s | 4 | 2026-10-08, ac709f4+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 34.5 s | 19.5 s | 22 | 2026-10-09, 3b73a35+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 24.2 s | 22.9 s | 23 | 2026-10-09, c566b59+ |
 | assets | profile wasm-dev, modes server | 12.4 s | 11.0 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 21.9 s | 12.0 s | 27 | 2026-10-09, 3b73a35+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 16.4 s | 15.1 s | 28 | 2026-10-09, c566b59+ |
 | assets: core wasm (cargo) | profile release | 38.5 s | 37.3 s | 4 | 2026-10-08, ac709f4+ |
 | assets: core wasm (cargo) | profile wasm-dev | 12.2 s | 10.9 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O0 | 12.1 s | 7.4 s | 10 | 2026-10-09, 3b73a35+ |
+| assets: wasm-opt (Asyncify) | level -O0 | 7.7 s | 7.6 s | 11 | 2026-10-09, c566b59+ |
 | assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 64.7 s | 62.5 s | 2 | 2026-10-08, 4303844+ |
 | build | modes browser | 143.3 s | 143.3 s | 1 | 2026-10-08, 4303844+ |
@@ -46,7 +46,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
-| lint:ui | - | 5.9 s | 5.9 s | 53 | 2026-10-09, 8fe2b6c+ |
+| lint:ui | - | 10.8 s | 5.9 s | 54 | 2026-10-09, c566b59+ |
 | merged_pairs | binaries prebuilt | 1747.8 s | 1747.8 s | 1 | 2026-10-09, ac62697+ |
 | merged_pairs | binaries prebuilt, reviews cached | 1163.9 s | 1163.9 s | 1 | 2026-10-09, 3c9d214+ |
 | review-av1 | profile local | 19.2 s | 19.1 s | 2 | 2026-10-08, 433f4a8+ |
@@ -63,7 +63,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | server-build | profile release, linker link.exe, change edit | 77.7 s | 77.7 s | 1 | 2026-10-08, 433f4a8+ |
 | server-build | profile release, linker rust-lld, change edit | 76.7 s | 76.7 s | 1 | 2026-10-08, 433f4a8+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
-| test:ui | - | 12.1 s | 11.9 s | 44 | 2026-10-09, 8fe2b6c+ |
+| test:ui | - | 22.5 s | 12.1 s | 45 | 2026-10-09, c566b59+ |
 | tokens | - | 0.5 s | 0.4 s | 8 | 2026-10-09, 8fe2b6c+ |
 | train | model large_v15 | 197.8 s | 197.8 s | 1 | 2026-10-09, 38ba8e9 |
 | types | - | 47.7 s | 47.7 s | 1 | 2026-10-09, b6480f1+ |

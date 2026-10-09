@@ -11,6 +11,7 @@ import {
   onShape,
   resized,
   scaled,
+  tracePath,
   turned,
   turnedBy,
   turnHandle,
@@ -98,6 +99,34 @@ describe('shape geometry', () => {
     const head = shape({ box: [50, 40, 10, 10] });
     const body = shape({ box: [50, 55, 10, 20] });
     expect(boxAround([head, body])).toEqual([50, 50, 10, 30]);
+  });
+});
+
+describe('an oval', () => {
+  it('resizes its width and height on their own, by a corner or a side, and turns', () => {
+    const oval = shape({ kind: 'ellipse' });
+    expect(resized(oval, 2, [70, 70]).box).toEqual([55, 57.5, 30, 25]);
+    expect(pushedFlatSide(oval, 3, [50, 65], false).box).toEqual([50, 55, 20, 20]);
+    expect(turned(oval, [60, 50]).angle).toBe(90);
+    expect(onShape(oval, [59, 54], 0) && !onShape(oval, [61, 50], 0)).toBe(true);
+  });
+
+  it('traces its turned ellipse on the canvas', () => {
+    const calls: unknown[][] = [];
+    const record =
+      (name: string) =>
+      (...args: unknown[]) =>
+        calls.push([name, ...args]);
+    const context = {
+      beginPath: record('beginPath'),
+      moveTo: record('moveTo'),
+      ellipse: record('ellipse'),
+    } as unknown as CanvasRenderingContext2D;
+    tracePath(context, shape({ kind: 'ellipse', angle: 90 }));
+    const [, , ellipse] = calls;
+    expect(ellipse.slice(0, 5)).toEqual(['ellipse', 50, 50, 10, 5]);
+    expect(ellipse[5]).toBeCloseTo(Math.PI / 2);
+    expect(ellipse.slice(6)).toEqual([0, 2 * Math.PI]);
   });
 });
 

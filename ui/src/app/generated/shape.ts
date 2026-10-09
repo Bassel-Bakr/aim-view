@@ -18,7 +18,7 @@ export interface Shape {
    */
   id: string;
   /**
-   * Pill or box.
+   * Pill, oval or box.
    */
   kind: ShapeKind;
   /**
