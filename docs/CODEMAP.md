@@ -1010,6 +1010,9 @@ desktop app) and test_out/vod_model/check_* in Python's (the review server).
 - `CropPage` (struct): A check folder (the page names it by its folder's name) and its sets.
 - `CropAnswers` (struct): A check folder's answers as one document, to move them between modes: browser mode exports it,
   the review server imports it.
+- `CropChecks` (struct): The Crops page's check folders in the layout's crops folder (config.rs `Folders`): what the
+  page lists, shows and answers. Methods: `new`, `crop_pages`, `crops`, `crop_answers`, `crop_image`,
+  `save_crop_answer`, `export_crop_answers`, `import_crop_answers`, `crop_labels`.
 - `Library` methods: `crop_pages`, `crops`, `crop_answers`, `crop_image`, `save_crop_answer`, `export_crop_answers`,
   `import_crop_answers`, `crop_labels`.
 - Constants: `CROP_PX`.
@@ -1153,7 +1156,7 @@ the page (browser.rs).
   `bad`.
 - `Answer` (type): A library answer: the value, or the failure the API answers with.
 - `Library` (struct): The user's recordings and everything kept for them; one per process, shared by every request's
-  thread. Methods: `open`, `config`, `folders`.
+  thread. Methods: `open`, `config`, `folders`, `crop_checks`.
 - Constants: `FOUND_NEEDED`.
 
 ## service/src/library/names.rs

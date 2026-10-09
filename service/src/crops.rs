@@ -14,6 +14,7 @@ use aimview::shapes::{self, Scene};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::config::Folders;
 use crate::library::{Answer, Failure, Library};
 
 /// Where a check folder keeps its answers: the page's own, and older folders the claude.ai pages' answers were saved
@@ -211,14 +212,27 @@ fn check_answer(answer: &CropAnswer, crop: &CropEntry) -> Answer<()> {
     }
 }
 
-impl Library {
+/// The Crops page's check folders in the layout's crops folder (config.rs `Folders`): what the page lists, shows and
+/// answers. It needs only that folder; the library's routes hand each request to it (Extract Class).
+pub struct CropChecks {
+    /// The folder the check folders are in.
+    crops: PathBuf,
+    /// The start a folder's name needs to be a check folder.
+    prefix: &'static str,
+}
+
+impl CropChecks {
+    /// The check folders of the layout's crops folder.
+    pub fn new(folders: &Folders) -> CropChecks {
+        CropChecks { crops: folders.crops.clone(), prefix: folders.crop_prefix }
+    }
+
     /// A check folder by its name, when it is one: a folder of the crops folder holding crops.json, its name plain and
     /// with the layout's start.
     fn crop_folder(&self, page: &str) -> Answer<PathBuf> {
-        let folders = self.folders();
-        let folder = folders.crops.join(page);
+        let folder = self.crops.join(page);
         let listed = crate::disk::is_file(folder.join("crops.json"));
-        if !plain_name(page) || !page.starts_with(folders.crop_prefix) || !listed {
+        if !plain_name(page) || !page.starts_with(self.prefix) || !listed {
             return Err(Failure::missing(format!("no check folder {page}")));
         }
         Ok(folder)
@@ -256,8 +270,7 @@ impl Library {
 
     /// Every check folder with its sets (GET /api/crop_pages), by name.
     pub fn crop_pages(&self) -> Answer<Value> {
-        let folders = self.folders();
-        let mut names: Vec<String> = crate::disk::read_dir(&folders.crops)
+        let mut names: Vec<String> = crate::disk::read_dir(&self.crops)
             .into_iter()
             .flatten()
             .flatten()
@@ -383,7 +396,7 @@ fn scene_label(answer: &CropAnswer, scene: &Scene) -> Value {
     })
 }
 
-impl Library {
+impl CropChecks {
     /// The training labels of a check folder's scene answers (aimview-tool crop-labels): by crop id, those of the
     /// given sets (every set when none is given); answers with no scene are left to labels.py, as before.
     pub fn crop_labels(&self, page: &str, sets: &[String]) -> Answer<Value> {
@@ -394,6 +407,48 @@ impl Library {
             .filter_map(|(id, answer)| Some((id.clone(), scene_label(answer, answer.scene.as_ref()?))))
             .collect();
         Ok(json!({ "page": page, "size": CROP_PX, "labels": labels }))
+    }
+}
+
+impl Library {
+    /// Every check folder with its sets (GET /api/crop_pages): `CropChecks::crop_pages`.
+    pub fn crop_pages(&self) -> Answer<Value> {
+        self.crop_checks().crop_pages()
+    }
+
+    /// A set's crops (GET /api/crops): `CropChecks::crops`.
+    pub fn crops(&self, page: &str, set: &str) -> Answer<Value> {
+        self.crop_checks().crops(page, set)
+    }
+
+    /// A set's answers by crop id (GET /api/crop_answers): `CropChecks::crop_answers`.
+    pub fn crop_answers(&self, page: &str, set: &str) -> Answer<Value> {
+        self.crop_checks().crop_answers(page, set)
+    }
+
+    /// A crop's picture, PNG (GET /api/crop_image): `CropChecks::crop_image`.
+    pub fn crop_image(&self, page: &str, id: &str) -> Answer<Vec<u8>> {
+        self.crop_checks().crop_image(page, id)
+    }
+
+    /// Keeps a crop's answer (POST /api/crop_answer): `CropChecks::save_crop_answer`.
+    pub fn save_crop_answer(&self, page: &str, id: &str, body: &[u8]) -> Answer<Value> {
+        self.crop_checks().save_crop_answer(page, id, body)
+    }
+
+    /// Every answer of a check folder as one document (GET /api/crop_export): `CropChecks::export_crop_answers`.
+    pub fn export_crop_answers(&self, page: &str) -> Answer<Value> {
+        self.crop_checks().export_crop_answers(page)
+    }
+
+    /// A document of answers (POST /api/crop_import): `CropChecks::import_crop_answers`.
+    pub fn import_crop_answers(&self, page: &str, body: &[u8]) -> Answer<Value> {
+        self.crop_checks().import_crop_answers(page, body)
+    }
+
+    /// The training labels of a check folder's scene answers (aimview-tool crop-labels): `CropChecks::crop_labels`.
+    pub fn crop_labels(&self, page: &str, sets: &[String]) -> Answer<Value> {
+        self.crop_checks().crop_labels(page, sets)
     }
 }
 

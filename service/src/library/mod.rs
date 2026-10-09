@@ -126,11 +126,13 @@ pub struct Library {
     facts: Mutex<Option<Arc<HashMap<String, Facts>>>>,
     /// Each recording's last job (a review, or a link's download), by its id.
     jobs: Mutex<HashMap<String, Arc<Mutex<Job>>>>,
+    /// The Crops page's check folders (crops.rs).
+    crop_checks: crate::crops::CropChecks,
     /// Held while area_examples.jsonl changes (areas.rs): one change at a time, as the finder learns in the background.
     examples: Mutex<()>,
-    /// What links' qualities were read (links.rs), by link, kept for their download.
+    /// The links yt-dlp read (links.rs), each kept for its download.
     #[cfg(feature = "native")]
-    links: Mutex<HashMap<String, crate::ytdlp::LinkInfo>>,
+    links: links::LinkReader,
 }
 
 /// A file's time of change in seconds since 1970; 0 when it has none.
@@ -180,6 +182,9 @@ impl Library {
         crate::ffmpeg::set_source(config.ffmpeg.clone());
         let store = open_store(&config, &folders)?;
         let settings = Settings::read(&*store);
+        let crop_checks = crate::crops::CropChecks::new(&folders);
+        #[cfg(feature = "native")]
+        let links = links::LinkReader::new(&config);
         let library = Arc::new(Library {
             config,
             folders,
@@ -188,9 +193,10 @@ impl Library {
             stats: Mutex::default(),
             facts: Mutex::default(),
             jobs: Mutex::default(),
+            crop_checks,
             examples: Mutex::default(),
             #[cfg(feature = "native")]
-            links: Mutex::default(),
+            links,
         });
         recordings::remove_stale_spools(&library.uploads(), crate::disk::process_id());
         if let Err(failure) = library.fix_examples() {
@@ -207,6 +213,11 @@ impl Library {
     /// The layout's folders in the data folder.
     pub fn folders(&self) -> &Folders {
         &self.folders
+    }
+
+    /// The Crops page's check folders, which its routes hand their requests to.
+    pub fn crop_checks(&self) -> &crate::crops::CropChecks {
+        &self.crop_checks
     }
 
     /// The hold on area_examples.jsonl for one change (areas.rs), taken even when a change before it panicked.

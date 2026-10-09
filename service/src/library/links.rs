@@ -138,10 +138,24 @@ struct Download {
     job: Arc<Mutex<Job>>,
 }
 
-impl Library {
-    /// The links' qualities read so far, by link.
-    fn read_links(&self) -> Answer<MutexGuard<'_, HashMap<String, LinkInfo>>> {
-        self.links.lock().map_err(|_| Failure::from("the links are broken".to_string()))
+/// Links read by yt-dlp: each one's title, length and qualities, kept from the page's asking for its qualities to the
+/// download that follows. It needs only the configuration's yt-dlp (Extract Class from Library).
+pub(super) struct LinkReader {
+    /// What the library was opened with: where yt-dlp comes from (`ytdlp::ensure`).
+    config: Config,
+    /// What was read so far, by link.
+    read: Mutex<HashMap<String, LinkInfo>>,
+}
+
+impl LinkReader {
+    /// Nothing read yet; yt-dlp from where `config` says.
+    pub(super) fn new(config: &Config) -> LinkReader {
+        LinkReader { config: config.clone(), read: Mutex::default() }
+    }
+
+    /// The links read so far, by link.
+    fn kept(&self) -> Answer<MutexGuard<'_, HashMap<String, LinkInfo>>> {
+        self.read.lock().map_err(|_| Failure::from("the links are broken".to_string()))
     }
 
     /// A link's title and length, and its qualities best first, from yt-dlp (fetched first when it is missing).
@@ -150,13 +164,28 @@ impl Library {
         ytdlp::info(&program, url).map_err(|error| Failure::bad(format!("yt-dlp cannot read this link: {error}")))
     }
 
-    /// A link's title, length and qualities ({url}: {title, duration, formats}), kept for the download that follows.
-    pub fn link_formats(&self, body: &Value) -> Answer<Value> {
-        let url = link_url(body)?;
+    /// A link's title, length and qualities as JSON ({title, duration, formats}), kept for the download that follows.
+    fn formats(&self, url: String) -> Answer<Value> {
         let info = self.read_link(&url)?;
         let answer = json!(info);
-        self.read_links()?.insert(url, info);
+        self.kept()?.insert(url, info);
         Ok(answer)
+    }
+
+    /// A link's title, length and qualities for its download: those kept for it (no longer kept), else read now.
+    fn take(&self, url: &str) -> Answer<LinkInfo> {
+        let kept = self.kept()?.remove(url);
+        match kept {
+            Some(info) => Ok(info),
+            None => self.read_link(url),
+        }
+    }
+}
+
+impl Library {
+    /// A link's title, length and qualities ({url}: {title, duration, formats}), kept for the download that follows.
+    pub fn link_formats(&self, body: &Value) -> Answer<Value> {
+        self.links.formats(link_url(body)?)
     }
 
     /// Adds a recording from a link ({url, format}: format is one of `link_formats`' ids, or null for the best). It
@@ -166,11 +195,7 @@ impl Library {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let url = link_url(body)?;
         let format = body["format"].as_str().map(String::from);
-        let kept = self.read_links()?.remove(&url);
-        let info = match kept {
-            Some(info) => info,
-            None => self.read_link(&url)?,
-        };
+        let info = self.links.take(&url)?;
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |since| since.as_secs_f64());
         let name = link_name(&info.title, &link_stamp(info.timestamp, info.upload_date.as_deref(), now));
         std::fs::create_dir_all(self.uploads())?;
