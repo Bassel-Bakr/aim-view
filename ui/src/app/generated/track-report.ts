@@ -24,7 +24,7 @@ export interface TrackReport {
    */
   summary: TrackSummary;
   /**
-   * Always empty: the checks are a clicking run's.
+   * The tracking checks (src/track_checks.rs): a Work on or Fine verdict on each habit the what-ifs measure.
    */
   issues: Issue[];
   /**
