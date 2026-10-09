@@ -19,8 +19,10 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
+import local_config  # noqa: E402
+
 VIDEO = "1w4ts Voltaic/1w4ts Voltaic - 143 - 2026.09.30-04.55.23.mp4"     # in the recordings' folder
-SAMPLE = Path("test_out/vod_model/bench_frame.npz")
+SAMPLE = local_config.folder("data") / "vod_model" / "bench_frame.npz"
 SAMPLE_KEY_FRAME = 10           # the key frame the sample is
 WARM_UP, TIMED = 5, 30          # CPU: runs before timing, runs timed
 GPU_WARM_UP, GPU_TIMED = 10, 50   # GPU: calls before timing, calls timed
@@ -34,7 +36,6 @@ def sample():
     made once into SAMPLE, with raw copies of both beside it for the browser benchmark."""
     if not SAMPLE.exists():
         import build_data
-        import local_config
         import old_review
         video = str(local_config.required(local_config.folder("vods"), "recordings' folder (vods)") / VIDEO)
         yuv = build_data.keyframes(video, "yuv420p")
@@ -157,7 +158,7 @@ def main():
         row = gpu(path)
         out["gpu"].append(row)
         print(row, flush=True)
-    json.dump(out, open("test_out/vod_model/bench.json", "w"), indent=1)
+    json.dump(out, open(SAMPLE.parent / "bench.json", "w"), indent=1)
 
 
 if __name__ == "__main__":

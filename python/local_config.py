@@ -30,6 +30,13 @@ def folder(key):
     return None if path is None else ROOT / path
 
 
+def repo_relative(path):
+    """A path as a report records it: from the repo's root, with forward slashes, when it lies under the root (as the
+    data folder's paths do); else as given."""
+    full = Path(path)
+    return full.relative_to(ROOT).as_posix() if full.is_absolute() and full.is_relative_to(ROOT) else str(path)
+
+
 def steam():
     """Steam's folder: as named, else where Steam records it; None when neither has one."""
     named = folder("steam")

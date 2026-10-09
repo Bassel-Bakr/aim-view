@@ -62,12 +62,13 @@ import eval_moving  # noqa: E402
 import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import infer  # noqa: E402
+from local_config import folder  # noqa: E402
 
 EXPORTS = HERE / "exports"
 MODELS = HERE / "models.json"
 REPORTS = HERE / "reports"
-EVAL = ROOT / "test_out" / "vod_model" / "eval"
-WORK = ROOT / "test_out" / "vod_model" / "accept"
+EVAL = folder("data") / "vod_model" / "eval"
+WORK = folder("data") / "vod_model" / "accept"
 DRAWS, SDS, SEED = 400, 2.0, 0                  # the draws behind a standard deviation, how many a number may drop, the
                                                 # draws' seed
 CLICKING = ("static", "dynamic", "switching")

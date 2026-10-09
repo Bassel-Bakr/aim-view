@@ -50,9 +50,10 @@ import aimview_tools  # noqa: E402
 import eval_vods  # noqa: E402
 import infer  # noqa: E402
 import old_review  # noqa: E402
+from local_config import folder  # noqa: E402
 
 RUNS = HERE / "video_alone_runs.json"
-EVAL = ROOT / "test_out" / "vod_model" / "eval"
+EVAL = folder("data") / "vod_model" / "eval"
 SETS = ("dev", "held")
 KINDS = ("static", "dynamic", "switching")
 # KovOBS's areas as the review service gives them (service/src/areas.rs: kovobs_areas): each kind by its id

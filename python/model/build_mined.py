@@ -81,6 +81,7 @@ import build_data  # noqa: E402
 import eval_moving  # noqa: E402
 import infer  # noqa: E402
 import old_review  # noqa: E402
+from local_config import folder  # noqa: E402
 
 WIDTH, HEIGHT, CROP = old_review.W, old_review.H, 256
 MODEL = HERE / "exports" / "detector_full_v3_u8in.onnx"   # the export the reviews ran, run again on the frames used
@@ -1215,7 +1216,7 @@ def main():
     """Picks crops for a check with --pick, else builds the dataset."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--vods", default=aimview_tools.VODS_DEFAULT)
-    parser.add_argument("--out", default="test_out/vod_model/data_mined")
+    parser.add_argument("--out", default=str(folder("data") / "vod_model" / "data_mined"))
     parser.add_argument("--per-folder", type=int, default=1, help="the newest recordings with a stats file per folder")
     parser.add_argument("--budget", type=float, default=3600, help="seconds of native review, then stop")
     parser.add_argument("--workers", type=int, default=2, help="recordings mined at once (CPU: decoding, the export)")

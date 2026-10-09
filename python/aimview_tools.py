@@ -21,7 +21,8 @@ from pathlib import Path
 import local_config
 
 ROOT = Path(__file__).resolve().parent.parent
-AREA_EXAMPLES = ROOT / "test_out" / "vod_app" / "area_examples.jsonl"   # the saved areas the area finder learns from
+# the saved areas the area finder learns from
+AREA_EXAMPLES = local_config.folder("data") / "vod_app" / "area_examples.jsonl"
 VODS_DEFAULT = local_config.folder("vods")             # this computer's settings (local_config.py); None: the app's
 STATS_DEFAULT = local_config.kovaak("stats")
 # the built tool, run when cargo is not on the PATH
@@ -141,7 +142,7 @@ class Library:
 
     def __init__(self, vods=VODS_DEFAULT, stats=STATS_DEFAULT, **config):
         """config: the library's other settings (data, layout, models, scenarios: a list, device, ffmpeg,
-        download_ffmpeg: True; see `aimview-tool help`). The defaults: the repo's test_out/ in Python's layout, the
+        download_ffmpeg: True; see `aimview-tool help`). The defaults: the data folder (local_config.py) in Python's layout, the
         models in python/model/exports, KovaaK's scenario folders, the detector on the GPU, ffmpeg from the PATH."""
         self.options = options(dict(config, vods=vods, stats=stats))
         answer = run("recordings", *self.options)

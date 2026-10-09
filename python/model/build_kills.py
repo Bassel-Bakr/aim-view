@@ -36,6 +36,7 @@ import build_data  # noqa: E402
 import infer  # noqa: E402
 import old_review  # noqa: E402
 import aimview_tools  # noqa: E402
+import local_config  # noqa: E402
 
 CROP = 256
 BACK = (1, 3, 6, 10, 15, 22, 30)          # frames before the kill used, at 120 fps (scaled for other rates)
@@ -373,7 +374,7 @@ def main():
     global KILLS, COUNTS
     parser = argparse.ArgumentParser()
     parser.add_argument("--vods", default=aimview_tools.VODS_DEFAULT)
-    parser.add_argument("--out", default="test_out/vod_model/data_kills")
+    parser.add_argument("--out", default=str(local_config.folder("data") / "vod_model" / "data_kills"))
     parser.add_argument("--per-folder", type=int, default=1)
     parser.add_argument("--also", help="a file of VOD hashes to include whatever --per-folder says (new runs)")
     parser.add_argument("--kills", type=int, default=10)

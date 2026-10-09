@@ -273,7 +273,7 @@ def parse_args():
     """The command line's options (the module's docstring)."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--vods", default=local_config.folder("vods"))
-    parser.add_argument("--out", default="test_out/vod_model/data")
+    parser.add_argument("--out", default=str(local_config.folder("data") / "vod_model" / "data"))
     parser.add_argument("--per-folder", type=int, default=4, help="the newest recordings of each scenario (0: every "
                         "one)")
     parser.add_argument("--kinds", default="static", help="scenario kinds, comma separated: static, dynamic, tracking, "

@@ -32,7 +32,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import net  # noqa: E402
+from local_config import folder  # noqa: E402
 
 HEIGHT_PX, WIDTH_PX = 720, 1280         # the frame the graphs are traced with
 OPSET = 17                              # the ONNX operator set the graphs use
@@ -274,7 +276,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("checkpoint")
     parser.add_argument("--out", default="python/model/exports")
-    parser.add_argument("--data", default="test_out/vod_model/data")
+    parser.add_argument("--data", default=str(folder("data") / "vod_model" / "data"))
     parser.add_argument("--u8in", action="store_true", help="only the _u8in file (the fp32 file must be beside it)")
     parser.add_argument("--val", action="append", help="a dataset whose val split fits the score map (repeat it) "
                         "[calibrate.VAL]; the threshold is picked on --data's val split")

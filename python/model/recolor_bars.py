@@ -20,12 +20,14 @@ Usage: python python/model/recolor_bars.py [--data test_out/vod_model/data_bars_
 """
 import argparse
 import random
+import sys
 from pathlib import Path
 
 import numpy as np
 from scipy import ndimage
 
-ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from local_config import folder  # noqa: E402
 TAG = "chk_barcol"              # put before each copy's name: 10 characters, train.py --repeat's key
 CHECKED_TAG = "chk_bars__"      # the checked crops' own tag, taken off before TAG goes on
 COPIES = 3                      # recolored copies of each train crop (one more without text when it has text)
@@ -165,8 +167,8 @@ def copies_of(path):
 def main():
     """Writes the copies of every train crop of --data into --out/train/ and prints the counts."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--data", type=Path, default=ROOT / "test_out" / "vod_model" / "data_bars_checked")
-    parser.add_argument("--out", type=Path, default=ROOT / "test_out" / "vod_model" / "data_bars_recolored")
+    parser.add_argument("--data", type=Path, default=folder("data") / "vod_model" / "data_bars_checked")
+    parser.add_argument("--out", type=Path, default=folder("data") / "vod_model" / "data_bars_recolored")
     args = parser.parse_args()
     (args.out / "train").mkdir(parents=True, exist_ok=True)
     crops = written = with_text = 0

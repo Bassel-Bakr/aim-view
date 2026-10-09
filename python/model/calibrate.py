@@ -55,8 +55,9 @@ EXPORTS = HERE / "exports"
 # crop names start with the md5 of the recording's path in this folder (build_data)
 VODS = local_config.folder("vods")
 # the map: the val splits full_v3 and small_v13 were picked on (every scenario kind)
-VAL = ("test_out/vod_model/data_v3", "test_out/vod_model/data_kills4", "test_out/vod_model/data_moving_dark")
-SWEEP_DATA = "test_out/vod_model/data"      # the threshold: eval.py's default, where infer.THRESHOLD was picked
+DATASETS = local_config.folder("data") / "vod_model"
+VAL = tuple(str(DATASETS / name) for name in ("data_v3", "data_kills4", "data_moving_dark"))
+SWEEP_DATA = str(DATASETS / "data")         # the threshold: eval.py's default, where infer.THRESHOLD was picked
 FLOOR = 0.05                                # peaks scoring under this are not collected
 SWEEP = (0.2, 0.3, 0.4, 0.5, 0.6)           # eval.py's threshold sweep
 KNOTS = np.round(np.arange(0.05, 0.951, 0.05), 2)   # reference scores the map gets a point at
@@ -356,9 +357,9 @@ def calibrate(model, val=VAL, sweep_data=SWEEP_DATA, ref_scored=None):
     threshold, sweep, gain = pick_threshold(swept, points)
     scores = np.linspace(0, 1, MAP_STEPS)
     report = dict(
-        val=list(map(str, val)), crops=len(new.files), labels=new.labels, scenarios=new.units,
+        val=list(map(local_config.repo_relative, val)), crops=len(new.files), labels=new.labels, scenarios=new.units,
         largest_move=round(float(np.abs(apply_map(points, scores) - scores).max()), 4), knots=knots,
-        sweep_data=str(sweep_data), best_over_reference_threshold=gain,
+        sweep_data=local_config.repo_relative(sweep_data), best_over_reference_threshold=gain,
         sweep={str(tried): numbers for tried, numbers in sweep.items()})
     return settings(name, threshold, points), report
 
@@ -393,7 +394,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model")
     parser.add_argument("--val", action="append", help="a dataset folder whose val split fits the map (repeat it) "
-                        f"[{', '.join(VAL)}]")
+                        f"[{', '.join(map(local_config.repo_relative, VAL))}]")
     parser.add_argument("--data", default=SWEEP_DATA, help="the dataset whose val split picks the threshold")
     parser.add_argument("--report", help="save the settings and the numbers behind them here (JSON)")
     parser.add_argument("--write", action="store_true", help="write exports/detector_<name>.json if it does not exist")

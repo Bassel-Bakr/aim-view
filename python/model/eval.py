@@ -140,8 +140,8 @@ def main():
     """Evaluates each model, and prints its test numbers, its recolored F1 and its weakest test scenarios."""
     parser = argparse.ArgumentParser()
     parser.add_argument("models", nargs="+")
-    parser.add_argument("--data", default="test_out/vod_model/data")
-    parser.add_argument("--out", default="test_out/vod_model/eval")
+    parser.add_argument("--data", default=str(local_config.folder("data") / "vod_model" / "data"))
+    parser.add_argument("--out", default=str(local_config.folder("data") / "vod_model" / "eval"))
     parser.add_argument("--thr", type=float, help="skip the sweep and use this threshold")
     args = parser.parse_args()
     Path(args.out).mkdir(parents=True, exist_ok=True)

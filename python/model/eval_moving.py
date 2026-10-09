@@ -30,6 +30,7 @@ import build_data  # noqa: E402
 import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import old_review  # noqa: E402
+import local_config  # noqa: E402
 
 # the recordings picked of each moving kind, one a folder
 PER = {"dynamic": 6, "switching": 6, "tracking": 12}
@@ -108,7 +109,7 @@ def model_numbers(lib, program, pick, scenarios, name, path, reports):
     scenarios: the scenarios' facts and target counts."""
     model = str(eval_vods.u8in(path))
     facts, counts = scenarios
-    cache = f"test_out/vod_model/eval/moving_{name}_native.pkl"
+    cache = local_config.folder("data") / "vod_model" / "eval" / f"moving_{name}_native.pkl"
     tracks = pickle.load(open(cache, "rb")) if os.path.exists(cache) else {}
     for kind, videos in pick.items():
         for video, _ in videos:
@@ -162,7 +163,7 @@ def main():
     pick = picks(lib)
     scenarios = lib.scenario_facts(), lib.target_counts()
     results = {}
-    os.makedirs("test_out/vod_model/eval", exist_ok=True)
+    os.makedirs(local_config.folder("data") / "vod_model" / "eval", exist_ok=True)
     models, reports = parse_args(sys.argv[1:])
     for arg in models:
         name, path = arg.split("=", 1)

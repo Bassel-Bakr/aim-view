@@ -654,8 +654,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("config", nargs="?")
     parser.add_argument("--epochs", type=int)
-    parser.add_argument("--out", default="test_out/vod_model/runs")
-    parser.add_argument("--data", default="test_out/vod_model/data")
+    parser.add_argument("--out", default=str(local_config.folder("data") / "vod_model" / "runs"))
+    parser.add_argument("--data", default=str(local_config.folder("data") / "vod_model" / "data"))
     parser.add_argument("--init", help="start from this checkpoint's weights only")
     parser.add_argument("--repeat", help="a file of VOD hashes (one a line) whose crops count --times times; a line can "
                         "give its own count after the hash (\"hand_crop_ 20\")")

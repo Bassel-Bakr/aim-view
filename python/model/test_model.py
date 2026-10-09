@@ -23,11 +23,12 @@ import export  # noqa: E402
 import infer  # noqa: E402
 import net  # noqa: E402
 import train  # noqa: E402
+import local_config  # noqa: E402
 
-DATA = ROOT / "test_out" / "vod_model" / "data"
+DATA = local_config.folder("data") / "vod_model" / "data"
 EXPORTS = HERE / "exports"
-FRAME = ROOT / "test_out" / "vod_model" / "bench_frame.npz"
-EXPECTED = ROOT / "test_out" / "vod_model" / "bench_expected.json"
+FRAME = local_config.folder("data") / "vod_model" / "bench_frame.npz"
+EXPECTED = local_config.folder("data") / "vod_model" / "bench_expected.json"
 CROP_PX = 256
 TARGET_RADIUS_PX = 4                # the outline test's target
 OUTLINE_REACH_PX = 4.5              # how far past the target an outline may reach

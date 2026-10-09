@@ -73,7 +73,7 @@ def library():
 def review_row(lib, video, model, stats):
     """One VOD's row: its kills matched, flicks measured and headline numbers, or the error that stopped it."""
     row = dict(video=Path(video).name)
-    out = Path("test_out/vod_model/eval/vods") / "native" / Path(video).stem[:FOLDER_CHARS]
+    out = local_config.folder("data") / "vod_model" / "eval" / "vods" / "native" / Path(video).stem[:FOLDER_CHARS]
     for name in ("tracks.json", "report.json"):
         (out / name).unlink(missing_ok=True)
     started = time.time()
@@ -96,7 +96,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model")
     parser.add_argument("--vods", nargs="*", default=DEFAULT)
-    parser.add_argument("--out", default="test_out/vod_model/eval")
+    parser.add_argument("--out", default=str(local_config.folder("data") / "vod_model" / "eval"))
     args = parser.parse_args()
     model, lib = u8in(args.model), library()
     rows = []

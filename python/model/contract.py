@@ -61,10 +61,12 @@ sys.path.insert(0, str(HERE.parent))
 import calibrate  # noqa: E402
 import infer  # noqa: E402
 import old_review  # noqa: E402
+from local_config import folder  # noqa: E402
 
 REPORTS = HERE / "reports"
-CACHE = Path("test_out/vod_model/contract")          # camera readings, fixed maps, and each export's peaks
-HAND = ("test_out/vod_model/hand_data", "test_out/vod_model/hand_data2")   # their test splits: no model trained on them
+CACHE = folder("data") / "vod_model" / "contract"             # camera readings, fixed maps, and each export's peaks
+# the hand-labelled sets: their test splits (no model trained on them)
+HAND = tuple(str(folder("data") / "vod_model" / name) for name in ("hand_data", "hand_data2"))
 KILLS = "data_kills4"                                # the kill-moment crops, among calibrate.VAL
 TURN = 0.5                                           # degrees the room moves between two frames for a turning pair
 NEAR = 24                                            # px from the crosshair's center where its fixed-map parts start

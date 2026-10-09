@@ -25,10 +25,12 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
+from local_config import folder  # noqa: E402
 
-DATA = HERE.parents[1] / "test_out" / "vod_model" / "data"
-OUT = HERE.parents[1] / "test_out" / "vod_model" / "checked.jsonl"
+DATA = folder("data") / "vod_model" / "data"
+OUT = folder("data") / "vod_model" / "checked.jsonl"
 CANDIDATES_PER_CROP = 6             # crops looked at for each one asked for
 MATCH_MIN_PX = 2.0                  # a model box matches a label within this, or half the label's larger side
 NEAR_CROSSHAIR_PX = 12              # a label this close to the fixed map's middle is a target near the crosshair

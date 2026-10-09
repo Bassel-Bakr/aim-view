@@ -41,9 +41,10 @@ import old_review
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import aimview_tools  # noqa: E402
+from local_config import folder  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-REVIEWS = ROOT / "test_out" / "vod_model" / "data_mined" / "reviews"
+REVIEWS = folder("data") / "vod_model" / "data_mined" / "reviews"
 BOX_THRESHOLD = 0.2                     # the model's boxes looked at: under the review's threshold, to find the bars
                                         # it nearly boxes
 TARGET_SCORE = 0.5                      # another box in a crop scoring under this may not be a target: no crop
@@ -214,7 +215,7 @@ def recording_crops(job, tracks, detector, out, args):
 def main():
     """Writes the crops of this part's recordings, then the manifest of every recording with crops in --out."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--out", type=Path, default=ROOT / "test_out" / "vod_model" / "data_bars")
+    parser.add_argument("--out", type=Path, default=folder("data") / "vod_model" / "data_bars")
     parser.add_argument("--model", default="full_v7")
     parser.add_argument("--per-recording", type=int, default=6)
     parser.add_argument("--part", type=int, default=0)

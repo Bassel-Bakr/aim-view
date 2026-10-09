@@ -6,10 +6,14 @@ Writes validation.json into the dataset folder, and the contact sheet.
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from local_config import folder  # noqa: E402
 
 CROP_PX = 256
 BOX_VALUES = 4                      # cx, cy, w, h
@@ -73,8 +77,8 @@ def contact_sheet(files, path):
 def main():
     """Prints the leaks and each split's report, writes them to <data>/validation.json, and saves the contact sheet."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default="test_out/vod_model/data")
-    parser.add_argument("--sheet", default="test_out/vod_model/sheet.png")
+    parser.add_argument("--data", default=str(folder("data") / "vod_model" / "data"))
+    parser.add_argument("--sheet", default=str(folder("data") / "vod_model" / "sheet.png"))
     args = parser.parse_args()
     data = Path(args.data)
     rows = [json.loads(line) for line in open(data / "manifest.jsonl", encoding="utf-8")]
