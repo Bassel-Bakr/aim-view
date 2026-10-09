@@ -175,9 +175,10 @@ rust-analyzer's call hierarchy.
   what the app writes and the app reads what Python wrote.
 - `service/src/pyjson.rs`: JSON as python/retired/server.py read and wrote it, so the files the app keeps are the review
   server's, byte for byte.
-- `service/src/report.rs`: A review's report, worked out by the core as the browser does (src/review.rs: `review_json`),
-  from what the review keeps (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the
-  HUD was read has none).
+- `service/src/report.rs`: A review's report, worked out by the core's typed entry (src/review.rs: `review_request`; the
+  browser sends the same request as JSON to `review_json`) from what the review keeps (store.rs: `Part`): its tracks,
+  readings and what the HUD read (a review made before the HUD was read has none), each read once straight into its
+  type.
 - `service/src/review.rs`: A recording's review on this computer: ffmpeg decodes the frames and the core converts them
   to ffmpeg's 720p RGB byte for byte (or, for the videos gpu_frames.rs takes, the GPU does both), the detector runs on
   the GPU or the CPU (detector.rs), and the core's review session (aimview::session, which the browser's workers feed
@@ -273,7 +274,7 @@ rust-analyzer's call hierarchy.
   (test_out/vod_model/eval/video_alone/full_v3/<run>/).
 - `examples/areas.rs`: Checks the area finder (src/areas.rs) against python/areas.py's analyse() on recordings: `cargo
   run --profile quick --example areas -- <reference folder> <name> [more names]`.
-- `examples/hud.rs`: Reads recordings' HUDs with the core (src/hud.rs) and prints one line of JSON for each: `cargo run
+- `examples/hud.rs`: Reads recordings' HUDs with the core (src/hud/) and prints one line of JSON for each: `cargo run
   --profile quick --example hud -- <video> [more videos]`.
 - `examples/review.rs`: Reviews one request (src/review.rs `ReviewRequest`, as JSON in a file) and prints the outcome,
   for checks outside the app: `cargo run --profile quick --example review -- <request.json>`.
@@ -350,7 +351,8 @@ src/review.rs places the run's start with when no kill does.
 - `CameraWatch` (struct): The camera watch over a recording: fed each frame's luma (1280 x 720), it keeps each frame's
   tile shifts and its countdown bar's showing; the readings come once the tracks are known (a tile with a target in it
   is left out). Methods: `new`, `for_recording`, `finish`, `skip`, `part`, `join`, `add`, `reading`, `readings`.
-- `VideoReadings` (struct): What a tracking run reads from the video besides the tracks (CameraWatch::finish).
+- `VideoReadings` (struct): What a tracking run reads from the video besides the tracks (CameraWatch::finish), as
+  readings.json keeps it; none (the default) for a review that did not read them.
 - `CameraPart` (struct): A run's part of the camera watch (CameraWatch::part): each frame's tile shifts and whether the
   countdown bar shows.
 - Functions: `excluded`, `countdown_showing`.
@@ -693,7 +695,7 @@ and the user's run marks), which the service builds in every mode (service/src/r
   offset}; null or missing: none).
 - `AnyReport` (enum): A clicking run's report or a tracking run's.
 - `Outcome` (enum): The report, or why there is none: {"report": ...} or {"error": "..."}.
-- Functions: `review_clicks`, `review_tracking`, `run_window`, `review_json`.
+- Functions: `review_clicks`, `review_tracking`, `run_window`, `review_request`, `review_json`.
 
 ## src/scenario.rs
 
@@ -1247,17 +1249,17 @@ JSON as python/retired/server.py read and wrote it, so the files the app keeps a
 
 ## service/src/report.rs
 
-A review's report, worked out by the core as the browser does (src/review.rs: `review_json`), from what the review keeps
-(store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the HUD was read has none). With a
-stats file the core reviews from it; without one, from the HUD's reading, else from the video alone
-(python/retired/server.py did the same). In: the review's parts and the recording's stats file, run marks, facts and
-cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which
-/api/report answers.
+A review's report, worked out by the core's typed entry (src/review.rs: `review_request`; the browser sends the same
+request as JSON to `review_json`) from what the review keeps (store.rs: `Part`): its tracks, readings and what the HUD
+read (a review made before the HUD was read has none), each read once straight into its type. With a stats file the core
+reviews from it; without one, from the HUD's reading, else from the video alone (python/retired/server.py did the same).
+In: the review's parts and the recording's stats file, run marks, facts, chosen hitbox and cut-off (library/reviews.rs;
+aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which /api/report answers.
 
 - `ReportInputs` (struct): What a report is worked out from besides the review's parts and the video (Introduce
   Parameter Object), each None where there is none: a caller names those it has and takes the rest from
   `ReportInputs::default()`.
-- Functions: `work_out`.
+- Functions: `chosen_hitbox`, `work_out`.
 
 ## service/src/review.rs
 
@@ -1629,7 +1631,7 @@ matched to the core's by IoU with both kinds, the time a frame takes and the siz
 
 ## examples/hud.rs
 
-Reads recordings' HUDs with the core (src/hud.rs) and prints one line of JSON for each: `cargo run --profile quick
+Reads recordings' HUDs with the core (src/hud/) and prints one line of JSON for each: `cargo run --profile quick
 --example hud -- <video> [more videos]`. ffmpeg decodes (it must be in PATH): first the key frames, picked with ffmpeg's
 select (some builds ignore `-skip_frame nokey` on AV1), then every frame, which the watch reads as the Y plane of
 yuv420p. Each recording is read three ways, which must agree: one watch; its part joined into a new watch (as the

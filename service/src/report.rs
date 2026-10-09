@@ -1,18 +1,31 @@
-//! A review's report, worked out by the core as the browser does (src/review.rs: `review_json`), from what the review
-//! keeps (store.rs: `Part`): its tracks, readings and what the HUD read (a review made before the HUD was read has
-//! none). With a stats file the core reviews from it; without one, from the HUD's reading, else from the video alone
-//! (python/retired/server.py did the same). In: the review's parts and the recording's stats file, run marks, facts
-//! and cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON,
-//! which /api/report answers.
+//! A review's report, worked out by the core's typed entry (src/review.rs: `review_request`; the browser sends the
+//! same request as JSON to `review_json`) from what the review keeps (store.rs: `Part`): its tracks, readings and what
+//! the HUD read (a review made before the HUD was read has none), each read once straight into its type. With a stats
+//! file the core reviews from it; without one, from the HUD's reading, else from the video alone
+//! (python/retired/server.py did the same). In: the review's parts and the recording's stats file, run marks, facts,
+//! chosen hitbox and cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the
+//! report's JSON, which /api/report answers.
 
 use std::path::Path;
 
-use aimview::scenario::{Facts, Hitbox, Kind};
+use aimview::camera::VideoReadings;
+use aimview::faint::FaintSetting;
+use aimview::hud::HudReading;
+use aimview::kill_check::KillEvidence;
+use aimview::review::{ReviewRequest, review_request};
+use aimview::scenario::{Facts, Hitbox, HitboxKind, Kind};
 use aimview::stats_file::StatsFile;
-use serde_json::{Value, json};
+use aimview::track::Tracks;
+use aimview::tracking::box_ratio;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 use crate::run_window::RunMarks;
 use crate::store::Part;
+
+/// The core's words for a request it cannot read (src/review.rs `review_json`), which a part that is not its type
+/// gives too.
+const UNREADABLE: &str = "The review request could not be read";
 
 /// Whether the run was a tracking run: by its scenario's facts, else (its scenario file not here: in the browser, KovaaK's
 /// stats folder chosen without the scenarios) by its stats file, which for a pure tracking scenario counts no kills and
@@ -41,51 +54,92 @@ pub struct ReportInputs<'a> {
     pub run: Option<RunMarks>,
     /// The scenario's facts.
     pub facts: Option<&'a Facts>,
-    /// The bots' hitbox the user chose in place of the facts' (None: the facts').
-    pub hitbox: Option<Hitbox>,
-    /// The user's faint-target cut-off (faint.json: {on, offset}).
-    pub faint: Option<Value>,
+    /// The bots' hitbox shape the user chose in place of the facts' hitbox (None: the facts'); its proportions come
+    /// from the tracks (`chosen_hitbox`).
+    pub hitbox_pick: Option<HitboxKind>,
+    /// The user's faint-target cut-off (faint.json).
+    pub faint: Option<FaintSetting>,
 }
 
-/// The report of the review of `video` whose parts `parts` gives, worked out with `inputs`; None when the review has no
-/// tracks.
+/// The review's parts, each read straight into its type.
+struct ReviewParts {
+    /// The run's tracks (tracks.json).
+    tracks: Tracks,
+    /// The camera's turn and the countdown bar per frame (readings.json); none where the review has none.
+    readings: VideoReadings,
+    /// What the HUD read (hud.json); None where it was not read.
+    hud: Option<HudReading>,
+    /// The check of the kills the video alone gives (kills.json); None where it was not checked.
+    kill_check: Option<Vec<KillEvidence>>,
+}
+
+/// A part read straight into its type: None when it is missing or not JSON at all (the report goes without it, as it
+/// always has); JSON that is not the part's type fails the report, as the core's reading of the request did.
+fn read_part<T: DeserializeOwned>(part: Part, bytes: Option<Vec<u8>>) -> Result<Option<T>, String> {
+    let Some(bytes) = bytes else { return Ok(None) };
+    match serde_json::from_slice(&bytes) {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.is_data() => Err(format!("{UNREADABLE}: {}: {error}", part.file_name())),
+        Err(_) => Ok(None),
+    }
+}
+
+/// The review's parts that `parts` gives; None when it has no tracks.
+fn read_parts(parts: impl Fn(Part) -> Option<Vec<u8>>) -> Result<Option<ReviewParts>, String> {
+    let Some(tracks) = read_part(Part::Tracks, parts(Part::Tracks))? else { return Ok(None) };
+    Ok(Some(ReviewParts {
+        tracks,
+        readings: read_part(Part::Readings, parts(Part::Readings))?.unwrap_or_default(),
+        hud: read_part::<Option<HudReading>>(Part::Hud, parts(Part::Hud))?.flatten(),
+        kill_check: read_part::<Option<Vec<KillEvidence>>>(Part::Kills, parts(Part::Kills))?.flatten(),
+    }))
+}
+
+/// The hitbox the user chose (`pick`) for the report in place of the scenario's: a sphere is as wide as it is tall; a
+/// capsule's or a box's width over height is the review's target boxes' (1 without them).
+pub fn chosen_hitbox(pick: HitboxKind, tracks: &Tracks) -> Hitbox {
+    let width_to_height = match pick {
+        HitboxKind::Spheroid => 1.0,
+        HitboxKind::Cylindrical | HitboxKind::Cuboid => box_ratio(&tracks.frames).unwrap_or(1.0),
+    };
+    Hitbox { kind: pick, width_to_height }
+}
+
+/// The core's review request for `video` from its parts and `inputs`.
+fn request(parts: ReviewParts, video: &Path, inputs: ReportInputs<'_>) -> Result<ReviewRequest, String> {
+    let ReportInputs { stats, run, facts, hitbox_pick, faint } = inputs;
+    let ReviewParts { tracks, readings, hud, kill_check } = parts;
+    let stats_text = stats.map_or_else(String::new, |(_, bytes)| String::from_utf8_lossy(bytes).into_owned());
+    let picked = hitbox_pick.map(|pick| chosen_hitbox(pick, &tracks));
+    let run = run.filter(RunMarks::is_set).map(serde_json::to_value).transpose().map_err(|error| error.to_string())?;
+    Ok(ReviewRequest {
+        video: file_name(video).ok_or_else(|| format!("{UNREADABLE}: {} has no file name", video.display()))?,
+        stats: stats.and_then(|(path, _)| file_name(path)).unwrap_or_default(),
+        tracking: is_tracking(facts, &stats_text),
+        stats_text,
+        tracks,
+        hud,
+        run,
+        limit: facts.and_then(|facts| facts.limit),
+        reload: facts.and_then(|facts| facts.reload.clone()),
+        camera: readings.camera,
+        countdown: readings.countdown,
+        faint,
+        hitbox: picked.or_else(|| facts.and_then(|facts| facts.hitbox)),
+        kill_check,
+    })
+}
+
+/// The report of the review of `video` whose parts `parts` gives, worked out with `inputs` by the core's typed entry
+/// (src/review.rs `review_request`) and made JSON once; None when the review has no tracks.
 pub fn work_out(
     parts: impl Fn(Part) -> Option<Vec<u8>>,
     video: &Path,
     inputs: ReportInputs<'_>,
 ) -> Result<Option<Value>, String> {
-    let ReportInputs { stats, run, facts, hitbox, faint } = inputs;
-    // each part's JSON, or None when it is missing or not JSON
-    let read = |part: Part| serde_json::from_slice::<Value>(&parts(part)?).ok();
-    let Some(tracks) = read(Part::Tracks) else { return Ok(None) };
-    let readings = read(Part::Readings).unwrap_or(json!({ "camera": [], "countdown": [] }));
-    let hud = read(Part::Hud).unwrap_or(Value::Null);
-    // the check of the kills the video alone gives (null or missing: not checked)
-    let kill_check = read(Part::Kills).unwrap_or(Value::Null);
-    let stats_text = stats.map_or_else(String::new, |(_, bytes)| String::from_utf8_lossy(bytes).into_owned());
-    let request = json!({
-        "tracks": tracks,
-        "statsText": stats_text,
-        "video": file_name(video),
-        "stats": stats.and_then(|(path, _)| file_name(path)).unwrap_or_default(),
-        "hud": hud,
-        "run": run.filter(RunMarks::is_set),
-        "tracking": is_tracking(facts, &stats_text),
-        "limit": facts.and_then(|facts| facts.limit),
-        "reload": facts.and_then(|facts| facts.reload.as_ref()),
-        "hitbox": hitbox.or_else(|| facts.and_then(|facts| facts.hitbox)),
-        "killCheck": kill_check,
-        "camera": readings["camera"],
-        "countdown": readings["countdown"],
-        "faint": faint,
-    });
-    let request = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
-    let outcome: Value =
-        serde_json::from_slice(&aimview::review::review_json(&request)).map_err(|error| error.to_string())?;
-    if let Some(error) = outcome["error"].as_str() {
-        return Err(error.to_string());
-    }
-    Ok(Some(outcome["report"].clone()))
+    let Some(parts) = read_parts(parts)? else { return Ok(None) };
+    let report = review_request(request(parts, video, inputs)?)?;
+    serde_json::to_value(&report).map(Some).map_err(|error| error.to_string())
 }
 
 /// The run's kind when its scenario file is missing.

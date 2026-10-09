@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, PoisonError};
 
-use aimview::scenario::{Facts, Hitbox, HitboxKind, Kind};
-use aimview::track::Tracks;
+use aimview::scenario::{Facts, HitboxKind, Kind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -279,21 +278,6 @@ impl Library {
     /// The bots' hitbox shape the user chose for a recording (hitbox.json); None when it follows its scenario.
     pub(crate) fn hitbox_pick(&self, id: &str) -> Option<HitboxKind> {
         read_kept::<HitboxPick>(self.store(), Item::Mark(id, Mark::HitboxPick)).map(|pick| pick.hitbox)
-    }
-
-    /// The hitbox the user chose for a recording, for the report in place of its scenario's: a sphere is as wide as it
-    /// is tall; a capsule's or a box's width over height is the review's target boxes' (`tracks`: tracks.json's bytes),
-    /// 1 without them. None when the user chose none.
-    pub(crate) fn chosen_hitbox(&self, id: &str, tracks: Option<&[u8]>) -> Option<Hitbox> {
-        let kind = self.hitbox_pick(id)?;
-        let width_to_height = match kind {
-            HitboxKind::Spheroid => 1.0,
-            HitboxKind::Cylindrical | HitboxKind::Cuboid => tracks
-                .and_then(|bytes| serde_json::from_slice::<Tracks>(bytes).ok())
-                .and_then(|tracks| aimview::tracking::box_ratio(&tracks.frames))
-                .unwrap_or(1.0),
-        };
-        Some(Hitbox { kind, width_to_height })
     }
 
     /// POST /api/hitbox: the bots' hitbox shape the user chose for the recording ({hitbox: "spheroid"}, "cylindrical"
@@ -626,23 +610,27 @@ mod tests {
     #[test]
     fn a_chosen_hitbox_is_the_reports() {
         use aimview::scenario::{Hitbox, HitboxKind};
+        use aimview::track::Tracks;
         let dir = std::env::temp_dir().join(format!("aimview-hitbox-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
         let saved = library.upload("not a scenario at all - 2026.10.08-12.50.56.mp4", None, b"video").unwrap();
         let id = format!("uploads/{}", saved["saved"].as_str().unwrap());
         let tracks = br#"{"fps": 60, "frames": [{"i": 0, "shift": [0, 0], "t": [], "a": [], "wh": [[1.5, 1.0]]}]}"#;
-        assert_eq!(library.chosen_hitbox(&id, Some(tracks)), None);
+        let tracks: Tracks = serde_json::from_slice(tracks).unwrap();
+        let chosen =
+            |library: &Library| library.hitbox_pick(&id).map(|pick| crate::report::chosen_hitbox(pick, &tracks));
+        assert_eq!(chosen(&library), None);
         let answer = library.set_hitbox(&id, &serde_json::json!({ "hitbox": "spheroid" })).unwrap();
         assert_eq!(answer, serde_json::json!({ "hitbox_pick": "spheroid" }));
         let sphere = Hitbox { kind: HitboxKind::Spheroid, width_to_height: 1.0 };
-        assert_eq!(library.chosen_hitbox(&id, Some(tracks)), Some(sphere));
+        assert_eq!(chosen(&library), Some(sphere));
         library.set_hitbox(&id, &serde_json::json!({ "hitbox": "cuboid" })).unwrap();
         let cuboid = Hitbox { kind: HitboxKind::Cuboid, width_to_height: 1.5 };
-        assert_eq!(library.chosen_hitbox(&id, Some(tracks)), Some(cuboid));
+        assert_eq!(chosen(&library), Some(cuboid));
         assert!(library.set_hitbox(&id, &serde_json::json!({ "hitbox": "cone" })).is_err(), "not a shape");
         library.set_hitbox(&id, &serde_json::json!({ "hitbox": null })).unwrap();
-        assert_eq!(library.chosen_hitbox(&id, Some(tracks)), None);
+        assert_eq!(chosen(&library), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -538,8 +538,9 @@ impl CameraWatch {
     }
 }
 
-/// What a tracking run reads from the video besides the tracks (CameraWatch::finish).
-#[derive(Clone, Debug, PartialEq, Serialize)]
+/// What a tracking run reads from the video besides the tracks (CameraWatch::finish), as readings.json keeps it; none
+/// (the default) for a review that did not read them.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct VideoReadings {
     /// Per frame, the camera's reading; None on the first frame and where too few tiles agree.
     pub camera: Vec<CameraReading>,

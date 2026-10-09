@@ -762,8 +762,9 @@ pub enum Outcome {
 
 /// Reviews a request: from the stats file when it has one, else from the HUD and the video; as a tracking run or a
 /// clicking run as it says. The report is marked outdated when the tracks come from an older review version. Fails
-/// when the stats file cannot be read or the summary cannot be made.
-fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
+/// when the stats file cannot be read or the summary cannot be made. The service builds the request in its types
+/// (service/src/report.rs); the page sends it as JSON (`review_json`).
+pub fn review_request(request: ReviewRequest) -> Result<AnyReport, String> {
     let kills = if request.stats_text.is_empty() {
         KillTimes::Unpaired { hud: request.hud.as_ref(), checked: request.kill_check.as_deref() }
     } else {

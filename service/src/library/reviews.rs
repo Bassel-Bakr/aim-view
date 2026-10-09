@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use aimview::areas::Found;
+use aimview::faint::FaintSetting;
 use aimview::kill_check::KillEvidence;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -354,17 +355,13 @@ impl Library {
         let stats = self.stats_of(id, &video);
         let stats_text = stats.as_deref().map(|path| self.stats_bytes(path)).transpose()?;
         let run = Some(RunMarks::read(self.store(), id));
-        let faint = Some(self.faint(id));
+        let faint = serde_json::from_value::<FaintSetting>(self.faint(id))
+            .map_err(|error| format!("The review request could not be read: faint.json: {error}"))?;
         let facts = self.facts_for(id, &video);
-        // a chosen hitbox reads the tracks first: the report takes them from here rather than read them again
-        let picked_tracks = self.hitbox_pick(id).and_then(|_| self.review_part(id, &by, Part::Tracks));
-        let hitbox = self.chosen_hitbox(id, picked_tracks.as_deref());
-        let parts = |part: Part| match (part, &picked_tracks) {
-            (Part::Tracks, Some(tracks)) => Some(tracks.clone()),
-            _ => self.review_part(id, &by, part),
-        };
+        let parts = |part: Part| self.review_part(id, &by, part);
         let stats = stats.as_deref().zip(stats_text.as_deref());
-        let inputs = ReportInputs { stats, run, facts: facts.as_ref(), hitbox, faint };
+        let hitbox_pick = self.hitbox_pick(id);
+        let inputs = ReportInputs { stats, run, facts: facts.as_ref(), hitbox_pick, faint: Some(faint) };
         let worked_out = crate::report::work_out(parts, &video, inputs)?;
         let Some(mut report) = worked_out else { return Ok(Value::Null) };
         report["review_model"] = json!(model);
