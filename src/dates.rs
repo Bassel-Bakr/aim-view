@@ -2,7 +2,7 @@
 //! algorithms, which count years from March so that a leap day ends the year.
 //!
 //! In: the dates in file names (a stats file's "2026.09.30-04.55.23"). Out: day counts for the mouse log's reader
-//! (mouse.rs); the service's file names (service/src/library/names.rs) do the same sums.
+//! (mouse.rs) and for the service's file names and time stamps (service/src/library/names.rs).
 
 /// Years in an era: the Gregorian calendar repeats every 400 years.
 const YEARS_PER_ERA: i64 = 400;

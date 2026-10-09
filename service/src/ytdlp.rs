@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use aimview::local_config::LocalConfig;
 use ffmpeg_sidecar::download::{FfmpegDownloadProgressEvent, download_ffmpeg_package_with_progress};
 use serde::{Deserialize, Serialize};
 
@@ -24,8 +25,9 @@ static INSTALLING: Mutex<()> = Mutex::new(());
 const SOCKET_TIMEOUT_S: &str = "15";
 /// yt-dlp's name on the PATH, and its folder in the tools folder.
 const PROGRAM: &str = "yt-dlp";
-/// Where the official releases are, each file by its name.
-const RELEASES_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/";
+/// Where the settings (aimview.defaults.json, "downloads") name the address of the official releases, each file by
+/// its name after it.
+const RELEASES_SETTING: &str = "/downloads/ytdlp_releases";
 /// The options every run of yt-dlp takes: one video, no user config, no warnings, UTF-8 output.
 const COMMON_OPTIONS: [&str; 5] = ["--no-playlist", "--ignore-config", "--no-warnings", "--encoding", "utf-8"];
 /// The format yt-dlp downloads when none is chosen: the best video with the best audio, else the best file.
@@ -230,7 +232,10 @@ fn release() -> Result<String, String> {
         ("macos", _) => "yt-dlp_macos",
         (os, arch) => return Err(format!("no yt-dlp release for {os} on {arch}: put yt-dlp on the PATH")),
     };
-    Ok(format!("{RELEASES_URL}{name}"))
+    let settings = LocalConfig::load();
+    let releases = settings.text(RELEASES_SETTING);
+    let releases = releases.ok_or_else(|| format!("the settings name no yt-dlp releases ({RELEASES_SETTING})"))?;
+    Ok(format!("{releases}{name}"))
 }
 
 /// A byte count in whole megabytes, as progress is told.
@@ -519,6 +524,15 @@ fn follow_progress(stdout: ChildStdout, progress: impl Fn(usize, usize)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The settings name the releases the app downloaded yt-dlp from before they were a setting: this system's file
+    /// after that address.
+    #[test]
+    fn the_settings_name_the_releases() {
+        let before = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/";
+        let url = release().unwrap();
+        assert!(url.strip_prefix(before).is_some_and(|name| name.starts_with(PROGRAM)), "{url}");
+    }
 
     /// A failure's reason is its last ERROR line without the site and the video's id; with none, a plain sentence.
     #[test]

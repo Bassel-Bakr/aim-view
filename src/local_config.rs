@@ -60,6 +60,12 @@ impl LocalConfig {
         (host, server["port"].as_u64().and_then(|port| u16::try_from(port).ok()).unwrap_or_default())
     }
 
+    /// A text setting by its JSON pointer into the settings ("/downloads/ytdlp_releases"); None when it is missing or
+    /// not a string.
+    pub fn text(&self, pointer: &str) -> Option<&str> {
+        self.value.pointer(pointer)?.as_str()
+    }
+
     /// Steam's folder: as named, else where Steam records it; None when neither has one.
     pub fn steam(&self) -> Option<PathBuf> {
         if let Some(named) = self.folder("steam") {
@@ -125,5 +131,14 @@ mod tests {
         assert_eq!(config.kovaak("stats"), Some(root.join(game).join("stats")));
         std::fs::remove_dir_all(root).unwrap();
         assert_eq!(LocalConfig::at(Path::new("no such folder")).folder("vods"), None);
+    }
+
+    /// A text setting is found by its pointer; a missing one, or one that is not text, is None.
+    #[test]
+    fn text_settings_by_pointer() {
+        let config = LocalConfig::at(Path::new("no such folder"));
+        assert_eq!(config.text("/server/host"), Some("127.0.0.1"));
+        assert_eq!(config.text("/server/port"), None, "a number");
+        assert_eq!(config.text("/no/such/setting"), None);
     }
 }

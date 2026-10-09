@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock, PoisonError, RwLock};
 
+use aimview::local_config::LocalConfig;
 use ffmpeg_sidecar::download::{
     FfmpegDownloadProgressEvent, download_ffmpeg_package_with_progress, ffmpeg_download_url, unpack_ffmpeg,
 };
@@ -21,9 +22,8 @@ static SOURCE: RwLock<Ffmpeg> = RwLock::new(Ffmpeg::Path);
 static INSTALLING: Mutex<()> = Mutex::new(());
 /// Which build the folder holds (its download's address); another one is replaced.
 const SOURCE_FILE: &str = "source.txt";
-/// The build the app downloads on 64-bit Windows: BtbN's, with dav1d.
-const WINDOWS_BUILD_URL: &str =
-    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
+/// Where the settings (aimview.defaults.json, "downloads") name the build the app downloads on 64-bit Windows.
+const WINDOWS_BUILD_SETTING: &str = "/downloads/ffmpeg_windows";
 /// A byte count shifted right by this many bits is in megabytes (MiB), as progress is told.
 const MEGABYTE_SHIFT: u32 = 20;
 /// The player the download also unpacks: the review never runs it, and BtbN's Windows build of it is 170 MB.
@@ -65,13 +65,22 @@ pub fn program(name: &str) -> PathBuf {
     }
 }
 
-/// The build the app downloads: BtbN's on 64-bit Windows, else ffmpeg-sidecar's choice for this system.
-fn download_url() -> Result<&'static str, String> {
+/// The build the app downloads: the settings' on 64-bit Windows (`windows_build_url`), else ffmpeg-sidecar's choice
+/// for this system.
+fn download_url() -> Result<String, String> {
     if cfg!(all(windows, target_arch = "x86_64")) {
-        Ok(WINDOWS_BUILD_URL)
+        windows_build_url()
     } else {
-        ffmpeg_download_url().map_err(|error| error.to_string())
+        ffmpeg_download_url().map(String::from).map_err(|error| error.to_string())
     }
+}
+
+/// The build the settings name for 64-bit Windows (BtbN's, with dav1d).
+fn windows_build_url() -> Result<String, String> {
+    let settings = LocalConfig::load();
+    let url = settings.text(WINDOWS_BUILD_SETTING);
+    url.map(String::from)
+        .ok_or_else(|| format!("the settings name no ffmpeg build to download ({WINDOWS_BUILD_SETTING})"))
 }
 
 /// The downloaded folder without ffplay (also from a folder an older version unpacked it into).
@@ -94,6 +103,7 @@ pub fn ensure(progress: impl Fn(usize, usize)) -> Result<(), String> {
     }
     let _one = INSTALLING.lock().unwrap_or_else(PoisonError::into_inner);
     let url = download_url()?;
+    let url = url.as_str();
     if installed(folder, url) {
         without_player(folder);
         return Ok(());
@@ -114,4 +124,18 @@ pub fn ensure(progress: impl Fn(usize, usize)) -> Result<(), String> {
         return Err("ffmpeg's download held no ffmpeg and ffprobe".into());
     }
     Ok(())
+}
+
+/// The build the app downloads.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The settings name the Windows build the app downloaded before it was a setting.
+    #[test]
+    fn the_settings_name_the_windows_build() {
+        let before =
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
+        assert_eq!(windows_build_url().as_deref(), Ok(before));
+    }
 }

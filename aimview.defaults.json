@@ -9,6 +9,11 @@
     "host": "127.0.0.1",
     "port": 8770
   },
+  "downloads": {
+    "about": "Where the app downloads a tool this computer lacks: ffmpeg on 64-bit Windows (BtbN's build, with dav1d; elsewhere ffmpeg-sidecar picks one), and yt-dlp's official releases, each file by its name after this address.",
+    "ffmpeg_windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    "ytdlp_releases": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+  },
   "steam": null,
   "steam_found": {
     "about": "Where Steam's folder is looked for when steam is null: on Windows the registry value Steam keeps it in, elsewhere this folder under the home folder.",

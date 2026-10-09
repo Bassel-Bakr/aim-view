@@ -531,7 +531,7 @@ scripts). Steam's folder, unless named, is where Steam records it: the registry 
 In: the two files. Out: folders, and the server's address.
 
 - `LocalConfig` (struct): The settings: the defaults with this computer's file over them, and the folder their relative
-  paths start at. Methods: `load`, `at`, `folder`, `server`, `steam`, `kovaak`, `kovaak_scenarios`.
+  paths start at. Methods: `load`, `at`, `folder`, `server`, `text`, `steam`, `kovaak`, `kovaak_scenarios`.
 
 ## src/matching.rs
 
