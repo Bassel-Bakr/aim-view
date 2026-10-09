@@ -14,6 +14,7 @@ use aimview::local_config::LocalConfig;
 use aimview::scenario::{Facts, Kind};
 use aimview_service::areas::kovobs_areas;
 use aimview_service::library::parse_name;
+use aimview_service::report::ReportInputs;
 use aimview_service::review::{AreaBox, Request, TimeWindow, parts_at_once, review};
 use aimview_service::{Config, Device, Failure, Ffmpeg, Layout, Library};
 use serde_json::{Value, json};
@@ -551,7 +552,8 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         let parts = aimview_service::store::folder_parts(&out);
         let text = stats.as_deref().map(stats_text).transpose()?;
         let stats = stats.as_deref().zip(text.as_deref());
-        aimview_service::report::work_out(parts, &request.video, stats, None, facts.as_ref(), None, None)?
+        let inputs = ReportInputs { stats, facts: facts.as_ref(), ..ReportInputs::default() };
+        aimview_service::report::work_out(parts, &request.video, inputs)?
     };
     if let Some(report) = &report {
         write("report", serde_json::to_vec(report))?;

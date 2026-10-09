@@ -1254,6 +1254,9 @@ stats file the core reviews from it; without one, from the HUD's reading, else f
 cut-off (library/reviews.rs; aimview-tool's from a folder, store.rs: `folder_parts`). Out: the report's JSON, which
 /api/report answers.
 
+- `ReportInputs` (struct): What a report is worked out from besides the review's parts and the video (Introduce
+  Parameter Object), each None where there is none: a caller names those it has and takes the rest from
+  `ReportInputs::default()`.
 - Functions: `work_out`.
 
 ## service/src/review.rs

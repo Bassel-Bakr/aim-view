@@ -31,20 +31,30 @@ fn file_name(path: &Path) -> Option<String> {
     path.file_name().map(|name| name.to_string_lossy().into_owned())
 }
 
-/// The report of the review of `video` whose parts `parts` gives, with its stats file (its path and text) when it has
-/// one, the user's run
-/// marks, the scenario's facts, the bots' hitbox the user chose in place of the facts' (None: the facts') and the
-/// user's faint-target cut-off (faint.json: {on, offset}); None when the review has
-/// no tracks.
+/// What a report is worked out from besides the review's parts and the video (Introduce Parameter Object), each None
+/// where there is none: a caller names those it has and takes the rest from `ReportInputs::default()`.
+#[derive(Default)]
+pub struct ReportInputs<'a> {
+    /// The stats file: its path and its text.
+    pub stats: Option<(&'a Path, &'a [u8])>,
+    /// The user's run marks.
+    pub run: Option<RunMarks>,
+    /// The scenario's facts.
+    pub facts: Option<&'a Facts>,
+    /// The bots' hitbox the user chose in place of the facts' (None: the facts').
+    pub hitbox: Option<Hitbox>,
+    /// The user's faint-target cut-off (faint.json: {on, offset}).
+    pub faint: Option<Value>,
+}
+
+/// The report of the review of `video` whose parts `parts` gives, worked out with `inputs`; None when the review has no
+/// tracks.
 pub fn work_out(
     parts: impl Fn(Part) -> Option<Vec<u8>>,
     video: &Path,
-    stats: Option<(&Path, &[u8])>,
-    run: Option<RunMarks>,
-    facts: Option<&Facts>,
-    hitbox: Option<Hitbox>,
-    faint: Option<Value>,
+    inputs: ReportInputs<'_>,
 ) -> Result<Option<Value>, String> {
+    let ReportInputs { stats, run, facts, hitbox, faint } = inputs;
     // each part's JSON, or None when it is missing or not JSON
     let read = |part: Part| serde_json::from_slice::<Value>(&parts(part)?).ok();
     let Some(tracks) = read(Part::Tracks) else { return Ok(None) };

@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{Answer, Library, keep_json, read_kept};
+use crate::report::ReportInputs;
 use crate::review::{CANCELLED, Request, TimeWindow};
 use crate::run_window::{RunMarks, covers};
 use crate::store::{Item, Part, ReviewBy, Store};
@@ -354,12 +355,17 @@ impl Library {
         let stats_text = stats.as_deref().map(|path| self.stats_bytes(path)).transpose()?;
         let run = Some(RunMarks::read(self.store(), id));
         let faint = Some(self.faint(id));
-        let parts = |part: Part| self.review_part(id, &by, part);
         let facts = self.facts_for(id, &video);
-        let tracks = self.hitbox_pick(id).and_then(|_| parts(Part::Tracks));
-        let hitbox = self.chosen_hitbox(id, tracks.as_deref());
+        // a chosen hitbox reads the tracks first: the report takes them from here rather than read them again
+        let picked_tracks = self.hitbox_pick(id).and_then(|_| self.review_part(id, &by, Part::Tracks));
+        let hitbox = self.chosen_hitbox(id, picked_tracks.as_deref());
+        let parts = |part: Part| match (part, &picked_tracks) {
+            (Part::Tracks, Some(tracks)) => Some(tracks.clone()),
+            _ => self.review_part(id, &by, part),
+        };
         let stats = stats.as_deref().zip(stats_text.as_deref());
-        let worked_out = crate::report::work_out(parts, &video, stats, run, facts.as_ref(), hitbox, faint)?;
+        let inputs = ReportInputs { stats, run, facts: facts.as_ref(), hitbox, faint };
+        let worked_out = crate::report::work_out(parts, &video, inputs)?;
         let Some(mut report) = worked_out else { return Ok(Value::Null) };
         report["review_model"] = json!(model);
         Ok(report)

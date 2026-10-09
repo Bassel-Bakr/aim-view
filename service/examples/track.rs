@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use aimview::hud::HudReading;
+use aimview_service::report::ReportInputs;
 use aimview_service::review::{Request, TimeWindow, review};
 
 /// `--features dhat-heap`: every allocation counted by where it was made, written to dhat-heap.json when the review
@@ -96,7 +97,8 @@ fn main() {
     let stats_text = stats_path.map(|path| std::fs::read(path).unwrap_or_else(|error| panic!("{error}")));
     let stats = stats_path.zip(stats_text.as_deref());
     let parts = aimview_service::store::folder_parts(&out);
-    match aimview_service::report::work_out(parts, &request.video, stats, None, None, None, None) {
+    let inputs = ReportInputs { stats, ..ReportInputs::default() };
+    match aimview_service::report::work_out(parts, &request.video, inputs) {
         Ok(Some(report)) => {
             let summary = &report["summary"];
             eprintln!("report: kills from {}, {} kills", summary["info"]["source"], summary["kills"]);
