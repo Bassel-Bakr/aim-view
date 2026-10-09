@@ -9,8 +9,8 @@ On the page: click a target's center to add a box (drag to size it), click a box
 save and go on, "Skip" to leave a crop out. Saved to test_out/vod_model/checked.jsonl, one line per crop:
 {"file": ..., "boxes": [[cx, cy, w, h], ...], "verdict": "correct" | "skip" | "unsure", "auto": [...], "model": [...]}.
 "skip" means no target in the crop; "unsure" leaves the crop out.
-Usage: python python/model/label_check.py [--n 400] [--port 8773] [--data <dataset>] [--out <checked.jsonl>]
-       then open http://127.0.0.1:8773/
+Usage: python python/model/label_check.py [--n 400] [--port <port>] [--data <dataset>] [--out <checked.jsonl>]
+       then open http://127.0.0.1:<port>/ (the port: the settings' tool_ports.label_check, 8773)
 """
 import argparse
 import base64
@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
-from local_config import folder  # noqa: E402
+from local_config import folder, tool_port  # noqa: E402
 
 DATA = folder("data") / "vod_model" / "data"
 OUT = folder("data") / "vod_model" / "checked.jsonl"
@@ -215,7 +215,7 @@ def main():
     global DATA, OUT
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=400)
-    parser.add_argument("--port", type=int, default=8773)
+    parser.add_argument("--port", type=int, default=tool_port("label_check"))
     parser.add_argument("--data", default=str(DATA), help="the dataset folder (train, val, test inside)")
     parser.add_argument("--out", default=str(OUT), help="where the checked crops are saved")
     args = parser.parse_args()

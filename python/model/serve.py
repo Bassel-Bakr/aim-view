@@ -6,7 +6,8 @@ standard library, NumPy and ONNX Runtime (no PyTorch), and listens on 127.0.0.1 
        body: the frame as raw RGB bytes (w * h * 3), followed, when fixed=1, by the fixed map (w * h bytes, 0 or 1)
        answers {"detections": [[cx, cy, w, h, score], ...], "ms": inference time}
 w and h must be multiples of 16. Coordinates are pixels of the frame sent. A bad request gets 400 and {"error": ...}.
-Usage: python python/model/serve.py [--model python/model/exports/detector_<infer.BEST>_fp32.onnx] [--port 8771]
+Usage: python python/model/serve.py [--model python/model/exports/detector_<infer.BEST>_fp32.onnx]
+       [--port <the settings' tool_ports.detector_api, 8771>]
        [--threads 4]
        python python/model/serve.py --client [--n 100]   (sends a real frame N times and prints the round-trip time)
 """
@@ -21,7 +22,9 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import infer  # noqa: E402
+import local_config  # noqa: E402
 
 WIDTH_PX, HEIGHT_PX = 1280, 720     # a frame's size when the request does not give it
 SIZE_MULTIPLE = 16                  # the network needs a frame's sides in multiples of this
@@ -109,7 +112,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=str(Path(__file__).resolve().parent / "exports" /
                                                f"detector_{infer.BEST}_fp32.onnx"))
-    parser.add_argument("--port", type=int, default=8771)
+    parser.add_argument("--port", type=int, default=local_config.tool_port("detector_api"))
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--client", action="store_true")
     parser.add_argument("--n", type=int, default=100)

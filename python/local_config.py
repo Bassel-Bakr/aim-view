@@ -30,6 +30,11 @@ def folder(key):
     return None if path is None else ROOT / path
 
 
+def tool_port(name):
+    """The port a Python tool listens on at 127.0.0.1 (tool_ports: detector_api, web_demo, label_check)."""
+    return settings()["tool_ports"][name]
+
+
 def repo_relative(path):
     """A path as a report records it: from the repo's root, with forward slashes, when it lies under the root (as the
     data folder's paths do); else as given."""

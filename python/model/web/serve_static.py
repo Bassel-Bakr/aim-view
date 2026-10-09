@@ -1,12 +1,16 @@
 """Serve the repository root for the browser benchmark, with the cross-origin isolation headers that multi-threaded
-WASM needs (SharedArrayBuffer). Open http://127.0.0.1:8772/python/model/web/ .
-Usage: python python/model/web/serve_static.py [--port 8772]"""
+WASM needs (SharedArrayBuffer). Open http://127.0.0.1:<port>/python/model/web/ (the port: the settings'
+tool_ports.web_demo, 8772).
+Usage: python python/model/web/serve_static.py [--port <port>]"""
 import argparse
 import functools
+import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "python"))
+import local_config  # noqa: E402
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -32,7 +36,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8772)
+    ap.add_argument("--port", type=int, default=local_config.tool_port("web_demo"))
     a = ap.parse_args()
     print(f"http://127.0.0.1:{a.port}/python/model/web/", flush=True)
     ThreadingHTTPServer(("127.0.0.1", a.port), functools.partial(Handler, directory=str(ROOT))).serve_forever()

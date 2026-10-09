@@ -9,6 +9,12 @@
     "host": "127.0.0.1",
     "port": 8770
   },
+  "tool_ports": {
+    "about": "The ports the Python tools' local pages and APIs listen on, at 127.0.0.1; each tool's --port overrides its own: the detector API (python/model/serve.py), the WebAssembly demo's static server (python/model/web/serve_static.py) and the label check page (python/model/label_check.py).",
+    "detector_api": 8771,
+    "web_demo": 8772,
+    "label_check": 8773
+  },
   "downloads": {
     "about": "Where the app downloads a tool this computer lacks: ffmpeg on 64-bit Windows (BtbN's build, with dav1d; elsewhere ffmpeg-sidecar picks one), and yt-dlp's official releases, each file by its name after this address.",
     "ffmpeg_windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
