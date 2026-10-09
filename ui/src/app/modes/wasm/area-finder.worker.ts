@@ -4,7 +4,7 @@
  * on a recording not reviewed yet): it reads every key frame, or, when the recording has few, the
  * frames areas_sample picks over it, each decoded and converted as the review's frames are
  * (video-frames.ts, frame-converter.ts), so they are ffmpeg's pixels. KovaaK's session box comes
- * from the key frames' Y planes, as the review's HUD watch finds it (src/hud.rs). In: a
+ * from the key frames' Y planes, as the review's HUD watch finds it (src/hud/). In: a
  * `FinderWork` from page-area-finder.ts. Out: one `FinderReply`, the areas found as JSON.
  */
 import { FinderReply, FinderWork } from './area-finder-messages';

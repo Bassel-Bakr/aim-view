@@ -37,7 +37,7 @@ export interface CoreExports {
   cutoff_crops(request: number, len: number): number;
   /** What a crop's shapes show: {scene, width, height} in, a `SceneView` or {error} out. */
   shapes_visible(request: number, len: number): number;
-  /** A HUD watch (src/hud.rs) for w x h frames; full 1 when their Y spans 0 to 255. */
+  /** A HUD watch (src/hud/) for w x h frames; full 1 when their Y spans 0 to 255. */
   hud_new(w: number, h: number, full: number): number;
   /** One key frame's Y plane, before any frame. */
   hud_add_key(hud: number, y: number, len: number): void;

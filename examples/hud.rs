@@ -1,4 +1,4 @@
-//! Reads recordings' HUDs with the core (src/hud.rs) and prints one line of JSON for each:
+//! Reads recordings' HUDs with the core (src/hud/) and prints one line of JSON for each:
 //! `cargo run --profile quick --example hud -- <video> [more videos]`. ffmpeg decodes (it must be in PATH): first the
 //! key frames, picked with ffmpeg's select (some builds ignore `-skip_frame nokey` on AV1), then every frame, which
 //! the watch reads as the Y plane of yuv420p. Each recording is read three ways, which must agree: one watch; its part
