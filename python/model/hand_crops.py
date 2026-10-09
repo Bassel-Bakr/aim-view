@@ -4,7 +4,7 @@ seams pass for targets). Each crop is saved in the training format (rgb, fixed, 
 model's finds that the review would keep (the scenario's target count, the crosshair's neighbors always), so the
 label page starts from what the review sees and shows every other find for reference.
 Usage: python python/model/hand_crops.py <mp4> [<mp4> ...] --out test_out/vod_model/hand/<name> [--per-vod 50]
-       [--centre find|crosshair|mixed]
+       [--center find|crosshair|mixed]
 
 Then, once checked: python python/model/hand_crops.py --labels <checked.jsonl> --out <dataset> [--test <text>]
 [--prefix hand_crop_] writes the checked crops as a training set, with the hand boxes as labels ("skip" meant no target
@@ -210,7 +210,7 @@ def vod_crops(video, detector, args, rnd, out):
     written = 0
     for i, rgb in enumerate(frames):
         detections = detector(rgb, fixed)
-        at_crosshair = args.centre == "crosshair" or (args.centre == "mixed" and i % 2 == 0)
+        at_crosshair = args.center == "crosshair" or (args.center == "mixed" and i % 2 == 0)
         if not len(detections) and not at_crosshair:
             continue
         keep = review_keeps(detections, count)
@@ -235,9 +235,9 @@ def main():
     parser.add_argument("vods", nargs="*")
     parser.add_argument("--out", required=True)
     parser.add_argument("--per-vod", type=int, default=50)
-    parser.add_argument("--centre", choices=("find", "crosshair", "mixed"), default="find",
+    parser.add_argument("--center", "--centre", choices=("find", "crosshair", "mixed"), default="find",
                         help="the crop round the least sure find, round the crosshair (targets under it), or every "
-                        "other one")
+                        "other one (--centre: its old spelling)")
     parser.add_argument("--labels")
     parser.add_argument("--test")
     parser.add_argument("--prefix", default="hand_crop_", help="crop name prefix: cut_crop_ for the cut-off labels")

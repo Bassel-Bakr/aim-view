@@ -410,8 +410,8 @@ def box_fit(scored, crop_weight=None):
         """The values' weighted percentile over the boxes that took a label, to 4 places, or None."""
         value = weighted_percentile(values, weights, percentile)
         return None if value is None else round(value, 4)
-    return dict(boxes=int(scored.hit.sum()), centre_error_median=at(scored.err, 50),
-                centre_error_p90=at(scored.err, 90), iou_median=at(scored.iou, 50), iou_p10=at(scored.iou, 10),
+    return dict(boxes=int(scored.hit.sum()), center_error_median=at(scored.err, 50),
+                center_error_p90=at(scored.err, 90), iou_median=at(scored.iou, 50), iou_p10=at(scored.iou, 10),
                 width_ratio_median=at(scored.w_ratio, 50), height_ratio_median=at(scored.h_ratio, 50))
 
 
@@ -500,10 +500,10 @@ def spread(scored, per, hand, edges, draws=DRAWS, seed=0):
         rows.append(flat(crop_checks(scored, per, edges, draw[scored.unit])))
         crops = len(hand.dets)
         hand_draw = np.bincount(rng.integers(0, crops, crops), minlength=crops).astype(float)
-        hand_rows.append(box_fit(hand, hand_draw)["centre_error_median"])
+        hand_rows.append(box_fit(hand, hand_draw)["center_error_median"])
     deviation = {key: round(float(np.std([row[key] for row in rows if row.get(key) is not None])), 4)
                  for key in rows[0] if isinstance(rows[0][key], float)}
-    deviation["hand.centre_error_median"] = round(float(np.std([value for value in hand_rows if value is not None])), 4)
+    deviation["hand.center_error_median"] = round(float(np.std([value for value in hand_rows if value is not None])), 4)
     return deviation
 
 
@@ -602,9 +602,9 @@ def judge(rep, ref, sd, ref_rec):
 
     fit = rep["box_fit"]
     rows = {key: rel(f"box_fit.{key}", fit[key], worse)
-            for key, worse in (("centre_error_median", 1), ("centre_error_p90", 1), ("width_ratio_median", RATIO),
+            for key, worse in (("center_error_median", 1), ("center_error_p90", 1), ("width_ratio_median", RATIO),
                                ("height_ratio_median", RATIO))}
-    rows["hand_centre_error_median"] = rel("hand.centre_error_median", rep["hand"]["centre_error_median"], 1)
+    rows["hand_center_error_median"] = rel("hand.center_error_median", rep["hand"]["center_error_median"], 1)
     out["box_fit"] = dict(rows, passed=all(row["passed"] for row in rows.values()))
     out["one_box"] = rel("one_box", rep["one_box"], 1)
     out["under_crosshair"] = rel("under_crosshair", rep["under_crosshair"], -1)

@@ -332,8 +332,8 @@ python python/model/train.py python/model/configs/small_v10.json --data test_out
   --repeat test_out/vod_model/repeat_v9.txt --times 3
 ```
 
-Batch 2's crops came from `hand_crops.py` runs with `--centre find` (Jumbo, ClickTrack), `--centre crosshair`
-(Pokeball 5, 1w4ts 134) and `--centre mixed` (the 1931 WR and ww5t 2040 uploads). `repeat_v9.txt` is `new_runs.txt`
+Batch 2's crops came from `hand_crops.py` runs with `--center find` (Jumbo, ClickTrack), `--center crosshair`
+(Pokeball 5, 1w4ts 134) and `--center mixed` (the 1931 WR and ww5t 2040 uploads). `repeat_v9.txt` is `new_runs.txt`
 plus the line `hand_crop_ 20` (hand crops count 20 times). small_v9 is the same without `hand_data2`.
 
 small_v11 and small_v12 are the small_v10 command with `small_v11.json` or `small_v12.json`: both set
@@ -682,7 +682,7 @@ Each check tests something the review relies on. Each limit compares the model w
 | crosshair | On the 8 static recordings of `eval_moving.py`: the turning pairs (the room moved 0.5 degrees or more since the frame before, and half that either side; `review.camera_motion`) with a box on the fixed map's crosshair that stayed put while the room moved | the pairs over full_v3's, recording by recording: at most 0.5% of all the pairs, and under 2% on any one recording |
 | screen_fixed | The same on the fixed map's other parts (the HUD) | as for crosshair |
 | boxes_per_frame | The most boxes in one frame of those recordings | 50 (`link` compares at most 2,500 pairs of boxes) |
-| box_fit | Centre error (median, 90th percentile) and width and height (medians, over the label's) against the val labels; centre error against the 40 held-out hand-labelled targets (`hand_data`, `hand_data2` test splits) | within 2 standard deviations of full_v3's number over 400 draws of the val scenarios |
+| box_fit | Center error (median, 90th percentile) and width and height (medians, over the label's) against the val labels; center error against the 40 held-out hand-labelled targets (`hand_data`, `hand_data2` test splits) | within 2 standard deviations of full_v3's number over 400 draws of the val scenarios |
 | one_box | Second boxes inside a found target's box, per target found | as box_fit, but never under 1 point |
 | under_crosshair | Kill-moment labels touching the fixed map (a target under the crosshair) found | as one_box |
 | calibrated | Precision in each band of mapped scores (0.3, 0.4, ... 0.8 to 1.0) against full_v3's | as one_box, either way, with 50 boxes or more in the band |
@@ -705,9 +705,9 @@ Results (2026-10-04):
 | crosshair: share of the 5,179 turning pairs | 20.3% (valorant 99.2%, 849.91 0.9%, others 0) | 18.5%; **fails**: 1w4ts 2.8% where full_v3 has 0 | 20.3%; **fails**: 0.64% more than full_v3 (1w4ts 1.5%, 849.91 2.5%) |
 | screen_fixed | 0 | 0.08% | 0 |
 | boxes_per_frame | 11 | 15 | 21 |
-| box_fit: centre error median, p90 (px) | 0.49, 1.33 | 0.47, 1.34 | 0.44, 1.22 |
+| box_fit: center error median, p90 (px) | 0.49, 1.33 | 0.47, 1.34 | 0.44, 1.22 |
 | box_fit: width, height over the label's | 0.96, 0.99 | 0.98, 0.98 | 0.98, 1.00 |
-| box_fit: hand labels, centre error median; found, false boxes | 0.72 px; 32 of 40, 9 | 0.67 px; 31, 17 | 0.64 px; 31, 18 |
+| box_fit: hand labels, center error median; found, false boxes | 0.72 px; 32 of 40, 9 | 0.67 px; 31, 17 | 0.64 px; 31, 18 |
 | one_box | 2.5% | 2.1% | 0.2% |
 | under_crosshair | 99.9% | 99.7% | 99.6% |
 | calibrated: precision at 0.4 to 0.5, 0.5 to 0.6 | 0.46, 0.71 | 0.57, 0.85: **fails** at 0.5 to 0.6 (gap 0.14, allowed 0.11); with the calibrated map 0.57, 0.81: pass | 0.54, 0.81 |

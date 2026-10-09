@@ -97,7 +97,7 @@ button.go { background: #3987e5; border-color: #3987e5; }
 .muted { color: #8f8e86; } .k { display: inline-block; width: 12px; height: 12px; border-radius: 6px; margin-right: 6px; vertical-align: -1px; }
 </style></head><body>
 <h2>Check the labels</h2>
-<p class="muted">Every target in the crop should have a ring, and nothing else. Click a target's centre to add one (drag
+<p class="muted">Every target in the crop should have a ring, and nothing else. Click a target's center to add one (drag
 to size it); click a ring to remove it. The crosshair and the HUD are not targets.</p>
 <div id="wrap"><canvas id="c" width="768" height="768"></canvas><div>
 <p id="pos"></p>

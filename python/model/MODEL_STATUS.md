@@ -10,7 +10,7 @@ changes, and when a target sits under the crosshair (Pokeball scenarios).
 
 - **Input:** one 1280 × 720 RGB frame, plus a "fixed map": 1 where the screen stays put over the run (crosshair, HUD),
   0 elsewhere. The fixed map comes from the run's key frames (`review.fixed_map`).
-- **Output:** one box per target: centre x, centre y, width, height (frame pixels) and a score from 0 to 1.
+- **Output:** one box per target: center x, center y, width, height (frame pixels) and a score from 0 to 1.
 - **Where it plugs in:** `python/review.py` links the boxes into tracks, matches the kills with the stats file and
   measures each flick. The review app (`bun run server`, or the desktop app) uses the model on its own when the export exists.
 - **Not a chatbot.** The model only detects. The review's text, numbers and issue rules stay ordinary code.
@@ -23,7 +23,7 @@ starting over.
 A CenterNet-style detector ("objects as points"), written from scratch in PyTorch (`net.py`):
 
 - depthwise-separable convolutions, a small feature pyramid (strides 4, 8 and 16), nearest-neighbour upsampling;
-- one output map at stride 4: a centre heatmap, the centre's offset within its cell, and log width and log height;
+- one output map at stride 4: a center heatmap, the center's offset within its cell, and log width and log height;
 - 4 input channels: RGB (0 to 1) and the fixed map. The fixed map tells the crosshair and HUD apart from targets, so
   colour does not have to.
 
@@ -71,7 +71,7 @@ Real KovOBS frames, labelled automatically. No frame was labelled by hand.
 - targets repainted in a random colour that still stands out, with their anti-aliased edges blended again;
 - added wall texture, blur and noise;
 - synthetic crosshairs (dot, plus or ring, any colour), drawn into the image and the fixed map. In v2, 70% of them sit
-  on a target, up to 0.6 target sizes off its centre, as when a player holds slightly off.
+  on a target, up to 0.6 target sizes off its center, as when a player holds slightly off.
 
 So the model learns from real frames and real automatic labels, and sees colours and crosshairs that the library does
 not have.
@@ -93,7 +93,7 @@ Measured against the automatic labels, so these scores are agreement with the ha
 it was reliable, not ground truth. The threshold is chosen on val (0.4 for v1, 0.3 for v2), never on test.
 "Recoloured" repaints every test crop's wall and targets (fixed seed): does the model ignore colour?
 
-| Model | Precision | Recall | F1 | Centre error, median / p90 (px) | Recoloured F1 |
+| Model | Precision | Recall | F1 | Center error, median / p90 (px) | Recoloured F1 |
 | --- | --- | --- | --- | --- | --- |
 | tiny | 0.955 | 0.935 | 0.945 | 0.45 / 1.22 | 0.955 |
 | small | 0.969 | 0.934 | 0.951 | 0.30 / 0.85 | 0.967 |
