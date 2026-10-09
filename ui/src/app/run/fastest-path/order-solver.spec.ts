@@ -1,6 +1,6 @@
 import { Flick, TrackPoint } from '../../api';
 import { fingerprint } from '../recording-context';
-import { fitFitts, OrderSolver } from './order-solver';
+import { fitFitts, OrderSolver, Solution } from './order-solver';
 
 describe('fitFitts', () => {
   it('fits time to the log of distance over width', () => {
@@ -47,6 +47,24 @@ describe('OrderSolver', () => {
     expect(solver.fastestOrder([])).toBeNull();
   });
 
+  it('orders the same with its kept tables as a new solver does', () => {
+    const fitted = new OrderSolver(fitFitts(VARIED_FLICKS, 0.4));
+    const sets = [targetSet(9), targetSet(5), targetSet(9).reverse(), targetSet(5)];
+    for (const targets of sets) {
+      const fresh = new OrderSolver(fitted.fitts);
+      expect(fitted.fastestOrder(targets)).toEqual(fresh.fastestOrder(targets));
+      expect(costById(fitted.solve(targets))).toEqual(costById(fresh.solve(targets)));
+    }
+  });
+
+  it('reuses the table of a set after another set is solved', () => {
+    const all = targetSet(9);
+    const yours = all.slice(0, 4);
+    const first = solver.solve(all)?.table;
+    solver.solve(yours);
+    expect(solver.solve([...all].reverse())?.table).toBe(first);
+  });
+
   it('keeps its fits, orders and costs (a digest of them)', () => {
     const fitted = new OrderSolver(fitFitts(VARIED_FLICKS, 0.4));
     const results = [3, 9, 16, 9].map((count) => {
@@ -71,6 +89,12 @@ const VARIED_FLICKS = Array.from(
   { length: 12 },
   (_unused, i) => ({ D0: 1 + ((i * 7) % 13), total: 0.2 + ((i * 5) % 9) / 30 }) as Flick,
 );
+
+/** Each target's id and the set's cost when it goes first, by id (tables differ in their order). */
+function costById(solution: Solution | null): number[][] {
+  const pairs = solution?.targets.map((target, j) => [target[0], solution.from[j]]) ?? [];
+  return pairs.sort((a, b) => a[0] - b[0]);
+}
 
 /** Targets spread around the crosshair, each with its id and place in degrees. */
 function targetSet(count: number): TrackPoint[] {

@@ -65,10 +65,8 @@ interface OrderTable {
   next: Int8Array;
 }
 
-/** A table kept for one set of targets (key: their sorted ids), in the order of ids. */
+/** A table kept for one set of targets, in the order of ids. */
 interface CachedTable {
-  /** The targets' ids, sorted and joined with commas. */
-  key: string;
   /** The targets' ids in the table's order. */
   ids: number[];
   /** The table for those targets. */
@@ -105,13 +103,22 @@ export interface FastestOrder {
 const MAX_TARGETS = 14;
 
 /**
+ * How many sets' tables are kept: the overlay orders all the targets and then your kills among
+ * them each frame, so one table would be made again twice a frame.
+ */
+const MAX_CACHED_TABLES = 4;
+
+/**
  * Orders targets by Fitts' law. Costs are in log units (seconds = a per flick + b per unit). The
- * table for a set of targets is kept until the set changes, so each frame only adds the flick from
- * the crosshair.
+ * tables for the last few sets of targets are kept, so each frame only adds the flick from the
+ * crosshair.
  */
 export class OrderSolver {
-  /** The table for the last set of targets solved; null before the first. */
-  private cache: CachedTable | null = null;
+  /**
+   * The tables of the sets solved last, by their sorted ids joined with commas; the least recently
+   * used first.
+   */
+  private readonly cache = new Map<string, CachedTable>();
 
   /** A solver with the run's fit. */
   constructor(readonly fitts: Fitts) {}
@@ -156,13 +163,7 @@ export class OrderSolver {
       .map((target) => target[0])
       .sort((a, b) => a - b)
       .join(',');
-    if (this.cache?.key !== key)
-      this.cache = {
-        key,
-        ids: candidates.map((target) => target[0]),
-        table: this.table(candidates),
-      };
-    const { ids, table } = this.cache;
+    const { ids, table } = this.cachedTable(key, candidates);
     const byId = new Map(candidates.map((target) => [target[0], target]));
     const inTableOrder = ids.map((id) => byId.get(id) as TrackPoint);
     const from = inTableOrder.map(
@@ -189,6 +190,20 @@ export class OrderSolver {
     return { order, seconds: this.seconds(order.length, solution.from[solution.bestFirst]) };
   }
 
+  /** The kept table for a set of targets (made when it is not kept), now the most recently used. */
+  private cachedTable(key: string, candidates: TrackPoint[]): CachedTable {
+    const kept = this.cache.get(key);
+    this.cache.delete(key);
+    const cached = kept ?? {
+      ids: candidates.map((target) => target[0]),
+      table: this.table(candidates),
+    };
+    this.cache.set(key, cached);
+    if (this.cache.size > MAX_CACHED_TABLES)
+      this.cache.delete(this.cache.keys().next().value as string);
+    return cached;
+  }
+
   /**
    * The table of best paths through the targets (Held-Karp's dynamic programming over subsets):
    * each mask builds on the smaller masks before it. The table doubles with each target.
@@ -198,6 +213,10 @@ export class OrderSolver {
     const fullMask = (1 << count) - 1;
     const best = new Float64Array((fullMask + 1) * count).fill(Infinity);
     const next = new Int8Array((fullMask + 1) * count).fill(-1);
+    const costs = new Float64Array(count * count);
+    for (let j = 0; j < count; j++)
+      for (let after = 0; after < count; after++)
+        costs[j * count + after] = this.cost(targets[j], targets[after]);
     for (let j = 0; j < count; j++) best[(1 << j) * count + j] = 0;
     for (let mask = 1; mask <= fullMask; mask++) {
       for (let j = 0; j < count; j++) {
@@ -205,7 +224,7 @@ export class OrderSolver {
         const rest = mask ^ (1 << j);
         for (let after = 0; after < count; after++) {
           if (!(rest & (1 << after))) continue;
-          const cost = this.cost(targets[j], targets[after]) + best[rest * count + after];
+          const cost = costs[j * count + after] + best[rest * count + after];
           if (cost < best[mask * count + j]) {
             best[mask * count + j] = cost;
             next[mask * count + j] = after;
