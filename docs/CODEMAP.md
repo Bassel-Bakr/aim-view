@@ -90,8 +90,8 @@ rust-analyzer's call hierarchy.
 - `src/track_checks.rs`: A tracking run's checks: each a Work on / Fine verdict, like a clicking run's (src/summary.rs
   `judge`).
 - `src/tracker.rs`: The track step for one recording, or one run of it (a recording split into runs, reviewed at once):
-  each frame's boxes kept or dropped (raw boxes kept too), its excluded areas watched for pop-ups, then the frames where
-  a pop-up is off kept again, and all linked when the frames are in.
+  each frame's boxes as the detector gave them, its excluded areas watched for pop-ups, then, when the frames are in,
+  each frame's boxes kept or dropped (those under a pop-up that is off kept again) and all linked.
 - `src/tracking.rs`: A tracking run's summary (the old review, python/retired/review.py: `track_summary`,
   `track_motion`, `what_if`, `stats_length`, `countdown_end`, `tracking_crosshair`, `without_crosshair`): how the
   crosshair stayed on the target, from the tracks and the camera's turn.
@@ -852,9 +852,9 @@ A tracking run's checks: each a Work on / Fine verdict, like a clicking run's (s
 ## src/tracker.rs
 
 The track step for one recording, or one run of it (a recording split into runs, reviewed at once): each frame's boxes
-kept or dropped (raw boxes kept too), its excluded areas watched for pop-ups, then the frames where a pop-up is off kept
-again, and all linked when the frames are in. The review session (src/session.rs) drives it for the browser and the
-desktop app.
+as the detector gave them, its excluded areas watched for pop-ups, then, when the frames are in, each frame's boxes kept
+or dropped (those under a pop-up that is off kept again) and all linked. The review session (src/session.rs) drives it
+for the browser and the desktop app.
 
 - `Tracker` (struct): The track step's state: the settings it decodes and keeps boxes with, and what it has of the
   frames so far. Methods: `new`, `end_screens`, `set_model`, `kovobs`, `start_at`, `watch`, `push_maps`, `push_boxes`,

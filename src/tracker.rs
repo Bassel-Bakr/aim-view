@@ -1,6 +1,6 @@
 //! The track step for one recording, or one run of it (a recording split into runs, reviewed at once): each frame's
-//! boxes kept or dropped (raw boxes kept too), its excluded areas watched for pop-ups, then the frames where a pop-up
-//! is off kept again, and all linked when the frames are in. The review session (src/session.rs) drives it for the
+//! boxes as the detector gave them, its excluded areas watched for pop-ups, then, when the frames are in, each frame's
+//! boxes kept or dropped (those under a pop-up that is off kept again) and all linked. The review session (src/session.rs) drives it for the
 //! browser and the desktop app.
 //!
 //! In: each frame's detector maps (or boxes already decoded) and its 720p RGB, and the other runs' parts. Out: the
@@ -25,11 +25,8 @@ pub struct Tracker {
     cap: Option<usize>,
     /// Watches each excluded area for when it shows, so the frames where a pop-up is off get their boxes back.
     watch: AreaWatch,
-    /// Each frame's boxes as the detector gave them.
+    /// Each frame's boxes as the detector gave them: `finish` keeps or drops them, once, when every run's part is in.
     raw: Vec<Vec<RawBox>>,
-    /// Each frame's targets kept of its boxes, every area excluded (`reopen` adds back the ones under a pop-up that
-    /// is off).
-    frames: Vec<Vec<Spot>>,
 }
 
 /// A run's part of the track step (`Tracker::part`): its frames' raw boxes and its area watch, joined in order with
@@ -53,7 +50,6 @@ impl Tracker {
             areas: areas.into_boxed_slice(),
             cap: (cap > 0).then_some(cap),
             raw: Vec::new(),
-            frames: Vec::new(),
         }
     }
 
@@ -85,18 +81,14 @@ impl Tracker {
     }
 
     /// One frame's detector output: the score map (grid_height x grid_width) and the regression maps (4 x grid_height
-    /// x grid_width: `detect::decode`). Returns the boxes kept.
-    pub fn push_maps(&mut self, score: &[f32], regression: &[f32], grid_width: usize, grid_height: usize) -> usize {
-        self.push_boxes(&detect::decode(score, regression, grid_width, grid_height, &self.model))
+    /// x grid_width: `detect::decode`).
+    pub fn push_maps(&mut self, score: &[f32], regression: &[f32], grid_width: usize, grid_height: usize) {
+        self.push_boxes(detect::decode(score, regression, grid_width, grid_height, &self.model));
     }
 
-    /// One frame's boxes, already decoded (their scores on the reference model's scale). Returns the boxes kept.
-    pub fn push_boxes(&mut self, raw: &[RawBox]) -> usize {
-        let kept = keep(raw, &self.mask, self.cap);
-        let kept_count = kept.len();
-        self.frames.push(kept);
-        self.raw.push(raw.to_vec());
-        kept_count
+    /// One frame's boxes, already decoded (their scores on the reference model's scale).
+    pub fn push_boxes(&mut self, raw: Vec<RawBox>) {
+        self.raw.push(raw);
     }
 
     /// The run's part, for joining with the other runs'.
@@ -104,26 +96,26 @@ impl Tracker {
         TrackPart { raw: self.raw, watch: self.watch }
     }
 
-    /// The next run's part, after the frames the tracker has: each frame's boxes kept or dropped as `push_boxes`
-    /// does, and its area watch joined after the one before. A part that starts later (a review from part way in) has
-    /// empty frames before it. Returns the frames the part added.
+    /// The next run's part, after the frames the tracker has: its frames' boxes, and its area watch joined after the
+    /// one before. A part that starts later (a review from part way in) has empty frames before it. Returns the frames
+    /// the part added.
     pub fn add_part(&mut self, part: TrackPart) -> usize {
         while self.raw.len() < part.watch.from() {
-            self.push_boxes(&[]);
+            self.push_boxes(Vec::new());
         }
-        for raw in &part.raw {
-            self.push_boxes(raw);
-        }
+        let added = part.raw.len();
+        self.raw.extend(part.raw);
         self.watch.join(part.watch);
-        part.raw.len()
+        added
     }
 
-    /// The frames linked: tracks.json's `frames`. First each frame gets back the boxes under a pop-up that was not
-    /// showing then.
-    pub fn finish(mut self) -> Box<[TrackFrame]> {
+    /// The frames linked: tracks.json's `frames`. Each frame's boxes are kept or dropped with every area excluded,
+    /// then each frame gets back the boxes under a pop-up that was not showing then.
+    pub fn finish(self) -> Box<[TrackFrame]> {
+        let mut frames: Vec<Vec<Spot>> = self.raw.iter().map(|raw| keep(raw, &self.mask, self.cap)).collect();
         let shows = self.watch.showing();
-        reopen(&self.raw, &mut self.frames, &self.areas, &shows, self.cap);
-        link(&self.frames)
+        reopen(&self.raw, &mut frames, &self.areas, &shows, self.cap);
+        link(&frames)
     }
 }
 
@@ -142,7 +134,7 @@ mod tests {
         run.start_at(5);
         for _ in 0..3 {
             run.watch(&rgb);
-            run.push_boxes(&[target]);
+            run.push_boxes(vec![target]);
         }
         let mut joined = Tracker::kovobs(0);
         assert_eq!(joined.add_part(run.part()), 3);
