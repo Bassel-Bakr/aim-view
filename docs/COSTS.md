@@ -18,6 +18,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 <!-- costs:start -->
 | Step | Configuration | Latest | Median of the last 5 | Runs | Latest run (date, commit; + uncommitted changes) |
 | --- | --- | --- | --- | --- | --- |
+| accept | model large_v16e4 | 1455.3 s | 1455.3 s | 1 | 2026-10-09, ec76e1d+ |
 | assets | profile release, modes browser | 0.3 s | 68.7 s | 2 | 2026-10-08, 4303844+ |
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 0.2 s | 38.5 s | 6 | 2026-10-09, 1a3382e+ |
@@ -44,6 +45,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: lint | - | 4.7 s | 4.7 s | 8 | 2026-10-09, 1a3382e+ |
 | cargo test quick workspace | - | 45.3 s | 31.0 s | 2 | 2026-10-09, f4f3d0b+ |
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
+| export | model large_v16e4 | 82.4 s | 82.4 s | 1 | 2026-10-09, ec76e1d+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
 | lint:ui | - | 4.5 s | 4.4 s | 59 | 2026-10-09, 5affc0b+ |
@@ -67,6 +69,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | test:ui | - | 8.9 s | 9.5 s | 50 | 2026-10-09, 5affc0b+ |
 | tokens | - | 0.5 s | 0.4 s | 8 | 2026-10-09, 8fe2b6c+ |
 | train | model large_v15 | 197.8 s | 197.8 s | 1 | 2026-10-09, 38ba8e9 |
+| train | model large_v16 | 211.6 s | 211.6 s | 1 | 2026-10-09, ec76e1d+ |
 | types | - | 33.2 s | 40.5 s | 2 | 2026-10-09, 12b88ac+ |
 <!-- costs:end -->
 

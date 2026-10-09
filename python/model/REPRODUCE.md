@@ -494,7 +494,7 @@ python python/model/accept.py large_v13e4 --list
 
 The large_v14 runs (2026-10-06 and 07), large_v13e4 trained on for 4 epochs more with the auto-labelled sets (the
 same command, `--init $D/runs/large_v13e4/best.pt`, the last epoch exported, the tracking rule `at_crosshair` added to
-its settings file); none passed, and large_v13e4 stays the default:
+its settings file); large_v16e4 is the first to pass, and large_v13e4 stays the default until the user picks another:
 
 | Config | What it added | Verdict |
 | --- | --- | --- |
@@ -503,6 +503,7 @@ its settings file); none passed, and large_v13e4 stays the default:
 | large_v14_ctrl | nothing: large_v13e4's own data again | the contract: 6.05%, so any fine-tune tips that recording |
 | large_v14_noxs | large_v14b without data_auto_xsb | met the contract (4.56%); the gate failed it on the video alone's dynamic precision, 0.9888 against 0.9929 (allowed 0.0039) |
 | large_v15 (2026-10-09) | the 687 crops the user checked from the 2026-10-08 label batch (`data_batch_2026_10_08_checked`, `chk_batch1 3`) | met the contract (1.81% against 2.83%); the gate failed it on dynamic kills, 795 of 797 against 796 (Bounce 180 Sparky Jumbo 106 of 107; allowed 0); every other check passed, switching flicks 399 against 393 |
+| large_v16 (2026-10-09) | the label batch's 721 checked crops (`data_batch_2026_10_08_checked2`, `chk_batch1 3`) and the 120 overlapping-target crops the user checked, drawn with ovals and polygons too (`data_merged_pairs_2026_10_09_checked`, `chk_pairs_ 3`) | passed: every check; dynamic kills 796 of 797 (Bounce 180 Sparky Jumbo 107 of 107), the contract 3.38% against 2.83% (allowed 2 points more on one recording) |
 
 large_v15's set, from the Crops page's answers (labels.py once per part, its crops' names then prefixed with the part's
 folder in one checked_phone.jsonl):
@@ -514,6 +515,26 @@ python python/model/crop_check/labels.py $P $P/answers/checks $L/agreed/checked_
 python python/model/crop_check/labels.py $P $P/answers/checks $L/robots/checked_phone.jsonl auto_robots
 python python/model/checked_data.py --labels $D/label_batch_2026-10-08/checked_phone.jsonl --out $D/data_batch_2026_10_08_checked --tag chk_batch1 --split train
 python python/model/train.py python/model/configs/large_v15.json --data $D/data_v3 $SETS --extra $D/data_centering_checked_snapped   --extra $D/data_kill_feedback_checked --extra $D/data_auto_tiles2 --extra $D/data_robot_kills_checked   --extra $D/data_batch_2026_10_08_checked --repeat $D/repeat_large_v15.txt --times 3 --init $D/runs/large_v13e4/best.pt
+```
+
+large_v16's sets: the label batch's labels made again into new files (566 of 649 review crops answered), and the
+overlapping targets' page (labels.py's labels of an oval or a polygon come from the core, as any drawn answer's do;
+the labels sit beside the crops and their manifest in crops/). Its repeat file is large_v15's plus `chk_pairs_ 3`.
+large_v16's last epoch was exported as large_v16e4 (as large_v13e4's), with large_v13e4's `at_crosshair` rule added:
+
+```bash
+P=$D/check_label_batch_2026-10-08; L=$D/label_batch_2026-10-08
+python python/model/crop_check/labels.py $P $P/answers/checks $L/review/checked_phone_2.jsonl auto_review
+python python/model/crop_check/labels.py $P $P/answers/checks $L/agreed/checked_phone_2.jsonl auto_agreed_sample
+python python/model/crop_check/labels.py $P $P/answers/checks $L/robots/checked_phone_2.jsonl auto_robots
+python python/model/checked_data.py --labels $L/checked_phone_2.jsonl --out $D/data_batch_2026_10_08_checked2 --tag chk_batch1 --split train
+P=$D/check_merged_pairs; M=$D/merged_pairs_2026-10-09
+python python/model/crop_check/labels.py $P $P/answers/checks $M/crops/checked_phone.jsonl merged_pairs
+python python/model/checked_data.py --labels $M/crops/checked_phone.jsonl --out $D/data_merged_pairs_2026_10_09_checked --tag chk_pairs_ --split train
+python python/model/train.py python/model/configs/large_v16.json --data $D/data_v3 $SETS --extra $D/data_centering_checked_snapped   --extra $D/data_kill_feedback_checked --extra $D/data_auto_tiles2 --extra $D/data_robot_kills_checked   --extra $D/data_batch_2026_10_08_checked2 --extra $D/data_merged_pairs_2026_10_09_checked --repeat $D/repeat_large_v16.txt --times 3 --init $D/runs/large_v13e4/best.pt
+python -c "import torch; c = torch.load('$D/runs/large_v16/last.pt', weights_only=False); c['config']['name'] = 'large_v16e4'; torch.save(c, '$D/runs/large_v16e4/best.pt')"
+python python/model/export.py $D/runs/large_v16e4/best.pt
+python python/model/accept.py large_v16e4 --all
 ```
 
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
