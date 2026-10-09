@@ -1,6 +1,7 @@
 /**
  * A box whose vertices are placed by hand (Shape.points: a flat box's 4 corners in order round
- * it, from its top left; a 3D box's 8 in `solidCorners` order), for a target seen in perspective.
+ * it, from its top left; a 3D box's 8 in `solidCorners` order), for a target seen in perspective;
+ * or a polygon's, in order round it (moved, turned and scaled the same way, each vertex dragged).
  * Each vertex drags on its own, a side (a 3D box's face) moves its vertices together, and the
  * outline is what they span, as the core's (src/shapes.rs `outline`). Crop pixels. Out:
  * shape-geometry.ts and the Crops page's stage.
@@ -41,6 +42,7 @@ const FACING_WINDING: number[] = (() => {
     face: null,
     solid: { thickness: 10, tip: 20, swing: 25 },
     points: null,
+    sides: null,
     depth: 0,
     role: null,
     model: null,
@@ -62,10 +64,11 @@ function signedArea(points: CropPoint[]): number {
   );
 }
 
-/** A box's placed vertices, when it has enough to span an area; null otherwise. */
+/** A box's or a polygon's placed vertices, when it has enough to span an area; null otherwise. */
 export function freePoints(shape: Shape): CropPoint[] | null {
   const points = shape.points;
-  return shape.kind === 'box' && points && points.length >= 3 ? points : null;
+  const placeable = shape.kind === 'box' || shape.kind === 'polygon';
+  return placeable && points && points.length >= 3 ? points : null;
 }
 
 /** The box round points: [center x, center y, width, height]. */

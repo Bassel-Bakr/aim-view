@@ -20,6 +20,7 @@ import { CropAnswerMap, CropImport, CropSets } from '../platform/crop-sets';
 import { queryValue, setQuery } from '../services/url-query';
 import { learn, suggest, Suggestion } from './crop-lessons';
 import { answerOf, DraftScene, duplicated, sceneOfAnswer, sceneOfFix } from './crop-scene';
+import { DEFAULT_SIDES } from '../shapes/polygon-geometry';
 
 /** A crop's side, in pixels (make_page.py's crops). */
 export const CROP_SIDE = 256;
@@ -80,6 +81,10 @@ export class CropDraft {
   readonly kind = signal<ShapeKind>('pill');
   /** Whether a drag on the wall draws a 3D shape (with a third face). */
   readonly deep = signal(false);
+  /** The sides of a polygon a drag on the wall draws. */
+  readonly sides = signal(DEFAULT_SIDES);
+  /** Whether a polygon a drag draws is placed vertex by vertex, each vertex dragged on its own (else it is uniform). */
+  readonly eachVertex = signal(false);
   /** In a fix, a drag moves the view instead of drawing or moving shapes (the tools' Pan); taps still select. */
   readonly panning = signal(false);
   /** A side dragged moves its opposite side too, the shape keeping its middle (the tools' Mirror; Alt does it too). */

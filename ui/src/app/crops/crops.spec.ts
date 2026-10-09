@@ -226,6 +226,28 @@ describe("the Crops page's perfect circles and squares", () => {
     expect(draft.draft()?.shapes.at(-1)?.box).toEqual([130, 140, 30, 30]);
   });
 
+  it('draws a polygon of its sides, places it vertex by vertex and makes it uniform again', async () => {
+    const { draft, click, drag } = await render(fakeServer([]));
+    await click('Wrong');
+    await click('Polygon');
+    drag([100, 100], [140, 140]);
+    const last = () => draft.draft()?.shapes.at(-1);
+    expect(last()).toMatchObject({
+      kind: 'polygon',
+      sides: 6,
+      points: null,
+      box: [120, 120, 40, 40],
+    });
+    await click('+');
+    expect(last()?.sides).toBe(7);
+    await click('Each vertex');
+    expect(last()?.points).toHaveLength(7);
+    drag([120, 100], [120, 90]);
+    expect(last()?.points?.[0]).toEqual([120, 90]);
+    await click('Uniform');
+    expect(last()).toMatchObject({ kind: 'polygon', points: null, sides: 7 });
+  });
+
   it('draws an oval with the Oval tool, and makes a selected shape one', async () => {
     const { draft, click, drag } = await render(fakeServer([]));
     await click('Wrong');

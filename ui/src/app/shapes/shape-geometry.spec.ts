@@ -1,4 +1,4 @@
-import { Shape } from '../api';
+import { CropVertex, Shape } from '../api';
 import {
   boxAround,
   corners,
@@ -10,6 +10,7 @@ import {
   moved,
   onShape,
   resized,
+  resizedEvenly,
   scaled,
   tracePath,
   turned,
@@ -27,6 +28,7 @@ function shape(overrides: Partial<Shape>): Shape {
     face: null,
     solid: null,
     points: null,
+    sides: null,
     depth: 0,
     role: null,
     model: null,
@@ -127,6 +129,49 @@ describe('an oval', () => {
     expect(ellipse.slice(0, 5)).toEqual(['ellipse', 50, 50, 10, 5]);
     expect(ellipse[5]).toBeCloseTo(Math.PI / 2);
     expect(ellipse.slice(6)).toEqual([0, 2 * Math.PI]);
+  });
+});
+
+describe('a uniform polygon', () => {
+  it('scales evenly by a corner, its ratio kept and the opposite corner staying put', () => {
+    const stretched = shape({ kind: 'polygon', sides: 5, box: [50, 50, 20, 10] });
+    expect(resizedEvenly(stretched, 2, [80, 56]).box).toEqual([60, 55, 40, 20]);
+    expect(resizedEvenly(stretched, 0, [50, 50]).box).toEqual([55, 52.5, 10, 5]);
+    expect(resizedEvenly(stretched, 2, [0, 0]).box).toEqual([42, 46, 4, 2]);
+  });
+
+  it('traces its vertices in order, or those placed vertex by vertex', () => {
+    const calls: string[] = [];
+    const record = (name: string) => () => calls.push(name);
+    const context = {
+      beginPath: record('beginPath'),
+      moveTo: record('moveTo'),
+      lineTo: record('lineTo'),
+      closePath: record('closePath'),
+    } as unknown as CanvasRenderingContext2D;
+    tracePath(context, shape({ kind: 'polygon', sides: 5 }));
+    expect(calls).toEqual([
+      'beginPath',
+      'moveTo',
+      'lineTo',
+      'lineTo',
+      'lineTo',
+      'lineTo',
+      'closePath',
+    ]);
+    calls.length = 0;
+    const points: CropVertex[] = [
+      [0, 0],
+      [8, 0],
+      [8, 8],
+      [4, 2],
+      [0, 8],
+      [1, 1],
+      [2, 2],
+      [3, 3],
+    ];
+    tracePath(context, shape({ kind: 'polygon', points }));
+    expect(calls.filter((call) => call === 'lineTo')).toHaveLength(7);
   });
 });
 

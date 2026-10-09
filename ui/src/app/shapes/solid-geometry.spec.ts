@@ -22,6 +22,7 @@ function box(solid: Partial<Solid> = {}, angle = 0): Shape {
     face: null,
     solid: { thickness: 30, tip: 0, swing: 0, ...solid },
     points: null,
+    sides: null,
     depth: 0,
     role: null,
     model: null,

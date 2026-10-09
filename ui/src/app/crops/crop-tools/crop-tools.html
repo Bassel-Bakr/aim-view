@@ -140,6 +140,53 @@
     Pan
   </button>
 </div>
+@if (polygonShown()) {
+  <div class="tool-row">
+    <span id="crop-sides-label" class="tool-label">Sides</span>
+    <button
+      class="button"
+      type="button"
+      aria-label="Fewer sides"
+      data-tooltip="One side fewer (a polygon placed vertex by vertex keeps its own)"
+      [disabled]="sides() <= MIN_SIDES || placedPolygonChosen()"
+      (click)="changeSides(-1)"
+    >
+      −
+    </button>
+    <span class="tool-count" aria-labelledby="crop-sides-label">{{ sides() }}</span>
+    <button
+      class="button"
+      type="button"
+      aria-label="More sides"
+      data-tooltip="One side more (a polygon placed vertex by vertex keeps its own)"
+      [disabled]="sides() >= MAX_SIDES || placedPolygonChosen()"
+      (click)="changeSides(1)"
+    >
+      +
+    </button>
+    <span id="crop-vertex-label" class="tool-label">Vertices</span>
+    <div class="segmented" role="group" aria-labelledby="crop-vertex-label">
+      <button
+        type="button"
+        class="segmented-option"
+        data-tooltip="Regular: a corner scales it evenly, a side stretches it; from Each vertex, the nearest regular polygon"
+        [attr.aria-pressed]="!eachVertex()"
+        (click)="useVertexMode(false)"
+      >
+        Uniform
+      </button>
+      <button
+        type="button"
+        class="segmented-option"
+        data-tooltip="Every vertex has its own handle, to drag on its own"
+        [attr.aria-pressed]="eachVertex()"
+        (click)="useVertexMode(true)"
+      >
+        Each vertex
+      </button>
+    </div>
+  </div>
+}
 @if (placedChosen()) {
   <div class="tool-row">
     <span class="tool-label">Corners</span>
@@ -182,10 +229,12 @@
   <summary>How to draw</summary>
   Drag on the crop to draw a {{ drawing() }}. Tap shapes to select them. Drag a box's corner (a 3D
   box's every corner) to move it on its own, for a box seen in perspective; a pill's or an oval's
-  corner resizes it (an oval fits a sphere the camera stretches). A square on a side moves that side
-  (Mirror or Alt: its opposite side too), the round handle above turns it. A 3D shape has a square
-  on each face (hollow: a face turned away) and a ringed handle below: drag it to tumble the shape
-  in 3D, or use the 3D turn buttons. Its faces toward you are shaded and its hidden edges dashed.
-  The wheel over the selected shapes resizes them, elsewhere it zooms. Shift while drawing or
-  resizing makes a perfect circle or square. Tap the wall for a tiny target.
+  corner resizes it (an oval fits a sphere the camera stretches). A polygon's Sides set how many it
+  has; Uniform keeps it regular (a corner scales it evenly, a side stretches it), Each vertex gives
+  every vertex its own handle, and Uniform again fits the nearest regular polygon to them. A square
+  on a side moves that side (Mirror or Alt: its opposite side too), the round handle above turns it.
+  A 3D shape has a square on each face (hollow: a face turned away) and a ringed handle below: drag
+  it to tumble the shape in 3D, or use the 3D turn buttons. Its faces toward you are shaded and its
+  hidden edges dashed. The wheel over the selected shapes resizes them, elsewhere it zooms. Shift
+  while drawing or resizing makes a perfect circle or square. Tap the wall for a tiny target.
 </details>

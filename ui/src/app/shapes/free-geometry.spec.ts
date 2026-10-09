@@ -12,6 +12,7 @@ function box(overrides: Partial<Shape> = {}): Shape {
     face: null,
     solid: null,
     points: null,
+    sides: null,
     depth: 0,
     role: null,
     model: null,

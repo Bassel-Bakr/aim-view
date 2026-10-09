@@ -202,7 +202,7 @@ function paintShapes(
     const width = picture.selection.includes(shape.id) ? style.lineWidthSelected : style.lineWidth;
     const line: SolidLine = { color: colorOf(shape, scene.occluders, style), width, scale };
     const points = freePoints(shape);
-    if (points) {
+    if (points && shape.kind === 'box') {
       paintFaces(context, freeFaces(points), freeEdges(points), line, style);
       continue;
     }

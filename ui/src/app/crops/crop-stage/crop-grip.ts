@@ -17,6 +17,7 @@ import {
   onShape,
   pushedFlatSide,
   resized,
+  resizedEvenly,
   turned,
   turnHandle,
 } from '../../shapes/shape-geometry';
@@ -101,7 +102,7 @@ export function handlesOf(shape: Shape, scale: number): ShapeHandles {
   if (points) {
     return {
       corners: points,
-      sides: freeSides(points),
+      sides: shape.kind === 'polygon' ? [] : freeSides(points),
       turn: turnHandle(shape, reach),
       face: null,
       tumble: null,
@@ -124,12 +125,15 @@ function vertexHandles(shape: Shape): CropPoint[] {
 
 /**
  * A box's vertex dragged: it moves on its own, the others stay (a box not yet placed by hand takes its corners as its
- * placed vertices first). A pill's corner resizes its frame, the opposite corner staying (Shift: equal sides).
+ * placed vertices first); so does a polygon's placed vertex by vertex. A uniform polygon's corner scales it evenly, a
+ * pill's or an oval's resizes its frame, the opposite corner staying (Shift: equal sides).
  */
 function draggedVertex(shape: Shape, index: number, point: CropPoint, even: boolean): Shape {
+  const placed = freePoints(shape);
+  if (placed) return movedVertex(shape, placed, index, point);
+  if (shape.kind === 'polygon') return resizedEvenly(shape, index, point);
   if (shape.kind !== 'box') return resized(shape, index, point, even);
-  const points = freePoints(shape) ?? vertexHandles(shape);
-  return movedVertex(shape, points, index, point);
+  return movedVertex(shape, vertexHandles(shape), index, point);
 }
 
 /** The shape that shows handles: the selected one, when only one is (with more, a drag moves them all). */

@@ -19,6 +19,15 @@
     @apply text-xs text-muted;
   }
 
+  // the shape buttons wrap on a phone
+  .tool-row .segmented {
+    @apply flex-wrap;
+  }
+
+  .tool-count {
+    @apply text-sm tabular-nums;
+  }
+
   // Hides and Pan stay on until pressed again: pressed, they look it
   .tool-toggle {
     @apply aria-pressed:border-accent aria-pressed:bg-surface-3;

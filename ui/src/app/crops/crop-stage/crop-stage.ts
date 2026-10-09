@@ -31,6 +31,7 @@ import {
   resizedAll,
   uncrossed,
   withDrawn,
+  withVertexMode,
   withPoint,
 } from '../crop-scene';
 import { CropDrag, CropGrip, dragged, gripAt, handleReach, shapesAt, sketchBox } from './crop-grip';
@@ -419,6 +420,7 @@ export class CropStage {
           kind,
           box,
           points: null,
+          sides: kind === 'polygon' ? this.draft.sides() : null,
           angle: 0,
           face: null,
           solid,
@@ -489,7 +491,11 @@ export class CropStage {
   private addDrawn(drag: CropDrag): void {
     const box = sketchBox(drag);
     if (!box) return;
-    this.draft.edit((scene) => withDrawn(scene, this.draft.kind(), box, this.draft.deep()));
+    this.draft.edit((scene) => {
+      const drawn = withDrawn(scene, this.draft.kind(), box, this.draft.deep(), this.draft.sides());
+      const added = drawn.shapes.slice(-1).map((shape) => shape.id);
+      return this.draft.eachVertex() ? withVertexMode(drawn, added, true) : drawn;
+    });
     const added = this.draft.draft()?.shapes.at(-1);
     if (added) this.draft.selection.set([added.id]);
   }

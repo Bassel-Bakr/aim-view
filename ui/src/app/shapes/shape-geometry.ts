@@ -3,7 +3,8 @@
  * does to it, and its outline on a canvas. What a shape covers and hides is the core's
  * (src/shapes.rs, through CoreModule.shapesVisible): these are only the handles a finger takes.
  * Coordinates are crop pixels; an angle is in degrees, clockwise on screen. A solid shape's
- * geometry is solid-geometry.ts's, a box placed by hand free-geometry.ts's.
+ * geometry is solid-geometry.ts's, a box placed by hand free-geometry.ts's, a polygon's vertices
+ * polygon-geometry.ts's.
  * Out: the Crops page (crop-scene.ts, crop-stage/).
  */
 
@@ -25,6 +26,7 @@ import {
   turnedPoints,
   withPoints,
 } from './free-geometry';
+import { polygonVertices } from './polygon-geometry';
 
 /** A point on a crop, in its pixels. */
 export type CropPoint = [x: number, y: number];
@@ -34,6 +36,14 @@ type OwnPoint = [along: number, across: number];
 
 /** A shape's smallest side when resized, in crop pixels. */
 export const MIN_SIDE_PX = 2;
+
+/** Each corner's sides of its frame's middle (as `corners`): along its width, across it. */
+const CORNER_SIGNS: OwnPoint[] = [
+  [-1, -1],
+  [1, -1],
+  [1, 1],
+  [-1, 1],
+];
 
 /** Degrees as radians. */
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
@@ -106,13 +116,7 @@ export function faceHandle(shape: Shape): CropPoint | null {
  */
 export function resized(shape: Shape, corner: number, point: CropPoint, even = false): Shape {
   if (shape.solid) return resizedSolid(shape, shape.solid, corner, point, even, MIN_SIDE_PX);
-  const signs: OwnPoint[] = [
-    [-1, -1],
-    [1, -1],
-    [1, 1],
-    [-1, 1],
-  ];
-  const [signW, signH] = signs[corner];
+  const [signW, signH] = CORNER_SIGNS[corner];
   const [, , width, height] = shape.box;
   const fixed: OwnPoint = [(-signW * width) / 2, (-signH * height) / 2];
   const [along, across] = toOwn(shape, point);
@@ -125,6 +129,26 @@ export function resized(shape: Shape, corner: number, point: CropPoint, even = f
   const middle: OwnPoint = [fixed[0] + (signW * newWidth) / 2, fixed[1] + (signH * newHeight) / 2];
   const [cx, cy] = toCrop(shape, middle);
   return { ...shape, box: [cx, cy, newWidth, newHeight] };
+}
+
+/**
+ * A shape scaled evenly by one corner dragged to a point: its width and height keep their ratio, by the side pulled
+ * further, and the opposite corner stays put (a uniform polygon's corners).
+ */
+export function resizedEvenly(shape: Shape, corner: number, point: CropPoint): Shape {
+  const [signW, signH] = CORNER_SIGNS[corner];
+  const [, , width, height] = shape.box;
+  const [along, across] = toOwn(shape, point);
+  const factor = Math.max(
+    (signW * along + width / 2) / width,
+    (signH * across + height / 2) / height,
+    MIN_SIDE_PX / Math.min(width, height),
+  );
+  const reach: OwnPoint = [
+    signW * (factor * width - width / 2),
+    signH * (factor * height - height / 2),
+  ];
+  return resized(shape, corner, toCrop(shape, reach));
 }
 
 /** A flat shape's side handles: the middles of its frame's sides (axis * 2: left, top; plus 1: right, bottom). */
@@ -284,14 +308,33 @@ function pillSides(shape: Shape, [dx, dy]: FaceOffset): CropPoint[] {
   ];
 }
 
+/** A closed ring of points as a path, moved by an offset (a far end's: a third face). */
+function traceRing(
+  context: CanvasRenderingContext2D,
+  points: CropPoint[],
+  [dx, dy]: FaceOffset,
+): void {
+  points.forEach(([x, y], i) =>
+    i ? context.lineTo(x + dx, y + dy) : context.moveTo(x + dx, y + dy),
+  );
+  context.closePath();
+}
+
 /**
  * A shape's outline as a path, the context drawing in crop pixels: a pill as its turned round-ended frame, an oval as
- * its turned ellipse, a box as its turned frame, and with a third face its far end and the edges joining them (a
- * cube's or a cylinder's wireframe; an oval's two ellipses only, as the page never gives one a face).
+ * its turned ellipse, a box as its turned frame, a polygon as its vertices in order, and with a third face its far end
+ * and the edges joining them (a cube's or a cylinder's wireframe; an oval's or a polygon's two ends only, as the page
+ * never gives one a face).
  */
 export function tracePath(context: CanvasRenderingContext2D, shape: Shape): void {
   context.beginPath();
   const points = freePoints(shape);
+  if (shape.kind === 'polygon') {
+    const near = points ?? polygonVertices(shape);
+    traceRing(context, near, [0, 0]);
+    if (shape.face) traceRing(context, near, shape.face);
+    return;
+  }
   if (points) {
     for (const edge of freeEdges(points)) {
       context.moveTo(...edge.from);

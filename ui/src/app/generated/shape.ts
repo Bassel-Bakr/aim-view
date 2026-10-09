@@ -18,7 +18,7 @@ export interface Shape {
    */
   id: string;
   /**
-   * Pill, oval or box.
+   * Pill, oval, box or polygon.
    */
   kind: ShapeKind;
   /**
@@ -39,10 +39,14 @@ export interface Shape {
    */
   solid: Solid | null;
   /**
-   * A box's vertices placed by hand, crop pixels (4 for a flat box, 8 for a 3D one); when there are 3 or more they
-   * decide its outline.
+   * A box's vertices placed by hand, crop pixels (4 for a flat box, 8 for a 3D one), or a polygon's in order round
+   * it; when there are 3 or more they decide its outline.
    */
   points: CropVertex[] | null;
+  /**
+   * A polygon's number of sides, `MIN_SIDES` to `MAX_SIDES` (`DEFAULT_SIDES` when None); other shapes ignore it.
+   */
+  sides: number | null;
   /**
    * Its place front to back: greater is nearer, and a nearer shape hides the parts of those behind it.
    */

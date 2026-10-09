@@ -19,6 +19,7 @@ import {
 } from '../api';
 import { START_SWING_DEG, START_TIP_DEG } from '../shapes/solid-geometry';
 import { boxAround, CropPoint, scaled } from '../shapes/shape-geometry';
+import { DEFAULT_SIDES, placedPolygon, refitPolygon } from '../shapes/polygon-geometry';
 import { CropFix } from './crop-lessons';
 
 /**
@@ -49,6 +50,7 @@ function pill(id: string, box: CropBox, model: number | null): Shape {
     face: null,
     solid: null,
     points: null,
+    sides: null,
     depth: 0,
     role: null,
     model,
@@ -166,16 +168,24 @@ export function defaultSolid(box: CropBox): Solid {
   return { thickness: Math.min(box[2], box[3]), tip: START_TIP_DEG, swing: START_SWING_DEG };
 }
 
-/** The scene with a new shape on top of the others; deep: a 3D one, solid. */
+/** The scene with a new shape on top of the others; deep: a 3D one, solid; a polygon of `sides` (DEFAULT_SIDES: null). */
 export function withShape(
   scene: DraftScene,
   kind: ShapeKind,
   box: CropBox,
   deep = false,
+  sides: number | null = null,
 ): DraftScene {
   const depth = Math.max(0, ...scene.shapes.map((shape) => shape.depth));
   const solid = deep ? defaultSolid(box) : null;
-  const shape: Shape = { ...pill(freshId(scene), box, null), kind, solid, depth };
+  const polygonSides = kind === 'polygon' ? (sides ?? DEFAULT_SIDES) : null;
+  const shape: Shape = {
+    ...pill(freshId(scene), box, null),
+    kind,
+    solid,
+    depth,
+    sides: polygonSides,
+  };
   return { ...scene, shapes: [...scene.shapes, shape] };
 }
 
@@ -188,6 +198,7 @@ export function withDrawn(
   kind: ShapeKind,
   box: CropBox,
   deep = false,
+  sides: number | null = null,
 ): DraftScene {
   const [cx, cy, width, height] = box;
   const covered = scene.shapes
@@ -196,7 +207,7 @@ export function withDrawn(
         model !== null && Math.abs(x - cx) <= width / 2 && Math.abs(y - cy) <= height / 2,
     )
     .map((shape) => shape.id);
-  return removed(withShape(scene, kind, box, deep), covered);
+  return removed(withShape(scene, kind, box, deep, sides), covered);
 }
 
 /** A scene with shapes copied, and the copies' ids. */
@@ -268,12 +279,16 @@ export function changeEach(
   };
 }
 
-/** The selected shapes made one kind, flat or 3D (deep: solid, keeping its tumble, or given the starting one). */
+/**
+ * The selected shapes made one kind, flat or 3D (deep: solid, keeping its tumble, or given the starting one); a polygon
+ * keeps its sides, or takes `sides`.
+ */
 export function withKind(
   scene: DraftScene,
   ids: readonly string[],
   kind: ShapeKind,
   deep = false,
+  sides: number | null = null,
 ): DraftScene {
   return changeEach(scene, ids, (shape) => ({
     ...shape,
@@ -281,7 +296,27 @@ export function withKind(
     face: null,
     solid: deep ? (shape.solid ?? defaultSolid(shape.box)) : null,
     points: null,
+    sides: kind === 'polygon' ? (shape.sides ?? sides ?? DEFAULT_SIDES) : null,
   }));
+}
+
+/** The selected uniform polygons given a number of sides; polygons placed vertex by vertex keep theirs. */
+export function withSides(scene: DraftScene, ids: readonly string[], sides: number): DraftScene {
+  return changeEach(scene, ids, (shape) =>
+    shape.kind === 'polygon' && !shape.points ? { ...shape, sides } : shape,
+  );
+}
+
+/**
+ * The selected polygons placed vertex by vertex (each: from where their vertices are), or made uniform again (the
+ * regular polygon nearest their vertices).
+ */
+export function withVertexMode(
+  scene: DraftScene,
+  ids: readonly string[],
+  each: boolean,
+): DraftScene {
+  return changeEach(scene, ids, each ? placedPolygon : refitPolygon);
 }
 
 /** The selected shapes given a role (null: none). */

@@ -9,6 +9,7 @@ import { Shape, ShapeKind, ShapeRole } from '../../api';
 import { CropDraft } from '../crop-draft';
 import { evened, turnedBy } from '../../shapes/shape-geometry';
 import { showing, SideShown } from '../../shapes/solid-geometry';
+import { MAX_TOOL_SIDES, MIN_SIDES, sidesOf } from '../../shapes/polygon-geometry';
 import {
   changeEach,
   DraftScene,
@@ -19,6 +20,8 @@ import {
   toggledOccluders,
   withKind,
   withRole,
+  withSides,
+  withVertexMode,
 } from '../crop-scene';
 
 /** A shape button: the kind it gives, flat or 3D (with a third face), and its words. */
@@ -55,6 +58,7 @@ const SHAPES: readonly ShapeChoice[] = [
   { kind: 'pill', deep: false, name: 'Pill' },
   { kind: 'ellipse', deep: false, name: 'Oval' },
   { kind: 'box', deep: false, name: 'Box' },
+  { kind: 'polygon', deep: false, name: 'Polygon' },
   { kind: 'pill', deep: true, name: '3D pill' },
   { kind: 'box', deep: true, name: '3D box' },
 ];
@@ -87,6 +91,10 @@ export class CropTools {
   protected readonly TURN_STEP = TURN_STEP_DEG;
   /** The 3D turn buttons. */
   protected readonly sidesShown = SIDES_SHOWN;
+  /** A polygon's fewest sides, for the template. */
+  protected readonly MIN_SIDES = MIN_SIDES;
+  /** The most sides the tools give a polygon, for the template. */
+  protected readonly MAX_SIDES = MAX_TOOL_SIDES;
   /** The role buttons. */
   protected readonly roles: readonly RoleChoice[] = [
     { role: null, name: 'None' },
@@ -132,7 +140,51 @@ export class CropTools {
   protected useShape(choice: ShapeChoice): void {
     this.draft.kind.set(choice.kind);
     this.draft.deep.set(choice.deep);
-    this.change((scene, ids) => withKind(scene, ids, choice.kind, choice.deep));
+    this.change((scene, ids) => {
+      const made = withKind(scene, ids, choice.kind, choice.deep, this.draft.sides());
+      return this.draft.eachVertex() ? withVertexMode(made, ids, true) : made;
+    });
+  }
+
+  /** The selected polygons. */
+  private readonly polygons = computed(() =>
+    this.chosen().filter((shape) => shape.kind === 'polygon'),
+  );
+  /** Whether the polygon tools show: a drag draws a polygon, or one is selected. */
+  protected readonly polygonShown = computed(
+    () => this.draft.kind() === 'polygon' || this.polygons().length > 0,
+  );
+  /** The sides the selected polygons share; else those of a polygon a drag draws. */
+  protected readonly sides = computed(() => {
+    const counts = new Set(this.polygons().map(sidesOf));
+    const [only] = counts;
+    return counts.size === 1 ? only : this.draft.sides();
+  });
+  /** Whether the selected polygons are all placed vertex by vertex; else whether a polygon a drag draws will be. */
+  protected readonly eachVertex = computed(() => {
+    const placed = new Set(this.polygons().map((shape) => shape.points !== null));
+    const [only] = placed;
+    return placed.size === 1 ? only : this.draft.eachVertex();
+  });
+  /** A polygon placed vertex by vertex among the selected ones: its sides are its vertices, no count to change. */
+  protected readonly placedPolygonChosen = computed(() =>
+    this.polygons().some((shape) => shape.points !== null),
+  );
+
+  /** Gives the selected uniform polygons, and those a drag draws, one side more (or fewer, for a negative step). */
+  protected changeSides(step: number): void {
+    const sides = Math.min(MAX_TOOL_SIDES, Math.max(MIN_SIDES, this.sides() + step));
+    this.draft.sides.set(sides);
+    this.change((scene, ids) => withSides(scene, ids, sides));
+  }
+
+  /**
+   * Places the selected polygons, and those a drag draws, vertex by vertex (each), or makes them uniform: regular, the
+   * nearest to their vertices.
+   */
+  protected useVertexMode(each: boolean): void {
+    this.draft.eachVertex.set(each);
+    this.change((scene, ids) => withVertexMode(scene, ids, each));
   }
 
   /** Gives the selected shapes a role (null: none). */
@@ -182,7 +234,7 @@ export class CropTools {
   );
   /** A box placed by hand among the selected ones: Back to a box shows. */
   protected readonly placedChosen = computed(() =>
-    this.chosen().some((shape) => shape.points !== null),
+    this.chosen().some((shape) => shape.kind === 'box' && shape.points !== null),
   );
 
   /** Turns each selected 3D shape so a side comes toward the camera, a step at a time. */
@@ -205,7 +257,11 @@ export class CropTools {
 
   /** Undoes the selected boxes' placed corners: each is its box again, flat or solid as it was. */
   protected unplace(): void {
-    this.change((scene, ids) => changeEach(scene, ids, (shape) => ({ ...shape, points: null })));
+    this.change((scene, ids) =>
+      changeEach(scene, ids, (shape) =>
+        shape.kind === 'box' ? { ...shape, points: null } : shape,
+      ),
+    );
   }
 
   /** Turns Mirror on or off: a side dragged moves its opposite side too. */
