@@ -537,7 +537,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
     std::fs::create_dir_all(&out).map_err(|error| format!("{}: {error}", out.display()))?;
     let write = |name: &str, bytes: Result<Vec<u8>, serde_json::Error>| -> Result<(), Failure> {
         let path = out.join(format!("{name}.json"));
-        let bytes = bytes.map_err(|error| error.to_string())?;
+        let bytes = bytes?;
         std::fs::write(&path, bytes).map_err(|error| Failure::from(format!("{}: {error}", path.display())))
     };
     write("tracks", serde_json::to_vec(&reviewed.tracks))?;

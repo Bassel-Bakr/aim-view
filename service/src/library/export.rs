@@ -116,7 +116,7 @@ impl Library {
             "format": FORMAT, "app": env!("CARGO_PKG_VERSION"), "made": local_stamp(crate::disk::now()),
             "mode": ask.mode, "recordings": recordings,
         });
-        let manifest = serde_json::to_vec_pretty(&manifest).map_err(|error| error.to_string())?;
+        let manifest = serde_json::to_vec_pretty(&manifest)?;
         crate::batch::push(&mut out, MANIFEST, crate::disk::now(), &manifest);
         Ok(out)
     }

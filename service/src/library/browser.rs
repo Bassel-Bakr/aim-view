@@ -218,8 +218,8 @@ impl Library {
     pub fn kovaak_files(&self) -> Answer<Value> {
         let kovaak =
             self.store().kovaak().ok_or_else(|| Failure::from("KovaaK's files are not kept here".to_string()))?;
-        let stats = kovaak.stats_texts_kept().map_err(|error| error.to_string())?;
-        let scenarios = kovaak.scenarios().map_err(|error| error.to_string())?;
+        let stats = kovaak.stats_texts_kept()?;
+        let scenarios = kovaak.scenarios()?;
         Ok(json!({
             "stats": stats.iter().map(|row| json!([row.name, row.size, row.modified])).collect::<Vec<_>>(),
             "scenarios": scenarios.iter().map(|row| json!([row.path, row.size, row.modified])).collect::<Vec<_>>(),
@@ -245,11 +245,11 @@ impl Library {
                 scenarios.push(ScenarioRow { path: file.path.to_string(), size, modified: file.modified, facts });
             }
         }
-        kovaak.add_stats_files(&stats).map_err(|error| error.to_string())?;
+        kovaak.add_stats_files(&stats)?;
         for pack in super::stats::stats_packs(texts) {
-            kovaak.keep_stats_pack(&pack).map_err(|error| error.to_string())?;
+            kovaak.keep_stats_pack(&pack)?;
         }
-        kovaak.add_scenarios(&scenarios).map_err(|error| error.to_string())?;
+        kovaak.add_scenarios(&scenarios)?;
         self.kovaak_changed()?;
         Ok(json!({ "stats": stats.len(), "scenarios": scenarios.len() }))
     }

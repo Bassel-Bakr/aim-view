@@ -479,7 +479,7 @@ impl Library {
     pub fn spool(&self) -> Answer<PathBuf> {
         /// The next spool's number in this process.
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        crate::disk::create_dir_all(self.uploads()).map_err(|error| error.to_string())?;
+        crate::disk::create_dir_all(self.uploads())?;
         let number = NEXT.fetch_add(1, Ordering::Relaxed);
         Ok(self.uploads().join(format!("{SPOOL_PREFIX}{}-{number}{SPOOL_SUFFIX}", crate::disk::process_id())))
     }
@@ -501,9 +501,8 @@ impl Library {
         } else {
             return Err(Failure::bad(format!("not a video or a stats .csv: {name}")));
         };
-        crate::disk::create_dir_all(destination.parent().unwrap_or(&self.uploads()))
-            .map_err(|error| error.to_string())?;
-        body.save(&destination).map_err(|error| error.to_string())?;
+        crate::disk::create_dir_all(destination.parent().unwrap_or(&self.uploads()))?;
+        body.save(&destination)?;
         let saved = destination.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
         match id {
             None => Ok(json!({ "id": upload_id(&saved), "saved": saved })),

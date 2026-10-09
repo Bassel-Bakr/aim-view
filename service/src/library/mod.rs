@@ -28,6 +28,7 @@ mod usage;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -75,6 +76,25 @@ impl From<String> for Failure {
     /// Any other error (500).
     fn from(message: String) -> Failure {
         Failure { status: SERVER_ERROR, message }
+    }
+}
+
+impl From<io::Error> for Failure {
+    /// A file error, in io::Error's words: something not found is a 404 (`Failure::missing`), any other error a 500.
+    fn from(error: io::Error) -> Failure {
+        if error.kind() == io::ErrorKind::NotFound {
+            Failure::missing(error.to_string())
+        } else {
+            Failure::from(error.to_string())
+        }
+    }
+}
+
+impl From<serde_json::Error> for Failure {
+    /// JSON the service made or kept that cannot be written or read (500), in serde_json's words. A request body that
+    /// does not read is the user's error: its call site answers 400 (`Failure::bad`) instead.
+    fn from(error: serde_json::Error) -> Failure {
+        Failure::from(error.to_string())
     }
 }
 
@@ -128,7 +148,7 @@ pub(crate) fn read_kept<T: for<'a> Deserialize<'a>>(store: &dyn Store, item: Ite
 
 /// Keeps a value as compact JSON.
 pub(crate) fn keep_json(store: &dyn Store, item: Item<'_>, value: &impl Serialize) -> Answer<()> {
-    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec(value)?;
     store.write(item, &bytes).map_err(|error| error.to_string().into())
 }
 

@@ -177,7 +177,7 @@ impl Library {
         };
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |since| since.as_secs_f64());
         let name = link_name(&info.title, &link_stamp(info.timestamp, info.upload_date.as_deref(), now));
-        std::fs::create_dir_all(self.uploads()).map_err(|error| error.to_string())?;
+        std::fs::create_dir_all(self.uploads())?;
         let mut jobs = self.jobs.lock().map_err(|_| "the jobs are broken".to_string())?;
         let dest = free_destination(&self.uploads(), &name, &jobs);
         let saved = dest.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();

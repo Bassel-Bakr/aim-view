@@ -292,15 +292,11 @@ impl Library {
         let mut files: Vec<StatsEntry> = self.with_stats(|index| index.get(scenario).cloned().unwrap_or_default());
         files.sort_by(|a, b| a.end_s.total_cmp(&b.end_s).then(a.name.cmp(&b.name)));
         if let Some(kovaak) = self.store().kovaak() {
-            let runs: HashMap<String, StatsRun> = kovaak
-                .stats_files()
-                .map_err(|error| error.to_string())?
-                .into_iter()
-                .filter_map(|row| Some((row.name, row.run?)))
-                .collect();
+            let runs: HashMap<String, StatsRun> =
+                kovaak.stats_files()?.into_iter().filter_map(|row| Some((row.name, row.run?))).collect();
             let past_runs: Vec<PastRun> =
                 files.iter().filter_map(|file| Some(past(&file.stamp, runs.get(&file.name)?.clone()))).collect();
-            return Ok(serde_json::to_value(past_runs).map_err(|error| error.to_string())?);
+            return Ok(serde_json::to_value(past_runs)?);
         }
         if !cfg!(feature = "native") {
             let folder = self.stats_folder();
@@ -323,7 +319,7 @@ impl Library {
             }
         }
         let past_runs: Vec<PastRun> = runs.into_iter().flatten().flatten().collect();
-        Ok(serde_json::to_value(past_runs).map_err(|error| error.to_string())?)
+        Ok(serde_json::to_value(past_runs)?)
     }
 
     /// Whether a stats file is there: one of KovaaK's the browser keeps, or a file.
@@ -353,13 +349,13 @@ impl Library {
     pub(crate) fn stats_bytes(&self, path: &Path) -> Answer<Vec<u8>> {
         let read = || crate::disk::read(path).map_err(|error| Failure::from(format!("{}: {error}", path.display())));
         let (Some(name), Some(kovaak)) = (self.kept_stats_name(path), self.store().kovaak()) else { return read() };
-        if let Some(csv) = kovaak.stats_csv(name).map_err(|error| error.to_string())? {
+        if let Some(csv) = kovaak.stats_csv(name)? {
             return Ok(csv);
         }
         let bytes = crate::disk::read(path).map_err(|_| {
             Failure::missing(format!("{name} is not kept in this browser: choose KovaaK's stats folder again"))
         })?;
-        kovaak.keep_stats_csv(name, &bytes).map_err(|error| error.to_string())?;
+        kovaak.keep_stats_csv(name, &bytes)?;
         Ok(bytes)
     }
 

@@ -85,7 +85,7 @@ impl Library {
         parts.push(part("marks", "marks", store.marks_size(), false));
         parts.push(part("cutoff", "cutoff", store.cutoff_size(), false));
         if let Some(kovaak) = store.kovaak() {
-            let (stats, scenarios, bytes) = kovaak.kovaak_size().map_err(|error| error.to_string())?;
+            let (stats, scenarios, bytes) = kovaak.kovaak_size()?;
             let mut entry = part("kovaak", "kovaak", bytes, true);
             entry["stats"] = json!(stats);
             entry["scenarios"] = json!(scenarios);

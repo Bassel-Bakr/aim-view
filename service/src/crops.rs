@@ -226,7 +226,7 @@ impl Library {
 
     /// A check folder's crops, in the order make_page.py listed them.
     fn crop_entries(&self, folder: &Path) -> Answer<Vec<CropEntry>> {
-        let bytes = crate::disk::read(folder.join("crops.json")).map_err(|error| error.to_string())?;
+        let bytes = crate::disk::read(folder.join("crops.json"))?;
         serde_json::from_slice(&bytes).map_err(|error| Failure::from(format!("crops.json: {error}")))
     }
 
@@ -401,10 +401,10 @@ impl Library {
 /// it replaces moves to answers/replaced/ first.
 fn write_answer(folder: &Path, id: &str, answer: &CropAnswer) -> Answer<()> {
     let dir = folder.join(ANSWERS).join(CHECKS);
-    crate::disk::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    let bytes = serde_json::to_vec_pretty(answer).map_err(|error| error.to_string())?;
+    crate::disk::create_dir_all(&dir)?;
+    let bytes = serde_json::to_vec_pretty(answer)?;
     let (temporary, path) = (dir.join(format!("{id}.json.part")), dir.join(format!("{id}.json")));
-    crate::disk::write(&temporary, bytes).map_err(|error| error.to_string())?;
+    crate::disk::write(&temporary, bytes)?;
     keep_replaced(folder, id, &path)?;
     crate::disk::rename(&temporary, &path).map_err(|error| error.to_string().into())
 }
@@ -416,7 +416,7 @@ fn keep_replaced(folder: &Path, id: &str, path: &Path) -> Answer<()> {
         return Ok(());
     }
     let dir = folder.join(ANSWERS).join(REPLACED);
-    crate::disk::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    crate::disk::create_dir_all(&dir)?;
     let at = read_answer(path).map_or(0.0, |answer| answer.at.round());
     let name = |copy: usize| if copy == 0 { format!("{id}.{at}.json") } else { format!("{id}.{at}.{copy}.json") };
     let free = (0..).map(|copy| dir.join(name(copy))).find(|place| !crate::disk::exists(place));

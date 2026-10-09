@@ -160,7 +160,7 @@ impl Library {
     /// vod_model/hand/cutoff/: checked.jsonl (deflated) and each row's crop, train/<name>.npz (stored: an .npz is
     /// compressed already). A crop that is not kept is left out.
     pub fn cutoff_labels_zip(&self) -> Answer<Vec<u8>> {
-        let rows = self.store().read(Item::CutoffRows).map_err(|error| error.to_string())?.unwrap_or_default();
+        let rows = self.store().read(Item::CutoffRows)?.unwrap_or_default();
         let files: BTreeSet<String> =
             self.cutoff_rows().iter().filter_map(|row| row["file"].as_str().map(str::to_string)).collect();
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -168,11 +168,11 @@ impl Library {
         let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         let zip_error = |error: zip::result::ZipError| error.to_string();
         zip.start_file(Item::CutoffRows.file_name(), deflated).map_err(zip_error)?;
-        zip.write_all(&rows).map_err(|error| error.to_string())?;
+        zip.write_all(&rows)?;
         for file in &files {
             let Some(npz) = self.store().read(Item::CutoffCrop(file)).ok().flatten() else { continue };
             zip.start_file(file.as_str(), stored).map_err(zip_error)?;
-            zip.write_all(&npz).map_err(|error| error.to_string())?;
+            zip.write_all(&npz)?;
         }
         Ok(zip.finish().map_err(zip_error)?.into_inner())
     }
