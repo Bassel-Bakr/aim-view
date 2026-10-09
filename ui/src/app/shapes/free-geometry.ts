@@ -72,7 +72,7 @@ export function freePoints(shape: Shape): CropPoint[] | null {
 }
 
 /** The box round points: [center x, center y, width, height]. */
-function boxOf(points: CropPoint[]): CropBox {
+export function boxOf(points: CropPoint[]): CropBox {
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];

@@ -30,13 +30,16 @@ import {
   tumbleHandle,
 } from '../../shapes/solid-geometry';
 import { freePoints, freeSides, movedSide, movedVertex } from '../../shapes/free-geometry';
+import { placedFrame, reframed } from '../../shapes/polygon-geometry';
 import { changeEach, DraftScene, withChanged } from '../crop-scene';
 
 /**
- * What a press holds: a selected shape's corner, side, turn handle, face handle or a solid's
- * tumble handle, a shape (move), a crossed-out box (uncross), or the wall (draw).
+ * What a press holds: a selected shape's corner, side, turn handle, face handle, a solid's
+ * tumble handle or a placed polygon's frame corner, a shape (move), a crossed-out box (uncross),
+ * or the wall (draw).
  */
-export type GripKind = 'corner' | 'side' | 'turn' | 'face' | 'tumble' | 'move' | 'uncross' | 'draw';
+export type GripKind =
+  'corner' | 'side' | 'turn' | 'face' | 'tumble' | 'frame' | 'move' | 'uncross' | 'draw';
 
 /** What a press took hold of: which kind of thing, the shape, and which of its parts. */
 export interface CropGrip {
@@ -70,6 +73,11 @@ export interface CropDrag {
 export interface ShapeHandles {
   /** The corner handles, in crop pixels. */
   corners: CropPoint[];
+  /**
+   * The frame's corners round a polygon placed vertex by vertex (as `corners`), which scale all its vertices together;
+   * null for one a finger would take for a vertex, and none for other shapes or one too small on screen.
+   */
+  frame: (CropPoint | null)[];
   /** The side handles: a solid box's faces, a capsule's ends and sides, a flat frame's sides. */
   sides: SideHandle[];
   /** The turn handle, above the shape. */
@@ -93,16 +101,36 @@ export function handleReach(pointerType: string): number {
 }
 /** How near a finger must come to a shape's edge to take it, in screen pixels. */
 const SHAPE_SLACK_PX = 6;
+/**
+ * A placed polygon's frame handles show only when both its frame's sides are at least this long on screen, in screen
+ * pixels (two fingers' reach), so a small one shows its vertices alone, uncluttered.
+ */
+const FRAME_HANDLES_MIN_PX = 2 * TOUCH_HIT_PX;
 
 /** A shape's handles at a scale: its corners, its sides (a solid box's every face, a capsule's ends and sides). */
 export function handlesOf(shape: Shape, scale: number): ShapeHandles {
   const reach = HANDLE_REACH_PX / scale;
   const solid = shape.solid;
   const points = freePoints(shape);
+  if (points && shape.kind === 'polygon') {
+    const frame = placedFrame(shape);
+    const framed = Math.min(frame.box[2], frame.box[3]) * scale >= FRAME_HANDLES_MIN_PX;
+    const clear = ([x, y]: CropPoint) =>
+      points.every(([vx, vy]) => Math.hypot(vx - x, vy - y) * scale >= TOUCH_HIT_PX);
+    return {
+      corners: points,
+      frame: framed ? corners(frame).map((corner) => (clear(corner) ? corner : null)) : [],
+      sides: framed ? flatSides(frame).filter((side) => clear(side.point)) : [],
+      turn: turnHandle(frame, reach),
+      face: null,
+      tumble: null,
+    };
+  }
   if (points) {
     return {
       corners: points,
-      sides: shape.kind === 'polygon' ? [] : freeSides(points),
+      frame: [],
+      sides: freeSides(points),
       turn: turnHandle(shape, reach),
       face: null,
       tumble: null,
@@ -110,6 +138,7 @@ export function handlesOf(shape: Shape, scale: number): ShapeHandles {
   }
   return {
     corners: vertexHandles(shape),
+    frame: [],
     sides: solid ? sideHandles(shape, solid) : flatSides(shape),
     turn: turnHandle(shape, reach),
     face: faceHandle(shape),
@@ -176,6 +205,8 @@ function handleAt(
   const handles = handlesOf(shape, scale);
   const corner = handles.corners.findIndex(near);
   if (corner >= 0) return { kind: 'corner', id: shape.id, index: corner };
+  const frame = handles.frame.findIndex(near);
+  if (frame >= 0) return { kind: 'frame', id: shape.id, index: frame };
   // the sides the camera sees first: they lie over the hidden ones
   const sides = [...handles.sides].sort((a, b) => Number(b.seen) - Number(a.seen));
   const side = sides.find((handle) => near(handle.point));
@@ -210,7 +241,7 @@ export function gripAt(
 
 /**
  * The scene as a drag leaves it, from the scene at the press: a corner resizes its shape (its sides kept equal with
- * Shift), a side moves that side (its opposite one too, mirrored), the turn handle turns it, the face handle moves its
+ * Shift; a placed polygon's vertex moves on its own, its frame's corner scales all its vertices evenly), a side moves that side (its opposite one too, mirrored), the turn handle turns it, the face handle moves its
  * far end, a solid's tumble handle tumbles it in 3D, and a shape moves (with the rest of the selection when selected).
  */
 export function dragged(
@@ -225,6 +256,11 @@ export function dragged(
   switch (grip.kind) {
     case 'corner':
       return withChanged(from, draggedVertex(held, grip.index, point, even));
+    case 'frame':
+      return withChanged(
+        from,
+        reframed(held, resizedEvenly(placedFrame(held), grip.index, point).box),
+      );
     case 'side':
       return withChanged(from, draggedSide(held, grip.index, { start, point, even, mirror }));
     case 'turn':
@@ -246,9 +282,14 @@ export function dragged(
   }
 }
 
-/** A side dragged: a placed box's moves its vertices, a solid's its face, a flat shape's its frame's side. */
+/**
+ * A side dragged: a placed polygon's frame side scales its vertices along that axis, a placed box's moves its vertices,
+ * a solid's its face, a flat shape's its frame's side.
+ */
 function draggedSide(shape: Shape, side: number, { start, point, mirror }: CropDrag): Shape {
   const points = freePoints(shape);
+  if (points && shape.kind === 'polygon')
+    return reframed(shape, pushedFlatSide(placedFrame(shape), side, point, mirror).box);
   if (points)
     return movedSide(shape, points, side, [point[0] - start[0], point[1] - start[1]], mirror);
   if (shape.solid)

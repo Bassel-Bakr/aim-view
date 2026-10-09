@@ -342,8 +342,8 @@ function dot(
 }
 
 /**
- * The selected shape's handles, at the same size on screen at any zoom: corners, the turn handle, the face's, and a
- * solid's tumble (a ringed dot) and thickness (a square).
+ * The selected shape's handles, at the same size on screen at any zoom: corners, a placed polygon's frame corners (a
+ * ring), the turn handle, the face's, and a solid's tumble (a ringed dot) and thickness (a square).
  */
 function paintHandles(
   context: CanvasRenderingContext2D,
@@ -369,6 +369,16 @@ function paintHandles(
     context.lineWidth = 1;
     context.strokeStyle = style.handle;
     context.stroke();
+    // a placed polygon's frame corners: rings, apart from its vertices' dots
+    for (const corner of handles.frame) {
+      if (!corner) continue;
+      const [x, y] = onScreen(corner);
+      context.beginPath();
+      context.arc(x, y, radius, 0, 2 * Math.PI);
+      context.lineWidth = 2;
+      context.strokeStyle = style.handle;
+      context.stroke();
+    }
     for (const corner of handles.corners) dot(context, onScreen(corner), radius, style);
     dot(context, turn, radius, style);
     if (handles.face) {

@@ -5,8 +5,8 @@
  * is in degrees, clockwise on screen. Out: shape-geometry.ts, the stage and the tools.
  */
 
-import { Shape } from '../api';
-import { withPoints } from './free-geometry';
+import { CropBox, Shape } from '../api';
+import { boxOf, withPoints } from './free-geometry';
 import type { CropPoint } from './shape-geometry';
 
 /** A polygon's fewest sides (the core's MIN_SIDES). */
@@ -41,6 +41,33 @@ export function polygonVertices(shape: Shape): CropPoint[] {
       cy + along * Math.sin(turn) + across * Math.cos(turn),
     ];
   });
+}
+
+/**
+ * A polygon placed vertex by vertex as its frame: the box round its vertices, unturned (where its frame handles sit and
+ * what they resize).
+ */
+export function placedFrame(shape: Shape): Shape {
+  return shape.points ? { ...shape, box: boxOf(shape.points), angle: 0, face: null } : shape;
+}
+
+/**
+ * A polygon placed vertex by vertex fitted to a new frame (as `placedFrame`'s): each vertex keeps its place in the
+ * frame, so the layout of its vertices is kept, only scaled along each side (a frame side of no size stays put).
+ */
+export function reframed(shape: Shape, [cx, cy, width, height]: CropBox): Shape {
+  const points = shape.points;
+  if (!points) return shape;
+  const [oldX, oldY, oldWidth, oldHeight] = boxOf(points);
+  const placed = (value: number, from: number, to: number, oldSide: number, side: number) =>
+    oldSide > 0 ? to + ((value - from) * side) / oldSide : to;
+  return withPoints(
+    shape,
+    points.map(([x, y]): CropPoint => [
+      placed(x, oldX, cx, oldWidth, width),
+      placed(y, oldY, cy, oldHeight, height),
+    ]),
+  );
 }
 
 /** A uniform polygon made one placed vertex by vertex, from where its vertices are. */
