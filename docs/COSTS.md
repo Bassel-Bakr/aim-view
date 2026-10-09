@@ -42,6 +42,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 4.9 s | 5.9 s | 8 | 2026-10-08, 433f4a8+ |
 | build: lint | - | 4.4 s | 4.5 s | 5 | 2026-10-08, 433f4a8+ |
+| export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
 | lint:ui | - | 5.5 s | 4.7 s | 48 | 2026-10-08, ac709f4+ |
@@ -61,6 +62,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
 | test:ui | - | 10.9 s | 9.0 s | 38 | 2026-10-08, ac709f4+ |
 | tokens | - | 0.5 s | 0.4 s | 7 | 2026-10-08, a386e9e+ |
+| train | model large_v15 | 197.8 s | 197.8 s | 1 | 2026-10-09, 38ba8e9 |
 <!-- costs:end -->
 
 ## Recorded by hand
@@ -123,6 +125,10 @@ call.
 | a training run of the small model | python/model/train.py | about 100 s an epoch (126 s the first), 7 min in all | 8646808 | python/model/MODEL_STATUS.md |
 
 Not timed yet, and timed by the scripts from their next run: the UI's tests and lint, the installer (`build:app`).
-Not timed at all yet: `bun run types`, `cargo test --profile quick` over the workspace, the acceptance gate
-(`accept.py`), `eval_moving.py`, `eval_video_alone.py`; time them through `bun scripts/costs.ts run <name> --config
-model=<name> -- <command>` the next time they run for a reason.
+Not timed at all yet: `bun run types`, `cargo test --profile quick` over the workspace, `eval_moving.py`,
+`eval_video_alone.py`; time them through `bun scripts/costs.ts run <name> --config model=<name> -- <command>` the next
+time they run for a reason.
+The acceptance gate (`accept.py`) is timed as `accept` in the log (test_out/costs.jsonl). The measured table above
+keeps only runs that exit 0, and the gate exits 1 when the model fails, so a failed gate is in the log only:
+large_v15e4 (2026-10-09, 38ba8e9) took 282 s to its first failed stage and 1,073 s with `--all` (every stage, with its
+video-alone tracks made fresh).

@@ -502,6 +502,19 @@ its settings file); none passed, and large_v13e4 stays the default:
 | large_v14b | the sets rebuilt with the after-kill pairs (data_auto_tiles3, data_auto_v13b, data_auto_xsb; `auto_gone_ 3`) | the contract: 10.6% |
 | large_v14_ctrl | nothing: large_v13e4's own data again | the contract: 6.05%, so any fine-tune tips that recording |
 | large_v14_noxs | large_v14b without data_auto_xsb | met the contract (4.56%); the gate failed it on the video alone's dynamic precision, 0.9888 against 0.9929 (allowed 0.0039) |
+| large_v15 (2026-10-09) | the 687 crops the user checked from the 2026-10-08 label batch (`data_batch_2026_10_08_checked`, `chk_batch1 3`) | met the contract (1.81% against 2.83%); the gate failed it on dynamic kills, 795 of 797 against 796 (Bounce 180 Sparky Jumbo 106 of 107; allowed 0); every other check passed, switching flicks 399 against 393 |
+
+large_v15's set, from the Crops page's answers (labels.py once per part, its crops' names then prefixed with the part's
+folder in one checked_phone.jsonl):
+
+```bash
+P=$D/check_label_batch_2026-10-08; L=$D/label_batch_2026-10-08
+python python/model/crop_check/labels.py $P $P/answers/checks $L/review/checked_phone.jsonl auto_review
+python python/model/crop_check/labels.py $P $P/answers/checks $L/agreed/checked_phone.jsonl auto_agreed_sample
+python python/model/crop_check/labels.py $P $P/answers/checks $L/robots/checked_phone.jsonl auto_robots
+python python/model/checked_data.py --labels $D/label_batch_2026-10-08/checked_phone.jsonl --out $D/data_batch_2026_10_08_checked --tag chk_batch1 --split train
+python python/model/train.py python/model/configs/large_v15.json --data $D/data_v3 $SETS --extra $D/data_centering_checked_snapped   --extra $D/data_kill_feedback_checked --extra $D/data_auto_tiles2 --extra $D/data_robot_kills_checked   --extra $D/data_batch_2026_10_08_checked --repeat $D/repeat_large_v15.txt --times 3 --init $D/runs/large_v13e4/best.pt
+```
 
 A run can be paused (create `PAUSE` in its folder, or Ctrl+C), resumed with `--resume test_out/vod_model/runs/<name>`,
 and forked from any snapshot with `<new config> --fork test_out/vod_model/runs/<name>/snapshots/<snapshot>.pt`.
