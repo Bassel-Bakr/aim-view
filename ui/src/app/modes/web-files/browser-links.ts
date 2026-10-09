@@ -8,11 +8,15 @@ import { HttpClient, HttpErrorResponse, HttpEventType, HttpResponse } from '@ang
 import { effect, inject, Service, signal } from '@angular/core';
 import { filter, firstValueFrom, fromEvent, lastValueFrom, takeUntil, tap } from 'rxjs';
 import { CANCELLED, Job, JobStage, LinkAdded, LinkInfo } from '../../api';
+import { server } from '../../../../../aimview.defaults.json';
 
 /** Where the browser keeps the address of the server that downloads links for it. */
 const SERVER_KEY = 'link-server';
-/** The Aim View server on this computer, as `bun run server` starts it. */
-export const DEFAULT_LINK_SERVER = 'http://127.0.0.1:8770';
+/**
+ * The Aim View server on this computer, as `bun run server` starts it: its address from
+ * aimview.defaults.json, put in at build time.
+ */
+export const DEFAULT_LINK_SERVER = `http://${server.host}:${server.port}`;
 /** The error when the link server does not answer at all, saying how to start it. */
 export const NO_LINK_SERVER =
   'Start the Aim View server (bun run server) to add from a link in this browser.';
