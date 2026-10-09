@@ -42,6 +42,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 21 s | 6.2 s | 9 | 2026-10-09, 1eb73ed+ |
 | build: lint | - | 11.9 s | 5.0 s | 6 | 2026-10-09, 1eb73ed+ |
+| cargo test quick workspace | - | 16.7 s | 16.7 s | 1 | 2026-10-09, b6480f1+ |
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
@@ -65,6 +66,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | test:ui | - | 12.1 s | 11.9 s | 44 | 2026-10-09, 8fe2b6c+ |
 | tokens | - | 0.5 s | 0.4 s | 8 | 2026-10-09, 8fe2b6c+ |
 | train | model large_v15 | 197.8 s | 197.8 s | 1 | 2026-10-09, 38ba8e9 |
+| types | - | 47.7 s | 47.7 s | 1 | 2026-10-09, b6480f1+ |
 <!-- costs:end -->
 
 ## Recorded by hand

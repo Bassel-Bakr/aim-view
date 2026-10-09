@@ -1,7 +1,8 @@
-//! The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets are 3D). A pill
-//! (a sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a
-//! third face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep
-//! pill's the pill swept back to its far end. Or either can be solid: a box or a capsule with a thickness, tipped and
+//! The shapes a target is drawn with on a crop, as their outline on screen (the targets are 3D). A pill (a sphere is a
+//! pill with equal sides), an oval (a sphere stretched by the camera's perspective) and a box (a square or a cube), each
+//! turned to any angle. Each can have a third face, the offset of its far end, for a target seen at an angle: a cube's
+//! outline is then a hexagon, a deep pill's or oval's the shape swept back to its far end. Or a pill or a box can be
+//! solid: a box or a capsule with a thickness, tipped and
 //! swung out of the screen's plane, its outline what that solid shows the camera. A box's vertices can also be placed
 //! one by one (`points`: a flat box's 4 corners, a 3D box's 8), for a target seen in perspective: its outline is then
 //! what they span. Shapes are joined into targets (a bot's head and body), ordered
@@ -15,13 +16,16 @@
 
 use serde::{Deserialize, Serialize};
 
-/// KovaaK's target shapes.
+/// The target shapes: KovaaK's two, and the oval perspective stretches a sphere into.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ShapeKind {
     /// Two half circles joined by straight sides; a circle when its sides are equal (a sphere).
     Pill,
+    /// An ellipse ("ellipse" in the JSON): a sphere stretched by the camera's perspective, which a pill cannot fit. It
+    /// is never solid and never has its points placed (`check` refuses both).
+    Ellipse,
     /// A rectangle (a square or a cube's face), or the solid or hand-placed box its other fields give.
     Box,
 }
@@ -46,7 +50,7 @@ pub enum ShapeRole {
 pub struct Shape {
     /// The shape's id in the scene, which `Scene::targets` and `Scene::occluders` name it by.
     pub id: String,
-    /// Pill or box.
+    /// Pill, oval or box.
     pub kind: ShapeKind,
     /// Its frame before turning: [center x, center y, width, height], crop pixels ("box" in the JSON).
     #[serde(rename = "box")]
@@ -143,6 +147,10 @@ pub struct SceneView {
 
 /// A pill's ends and a box's outline are drawn with this many points per half circle.
 const ARC_POINTS: usize = 16;
+/// An oval's outline is drawn with this many points, a multiple of 4 so the tips of its axes are among them. A chord
+/// strays at most a * (1 - cos(pi / ELLIPSE_POINTS)) from the curve, a its longer half axis: 0.14 px for one as long as a
+/// crop's side (256 px).
+const ELLIPSE_POINTS: usize = 96;
 /// The largest frame side, angle or face (pixels or degrees) a shape may have: anything past it is a slip.
 const MAX_VALUE: f64 = 1e5;
 
@@ -237,6 +245,21 @@ fn flat_pill_outline(shape: &Shape) -> Vec<[f64; 2]> {
     points
 }
 
+/// An oval's outline: ELLIPSE_POINTS round it; with a third face, the hull of the oval and the oval moved by the face.
+fn ellipse_outline(shape: &Shape) -> Vec<[f64; 2]> {
+    let (half_w, half_h) = (shape.frame[2] / 2.0, shape.frame[3] / 2.0);
+    let near: Vec<[f64; 2]> = (0..ELLIPSE_POINTS)
+        .map(|step| {
+            let turn = (360.0 * step as f64 / ELLIPSE_POINTS as f64).to_radians();
+            to_crop(shape, half_w * turn.cos(), half_h * turn.sin())
+        })
+        .collect();
+    match shape.face {
+        None => near,
+        Some([dx, dy]) => convex_hull(near.iter().flat_map(|point| [*point, [point[0] + dx, point[1] + dy]]).collect()),
+    }
+}
+
 /// A solid shape's turn as a matrix, Rz(angle) Ry(swing) Rx(tip): a point of its own frame (along its width, across
 /// it, front to back) times the matrix is where the turn puts it.
 fn rotation(shape: &Shape, solid: &Solid) -> [[f64; 3]; 3] {
@@ -307,6 +330,7 @@ pub fn outline(shape: &Shape) -> Vec<[f64; 2]> {
         (ShapeKind::Box, Some(solid)) => convex_hull(solid_corners(shape, solid)),
         (ShapeKind::Pill, None) => pill_outline(shape),
         (ShapeKind::Box, None) => box_outline(shape),
+        (ShapeKind::Ellipse, _) => ellipse_outline(shape),
     }
 }
 
@@ -361,12 +385,28 @@ fn in_deep_pill(shape: &Shape, [dx, dy]: [f64; 2], x: f64, y: f64) -> bool {
     (0..sweep.len()).any(|i| segment_distance([x, y], sweep[i], sweep[(i + 1) % sweep.len()]) <= radius)
 }
 
-/// Whether a crop point is inside a shape: a pill holds the points within its radius of its middle segment (of the
+/// Whether a crop point is in an oval, or with a third face in the band it sweeps to its far end. Stretched along its
+/// width until it is a circle of radius half its height (the stretch maps the oval moved along its face to that circle
+/// moved along the stretched face), the point is within that radius of the segment from the center to the stretched
+/// face (no segment for a flat oval).
+fn in_ellipse(shape: &Shape, x: f64, y: f64) -> bool {
+    let radius = shape.frame[3] / 2.0;
+    let stretch = shape.frame[3] / shape.frame[2];
+    let (along, across) = to_own(shape, x, y);
+    let [dx, dy] = shape.face.unwrap_or([0.0, 0.0]);
+    let (face_along, face_across) = to_own(shape, shape.frame[0] + dx, shape.frame[1] + dy);
+    segment_distance([along * stretch, across], [0.0, 0.0], [face_along * stretch, face_across]) <= radius
+}
+
+/// Whether a crop point is inside a shape: an oval by `in_ellipse`; a pill holds the points within its radius of its middle segment (of the
 /// band it sweeps to its far end, with a third face; of its tipped axis, solid); a box those in its turned rectangle,
 /// or in its outline when it has a third face, is solid or has its vertices placed.
 pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
     if free_points(shape).is_some() {
         return in_convex(&outline(shape), x, y);
+    }
+    if shape.kind == ShapeKind::Ellipse {
+        return in_ellipse(shape, x, y);
     }
     if let Some(solid) = &shape.solid {
         return match shape.kind {
@@ -374,7 +414,7 @@ pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
                 let [a, b] = solid_pill_segment(shape, solid);
                 segment_distance([x, y], a, b) <= pill_parts(shape).0
             }
-            ShapeKind::Box => in_convex(&outline(shape), x, y),
+            ShapeKind::Box | ShapeKind::Ellipse => in_convex(&outline(shape), x, y),
         };
     }
     match (shape.kind, shape.face) {
@@ -390,6 +430,7 @@ pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
             along.abs() <= shape.frame[2] / 2.0 && across.abs() <= shape.frame[3] / 2.0
         }
         (ShapeKind::Box, Some(_)) => in_convex(&box_outline(shape), x, y),
+        (ShapeKind::Ellipse, _) => in_ellipse(shape, x, y),
     }
 }
 
@@ -400,8 +441,8 @@ fn bounds(shape: &Shape) -> [f64; 4] {
     })
 }
 
-/// Why a scene cannot be saved, or Ok: every id once, sizes positive and finite, every joined or hiding id a shape's,
-/// no shape in two targets, and no occluder in a target.
+/// Why a scene cannot be saved, or Ok: every id once, sizes positive and finite, no oval solid or with its points
+/// placed, every joined or hiding id a shape's, no shape in two targets, and no occluder in a target.
 pub fn check(scene: &Scene) -> Result<(), String> {
     let mut ids = std::collections::HashSet::new();
     for shape in &scene.shapes {
@@ -423,6 +464,9 @@ pub fn check(scene: &Scene) -> Result<(), String> {
         let flat = shape.solid.is_some_and(|solid| solid.thickness <= 0.0);
         if shape.frame[2] <= 0.0 || shape.frame[3] <= 0.0 || flat {
             return Err(format!("the shape {} has no size", shape.id));
+        }
+        if shape.kind == ShapeKind::Ellipse && (shape.solid.is_some() || shape.points.is_some()) {
+            return Err(format!("the oval {} cannot be solid or have its points placed", shape.id));
         }
     }
     let mut joined = std::collections::HashSet::new();
@@ -678,6 +722,71 @@ mod tests {
         let [x0, y0, x1, y1] = bounds(&deep);
         assert!((x0 - 35.0).abs() < 1e-9 && (x1 - 65.0).abs() < 1e-9, "{x0} {x1}");
         assert!((y0 - 39.0).abs() < 1e-9 && (y1 - 79.0).abs() < 1e-9, "{y0} {y1}");
+    }
+
+    /// An oval with equal sides covers a round pill's pixels, turned or not, and has its box.
+    #[test]
+    fn a_round_oval_covers_a_round_pills_pixels() {
+        for angle in [0.0, 30.0] {
+            let pill = Shape { angle, ..shape("p", ShapeKind::Pill, [64.0, 64.0, 20.0, 20.0], 0) };
+            let oval = Shape { kind: ShapeKind::Ellipse, ..pill.clone() };
+            let (round, stretched) = (
+                visible(&Scene { shapes: vec![pill], ..Scene::default() }, SIDE, SIDE),
+                visible(&Scene { shapes: vec![oval], ..Scene::default() }, SIDE, SIDE),
+            );
+            assert_eq!(round.mask, stretched.mask, "turned {angle} degrees");
+        }
+        let oval = shape("e", ShapeKind::Ellipse, [64.0, 64.0, 20.0, 20.0], 0);
+        let [x0, y0, x1, y1] = bounds(&oval);
+        assert!([x0 - 54.0, y0 - 54.0, x1 - 74.0, y1 - 74.0].iter().all(|gap| gap.abs() < 1e-9), "{x0} {y0} {x1} {y1}");
+    }
+
+    /// An oval 40 wide and 10 high, turned 90 degrees, covers the pixels of one 10 wide and 40 high: its tips, not the
+    /// corners of its frame; turned 30 degrees its tips turn with it and its box stays within a quarter pixel.
+    #[test]
+    fn a_turned_oval_covers_its_ellipse() {
+        let flat = shape("e", ShapeKind::Ellipse, [64.5, 64.5, 40.0, 10.0], 0);
+        let upright = Shape { angle: 90.0, ..flat.clone() };
+        let tall = shape("e", ShapeKind::Ellipse, [64.5, 64.5, 10.0, 40.0], 0);
+        let view = |one: &Shape| visible(&Scene { shapes: vec![one.clone()], ..Scene::default() }, SIDE, SIDE).mask;
+        assert_eq!(view(&upright), view(&tall));
+        let seen = view(&upright);
+        assert!(pixel(&seen, 64, 84) && pixel(&seen, 64, 45) && pixel(&seen, 69, 64), "its tips and sides");
+        assert!(!pixel(&seen, 64, 85) && !pixel(&seen, 70, 64) && !pixel(&seen, 84, 64), "past them");
+        assert!(!pixel(&seen, 68, 80) && !pixel(&seen, 61, 49), "the corners of its frame");
+        assert!(contains(&flat, 64.5 + 19.9, 64.5) && !contains(&flat, 64.5 + 20.1, 64.5), "the tip along its width");
+        assert!(!contains(&flat, 64.5 + 19.0, 64.5 + 4.0), "the corner of its frame");
+        let turned = Shape { angle: 30.0, ..flat };
+        let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+        assert!(contains(&turned, 64.5 + 19.9 * cos, 64.5 + 19.9 * sin), "its tip, turned clockwise");
+        assert!(!contains(&turned, 64.5 + 20.1 * cos, 64.5 + 20.1 * sin) && !contains(&turned, 64.5 + 19.9, 64.5));
+        let [x0, y0, x1, y1] = bounds(&turned);
+        let (half_w, half_h) =
+            ((400.0 * cos * cos + 25.0 * sin * sin).sqrt(), (400.0 * sin * sin + 25.0 * cos * cos).sqrt());
+        for (side, exact) in [(x1 - x0, 2.0 * half_w), (y1 - y0, 2.0 * half_h)] {
+            assert!(side <= exact + 1e-9 && exact - side < 0.5, "{side} against {exact}");
+        }
+    }
+
+    /// An oval with a third face covers the band it sweeps to its far end, and its bounds span it; a solid oval or one
+    /// with its points placed is refused.
+    #[test]
+    fn an_oval_with_a_third_face_covers_the_band_to_its_far_end() {
+        let oval = shape("e", ShapeKind::Ellipse, [40.0, 64.0, 10.0, 30.0], 0);
+        let deep = Shape { face: Some([20.0, -10.0]), ..oval.clone() };
+        assert!(contains(&deep, 50.0, 59.0) && !contains(&oval, 50.0, 59.0), "the band between the ends");
+        assert!(contains(&deep, 60.0, 54.0 - 14.9) && !contains(&deep, 60.0, 54.0 - 15.1), "the far end's top");
+        assert!(!contains(&deep, 40.0, 64.0 + 15.1) && !contains(&deep, 66.0, 54.0), "past either end");
+        assert!(!contains(&deep, 36.0, 44.0) && !contains(&deep, 64.0, 74.0), "the corners the sweep leaves out");
+        let [x0, y0, x1, y1] = bounds(&deep);
+        assert!((x0 - 35.0).abs() < 1e-9 && (x1 - 65.0).abs() < 1e-9, "{x0} {x1}");
+        assert!((y0 - 39.0).abs() < 1e-9 && (y1 - 79.0).abs() < 1e-9, "{y0} {y1}");
+        let solid = Shape { solid: Some(Solid { thickness: 5.0, tip: 0.0, swing: 0.0 }), ..oval.clone() };
+        let placed = Shape { points: Some(vec![[35.0, 49.0], [45.0, 49.0], [45.0, 79.0]]), ..oval };
+        for refused in [solid, placed] {
+            let scene = Scene { shapes: vec![refused], ..Scene::default() };
+            assert!(check(&scene).unwrap_err().contains("oval"));
+        }
     }
 
     /// A solid box tipped or swung shows its thickness, a capsule end on is a disc, and a solid of no thickness is

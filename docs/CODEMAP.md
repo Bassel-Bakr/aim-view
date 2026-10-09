@@ -78,8 +78,7 @@ rust-analyzer's call hierarchy.
 - `src/scipy.rs`: What the review uses from SciPy's `ndimage`, done the way SciPy does it, so results match bit for bit.
 - `src/session.rs`: A review session: everything a review does between the decoder and the detector, the same for the
   browser and the desktop.
-- `src/shapes.rs`: The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets
-  are 3D).
+- `src/shapes.rs`: The shapes a target is drawn with on a crop, as their outline on screen (the targets are 3D).
 - `src/statistics.rs`: The statistics a report gives: means, spreads and medians, in plain floating point (python.rs has
   NumPy's, where its order of operations reaches a result).
 - `src/stats_file.rs`: KovaaK's stats file (review.py: `load_stats`): its "Key:,value" lines and its kill table.
@@ -765,16 +764,17 @@ and natively alike), then joined:
 
 ## src/shapes.rs
 
-The shapes a target is drawn with on a crop: KovaaK's two, as their outline on screen (the targets are 3D). A pill (a
-sphere is a pill with equal sides) and a box (a square or a cube), each turned to any angle. Either can have a third
-face, the offset of its far end, for a target seen at an angle: a cube's outline is then a hexagon, a deep pill's the
-pill swept back to its far end. Or either can be solid: a box or a capsule with a thickness, tipped and swung out of the
-screen's plane, its outline what that solid shows the camera. A box's vertices can also be placed one by one (`points`:
-a flat box's 4 corners, a 3D box's 8), for a target seen in perspective: its outline is then what they span. Shapes are
-joined into targets (a bot's head and body), ordered front to back by depth (a shape hides the parts of shapes behind
-it), and some only hide what is behind them (occluders: the crosshair, a pillar, an overlay).
+The shapes a target is drawn with on a crop, as their outline on screen (the targets are 3D). A pill (a sphere is a pill
+with equal sides), an oval (a sphere stretched by the camera's perspective) and a box (a square or a cube), each turned
+to any angle. Each can have a third face, the offset of its far end, for a target seen at an angle: a cube's outline is
+then a hexagon, a deep pill's or oval's the shape swept back to its far end. Or a pill or a box can be solid: a box or a
+capsule with a thickness, tipped and swung out of the screen's plane, its outline what that solid shows the camera. A
+box's vertices can also be placed one by one (`points`: a flat box's 4 corners, a 3D box's 8), for a target seen in
+perspective: its outline is then what they span. Shapes are joined into targets (a bot's head and body), ordered front
+to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them (occluders: the
+crosshair, a pillar, an overlay).
 
-- `ShapeKind` (enum): KovaaK's target shapes.
+- `ShapeKind` (enum): The target shapes: KovaaK's two, and the oval perspective stretches a sphere into.
 - `ShapeRole` (enum): The part of a bot a shape stands for.
 - `Shape` (struct): One shape: its kind, its frame before turning ([center x, center y, width, height], pixels), its
   angle (degrees, clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and
