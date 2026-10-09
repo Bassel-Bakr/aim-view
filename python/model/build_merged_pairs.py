@@ -62,6 +62,7 @@ sys.path.insert(0, str(HERE.parent))
 import aimview_tools  # noqa: E402
 import build_auto_labels as auto  # noqa: E402  the pixel rules
 import build_label_batch as batch  # noqa: E402  the recordings, their reviews and their target's color
+import box_overlap  # noqa: E402
 import build_mined  # noqa: E402
 import crop_batch  # noqa: E402
 from crop_batch import boxes_px  # noqa: E402
@@ -198,7 +199,7 @@ def frame_candidates(frames, frame, stretch):
         if min(box[2:4]) >= MIN_SIDE_PX and elongation >= MERGE_ASPECT and inside_frame(box):
             best["merged"] = max(best.get("merged", (0, ())), (elongation, (i,)))
     for i, j in combinations(range(len(boxes)), 2):
-        overlap = label_score.iou(boxes[i][:4], boxes[j][:4])
+        overlap = box_overlap.iou(boxes[i][:4], boxes[j][:4])
         if overlap >= PAIR_IOU and inside_frame(boxes[i]) and inside_frame(boxes[j]):
             best["pair"] = max(best.get("pair", (0, ())), (overlap, (i, j)))
     return best

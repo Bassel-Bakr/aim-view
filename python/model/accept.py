@@ -63,6 +63,7 @@ import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import infer  # noqa: E402
 from local_config import folder  # noqa: E402
+from recording_names import scenario_of  # noqa: E402
 
 EXPORTS = HERE / "exports"
 MODELS = HERE / "models.json"
@@ -90,11 +91,6 @@ def say(*parts):
 def sha(path):
     """A file's SHA-256, in hex."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def scenario_of(video):
-    """The scenario of a recording KovOBS named, in lower case (the scenario facts' key)."""
-    return Path(video).stem.rsplit(" - ", 2)[0].lower()
 
 
 # ---- the models ------------------------------------------------------------------------------------------------------

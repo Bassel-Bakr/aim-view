@@ -35,6 +35,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_auto_labels as auto  # noqa: E402  the pixel rules
+from box_overlap import iou  # noqa: E402
 from local_config import folder  # noqa: E402
 
 SETS = ("data_moving_themes", "data_mined", "hand_small", "teacher_robots")
@@ -50,15 +51,6 @@ def recording_of(file):
     its last part (the crop's number)."""
     name = Path(file).stem
     return name[:10] if HASH_NAME.match(name) else name.rsplit("_", 1)[0]
-
-
-def iou(a, b):
-    """The overlap of two boxes (cx, cy, w, h) over their union."""
-    ax0, ay0, ax1, ay1 = a[0] - a[2] / 2, a[1] - a[3] / 2, a[0] + a[2] / 2, a[1] + a[3] / 2
-    bx0, by0, bx1, by1 = b[0] - b[2] / 2, b[1] - b[3] / 2, b[0] + b[2] / 2, b[1] + b[3] / 2
-    inter = max(0.0, min(ax1, bx1) - max(ax0, bx0)) * max(0.0, min(ay1, by1) - max(ay0, by0))
-    union = a[2] * a[3] + b[2] * b[3] - inter
-    return inter / union if union > 0 else 0.0
 
 
 def matched(found, truth):

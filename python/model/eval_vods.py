@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import local_config  # noqa: E402
+import recording_names  # noqa: E402
 
 STATS = local_config.required(local_config.kovaak("stats"), "KovaaK's stats folder (Steam's)")
 VODS = local_config.required(local_config.folder("vods"), "recordings' folder (vods)")
@@ -40,7 +41,7 @@ VIDEO_CHARS, ERROR_CHARS = 46, 60   # the printed line's columns
 def stats_for(video):
     """The stats file of a recording KovOBS named "<scenario> - <score> - <stamp>.mp4", found by its scenario and
     exact stamp, or None."""
-    scenario, _, stamp = Path(video).stem.rsplit(" - ", 2)
+    scenario, _, stamp = recording_names.name_parts(video)
     path = Path(STATS) / f"{scenario} - Challenge - {stamp} Stats.csv"
     return path if path.exists() else None
 
@@ -58,7 +59,7 @@ def u8in(model):
 def native_review(lib, video, model, out, stats):
     """The app's review of a video (aimview_tools: Library.review_video) with the model, and its report. The scenario's
     facts come from its file, as the core reads it (Library.scenario_facts, target_counts)."""
-    scenario = Path(video).stem.rsplit(" - ", 2)[0].lower()
+    scenario = recording_names.scenario_of(video)
     kind, limit = lib.scenario_facts().get(scenario, (None, None))
     return lib.review_video(video, str(model), str(out), stats=stats, kind=kind, limit=limit,
                             cap=lib.target_counts().get(scenario))["report"]

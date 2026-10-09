@@ -16,6 +16,7 @@ sys.path.insert(0, str(HERE.parent))
 import build_data  # noqa: E402
 import infer  # noqa: E402
 import old_review  # noqa: E402
+import recording_names  # noqa: E402
 
 EDGE_S = 3.0            # seconds left out at each end of a VOD
 MIN_SPAN_END_S = 3.5    # the last sample is at least this far in
@@ -58,7 +59,7 @@ def main():
     detectors = [infer.TorchDetector(model) for model in args.models]
     print(f"{'VOD':48s} {'alive':>5s}  " + "  ".join(f"{column_name(model):>22s}" for model in args.models))
     for video in args.vods:
-        scenario = Path(video).stem.rsplit(" - ", 2)[0]
+        scenario = recording_names.scenario_name(video)
         alive = counts.get(scenario.lower())
         if not alive:
             print(f"{scenario[:48]:48s} no target count")

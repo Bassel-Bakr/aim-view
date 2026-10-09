@@ -31,6 +31,7 @@ import eval_video_alone  # noqa: E402
 import eval_vods  # noqa: E402
 import old_review  # noqa: E402
 import local_config  # noqa: E402
+from recording_names import scenario_of  # noqa: E402
 
 # the recordings picked of each moving kind, one a folder
 PER = {"dynamic": 6, "switching": 6, "tracking": 12}
@@ -97,11 +98,6 @@ def parse_args(args):
         return args, None
     at = args.index("--reports")
     return args[:at] + args[at + 2:], Path(args[at + 1])
-
-
-def scenario_of(video):
-    """The scenario of a recording KovOBS named, in lower case (the scenario facts' key)."""
-    return Path(video).stem.rsplit(" - ", 2)[0].lower()
 
 
 def model_numbers(lib, program, pick, scenarios, name, path, reports):

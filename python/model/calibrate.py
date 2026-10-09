@@ -48,6 +48,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
 import local_config  # noqa: E402
+from box_overlap import iou  # noqa: E402
 
 FORMAT = 1                                  # the settings file's format
 REFERENCE = infer.BEST                      # the scale every model's scores are put on
@@ -150,14 +151,6 @@ def peaks(onnx_session, files, floor=FLOOR, batch=16):
             dets.append(infer.decode_np(score[k:k + 1], reg[k:k + 1], floor))
             gts.append(labels(crop["boxes"]))
     return dets, gts
-
-
-def iou(a, b):
-    """Intersection over union of two boxes (cx, cy, w, h)."""
-    overlap_x = max(0.0, min(a[0] + a[2] / 2, b[0] + b[2] / 2) - max(a[0] - a[2] / 2, b[0] - b[2] / 2))
-    overlap_y = max(0.0, min(a[1] + a[3] / 2, b[1] + b[3] / 2) - max(a[1] - a[3] / 2, b[1] - b[3] / 2))
-    inter = overlap_x * overlap_y
-    return inter / max(TINY, a[2] * a[3] + b[2] * b[3] - inter)
 
 
 def match(found, truth):

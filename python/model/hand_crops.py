@@ -28,6 +28,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import infer  # noqa: E402
 import old_review  # noqa: E402
+import recording_names  # noqa: E402
 
 CROP = 256
 JITTER_PX = 48                  # a crop's corner moves up to this far at random
@@ -198,7 +199,7 @@ def review_keeps(detections, count):
 def vod_crops(video, detector, args, rnd, out):
     """One VOD's crops for labelling; returns the number of frames sampled and of crops written."""
     _, duration = old_review.probe(video)
-    count = old_review.target_counts().get(Path(video).stem.rsplit(" - ", 2)[0].lower())
+    count = old_review.target_counts().get(recording_names.scenario_of(video))
     fixed = old_review.fixed_map(list(old_review._frames(video, keyframes=True))).astype(np.uint8)
     step = (duration - 2 * EDGE_S) / args.per_vod
     raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{EDGE_S:g}", "-i", video, "-t",
