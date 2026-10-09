@@ -194,9 +194,51 @@ mod imp {
         std::process::id()
     }
 
-    /// Windows' time calls, for `utc_offset_at`.
+    /// Whether a process with this id is running on this computer: Windows' OpenProcess and GetExitCodeProcess (a
+    /// process another user runs, which this one may not open, counts as running), elsewhere kill(id, 0) (EPERM: it
+    /// runs as another user).
+    pub fn process_running(process_id: u32) -> bool {
+        #[cfg(windows)]
+        {
+            /// Whether a handle may be inherited: no.
+            const NOT_INHERITED: i32 = 0;
+            // SAFETY: each call takes plain values and a handle it gave; the handle is closed
+            unsafe {
+                let process = win::OpenProcess(win::PROCESS_QUERY_LIMITED_INFORMATION, NOT_INHERITED, process_id);
+                if process.is_null() {
+                    return win::GetLastError() == win::ERROR_ACCESS_DENIED;
+                }
+                let mut exit_code = 0u32;
+                let read = win::GetExitCodeProcess(process, &mut exit_code) != 0;
+                win::CloseHandle(process);
+                read && exit_code == win::STILL_ACTIVE
+            }
+        }
+        #[cfg(unix)]
+        {
+            let Ok(id) = libc::pid_t::try_from(process_id) else { return false };
+            // SAFETY: signal 0 only asks whether the process exists; nothing is sent
+            if unsafe { libc::kill(id, 0) } == 0 {
+                return true;
+            }
+            io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        }
+        #[cfg(not(any(windows, unix)))]
+        {
+            let _ = process_id;
+            false
+        }
+    }
+
+    /// Windows' time and process calls, for `utc_offset_at` and `process_running`.
     #[cfg(windows)]
     mod win {
+        /// OpenProcess's right to ask a process's exit code.
+        pub const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+        /// GetExitCodeProcess's code for a process that has not ended.
+        pub const STILL_ACTIVE: u32 = 259;
+        /// GetLastError's code for a process this one may not open: it exists.
+        pub const ERROR_ACCESS_DENIED: u32 = 5;
         /// Seconds from 1601 (FILETIME's start) to 1970 (Unix time's).
         pub const FILETIME_TO_UNIX_S: i64 = 11_644_473_600;
         /// FILETIME's 100 ns steps in a second.
@@ -237,6 +279,15 @@ mod imp {
                 utc: *const SystemTime,
                 local: *mut SystemTime,
             ) -> i32;
+            /// A handle on a running process with the rights asked for; null when there is none or it may not be
+            /// opened (GetLastError says which).
+            pub fn OpenProcess(access: u32, inherit: i32, process_id: u32) -> *mut std::ffi::c_void;
+            /// A process's exit code (STILL_ACTIVE while it runs); 0 when it fails.
+            pub fn GetExitCodeProcess(process: *mut std::ffi::c_void, exit_code: *mut u32) -> i32;
+            /// Closes a handle; 0 when it fails.
+            pub fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+            /// The calling thread's last error code.
+            pub fn GetLastError() -> u32;
         }
     }
 
@@ -604,6 +655,11 @@ mod imp {
     /// The page has one service, so one process.
     pub fn process_id() -> u32 {
         0
+    }
+
+    /// The page has no other process: none runs.
+    pub fn process_running(_process_id: u32) -> bool {
+        false
     }
 
     /// The browser's offset from UTC in seconds at a moment (seconds since 1970).

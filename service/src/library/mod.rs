@@ -174,7 +174,8 @@ impl Library {
     /// The library `config` describes, with ffmpeg taken from where it says (for the whole process). Area examples kept
     /// before area kinds had ids are given ids (python/retired/server.py did it at its start); when they cannot be read
     /// the library still opens, and says why. Upload bodies another process left in the uploads folder (a crash
-    /// mid-upload) are removed. Fails when the data folder cannot be made.
+    /// mid-upload) are removed once that process is gone and they are old (recordings.rs `remove_stale_spools`). Fails
+    /// when the data folder cannot be made.
     pub fn open(config: Config) -> Result<Arc<Library>, String> {
         let folders = config.folders();
         crate::disk::create_dir_all(&folders.files).map_err(|error| format!("{}: {error}", folders.files.display()))?;
@@ -198,7 +199,7 @@ impl Library {
             #[cfg(feature = "native")]
             links,
         });
-        recordings::remove_stale_spools(&library.uploads(), crate::disk::process_id());
+        recordings::remove_stale_spools(&library.uploads(), crate::disk::process_id(), crate::disk::now());
         if let Err(failure) = library.fix_examples() {
             eprintln!("the area finder's examples: {}", failure.message);
         }

@@ -45,33 +45,54 @@ fn upload_id(name: &str) -> String {
     format!("{UPLOADS_ID}{name}")
 }
 
+/// How long an upload body or a link's download folder must have gone unchanged, in seconds, before another process
+/// may remove it as left behind: longer than any upload or download stalls.
+const STALE_AFTER_S: f64 = 3600.0;
+
 /// Removes the upload bodies (`spool`'s ".incoming-<process id>-<number>.part" files) and the links' download folders
-/// (links.rs: ".link-<process id>-<number>") that a process other than `process_id` left in `dir`: a server that
-/// stopped mid-upload or mid-download never moved them into place. Every other file stays.
-pub(super) fn remove_stale_spools(dir: &Path, process_id: u32) {
+/// (links.rs: ".link-<process id>-<number>") left in `dir` by a server that stopped mid-upload or mid-download, which
+/// never moved them into place. One is left behind only when all three hold: its process id is not `process_id` (this
+/// process's), no process with that id is running (disk.rs `process_running`), and nothing in it changed for
+/// STALE_AFTER_S before `now_s` (seconds since 1970). The running check keeps what another live server (the phone
+/// server beside the app) is still writing; the age keeps it when its id was reused or cannot be checked. Every other
+/// file stays.
+pub(super) fn remove_stale_spools(dir: &Path, process_id: u32, now_s: f64) {
+    let stale = |owner: Option<&str>, path: &Path| {
+        left_by_another(owner, process_id)
+            && last_change(path).is_some_and(|changed_s| now_s - changed_s > STALE_AFTER_S)
+    };
     for entry in crate::disk::read_dir(dir).into_iter().flatten().flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let (name, path) = (entry.file_name().to_string_lossy().into_owned(), entry.path());
         let spool = name.strip_prefix(SPOOL_PREFIX).and_then(|rest| rest.strip_suffix(SPOOL_SUFFIX));
-        let removed = if left_by_another(spool, process_id) && crate::disk::is_file(entry.path()) {
-            crate::disk::remove_file(entry.path())
-        } else if left_by_another(name.strip_prefix(LINK_FOLDER_PREFIX), process_id) && entry.is_dir() {
-            crate::disk::remove_dir_all(entry.path())
+        let removed = if crate::disk::is_file(&path) && stale(spool, &path) {
+            crate::disk::remove_file(&path)
+        } else if entry.is_dir() && stale(name.strip_prefix(LINK_FOLDER_PREFIX), &path) {
+            crate::disk::remove_dir_all(&path)
         } else {
             continue;
         };
         if let Err(error) = removed {
-            eprintln!("{}: {error}", entry.path().display());
+            eprintln!("{}: {error}", path.display());
         }
     }
 }
 
-/// Whether a spool's or a link folder's "<process id>-<number>" names a process other than `process_id`.
+/// When a file, or a folder or anything in it, last changed (seconds since 1970); None when a time cannot be read.
+fn last_change(path: &Path) -> Option<f64> {
+    let own = crate::disk::metadata(path).ok()?.modified()?;
+    let mut inside =
+        crate::disk::read_dir(path).into_iter().flatten().flatten().map(|entry| last_change(&entry.path()));
+    inside.try_fold(own, |newest, changed| Some(newest.max(changed?)))
+}
+
+/// Whether a spool's or a link folder's "<process id>-<number>" names a process that is not `process_id` and is not
+/// running.
 fn left_by_another(owner_and_number: Option<&str>, process_id: u32) -> bool {
     owner_and_number
         .and_then(|rest| rest.split_once('-'))
         .filter(|(_, number)| number.parse::<u64>().is_ok())
         .and_then(|(owner, _)| owner.parse::<u32>().ok())
-        .is_some_and(|owner| owner != process_id)
+        .is_some_and(|owner| owner != process_id && !crate::disk::process_running(owner))
 }
 
 /// The scenario files in `dir`, added to `files`.
@@ -518,35 +539,92 @@ mod tests {
     use crate::config::{Config, Layout};
     use crate::library::Library;
 
-    /// Opening the library removes the upload bodies another process left behind, and keeps this process's and every
-    /// other file.
+    /// Two hours, in seconds: what is left that long is past STALE_AFTER_S.
+    const LATER_S: f64 = 7200.0;
+
+    /// A child process that runs for a while (`ping` waits a second between its 30 tries), for a running process's id.
+    fn running_child() -> std::process::Child {
+        let mut command = std::process::Command::new(if cfg!(windows) { "ping" } else { "sleep" });
+        command.args(if cfg!(windows) { &["-n", "30", "127.0.0.1"][..] } else { &["30"][..] });
+        command.stdout(std::process::Stdio::null()).spawn().unwrap()
+    }
+
+    /// The id of a process that has ended.
+    fn ended_process_id() -> u32 {
+        let mut child = running_child();
+        let id = child.id();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!crate::disk::process_running(id), "the child still runs");
+        id
+    }
+
+    /// The names in a folder, sorted.
+    fn names_in(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// The upload bodies and link folders a process that has ended left behind are removed once they are old; this
+    /// process's and every other file stay.
     #[test]
-    fn opening_removes_other_processes_upload_bodies() {
+    fn other_processes_upload_bodies_are_removed() {
         let dir = std::env::temp_dir().join(format!("aimview-spools-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let other = ended_process_id();
+        let mine = format!(".incoming-{}-0.part", std::process::id());
+        let kept = [mine.as_str(), "run.mp4", ".incoming-x-0.part", ".incoming-12.part", "incoming-12-0.part"];
+        for name in kept.iter().copied().chain([format!(".incoming-{other}-3.part").as_str()]) {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        // a link's download folder: the ended process's goes, this one's stays
+        std::fs::create_dir_all(dir.join(format!(".link-{other}-0"))).unwrap();
+        std::fs::write(dir.join(format!(".link-{other}-0")).join("video.mp4.part"), b"x").unwrap();
+        let link = format!(".link-{}-0", std::process::id());
+        std::fs::create_dir_all(dir.join(&link)).unwrap();
+        super::remove_stale_spools(&dir, std::process::id(), crate::disk::now() + LATER_S);
+        let mut want: Vec<String> = kept.iter().map(|name| name.to_string()).chain([link]).collect();
+        want.sort();
+        assert_eq!(names_in(&dir), want);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// What a running process is still writing stays however old it is, and what an ended process left stays while it
+    /// is fresh; opening the library removes neither.
+    #[test]
+    fn running_and_fresh_upload_bodies_stay() {
+        let dir = std::env::temp_dir().join(format!("aimview-live-spools-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let config = Config::new(dir.clone(), Layout::App, dir.join("models"));
         let uploads = config.folders().uploads;
         std::fs::create_dir_all(&uploads).unwrap();
-        let other = std::process::id().wrapping_add(1);
-        let mine = format!(".incoming-{}-0.part", std::process::id());
-        let kept = [mine.as_str(), "run.mp4", ".incoming-x-0.part", ".incoming-12.part", "incoming-12-0.part"];
-        for name in kept.iter().copied().chain([format!(".incoming-{other}-3.part").as_str()]) {
+        let mut running = running_child();
+        let ended = ended_process_id();
+        let names = [format!(".incoming-{}-0.part", running.id()), format!(".incoming-{ended}-0.part")];
+        for name in &names {
             std::fs::write(uploads.join(name), b"x").unwrap();
         }
-        // a link's download folder: another process's goes, this one's stays
-        std::fs::create_dir_all(uploads.join(format!(".link-{other}-0"))).unwrap();
-        std::fs::write(uploads.join(format!(".link-{other}-0")).join("video.mp4.part"), b"x").unwrap();
-        let link = format!(".link-{}-0", std::process::id());
-        std::fs::create_dir_all(uploads.join(&link)).unwrap();
-        let library = Library::open(config).unwrap();
-        let mut left: Vec<String> = std::fs::read_dir(library.uploads())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        left.sort();
-        let mut want: Vec<String> = kept.iter().map(|name| name.to_string()).chain([link]).collect();
+        let links = [format!(".link-{}-0", running.id()), format!(".link-{ended}-0")];
+        for link in &links {
+            std::fs::create_dir_all(uploads.join(link)).unwrap();
+            std::fs::write(uploads.join(link).join("video.mp4.part"), b"x").unwrap();
+        }
+        let mut want: Vec<String> = names.iter().chain(&links).cloned().collect();
         want.sort();
-        assert_eq!(left, want);
+        let library = Library::open(config).unwrap();
+        assert_eq!(names_in(&library.uploads()), want, "fresh, or still written");
+        // two hours on, the running process's are still kept; only the ended process's go
+        super::remove_stale_spools(&uploads, std::process::id(), crate::disk::now() + LATER_S);
+        let mut want = vec![names[0].clone(), links[0].clone()];
+        want.sort();
+        assert_eq!(names_in(&uploads), want, "still written");
+        running.kill().unwrap();
+        running.wait().unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 
