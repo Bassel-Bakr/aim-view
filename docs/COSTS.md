@@ -34,6 +34,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets: wasm-opt (Asyncify) | level -O0 | 6.8 s | 7.6 s | 12 | 2026-10-09, 0fe8be4+ |
 | assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 64.7 s | 62.5 s | 2 | 2026-10-08, 4303844+ |
+| bench | model large_v16e4 | 10.2 s | 10.2 s | 1 | 2026-10-09, 63e0edd |
 | build | modes browser | 143.3 s | 143.3 s | 1 | 2026-10-08, 4303844+ |
 | build | modes browser,server,desktop, angular at once | 63.3 s | 34.2 s | 2 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular one at a time | 182.7 s | 182.7 s | 1 | 2026-10-07, 78c5844+ |
@@ -102,7 +103,8 @@ A frame's detector time depends on the model, the device and how many frames go 
 
 | Model | Native, DirectML | Native, other | Browser, WebGPU (4 frames a call) | Browser, CPU (8 threads) | Measured (date, commit) | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| large_v13e4 (the default) | 1.55 ms a frame | TensorRT fp32 1.41 ms (not kept: the review was slower) | 5.50 ms | 31.0 ms | browser 2026-10-06, d19e766; native 2026-10-07, f593028 | docs/BENCH.md (model speed), docs/HOT_PATHS.md |
+| large_v16e4 (the default) | PyTorch CUDA 1.92 ms a frame in batches of 16 (2.09 alone); ONNX Runtime CPU fp32, 4 threads, 7.7 ms with the frame's conversion (5.6 the model) | the same network as large_v13e4 | 6.21 ms | 31.6 ms | 2026-10-09, f7ed20a+ (bench.py; model-speed.html, where large_v13e4 measured 5.70 and 32.5 ms in the same run) | models.json's speed_ms |
+| large_v13e4 | 1.55 ms a frame | TensorRT fp32 1.41 ms (not kept: the review was slower) | 5.50 ms | 31.0 ms | browser 2026-10-06, d19e766; native 2026-10-07, f593028 | docs/BENCH.md (model speed), docs/HOT_PATHS.md |
 | full_v3 | 1.84 ms | PyTorch CUDA 1.7 to 2.2 ms, fp16 1.0 ms (b794f53) | 5.31 ms | 20.6 ms | native 4600bbe; browser 2026-10-06, d19e766 | docs/BENCH.md, docs/HOT_PATHS.md |
 | small_v13 (left the picker) | not timed | | 4.19 ms | 11.1 ms | 2026-10-06, d19e766 | docs/BENCH.md |
 | a 1,405-parameter network | the native review of av1 in 11.7 s against full_v3's 11.9 s | | | | b095354 | docs/HOT_PATHS.md |

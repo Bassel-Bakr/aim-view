@@ -54,6 +54,7 @@
     },
     "large_v16e4": {
       "params": 148709, "kb": 587.1,
+      "speed_ms": {"gpu": 1.92, "cpu": 7.7, "browser": 31.6},
       "trained": "large_v13e4 fine-tuned for 4 epochs with crops the user checked on the phone: 721 from an automatic label batch over 150 recordings (2026-10-08) and 120 of overlapping targets, each one boxed (ovals for stretched spheres). The epoch-4 checkpoint of large_v16.",
       "best": "Splits overlapping targets (Bounce 180 Sparky Jumbo 107 of 107 kills, large_v15e4 106); more flicks measured on dynamic (790 against 788) and switching runs (397 against 393); tracking's mean gap nearer 0 (-0.015 against -0.018); the video alone's precision 0.973 against 0.972.",
       "weak": "The video alone's recall a little lower (0.956 against 0.959; dynamic 0.975 against 0.980, within the gate's limit); tracking's mean gap size 0.050 against 0.048; the crosshair boxed in 3.4% of one recording's turns against 2.8%.",
