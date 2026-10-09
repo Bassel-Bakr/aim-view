@@ -765,16 +765,18 @@ and natively alike), then joined:
 ## src/shapes.rs
 
 The shapes a target is drawn with on a crop, as their outline on screen (the targets are 3D). A pill (a sphere is a pill
-with equal sides), an oval (a sphere stretched by the camera's perspective) and a box (a square or a cube), each turned
-to any angle. Each can have a third face, the offset of its far end, for a target seen at an angle: a cube's outline is
-then a hexagon, a deep pill's or oval's the shape swept back to its far end. Or a pill or a box can be solid: a box or a
-capsule with a thickness, tipped and swung out of the screen's plane, its outline what that solid shows the camera. A
-box's vertices can also be placed one by one (`points`: a flat box's 4 corners, a 3D box's 8), for a target seen in
-perspective: its outline is then what they span. Shapes are joined into targets (a bot's head and body), ordered front
-to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them (occluders: the
-crosshair, a pillar, an overlay).
+with equal sides), an oval (a sphere stretched by the camera's perspective), a box (a square or a cube) and a polygon of
+any number of sides, each turned to any angle. Each can have a third face, the offset of its far end, for a target seen
+at an angle: a cube's outline is then a hexagon, a deep pill's, oval's or polygon's the shape swept back to its far end.
+Or a pill or a box can be solid: a box or a capsule with a thickness, tipped and swung out of the screen's plane, its
+outline what that solid shows the camera. A box's vertices can also be placed one by one (`points`: a flat box's 4
+corners, a 3D box's 8), for a target seen in perspective: its outline is then what they span; a polygon's, its outline
+the polygon they make in order. Shapes are joined into targets (a bot's head and body), ordered front to back by depth
+(a shape hides the parts of shapes behind it), and some only hide what is behind them (occluders: the crosshair, a
+pillar, an overlay).
 
-- `ShapeKind` (enum): The target shapes: KovaaK's two, and the oval perspective stretches a sphere into.
+- `ShapeKind` (enum): The target shapes: KovaaK's two, the oval perspective stretches a sphere into, and a polygon for
+  any other outline.
 - `ShapeRole` (enum): The part of a bot a shape stands for.
 - `Shape` (struct): One shape: its kind, its frame before turning ([center x, center y, width, height], pixels), its
   angle (degrees, clockwise), a third face (the offset of the far end, pixels), its solid (a 3D shape's thickness and
@@ -789,6 +791,7 @@ crosshair, a pillar, an overlay).
 - `SceneView` (struct): A scene seen on a crop: its targets, and the pixels of all of them (the training `tmask`) as run
   lengths.
 - Functions: `outline`, `contains`, `check`, `runs`, `from_runs`, `visible`, `visible_json`.
+- Constants: `MIN_SIDES`, `MAX_SIDES`.
 
 ## src/statistics.rs
 

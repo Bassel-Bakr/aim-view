@@ -1,13 +1,13 @@
 //! The shapes a target is drawn with on a crop, as their outline on screen (the targets are 3D). A pill (a sphere is a
-//! pill with equal sides), an oval (a sphere stretched by the camera's perspective) and a box (a square or a cube), each
-//! turned to any angle. Each can have a third face, the offset of its far end, for a target seen at an angle: a cube's
-//! outline is then a hexagon, a deep pill's or oval's the shape swept back to its far end. Or a pill or a box can be
-//! solid: a box or a capsule with a thickness, tipped and
-//! swung out of the screen's plane, its outline what that solid shows the camera. A box's vertices can also be placed
-//! one by one (`points`: a flat box's 4 corners, a 3D box's 8), for a target seen in perspective: its outline is then
-//! what they span. Shapes are joined into targets (a bot's head and body), ordered
-//! front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is behind them
-//! (occluders: the crosshair, a pillar, an overlay).
+//! pill with equal sides), an oval (a sphere stretched by the camera's perspective), a box (a square or a cube) and a
+//! polygon of any number of sides, each turned to any angle. Each can have a third face, the offset of its far end, for
+//! a target seen at an angle: a cube's outline is then a hexagon, a deep pill's, oval's or polygon's the shape swept
+//! back to its far end. Or a pill or a box can be solid: a box or a capsule with a thickness, tipped and swung out of
+//! the screen's plane, its outline what that solid shows the camera. A box's vertices can also be placed one by one
+//! (`points`: a flat box's 4 corners, a 3D box's 8), for a target seen in perspective: its outline is then what they
+//! span; a polygon's, its outline the polygon they make in order. Shapes are joined into targets (a bot's head and
+//! body), ordered front to back by depth (a shape hides the parts of shapes behind it), and some only hide what is
+//! behind them (occluders: the crosshair, a pillar, an overlay).
 //!
 //! In: a scene, as the Crops page saves it (service/src/crops.rs). Out: each target's visible pixels and box
 //! (`visible`), for the page (src/wasm.rs `shapes_visible`) and the training set (aimview-tool crop-labels, read by
@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The target shapes: KovaaK's two, and the oval perspective stretches a sphere into.
+/// The target shapes: KovaaK's two, the oval perspective stretches a sphere into, and a polygon for any other outline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -28,6 +28,10 @@ pub enum ShapeKind {
     Ellipse,
     /// A rectangle (a square or a cube's face), or the solid or hand-placed box its other fields give.
     Box,
+    /// A polygon ("polygon" in the JSON): `sides` vertices inscribed in the ellipse of its turned frame, the first at
+    /// the frame's top (a regular polygon when the frame's sides are equal); or, with `points`, the polygon they make
+    /// in order, placed vertex by vertex. It is never solid (`check` refuses one).
+    Polygon,
 }
 
 /// The part of a bot a shape stands for.
@@ -50,7 +54,7 @@ pub enum ShapeRole {
 pub struct Shape {
     /// The shape's id in the scene, which `Scene::targets` and `Scene::occluders` name it by.
     pub id: String,
-    /// Pill, oval or box.
+    /// Pill, oval, box or polygon.
     pub kind: ShapeKind,
     /// Its frame before turning: [center x, center y, width, height], crop pixels ("box" in the JSON).
     #[serde(rename = "box")]
@@ -67,11 +71,14 @@ pub struct Shape {
     /// instead of `face`.
     #[serde(default)]
     pub solid: Option<Solid>,
-    /// A box's vertices placed by hand, crop pixels (4 for a flat box, 8 for a 3D one); when there are 3 or more they
-    /// decide its outline.
+    /// A box's vertices placed by hand, crop pixels (4 for a flat box, 8 for a 3D one), or a polygon's in order round
+    /// it; when there are 3 or more they decide its outline.
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::typescript::CropVertex>>"))]
     pub points: Option<Vec<[f64; 2]>>,
+    /// A polygon's number of sides, `MIN_SIDES` to `MAX_SIDES` (`DEFAULT_SIDES` when None); other shapes ignore it.
+    #[serde(default)]
+    pub sides: Option<u32>,
     /// Its place front to back: greater is nearer, and a nearer shape hides the parts of those behind it.
     #[serde(default)]
     pub depth: i32,
@@ -151,6 +158,14 @@ const ARC_POINTS: usize = 16;
 /// strays at most a * (1 - cos(pi / ELLIPSE_POINTS)) from the curve, a its longer half axis: 0.14 px for one as long as a
 /// crop's side (256 px).
 const ELLIPSE_POINTS: usize = 96;
+/// A polygon's fewest sides.
+pub const MIN_SIDES: u32 = 3;
+/// A polygon's most sides: more is a slip (an oval fits anything rounder).
+pub const MAX_SIDES: u32 = 64;
+/// A polygon's sides when the shape gives none.
+const DEFAULT_SIDES: u32 = 6;
+/// How near a crop point must be to a polygon's edge to count as on it, in pixels: the edge is the polygon's.
+const ON_EDGE_PX: f64 = 1e-9;
 /// The largest frame side, angle or face (pixels or degrees) a shape may have: anything past it is a slip.
 const MAX_VALUE: f64 = 1e5;
 
@@ -260,6 +275,32 @@ fn ellipse_outline(shape: &Shape) -> Vec<[f64; 2]> {
     }
 }
 
+/// A polygon's vertices on the crop, in order round it: its points placed by hand, when there are `MIN_SIDES` or more;
+/// else its sides' vertices on the ellipse of its turned frame, evenly spaced from the frame's top, clockwise.
+fn polygon_vertices(shape: &Shape) -> Vec<[f64; 2]> {
+    if let Some(points) = shape.points.as_ref().filter(|points| points.len() >= MIN_SIDES as usize) {
+        return points.clone();
+    }
+    let sides = shape.sides.unwrap_or(DEFAULT_SIDES).clamp(MIN_SIDES, MAX_SIDES);
+    let (half_w, half_h) = (shape.frame[2] / 2.0, shape.frame[3] / 2.0);
+    (0..sides)
+        .map(|vertex| {
+            let turn = (360.0 * f64::from(vertex) / f64::from(sides) - 90.0).to_radians();
+            to_crop(shape, half_w * turn.cos(), half_h * turn.sin())
+        })
+        .collect()
+}
+
+/// A polygon's outline: its vertices in order; with a third face, the hull of the polygon and the polygon moved by the
+/// face (exact for a convex polygon; for a concave one placed by hand, its box is still the sweep's).
+fn polygon_outline(shape: &Shape) -> Vec<[f64; 2]> {
+    let near = polygon_vertices(shape);
+    match shape.face {
+        None => near,
+        Some([dx, dy]) => convex_hull(near.iter().flat_map(|point| [*point, [point[0] + dx, point[1] + dy]]).collect()),
+    }
+}
+
 /// A solid shape's turn as a matrix, Rz(angle) Ry(swing) Rx(tip): a point of its own frame (along its width, across
 /// it, front to back) times the matrix is where the turn puts it.
 fn rotation(shape: &Shape, solid: &Solid) -> [[f64; 3]; 3] {
@@ -331,6 +372,7 @@ pub fn outline(shape: &Shape) -> Vec<[f64; 2]> {
         (ShapeKind::Pill, None) => pill_outline(shape),
         (ShapeKind::Box, None) => box_outline(shape),
         (ShapeKind::Ellipse, _) => ellipse_outline(shape),
+        (ShapeKind::Polygon, _) => polygon_outline(shape),
     }
 }
 
@@ -398,9 +440,42 @@ fn in_ellipse(shape: &Shape, x: f64, y: f64) -> bool {
     segment_distance([along * stretch, across], [0.0, 0.0], [face_along * stretch, face_across]) <= radius
 }
 
-/// Whether a crop point is inside a shape: an oval by `in_ellipse`; a pill holds the points within its radius of its middle segment (of the
-/// band it sweeps to its far end, with a third face; of its tipped axis, solid); a box those in its turned rectangle,
-/// or in its outline when it has a third face, is solid or has its vertices placed.
+/// Whether a crop point is in a polygon, convex or not (its vertices in order round it), by the even-odd rule; a point
+/// on an edge counts.
+fn in_polygon(polygon: &[[f64; 2]], x: f64, y: f64) -> bool {
+    let mut inside = false;
+    for (i, a) in polygon.iter().enumerate() {
+        let b = polygon[(i + 1) % polygon.len()];
+        if segment_distance([x, y], *a, b) <= ON_EDGE_PX {
+            return true;
+        }
+        if (a[1] > y) != (b[1] > y) && x < a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]) {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// Whether a crop point is in a polygon shape, or with a third face in what it sweeps to its far end: the polygon, the
+/// polygon moved by the face, or the band an edge sweeps between them (none for an edge along the face).
+fn in_polygon_shape(shape: &Shape, x: f64, y: f64) -> bool {
+    let near = polygon_vertices(shape);
+    let Some([dx, dy]) = shape.face else {
+        return in_polygon(&near, x, y);
+    };
+    let far: Vec<[f64; 2]> = near.iter().map(|point| [point[0] + dx, point[1] + dy]).collect();
+    let in_band = |i: usize| {
+        let j = (i + 1) % near.len();
+        let area = (near[j][0] - near[i][0]) * dy - (near[j][1] - near[i][1]) * dx;
+        area.abs() > f64::EPSILON && in_convex(&[near[i], near[j], far[j], far[i]], x, y)
+    };
+    in_polygon(&near, x, y) || in_polygon(&far, x, y) || (0..near.len()).any(in_band)
+}
+
+/// Whether a crop point is inside a shape: an oval by `in_ellipse`, a polygon by `in_polygon_shape`; a pill holds the
+/// points within its radius of its middle segment (of the band it sweeps to its far end, with a third face; of its
+/// tipped axis, solid); a box those in its turned rectangle, or in its outline when it has a third face, is solid or
+/// has its vertices placed.
 pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
     if free_points(shape).is_some() {
         return in_convex(&outline(shape), x, y);
@@ -408,13 +483,16 @@ pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
     if shape.kind == ShapeKind::Ellipse {
         return in_ellipse(shape, x, y);
     }
+    if shape.kind == ShapeKind::Polygon {
+        return in_polygon_shape(shape, x, y);
+    }
     if let Some(solid) = &shape.solid {
         return match shape.kind {
             ShapeKind::Pill => {
                 let [a, b] = solid_pill_segment(shape, solid);
                 segment_distance([x, y], a, b) <= pill_parts(shape).0
             }
-            ShapeKind::Box | ShapeKind::Ellipse => in_convex(&outline(shape), x, y),
+            ShapeKind::Box | ShapeKind::Ellipse | ShapeKind::Polygon => in_convex(&outline(shape), x, y),
         };
     }
     match (shape.kind, shape.face) {
@@ -431,6 +509,7 @@ pub fn contains(shape: &Shape, x: f64, y: f64) -> bool {
         }
         (ShapeKind::Box, Some(_)) => in_convex(&box_outline(shape), x, y),
         (ShapeKind::Ellipse, _) => in_ellipse(shape, x, y),
+        (ShapeKind::Polygon, _) => in_polygon_shape(shape, x, y),
     }
 }
 
@@ -442,7 +521,7 @@ fn bounds(shape: &Shape) -> [f64; 4] {
 }
 
 /// Why a scene cannot be saved, or Ok: every id once, sizes positive and finite, no oval solid or with its points
-/// placed, every joined or hiding id a shape's, no shape in two targets, and no occluder in a target.
+/// placed, no polygon solid or with too few or too many sides (or points placed), every joined or hiding id a shape's, no shape in two targets, and no occluder in a target.
 pub fn check(scene: &Scene) -> Result<(), String> {
     let mut ids = std::collections::HashSet::new();
     for shape in &scene.shapes {
@@ -468,6 +547,9 @@ pub fn check(scene: &Scene) -> Result<(), String> {
         if shape.kind == ShapeKind::Ellipse && (shape.solid.is_some() || shape.points.is_some()) {
             return Err(format!("the oval {} cannot be solid or have its points placed", shape.id));
         }
+        if shape.kind == ShapeKind::Polygon {
+            check_polygon(shape)?;
+        }
     }
     let mut joined = std::collections::HashSet::new();
     for id in scene.targets.iter().flatten().chain(&scene.occluders) {
@@ -477,6 +559,20 @@ pub fn check(scene: &Scene) -> Result<(), String> {
         if !joined.insert(id.as_str()) {
             return Err(format!("the shape {id} is in two targets, or a target and the occluders"));
         }
+    }
+    Ok(())
+}
+
+/// Why a polygon cannot be saved, or Ok: it is solid, or has fewer than `MIN_SIDES` or more than `MAX_SIDES` sides
+/// or points placed.
+fn check_polygon(shape: &Shape) -> Result<(), String> {
+    if shape.solid.is_some() {
+        return Err(format!("the polygon {} cannot be solid", shape.id));
+    }
+    let placed = shape.points.as_ref().map(|points| points.len() as u64);
+    let counts = [shape.sides.map(u64::from), placed];
+    if counts.into_iter().flatten().any(|count| count < u64::from(MIN_SIDES) || count > u64::from(MAX_SIDES)) {
+        return Err(format!("the polygon {} needs {MIN_SIDES} to {MAX_SIDES} sides", shape.id));
     }
     Ok(())
 }
@@ -660,6 +756,7 @@ mod tests {
             face: None,
             solid: None,
             points: None,
+            sides: None,
             depth,
             role: None,
             model: None,
@@ -787,6 +884,59 @@ mod tests {
             let scene = Scene { shapes: vec![refused], ..Scene::default() };
             assert!(check(&scene).unwrap_err().contains("oval"));
         }
+    }
+
+    /// A polygon of 4 sides turned 45 degrees is a square: a box's pixels; a hexagon's first vertex is at its frame's
+    /// top; one with a third face covers what it sweeps.
+    #[test]
+    fn a_polygon_inscribed_in_its_frame_covers_its_vertices_span() {
+        let side = 20.0 * std::f64::consts::SQRT_2;
+        let diamond =
+            Shape { sides: Some(4), angle: 45.0, ..shape("q", ShapeKind::Polygon, [64.5, 64.5, side, side], 0) };
+        let square = shape("b", ShapeKind::Box, [64.5, 64.5, 20.0, 20.0], 0);
+        let view = |one: &Shape| visible(&Scene { shapes: vec![one.clone()], ..Scene::default() }, SIDE, SIDE);
+        assert_eq!(view(&diamond).mask, view(&square).mask);
+        assert!(pixel(&view(&diamond).mask, 55, 55) && !pixel(&view(&diamond).mask, 54, 64));
+        let hexagon = shape("h", ShapeKind::Polygon, [64.0, 64.0, 20.0, 20.0], 0);
+        assert_eq!(outline(&hexagon).len(), 6, "six sides when none are given");
+        assert!(contains(&hexagon, 64.0, 54.0 + 0.1) && !contains(&hexagon, 64.0, 54.0 - 0.1), "the top vertex");
+        assert!(!contains(&hexagon, 64.0 + 9.0, 64.0 - 6.0), "past the top right edge");
+        let deep = Shape { face: Some([20.0, 0.0]), ..hexagon };
+        assert!(contains(&deep, 74.0, 55.0) && contains(&deep, 92.0, 64.0) && !contains(&deep, 95.0, 64.0));
+        let [x0, _, x1, _] = bounds(&deep);
+        assert!(
+            (x0 - (64.0 - 10.0 * 0.75_f64.sqrt())).abs() < 1e-9 && (x1 - (84.0 + 10.0 * 0.75_f64.sqrt())).abs() < 1e-9
+        );
+    }
+
+    /// A polygon placed vertex by vertex covers what its vertices enclose in order, a notch included, its edges too;
+    /// fewer than 3 sides, or a solid polygon, is refused.
+    #[test]
+    fn a_polygon_placed_by_hand_covers_what_its_vertices_enclose() {
+        let placed = |points: Vec<[f64; 2]>| Shape {
+            points: Some(points),
+            ..shape("t", ShapeKind::Polygon, [64.0, 64.0, 20.0, 20.0], 0)
+        };
+        let triangle = placed(vec![[10.0, 10.0], [30.0, 10.0], [10.0, 30.0]]);
+        let seen = visible(&Scene { shapes: vec![triangle.clone()], ..Scene::default() }, SIDE, SIDE).mask;
+        assert!(
+            pixel(&seen, 10, 10) && pixel(&seen, 20, 20) && pixel(&seen, 15, 15),
+            "a vertex, the long edge, inside"
+        );
+        assert!(
+            !pixel(&seen, 21, 20) && !pixel(&seen, 9, 15) && !pixel(&seen, 64, 64),
+            "outside, and its frame's middle"
+        );
+        assert_eq!(from_runs(&seen, SIDE * SIDE).iter().filter(|&&set| set != 0).count(), 21 * 22 / 2);
+        let notched = placed(vec![[10.0, 10.0], [40.0, 10.0], [40.0, 40.0], [25.0, 20.0], [10.0, 40.0]]);
+        assert!(contains(&notched, 25.0, 15.0) && contains(&notched, 35.0, 30.0) && contains(&notched, 12.0, 30.0));
+        assert!(!contains(&notched, 25.0, 30.0), "the notch");
+        let refused = |one: Shape| check(&Scene { shapes: vec![one], ..Scene::default() }).unwrap_err();
+        let two_sided = Shape { sides: Some(2), ..shape("p", ShapeKind::Polygon, [64.0, 64.0, 20.0, 20.0], 0) };
+        assert!(refused(two_sided).contains("3 to 64 sides"));
+        assert!(refused(placed(vec![[10.0, 10.0], [30.0, 10.0]])).contains("sides"));
+        let solid = Shape { solid: Some(Solid { thickness: 5.0, tip: 0.0, swing: 0.0 }), ..triangle };
+        assert!(refused(solid).contains("solid"));
     }
 
     /// A solid box tipped or swung shows its thickness, a capsule end on is a disc, and a solid of no thickness is
