@@ -5,18 +5,15 @@
 
 use std::path::{Path, PathBuf};
 
+use aimview::dates::{civil_from_days, days_from_civil};
+
 /// A file-name time stamp's form (yyyy.mm.dd-hh.mm.ss): its separators in their places; each 0 is a number's digit.
 const STAMP_FORM: &[u8; 19] = b"0000.00.00-00.00.00";
 /// Added to a year written as 00yy: some KovOBS recordings from June 2026 are named with the year 0026.
 const MISSING_CENTURIES: i64 = 2000;
-/// Howard Hinnant's civil calendar: the years in an era (the Gregorian calendar's 400-year cycle).
-const YEARS_PER_ERA: i64 = 400;
-/// The days in an era.
-const DAYS_PER_ERA: i64 = 146_097;
-/// The days from 0000-03-01 to 1970-01-01.
-const DAYS_TO_UNIX_EPOCH: i64 = 719_468;
-/// The days from 0000-03-01 to 2000-01-01.
-const DAYS_TO_2000: i64 = 730_425;
+/// The days from 1970-01-01, where the core's civil dates count from (src/dates.rs), to 2000-01-01, where a stamp's
+/// seconds count from.
+const DAYS_1970_TO_2000: i64 = 10_957;
 /// The seconds in a day.
 const SECONDS_PER_DAY: i64 = 86_400;
 /// The seconds in an hour.
@@ -62,32 +59,6 @@ pub fn parse_stats_name(name: &str) -> Option<(String, String)> {
     stamp_seconds(stamp).map(|_| (scenario.to_string(), stamp.to_string()))
 }
 
-/// Days from 2000-01-01 to a civil date (Howard Hinnant's `days_from_civil`, counting years from March so that a
-/// leap day ends the year).
-fn days_since_2000(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(YEARS_PER_ERA);
-    let year_of_era = year - era * YEARS_PER_ERA;
-    // the days before the month, counted from March: its lengths follow (153 * month + 2) / 5
-    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * DAYS_PER_ERA + day_of_era - DAYS_TO_2000
-}
-
-/// The civil date (year, month, day) of a day counted from 1970-01-01 (Howard Hinnant's `civil_from_days`).
-fn civil_from_days(days: i64) -> (i64, i64, i64) {
-    let from_march_0000 = days + DAYS_TO_UNIX_EPOCH;
-    let era = from_march_0000.div_euclid(DAYS_PER_ERA);
-    let day_of_era = from_march_0000 - era * DAYS_PER_ERA;
-    // the leap days so far in the era taken out, so 365 days make each year
-    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_from_march = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
-    let month = if month_from_march < 10 { month_from_march + 3 } else { month_from_march - 9 };
-    (year_of_era + era * YEARS_PER_ERA + i64::from(month <= 2), month, day)
-}
-
 /// A file-name time stamp (yyyy.mm.dd-hh.mm.ss, local time) as seconds from 2000-01-01, for differences only. Some
 /// KovOBS recordings from June 2026 are named with the year 0026: read as 2026.
 pub fn stamp_seconds(stamp: &str) -> Option<f64> {
@@ -108,7 +79,7 @@ pub fn stamp_seconds(stamp: &str) -> Option<f64> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
         return None;
     }
-    let days = days_since_2000(year, month, day);
+    let days = days_from_civil(year, month, day) - DAYS_1970_TO_2000;
     Some((days * SECONDS_PER_DAY + hour * SECONDS_PER_HOUR + minute * SECONDS_PER_MINUTE + second) as f64)
 }
 

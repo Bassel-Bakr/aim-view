@@ -52,7 +52,7 @@ pub enum Part {
     Tracks,
     /// The camera's turn per frame and KovaaK's countdown bar (readings.json; the core's camera.rs).
     Readings,
-    /// What the HUD read (hud.json; the core's hud.rs).
+    /// What the HUD read (hud.json; the core's src/hud/).
     Hud,
     /// The check of the kills the video alone gives, made only without a stats file (kills.json; the core's
     /// kill_check.rs).
