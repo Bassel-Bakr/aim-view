@@ -9,7 +9,8 @@ files (.npz, searched below it; a manifest.jsonl there names each crop's recordi
 of the file's name). A crop file holds rgb (the 256 x 256 crop) and boxes ([cx, cy, w, h] in crop pixels), and may hold
 scores, why, mined (the rule that mined it) and fix: for a rule whose name starts with "false", the box the rule thinks
 is no target, added after the others and shown crossed out, so Right agrees. A picks line may add folder, kind, why and
-rule. Running it again for a set replaces that set.
+rule, and boxes, scores and preset to show instead of the crop file's (second_look.py's). Running it again for a set
+replaces that set.
 
 --title names the set's tab; --crossed-out is the note shown over a crop with a crossed-out box; --no-learn keeps the
 set's answers out of the page's suggestions (a second pass over crops already checked, such as Tighten).
@@ -61,8 +62,9 @@ def from_picks(set_name, picks):
     for line in picks.read_text(encoding="utf8").splitlines():
         pick = json.loads(line)
         crop = np.load(picks.parent / pick["file"], allow_pickle=True)
-        yield crop, entry(set_name, pick["file"], crop, pick.get("folder", ""), pick.get("kind", ""),
-                          pick.get("why", []), pick.get("rule"))
+        row = entry(set_name, pick["file"], crop, pick.get("folder", ""), pick.get("kind", ""), pick.get("why", []),
+                    pick.get("rule"))
+        yield crop, row | {key: pick[key] for key in ("boxes", "scores", "preset") if key in pick}
 
 
 def from_folder(set_name, folder):

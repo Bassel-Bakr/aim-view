@@ -57,6 +57,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | rust-tests | profile quick | 28.4 s | 28.4 s | 9 | 2026-10-08, 6d5bc9d+ |
 | rust-tests-build | profile quick, linker link.exe, change edit | 13.1 s | 13.1 s | 1 | 2026-10-08, 433f4a8+ |
 | rust-tests-build | profile quick, linker rust-lld, change edit | 12.2 s | 12.2 s | 1 | 2026-10-08, 433f4a8+ |
+| second_look | - | 5.5 s | 5.5 s | 1 | 2026-10-09, f7ed20a+ |
 | server-build | profile local, linker link.exe | 2.3 s | 2.3 s | 1 | 2026-10-08, 433f4a8+ |
 | server-build | profile local, linker link.exe, change edit | 6 s | 6.0 s | 1 | 2026-10-08, 433f4a8+ |
 | server-build | profile local, linker rust-lld, change edit | 5.6 s | 5.6 s | 1 | 2026-10-08, 433f4a8+ |
