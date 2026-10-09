@@ -39,10 +39,7 @@ out in yellow) to look over.
 Usage: python python/model/build_auto_labels.py <out> <model> [--match tile] [--kinds static,dynamic,switching]
        [--recordings 40] [--per-recording 25] [--seed 0]
 """
-import argparse
-import hashlib
 import json
-import random
 import sys
 from pathlib import Path
 
@@ -54,13 +51,11 @@ from scipy.spatial import ConvexHull, QhullError
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
-import aimview_tools  # noqa: E402
-import build_data  # noqa: E402
-import build_disagreements  # noqa: E402
-import build_kill_feedback  # noqa: E402
 import build_mined  # noqa: E402
+import crop_batch  # noqa: E402
 import eval_video_alone  # noqa: E402
 import old_review  # noqa: E402
+from crop_batch import boxes_px  # noqa: E402
 
 CROP, JITTER_PX = build_mined.CROP, build_mined.JITTER_PX
 WIDTH, HEIGHT = build_mined.WIDTH, build_mined.HEIGHT
@@ -284,7 +279,7 @@ def gone_crop(kill, place, frames, decoded, fixed):
                     at[0] - CROSSHAIR_REACH_PX:at[0] + CROSSHAIR_REACH_PX + 1]
     if near.any():
         return None
-    model_boxes = [(box[0] - x0, box[1] - y0, box[2], box[3]) for box in build_disagreements.boxes_px(frames[later])
+    model_boxes = [(box[0] - x0, box[1] - y0, box[2], box[3]) for box in boxes_px(frames[later])
                    if x0 <= box[0] < x0 + CROP and y0 <= box[1] < y0 + CROP]
     boxes, ignore, mask = others(rgb, crop_fixed, found, (0, *size), model_boxes)
     return later, rgb, crop_fixed, boxes, ignore, mask.astype(np.uint8)
@@ -308,7 +303,7 @@ def crop_kill(kill, frames, decoded, fixed, rnd):
         frame = kill - back
         if frame not in decoded:
             continue
-        model_boxes = [(box[0] - x0, box[1] - y0, box[2], box[3]) for box in build_disagreements.boxes_px(frames[frame])
+        model_boxes = [(box[0] - x0, box[1] - y0, box[2], box[3]) for box in boxes_px(frames[frame])
                        if x0 <= box[0] < x0 + CROP and y0 <= box[1] < y0 + CROP]
         rgb, crop_fixed = decoded[frame][window], fixed[window]
         labels = label_crop(rgb, crop_fixed, at, model_boxes)
@@ -327,8 +322,8 @@ def crops_of(lib, video, stats, args, rnd):
     picked = sorted(rnd.sample(missed, min(args.per_recording, len(missed))))
     wanted = {kill - back for kill in picked for back in LOOK_BACK} | {kill + GONE_FRAMES for kill in picked}
     decoded = build_mined.decode(video, sorted(frame for frame in wanted if 0 <= frame < len(frames)))
-    fixed = old_review.fixed_map(build_data.keyframes(video, "yuv420p")).astype(bool)
-    stem = hashlib.md5(video.name.encode()).hexdigest()[:10]
+    fixed = crop_batch.fixed_mask(video, bool)
+    stem = crop_batch.recording_stem(video)
     (args.out / "train").mkdir(parents=True, exist_ok=True)
     written = gone = 0
     for kill in picked:
@@ -353,62 +348,47 @@ def crops_of(lib, video, stats, args, rnd):
 def save_crop(path, crop, why):
     """A crop (frame, rgb, fixed, boxes, ignore, mask) as an npz like build_kill_feedback.py's."""
     frame, rgb, crop_fixed, boxes, ignore, mask = crop
-    np.savez_compressed(path, rgb=rgb, fixed=crop_fixed.astype(np.uint8), tmask=mask,
-                        boxes=np.array(boxes, np.float32).reshape(-1, 4), scores=np.ones(len(boxes), np.float32),
-                        mined=np.str_("auto_kill"), frame=np.int32(frame), why=np.str_(why),
-                        ignore=np.array(ignore, np.float32).reshape(-1, 4))
+    crop_batch.save_crop_npz(path, rgb, crop_fixed.astype(np.uint8), mask, np.array(boxes, np.float32).reshape(-1, 4),
+                             np.ones(len(boxes), np.float32), frame, why, mined="auto_kill",
+                             ignore=np.array(ignore, np.float32).reshape(-1, 4))
 
 
 def draw_sheet(files, path):
     """Every saved crop at THUMB px: each target's outline (its mask's edge) in green, the ignored boxes in yellow."""
-    rows = (len(files) + SHEET_COLUMNS - 1) // SHEET_COLUMNS
-    page = Image.new("RGB", (SHEET_COLUMNS * THUMB, max(1, rows) * THUMB))
-    scale = THUMB / CROP
-    for n, file in enumerate(files):
-        crop = np.load(file)
-        rgb = crop["rgb"].copy()
-        mask = crop["tmask"].astype(bool)
-        rgb[mask & ~ndimage.binary_erosion(mask)] = (0, 255, 0)
-        thumb = Image.fromarray(rgb).resize((THUMB, THUMB))
-        pen = ImageDraw.Draw(thumb)
-        for cx, cy, width, height in crop["ignore"]:
-            pen.rectangle([(cx - width / 2) * scale, (cy - height / 2) * scale, (cx + width / 2) * scale,
-                           (cy + height / 2) * scale], outline="yellow")
-        page.paste(thumb, (n % SHEET_COLUMNS * THUMB, n // SHEET_COLUMNS * THUMB))
-    page.save(path)
+    crop_batch.draw_sheet(files, path, [crop_batch.boxes_layer("ignore", "yellow")], SHEET_COLUMNS, THUMB,
+                          recolor=crop_batch.outline_mask)
 
 
-def picked_recordings(lib, kinds, words, count, rnd):
-    """build_kill_feedback.recordings for each kind, together, in random order: `count` of them."""
-    pairs = [pair for kind in kinds for pair in build_kill_feedback.recordings(lib, kind, words, count, rnd)
+def picked_recordings(lib, args, rnd):
+    """crop_batch.recordings for each of --kinds whose scenario has one of --match's words, outside LEFT_OUT,
+    together, in random order: --recordings of them, as (video, stats file) pairs."""
+    words = [word.strip().lower() for word in args.match.split(",")]
+    pairs = [pair for kind in args.kinds.split(",")
+             for pair in crop_batch.recordings(lib, kind, words, args.recordings, rnd)
              if not any(word in pair[0].name.lower() for word in LEFT_OUT)]
     rnd.shuffle(pairs)
-    return pairs[:count]
+    return pairs[:args.recordings]
 
 
-def main():
-    """Picks the recordings, writes their crops, the manifest and both sheets, and prints the counts."""
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("out", type=Path)
-    parser.add_argument("model")
+def add_arguments(parser):
+    """The arguments besides crop_batch.run_builder's: which recordings, and how many kills of each to try."""
     parser.add_argument("--match", default="tile", help="comma-separated words, one of which the scenario's name has")
     parser.add_argument("--kinds", default="static,dynamic,switching")
     parser.add_argument("--recordings", type=int, default=40)
     parser.add_argument("--per-recording", type=int, default=25)
-    parser.add_argument("--seed", type=int, default=0)
-    args = parser.parse_args()
-    rnd = random.Random(args.seed)
-    lib = aimview_tools.Library()
-    args.program = eval_video_alone.review_program()
-    words = [word.strip().lower() for word in args.match.split(",")]
-    picked = picked_recordings(lib, args.kinds.split(","), words, args.recordings, rnd)
-    rows = [crops_of(lib, video, stats, args, rnd) for video, stats in picked]
-    args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "manifest.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+
+def finish(rows, args):
+    """Both sheets, and the counts."""
     draw_sheet(sorted((args.out / "train").glob(f"{TAG}*.npz")), args.out / "sheet.png")
     draw_sheet(sorted((args.out / "train").glob(f"{GONE_TAG}*.npz")), args.out / "sheet_gone.png")
     print(f"{sum(row['crops'] for row in rows)} crops and {sum(row.get('gone', 0) for row in rows)} with the target "
           f"gone from {len(rows)} recordings in {args.out}")
+
+
+def main():
+    """Picks the recordings, writes their crops, the manifest and both sheets, and prints the counts."""
+    crop_batch.run_builder(__doc__.split("\n\n")[0], add_arguments, picked_recordings, crops_of, finish)
 
 
 if __name__ == "__main__":

@@ -43,7 +43,6 @@ Usage: python python/model/build_merged_pairs.py <out> [--model large_v13e4] [--
        [--more 30] [--crops 120] [--seed 0] [--page <folder>]
 """
 import argparse
-import hashlib
 import json
 import random
 import re
@@ -55,18 +54,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from PIL import Image, ImageDraw
 from scipy import ndimage
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import aimview_tools  # noqa: E402
-import build_auto_labels as auto  # noqa: E402
-import build_data  # noqa: E402
-import build_disagreements  # noqa: E402
-import build_label_batch as batch  # noqa: E402
+import build_auto_labels as auto  # noqa: E402  the pixel rules
+import build_label_batch as batch  # noqa: E402  the recordings, their reviews and their target's color
 import build_mined  # noqa: E402
+import crop_batch  # noqa: E402
+from crop_batch import boxes_px  # noqa: E402
 import eval_video_alone  # noqa: E402
 import infer  # noqa: E402
 import label_score  # noqa: E402
@@ -175,7 +173,7 @@ def recording_stretch(frames, window):
     side of MIN_SIDE_PX or more) of their width over height against a sphere's there (sphere_aspect), 1 without any.
     Many players stretch a 4:3 picture to 16:9, so every sphere shows about 1.33 times as wide."""
     ratios = [box[2] / box[3] / sphere_aspect(*box[:2]) for frame in range(window[0], window[1] + 1)
-              for box in build_disagreements.boxes_px(frames[frame]) if min(box[2:4]) >= MIN_SIDE_PX]
+              for box in boxes_px(frames[frame]) if min(box[2:4]) >= MIN_SIDE_PX]
     return float(np.median(ratios)) if ratios else 1.0
 
 
@@ -194,7 +192,7 @@ def merged_elongation(box, smear, stretch):
 def frame_candidates(frames, frame, stretch):
     """A frame's best candidate of each kind: {kind: (strength, box indexes)}, the strength how many times a merged
     box is as long as wide (merged_elongation, its target's smear from smear_px), or a pair's IoU."""
-    boxes, best = build_disagreements.boxes_px(frames[frame]), {}
+    boxes, best = boxes_px(frames[frame]), {}
     for i, box in enumerate(boxes):
         elongation = merged_elongation(box, smear_px(frames, frame, frames[frame]["t"][i][0]), stretch)
         if min(box[2:4]) >= MIN_SIDE_PX and elongation >= MERGE_ASPECT and inside_frame(box):
@@ -245,7 +243,7 @@ def reviewed_recordings(lib, picks, args):
         cached = root == args.cached
         review_args = SimpleNamespace(out=root, model=args.model, program=args.program)
         folder_of, frames, fps, offset = batch.reviewed(lib, video, stats, review_args)
-        row = dict(stem=hashlib.md5(video.name.encode()).hexdigest()[:10], folder=video.parent.name, kind=kind,
+        row = dict(stem=crop_batch.recording_stem(video), folder=video.parent.name, kind=kind,
                    scenario=scenario, video=str(video), stats=str(stats), cached=cached, frames=frames, fps=fps,
                    offset=offset, candidates=[], frames_with={})
         window = batch.run_window(folder_of, stats, fps, len(frames), offset)
@@ -375,7 +373,7 @@ def crops_of(row, rnd):
     kills = color_kills(row, rnd)
     decoded = build_mined.decode(video, sorted({frame for _, _, frame, _ in row["candidates"]}
                                                | {kill - back for kill in kills for back in LOOK_BACK}))
-    fixed = old_review.fixed_map(build_data.keyframes(video, "yuv420p")).astype(bool)
+    fixed = crop_batch.fixed_mask(video, bool)
     color, source, count = batch.learned_color(video, row["frames"], row["window"], kills, decoded, fixed)
     row.update(color_source=source, color_count=count, color=None if color is None else color.round(1).tolist())
     crops = [crop_candidate(decoded[candidate[2]], fixed, row, candidate, color, rnd)
@@ -388,7 +386,7 @@ def crops_of(row, rnd):
 def crop_candidate(frame_rgb, fixed, row, candidate, color, rnd):
     """One candidate cropped and labelled: {name, kind, rank, why, arrays} (the arrays as the crop file holds them)."""
     kind, rank, frame, indexes = candidate
-    boxes = build_disagreements.boxes_px(row["frames"][frame])
+    boxes = boxes_px(row["frames"][frame])
     union = (min(boxes[i][0] - boxes[i][2] / 2 for i in indexes), min(boxes[i][1] - boxes[i][3] / 2 for i in indexes),
              max(boxes[i][0] + boxes[i][2] / 2 for i in indexes), max(boxes[i][1] + boxes[i][3] / 2 for i in indexes))
     x0, y0 = crop_corner(union, rnd)
@@ -398,12 +396,12 @@ def crop_candidate(frame_rgb, fixed, row, candidate, color, rnd):
     chosen = [in_crop.index(i) for i in indexes]
     labels, scores, sources, split, why = proposed(rgb, crop_fixed, color, model, chosen, ((x0, y0), row["stretch"]))
     labels = np.array(labels, np.float32).reshape(-1, 4)
-    arrays = dict(rgb=rgb, fixed=crop_fixed.astype(np.uint8), tmask=teacher_label.pill_mask(labels, (CROP, CROP)),
-                  boxes=labels, scores=np.array(scores, np.float32), mined=np.str_(SET_NAME), frame=np.int32(frame),
-                  why=np.str_(why), sources=np.array(sources, dtype=np.str_), candidate=np.str_(kind),
-                  model_boxes=np.array([box[:4] for box in model], np.float32).reshape(-1, 4),
-                  model_scores=np.array([box[4] for box in model], np.float32),
-                  pixel_boxes=np.array(split, np.float32).reshape(-1, 4))
+    arrays = crop_batch.crop_arrays(rgb, crop_fixed.astype(np.uint8), teacher_label.pill_mask(labels, (CROP, CROP)),
+                                    labels, scores, frame, why, mined=SET_NAME,
+                                    sources=np.array(sources, dtype=np.str_), candidate=np.str_(kind),
+                                    model_boxes=np.array([box[:4] for box in model], np.float32).reshape(-1, 4),
+                                    model_scores=np.array([box[4] for box in model], np.float32),
+                                    pixel_boxes=np.array(split, np.float32).reshape(-1, 4))
     return dict(name=f"{row['stem']}_{frame:05d}.npz", stem=row["stem"], kind=kind, rank=rank, why=why,
                 arrays=arrays)
 
@@ -437,28 +435,14 @@ def keep_crops(crops, count, out, rnd):
 def draw_sheet(files, path):
     """The crops at full size, SHEET_COLUMNS a row: model boxes blue, then the crop's boxes green over them, and its
     why's tag (S split, U unsplit) in the corner."""
-    rows = max(1, (len(files) + SHEET_COLUMNS - 1) // SHEET_COLUMNS)
-    page = Image.new("RGB", (SHEET_COLUMNS * CROP, rows * CROP))
-    for n, file in enumerate(files):
-        crop = np.load(file)
-        thumb = Image.fromarray(crop["rgb"])
-        pen = ImageDraw.Draw(thumb)
-        for name, color in (("model_boxes", "blue"), ("boxes", "lime")):
-            for cx, cy, width, height in crop[name]:
-                pen.rectangle([cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2], outline=color)
-        tag = "S" if str(crop["why"]).startswith("split") else "U"
-        pen.text((4, 4), f"{tag} {str(crop['candidate'])[0]} {file.stem}", fill="yellow")
-        page.paste(thumb, (n % SHEET_COLUMNS * CROP, n // SHEET_COLUMNS * CROP))
-    page.save(path)
+    crop_batch.draw_sheet(files, path, [crop_batch.boxes_layer("model_boxes", "blue"),
+                                        crop_batch.boxes_layer("boxes", "lime"), why_tag], SHEET_COLUMNS)
 
 
-def retire_old_crops(out):
-    """Moves the crops a run before left in <out>/crops to <out>/retired/crops/ (nothing is deleted)."""
-    old = sorted((out / "crops").glob("*.npz"))
-    if old:
-        (out / "retired" / "crops").mkdir(parents=True, exist_ok=True)
-        for path in old:
-            path.replace(out / "retired" / "crops" / path.name)
+def why_tag(pen, crop, file, scale):
+    """A sheet layer: the crop's why's tag (S split, U unsplit), its candidate's kind's letter and its file's stem."""
+    tag = "S" if str(crop["why"]).startswith("split") else "U"
+    pen.text((4, 4), f"{tag} {str(crop['candidate'])[0]} {file.stem}", fill="yellow")
 
 
 def write_outputs(recordings, totals, args):
@@ -466,9 +450,7 @@ def write_outputs(recordings, totals, args):
     the page's set; gives the summary without the recordings."""
     crops = args.out / "crops"
     crops.mkdir(parents=True, exist_ok=True)
-    keys = ("stem", "folder", "kind", "scenario", "video")
-    (crops / "manifest.jsonl").write_text("".join(json.dumps({key: row[key] for key in keys}) + "\n"
-                                                  for row in recordings), encoding="utf-8")
+    crop_batch.write_manifest(crops / "manifest.jsonl", recordings, batch.MANIFEST_KEYS)
     saved = sorted(crops.glob("*.npz"))
     draw_sheet(saved[:SHEET_CROPS], crops / "sheet.png")
     for row in recordings:
@@ -507,7 +489,7 @@ def main():
     args.program = eval_video_alone.review_program()
     recordings = reviewed_recordings(lib, pick_recordings(lib, args, rnd), args)
     crops = [crop for row in recordings if row["candidates"] for crop in crops_of(row, rnd)]
-    retire_old_crops(args.out)
+    crop_batch.retire_old(args.out, ("crops",))
     totals = keep_crops(crops, args.crops, args.out, rnd)
     summary = write_outputs(recordings, totals, args)
     print(json.dumps(summary, indent=1, default=str))

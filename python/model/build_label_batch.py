@@ -15,7 +15,7 @@ crosshair; the median over the kills that give one, MIN_COLOR_KILLS or more. Sho
 no kills), the same at up to ON_TARGET_FRAMES frames where the crosshair lies in a model box; short again, the
 recording has no color. A pixel part may be as long against its width as HITBOX_SLACK times the scenario's hitbox
 (build_auto_labels.MAX_ASPECT at least), so a thin pole can be a target. Then
---per-recording frames spread evenly over the run window (build_disagreements.run_window: after KovaaK's countdown, to
+--per-recording frames spread evenly over the run window (crop_batch.run_window: after KovaaK's countdown, to
 the stats file's length; without a countdown, the challenge's span from the stats file) give a 256 x 256 crop each,
 every other one round the crosshair and the rest round a random model box of the frame, shifted up to 48 px at random.
 
@@ -37,7 +37,6 @@ Usage: python python/model/build_label_batch.py <out> [--model large_v13e4] [--r
        [--seed 0] [--pages <folder>]
 """
 import argparse
-import hashlib
 import json
 import random
 import re
@@ -47,18 +46,15 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
 from scipy.spatial import ConvexHull, QhullError
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import aimview_tools  # noqa: E402
-import build_auto_labels as auto  # noqa: E402
-import build_data  # noqa: E402
-import build_disagreements  # noqa: E402
-import build_kill_feedback  # noqa: E402
+import build_auto_labels as auto  # noqa: E402  the pixel rules
 import build_mined  # noqa: E402
+import crop_batch  # noqa: E402
 import eval_video_alone  # noqa: E402
 import infer  # noqa: E402
 import label_score  # noqa: E402
@@ -90,17 +86,7 @@ PARTS = ("agreed", "review", "robots")
 SETS = {"review": ("auto_review", "Auto labels: model and pixels disagree, or no color"),
         "robots": ("auto_robots", "Auto labels: robots (the model's boxes)"),
         "agreed": ("auto_agreed_sample", "Auto labels: model and pixels agree (a sample)")}
-
-
-def retire_old_crops(out):
-    """Moves the crops a run before left in the parts to <out>/retired/<part>/ (nothing is deleted), so a rerun's parts
-    hold only its own crops; the reviews stay for it to reuse."""
-    for part in PARTS:
-        old = sorted((out / part).glob("*.npz"))
-        if old:
-            (out / "retired" / part).mkdir(parents=True, exist_ok=True)
-            for path in old:
-                path.replace(out / "retired" / part / path.name)
+MANIFEST_KEYS = ("stem", "folder", "kind", "scenario", "video")
 
 
 def dataset_folders():
@@ -144,7 +130,7 @@ def quotas_for(count):
 def candidates(lib):
     """{scenario: [(video, stats file)]}: the recordings with a stats file, outside the gate and LEFT_OUT, of a kind
     with a quota, under MAX_VIDEO_BYTES."""
-    facts, gate = lib.scenarios(), build_kill_feedback.gate_videos(lib)
+    facts, gate = lib.scenarios(), crop_batch.gate_videos(lib)
     found = defaultdict(list)
     for row in lib.list():
         more, scenario = lib.by_id[row["id"]], row["scenario"]
@@ -193,9 +179,9 @@ def reviewed(lib, video, stats, args):
 
 
 def run_window(folder_of, stats, fps, frame_count, offset):
-    """The run's frames (first, last): build_disagreements.run_window, or without a countdown the challenge's span
-    from the stats file, EDGE_S in from each end; None without either."""
-    window = build_disagreements.run_window(folder_of, stats, fps, frame_count)
+    """The run's frames (first, last): crop_batch.run_window, or without a countdown the challenge's span from the
+    stats file, EDGE_S in from each end; None without either."""
+    window = crop_batch.run_window(folder_of, stats, fps, frame_count)
     if window is not None or offset is None:
         return window
     first, last = eval_video_alone.challenge(stats, offset, fps)
@@ -232,7 +218,7 @@ def on_target(frames, window):
     x, y = old_review.to_px(0, 0)
     return [i for i in range(window[0], window[1] + 1)
             if any(abs(box[0] - x) <= box[2] / 2 - INSIDE_PX and abs(box[1] - y) <= box[3] / 2 - INSIDE_PX
-                   for box in build_disagreements.boxes_px(frames[i]))]
+                   for box in crop_batch.boxes_px(frames[i]))]
 
 
 def on_target_colors(video, frames, window, fixed):
@@ -343,13 +329,11 @@ def save_crop(path, rgb, crop_fixed, labels, model, pixel, frame, why):
     part, boxes, scores, sources = labels
     boxes = np.array(boxes, np.float32).reshape(-1, 4)
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, rgb=rgb, fixed=crop_fixed.astype(np.uint8),
-                        tmask=teacher_label.pill_mask(boxes, (CROP, CROP)), boxes=boxes,
-                        scores=np.array(scores, np.float32), mined=np.str_("auto_batch"), frame=np.int32(frame),
-                        why=np.str_(why), sources=np.array(sources, dtype=np.str_),
-                        model_boxes=np.array([box[:4] for box in model], np.float32).reshape(-1, 4),
-                        model_scores=np.array([box[4] for box in model], np.float32),
-                        pixel_boxes=np.array(pixel, np.float32).reshape(-1, 4))
+    crop_batch.save_crop_npz(path, rgb, crop_fixed.astype(np.uint8), teacher_label.pill_mask(boxes, (CROP, CROP)),
+                             boxes, scores, frame, why, mined="auto_batch", sources=np.array(sources, dtype=np.str_),
+                             model_boxes=np.array([box[:4] for box in model], np.float32).reshape(-1, 4),
+                             model_scores=np.array([box[4] for box in model], np.float32),
+                             pixel_boxes=np.array(pixel, np.float32).reshape(-1, 4))
 
 
 def why_of(part, sources, color, row):
@@ -375,7 +359,7 @@ def crops_of(lib, video, stats, scenario, kind, args, rnd, totals):
     facts = lib.scenarios()[scenario.lower()]
     robot = is_robot(kind, scenario.lower(), facts)
     folder_of, frames, fps, offset = reviewed(lib, video, stats, args)
-    row = dict(stem=hashlib.md5(video.name.encode()).hexdigest()[:10], folder=video.parent.name, kind=kind,
+    row = dict(stem=crop_batch.recording_stem(video), folder=video.parent.name, kind=kind,
                scenario=scenario, video=str(video), robot=robot, crops=Counter())
     window = run_window(folder_of, stats, fps, len(frames), offset)
     if window is None:
@@ -388,7 +372,7 @@ def crops_of(lib, video, stats, scenario, kind, args, rnd, totals):
                  if kill > max(LOOK_BACK)]
         kills = sorted(rnd.sample(truth, min(COLOR_KILLS, len(truth))))
     decoded = build_mined.decode(video, sorted(set(picks) | {kill - back for kill in kills for back in LOOK_BACK}))
-    fixed = old_review.fixed_map(build_data.keyframes(video, "yuv420p")).astype(bool)
+    fixed = crop_batch.fixed_mask(video, bool)
     color, source, count = (None, "none", 0) if robot else learned_color(video, frames, window, kills, decoded, fixed)
     row.update(kills=len(kills), color_source=source, color_count=count, max_aspect=round(longest_aspect(facts), 2),
                color=None if color is None else color.round(1).tolist())
@@ -402,7 +386,7 @@ def crops_of(lib, video, stats, scenario, kind, args, rnd, totals):
 def crop_frame(frame_rgb, fixed, tracks_frame, frame, n, row, color, args, rnd, totals):
     """Labels and saves one frame's crop: the even picks round the crosshair, the odd ones round a random model box
     (the crosshair when the frame has none)."""
-    boxes = build_disagreements.boxes_px(tracks_frame)
+    boxes = crop_batch.boxes_px(tracks_frame)
     center = rnd.choice(boxes)[:2] if n % 2 and boxes else old_review.to_px(0, 0)
     x0, y0 = corner_round(center, rnd)
     rgb, crop_fixed = frame_rgb[y0:y0 + CROP, x0:x0 + CROP], fixed[y0:y0 + CROP, x0:x0 + CROP]
@@ -426,27 +410,16 @@ def crop_frame(frame_rgb, fixed, tracks_frame, frame, n, row, color, args, rnd, 
 
 def draw_sheet(files, path):
     """The crops at full size, SHEET_COLUMNS a row: pixel boxes green, model boxes blue."""
-    rows = max(1, (len(files) + SHEET_COLUMNS - 1) // SHEET_COLUMNS)
-    page = Image.new("RGB", (SHEET_COLUMNS * CROP, rows * CROP))
-    for n, file in enumerate(files):
-        crop = np.load(file)
-        thumb = Image.fromarray(crop["rgb"])
-        pen = ImageDraw.Draw(thumb)
-        for name, color in (("model_boxes", "blue"), ("pixel_boxes", "lime")):
-            for cx, cy, width, height in crop[name]:
-                pen.rectangle([cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2], outline=color)
-        page.paste(thumb, (n % SHEET_COLUMNS * CROP, n // SHEET_COLUMNS * CROP))
-    page.save(path)
+    crop_batch.draw_sheet(files, path, [crop_batch.boxes_layer("model_boxes", "blue"),
+                                        crop_batch.boxes_layer("pixel_boxes", "lime")], SHEET_COLUMNS)
 
 
 def write_parts(rows, args, rnd):
     """Each part's manifest.jsonl and sheet.png, agreed/'s seeded sample (sample.txt and sample.jsonl, the latter for
     make_page.py); the sample's file names."""
-    manifest = "".join(json.dumps({key: row[key] for key in ("stem", "folder", "kind", "scenario", "video")}) + "\n"
-                       for row in rows)
     for part in PARTS:
         (args.out / part).mkdir(parents=True, exist_ok=True)
-        (args.out / part / "manifest.jsonl").write_text(manifest, encoding="utf-8")
+        crop_batch.write_manifest(args.out / part / "manifest.jsonl", rows, MANIFEST_KEYS)
         files = sorted((args.out / part).glob("*.npz"))
         draw_sheet(files[:SHEET_CROPS], args.out / part / "sheet.png")
     agreed = sorted(path.name for path in (args.out / "agreed").glob("*.npz"))
@@ -490,7 +463,7 @@ def main():
     lib = aimview_tools.Library()
     args.program = eval_video_alone.review_program()
     picked = pick_recordings(lib, args.recordings, rnd)
-    retire_old_crops(args.out)
+    crop_batch.retire_old(args.out, PARTS)
     totals, rows = Counter(), []
     for kind, picks in picked.items():
         for video, stats, scenario in picks:
