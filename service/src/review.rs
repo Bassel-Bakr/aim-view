@@ -580,7 +580,6 @@ fn decode_run(
     let stopped = || "the detector stopped".to_string();
     let rows = countdown_bytes();
     let luma_bytes = info.width * info.height;
-    let mut rgb = vec![0u8; RGB_BYTES];
     let mut waiting = vec![0u8; batch * RGB_BYTES];
     let mut count = 0;
     loop {
@@ -590,7 +589,10 @@ fn decode_run(
         // the frame's Y plane, 720p luma and countdown rows go straight into buffers the watch gave back
         let (mut plane, mut small, mut countdown) =
             to_watch.spare.try_recv().unwrap_or_else(|_| (vec![0u8; luma_bytes], Vec::new(), vec![0u8; rows.len()]));
-        if !frames.next_into(&mut rgb, &mut plane, Some(&mut small))? {
+        // the frame's RGB goes straight into its place in the batch: a frame only the watch reads leaves the place to
+        // the next frame
+        let rgb = &mut waiting[count * RGB_BYTES..(count + 1) * RGB_BYTES];
+        if !frames.next_into(rgb, &mut plane, Some(&mut small))? {
             break;
         }
         let next = tracking.lock().map_err(|_| "the tracker failed")?.next_frame();
@@ -602,8 +604,7 @@ fn decode_run(
         if next == NextFrame::Watch {
             continue;
         }
-        tracking.lock().map_err(|_| "the tracker failed")?.watch(&rgb);
-        waiting[count * RGB_BYTES..(count + 1) * RGB_BYTES].copy_from_slice(&rgb);
+        tracking.lock().map_err(|_| "the tracker failed")?.watch(rgb);
         count += 1;
         if count == batch {
             let next = to_detector.spare.try_recv().unwrap_or_else(|_| vec![0u8; batch * RGB_BYTES]);
