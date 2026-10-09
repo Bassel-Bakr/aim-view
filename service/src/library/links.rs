@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use super::names::{local_stamp, parse_name};
 use super::reviews::{Job, seconds_since};
 use super::{Answer, Failure, Library};
+use crate::config::Config;
 use crate::ytdlp::{self, LinkInfo};
 
 /// The longest title kept in a file name, in characters.
@@ -93,10 +94,10 @@ fn free_destination(uploads: &Path, name: &str, jobs: &HashMap<String, Arc<Mutex
     dest
 }
 
-/// Fetches yt-dlp (into `tools`) and ffmpeg when they are missing, downloads `url` in the format `spec` into `folder`
+/// Fetches yt-dlp (`config` says from where: `ytdlp::ensure`) and ffmpeg when they are missing, downloads `url` in the format `spec` into `folder`
 /// and moves the video to `dest`; `progress` hears each stage.
 fn download_link(
-    tools: &Path,
+    config: &Config,
     url: &str,
     spec: &str,
     folder: &Path,
@@ -104,7 +105,7 @@ fn download_link(
     cancel: &Arc<AtomicBool>,
     progress: &dyn Fn(&str, usize, usize),
 ) -> Result<(), String> {
-    let program = ytdlp::ensure(tools, |megabytes, of| progress("yt-dlp", megabytes, of))?;
+    let program = ytdlp::ensure(config, |megabytes, of| progress("yt-dlp", megabytes, of))?;
     crate::ffmpeg::ensure(|megabytes, of| progress("ffmpeg", megabytes, of))?;
     if cancel.load(Ordering::Relaxed) {
         return Err(crate::review::CANCELLED.into());
@@ -138,11 +139,6 @@ struct Download {
 }
 
 impl Library {
-    /// Where yt-dlp is downloaded when the PATH has none.
-    fn tools(&self) -> PathBuf {
-        ytdlp::tools_folder(&self.config.ffmpeg, &self.config.data)
-    }
-
     /// The links' qualities read so far, by link.
     fn read_links(&self) -> Answer<MutexGuard<'_, HashMap<String, LinkInfo>>> {
         self.links.lock().map_err(|_| Failure::from("the links are broken".to_string()))
@@ -150,7 +146,7 @@ impl Library {
 
     /// A link's title and length, and its qualities best first, from yt-dlp (fetched first when it is missing).
     fn read_link(&self, url: &str) -> Answer<LinkInfo> {
-        let program = ytdlp::ensure(&self.tools(), |_, _| {})?;
+        let program = ytdlp::ensure(&self.config, |_, _| {})?;
         ytdlp::info(&program, url).map_err(|error| Failure::bad(format!("yt-dlp cannot read this link: {error}")))
     }
 
@@ -207,7 +203,7 @@ impl Library {
                     (job.stage, job.done, job.total) = (stage.into(), done, total);
                 }
             };
-            let outcome = download_link(&library.tools(), &url, &spec, &folder, &dest, &cancel, &progress);
+            let outcome = download_link(&library.config, &url, &spec, &folder, &dest, &cancel, &progress);
             let _ = std::fs::remove_dir_all(&folder);
             library.end_download(&id, &job, outcome, seconds_since(started));
         });
@@ -358,8 +354,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("aimview-links-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
-        ytdlp::set_stand_in(Some(stand_in(&dir, false)));
+        let with_ytdlp = |program: PathBuf| Config {
+            ytdlp: Some(program),
+            ..Config::new(dir.clone(), Layout::App, dir.join("models"))
+        };
+        let library = Library::open(with_ytdlp(stand_in(&dir, false))).unwrap();
         let url = json!({ "url": "https://www.youtube.com/watch?v=abc" });
         let formats = library.link_formats(&url).unwrap();
         assert_eq!(formats["title"], "Air - 1 - 2026.10.01-16.23.03");
@@ -390,14 +389,13 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
 
-        ytdlp::set_stand_in(Some(stand_in(&dir, true)));
+        let library = Library::open(with_ytdlp(stand_in(&dir, true))).unwrap();
         let failed = library.link_formats(&json!({ "url": "https://www.youtube.com/watch?v=private" })).unwrap_err();
         assert_eq!(failed.status, 400);
         assert_eq!(
             failed.message,
             "yt-dlp cannot read this link: Private video. Sign in if you've been granted access to this video"
         );
-        ytdlp::set_stand_in(None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

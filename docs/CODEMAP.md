@@ -1315,7 +1315,7 @@ else the official release from GitHub, downloaded once into the tools folder bes
   choose from, best first.
 - `Choice` (struct): A quality to download: yt-dlp's format id, its frame size, frame rate, video codec, and size in
   bytes (with the best audio) where yt-dlp knows it.
-- Functions: `tools_folder`, `set_stand_in`, `ensure`, `reason`, `info`, `format_spec`, `download`.
+- Functions: `tools_folder`, `ensure`, `reason`, `info`, `format_spec`, `download`.
 
 ## server/src/access.rs
 

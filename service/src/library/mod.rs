@@ -126,6 +126,8 @@ pub struct Library {
     facts: Mutex<Option<Arc<HashMap<String, Facts>>>>,
     /// Each recording's last job (a review, or a link's download), by its id.
     jobs: Mutex<HashMap<String, Arc<Mutex<Job>>>>,
+    /// Held while area_examples.jsonl changes (areas.rs): one change at a time, as the finder learns in the background.
+    examples: Mutex<()>,
     /// What links' qualities were read (links.rs), by link, kept for their download.
     #[cfg(feature = "native")]
     links: Mutex<HashMap<String, crate::ytdlp::LinkInfo>>,
@@ -186,6 +188,7 @@ impl Library {
             stats: Mutex::default(),
             facts: Mutex::default(),
             jobs: Mutex::default(),
+            examples: Mutex::default(),
             #[cfg(feature = "native")]
             links: Mutex::default(),
         });
@@ -204,6 +207,11 @@ impl Library {
     /// The layout's folders in the data folder.
     pub fn folders(&self) -> &Folders {
         &self.folders
+    }
+
+    /// The hold on area_examples.jsonl for one change (areas.rs), taken even when a change before it panicked.
+    pub(crate) fn examples_lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.examples.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Where the library keeps what it keeps.

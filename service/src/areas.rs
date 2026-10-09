@@ -10,7 +10,7 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use aimview::areas::{self as finder_areas, Area, Examples, Labelled, Maps, SavedBox};
 
@@ -41,9 +41,6 @@ const MAX_KIND_ABOUT_CHARS: usize = 200;
 const SAME_EDGE_TOLERANCE: f64 = 1e-9;
 /// What an example learned from KovOBS's layout, not from one of the user's recordings, has as its recording.
 const KOVOBS_EXAMPLE_PREFIX: &str = "kovobs:";
-
-/// One change to area_examples.jsonl at a time (the finder learns in the background).
-static EXAMPLES: Mutex<()> = Mutex::new(());
 
 /// The kinds an area can be, built in (python/retired/review.py: EXCLUDE_KINDS), and what each is
 /// (python/retired/server.py: KIND_ABOUT).
@@ -489,7 +486,7 @@ impl Library {
         let (found, maps) = self.found_areas(id, &video, true)?;
         let saved: Vec<SavedBox> = saved.iter().filter_map(|area| serde_json::from_value(area.clone()).ok()).collect();
         let new = finder_areas::learn(id, &found, &saved, maps.as_ref());
-        let _one_at_a_time = EXAMPLES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _one_at_a_time = self.examples_lock();
         let lines = self.examples_lines();
         Ok(pyjson::write_text(self.store(), Item::AreaExamples, finder_areas::merge(&lines, id, &new).as_bytes())?)
     }
@@ -547,7 +544,7 @@ impl Library {
             count += 1;
         }
         {
-            let _one_at_a_time = EXAMPLES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _one_at_a_time = self.examples_lock();
             pyjson::write_text(self.store(), Item::AreaExamples, &out)?;
         }
         self.fix_examples()?;

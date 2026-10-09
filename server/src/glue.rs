@@ -59,6 +59,7 @@ fn config(settings: &Settings) -> Config {
             Device::Cuda => aimview_service::Device::Cuda,
             Device::Cpu => aimview_service::Device::Cpu,
         },
+        ytdlp: None,
         gpu_frames: settings.gpu_frames,
         // a named folder's own ffmpeg is used as it is; else the PATH's when it has one, or the folder's download
         ffmpeg: match &settings.ffmpeg {

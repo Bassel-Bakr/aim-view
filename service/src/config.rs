@@ -30,6 +30,9 @@ pub struct Config {
     pub device: Device,
     /// Where ffmpeg and ffprobe come from.
     pub ffmpeg: Ffmpeg,
+    /// The yt-dlp to run for links (ytdlp.rs), when one is given (the tests give a stand-in); None: the PATH's, else
+    /// the one downloaded into the tools folder.
+    pub ytdlp: Option<PathBuf>,
     /// Decode and convert the frames on the GPU where the video allows it (gpu_frames.rs: Windows, 2560 x 1440 AV1 or
     /// H.264 MP4s); else ffmpeg's software decode. On by default: the reviews are the same, byte for byte.
     pub gpu_frames: bool,
@@ -201,6 +204,7 @@ impl Config {
             models,
             device: Device::Auto,
             ffmpeg: Ffmpeg::Path,
+            ytdlp: None,
             gpu_frames: true,
         }
     }

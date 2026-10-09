@@ -16,12 +16,10 @@ use std::time::Duration;
 use ffmpeg_sidecar::download::{FfmpegDownloadProgressEvent, download_ffmpeg_package_with_progress};
 use serde::{Deserialize, Serialize};
 
-use crate::config::Ffmpeg;
+use crate::config::{Config, Ffmpeg};
 
 /// One download of yt-dlp at a time.
 static INSTALLING: Mutex<()> = Mutex::new(());
-/// A stand-in for yt-dlp (the tests'); None: the PATH's or the tools folder's.
-static STAND_IN: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// How long yt-dlp waits on the network before it gives up.
 const SOCKET_TIMEOUT_S: &str = "15";
 /// yt-dlp's name on the PATH, and its folder in the tools folder.
@@ -194,16 +192,6 @@ pub fn tools_folder(ffmpeg: &Ffmpeg, data: &Path) -> PathBuf {
     }
 }
 
-/// Uses `program` in place of yt-dlp (the tests' stand-in); None goes back to finding it.
-pub fn set_stand_in(program: Option<PathBuf>) {
-    *STAND_IN.lock().unwrap_or_else(PoisonError::into_inner) = program;
-}
-
-/// The tests' stand-in for yt-dlp, when one is set.
-fn stand_in() -> Option<PathBuf> {
-    STAND_IN.lock().unwrap_or_else(PoisonError::into_inner).clone()
-}
-
 /// A command without a console window of its own.
 fn command(program: &Path) -> Command {
     let mut command = Command::new(program);
@@ -250,12 +238,13 @@ fn megabytes(bytes: u64) -> usize {
     (bytes >> MEGABYTE_SHIFT) as usize
 }
 
-/// yt-dlp: the stand-in, the PATH's, or the tools folder's, downloaded there the first time (`progress` hears the
-/// megabytes downloaded, of how many).
-pub fn ensure(tools: &Path, progress: impl Fn(usize, usize)) -> Result<PathBuf, String> {
-    if let Some(program) = stand_in() {
-        return Ok(program);
+/// yt-dlp: the one `config` gives (`Config::ytdlp`), the PATH's, or the tools folder's (`tools_folder`), downloaded
+/// there the first time (`progress` hears the megabytes downloaded, of how many).
+pub fn ensure(config: &Config, progress: impl Fn(usize, usize)) -> Result<PathBuf, String> {
+    if let Some(program) = &config.ytdlp {
+        return Ok(program.clone());
     }
+    let tools = &tools_folder(&config.ffmpeg, &config.data);
     if on_path() {
         return Ok(PathBuf::from(PROGRAM));
     }
