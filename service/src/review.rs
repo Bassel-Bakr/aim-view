@@ -637,8 +637,8 @@ fn detect(
             let gpu_time = started.elapsed();
             let mut tracker = tracking.lock().map_err(|_| "the tracker failed")?;
             for index in 0..count {
-                let (score, reg) = maps.of_frame(index);
-                tracker.maps(score, reg, MAP_WIDTH, MAP_HEIGHT);
+                let (score, regression) = maps.of_frame(index);
+                tracker.maps(score, regression, MAP_WIDTH, MAP_HEIGHT);
             }
             Ok(gpu_time)
         })??;

@@ -337,21 +337,24 @@ pub unsafe extern "C" fn tracking_watch(tracking: *mut RunTracking, rgb: *const 
     unsafe { &mut *tracking }.watch(unsafe { std::slice::from_raw_parts(rgb, DST_W * DST_H * 3) });
 }
 
-/// The detector's maps for the next tracked frame: the score map (gh x gw) and reg maps (4 x gh x gw), f32.
+/// The detector's maps for the next tracked frame: the score map (grid_height x grid_width) and the regression maps
+/// (4 x grid_height x grid_width), f32.
 ///
 /// # Safety
-/// `tracking` from `review_tracking`; `score` and `reg` must hold `gw * gh` and `4 * gw * gh` f32s.
+/// `tracking` from `review_tracking`; `score` and `regression` must hold `grid_width * grid_height` and
+/// `4 * grid_width * grid_height` f32s.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tracking_maps(
     tracking: *mut RunTracking,
     score: *const f32,
-    reg: *const f32,
-    gw: usize,
-    gh: usize,
+    regression: *const f32,
+    grid_width: usize,
+    grid_height: usize,
 ) {
-    let score = unsafe { std::slice::from_raw_parts(score, gw * gh) };
-    let reg = unsafe { std::slice::from_raw_parts(reg, 4 * gw * gh) };
-    unsafe { &mut *tracking }.maps(score, reg, gw, gh);
+    let cells = grid_width * grid_height;
+    let score = unsafe { std::slice::from_raw_parts(score, cells) };
+    let regression = unsafe { std::slice::from_raw_parts(regression, 4 * cells) };
+    unsafe { &mut *tracking }.maps(score, regression, grid_width, grid_height);
 }
 
 /// The run's part of the tracking as JSON (`TrackPart`), or {error}; frees the tracking. Free the result as
