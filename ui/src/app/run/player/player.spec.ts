@@ -5,6 +5,7 @@ import { answer, serverMode } from '../../fake-api';
 import { AreaCanvas } from '../areas/area-canvas/area-canvas';
 import { Library } from '../../services/library';
 import { AreaDraft } from '../areas/area-draft';
+import { Playback } from '../playback';
 import { markPositions, Player } from './player';
 
 describe('markPositions', () => {
@@ -210,5 +211,21 @@ describe('Player hover', () => {
     }
     await settle();
     expect(renders).toBe(before);
+  });
+});
+
+describe('Player frames', () => {
+  it('draws each frame without reading the canvas size, which would lay the page out again', async () => {
+    const { player } = await render();
+    const canvas = player.querySelector('canvas.canvas') as HTMLCanvasElement;
+    let reads = 0;
+    for (const side of ['clientWidth', 'clientHeight']) {
+      Object.defineProperty(canvas, side, { get: () => ++reads && 0 });
+    }
+    const playback = TestBed.inject(Playback);
+    playback.frame(1);
+    playback.frame(2);
+    expect(reads).toBe(0);
+    expect(player.querySelector('.time')?.textContent).toBe('0:02.0');
   });
 });

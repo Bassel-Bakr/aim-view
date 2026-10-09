@@ -81,6 +81,14 @@ export function everyFrame(video: HTMLVideoElement, shown: (seconds: number) => 
   return () => cancelAnimationFrame(handle);
 }
 
+/** The overlay canvas's size on screen, in CSS pixels. */
+interface CanvasSize {
+  /** Its width, in CSS pixels. */
+  widthPx: number;
+  /** Its height, in CSS pixels. */
+  heightPx: number;
+}
+
 /**
  * Sizes the canvas's own pixels to its size on screen (in CSS pixels) at the screen's pixel ratio,
  * so the overlay is sharp. Returns the ratio.
@@ -210,6 +218,11 @@ export class Player {
   private readonly faintStyle = canvasStyle(() => this.canvas().nativeElement, readFaintStyle);
   /** The seek bar is being dragged: the frames leave its value alone. */
   private seeking = false;
+  /**
+   * The canvas's size as last laid out, kept by its ResizeObserver so a frame's drawing never makes
+   * the page lay out again; null before it is measured.
+   */
+  private canvasSize: CanvasSize | null = null;
 
   /** Starts following the video after the first render, and redraws when what is drawn changes. */
   constructor() {
@@ -242,7 +255,10 @@ export class Player {
     this.playback.attach(video);
     const stop = this.playback.onFrame((seconds) => this.draw(seconds));
     const cancel = everyFrame(video, (seconds) => this.playback.frame(seconds));
-    const resize = new ResizeObserver(() => this.draw(this.playback.time));
+    const resize = new ResizeObserver(() => {
+      this.canvasSize = this.measureCanvas();
+      this.draw(this.playback.time);
+    });
     resize.observe(this.canvas().nativeElement);
     const box = this.screenBox().nativeElement;
     listenQuietly(box, 'mousemove', (event) => this.pointAt(event), this.destroyRef);
@@ -269,11 +285,10 @@ export class Player {
    * a review).
    */
   private draw(seconds: number): void {
+    const { widthPx, heightPx } = (this.canvasSize ??= this.measureCanvas());
     this.clockText().nativeElement.textContent = clock(seconds);
     if (!this.seeking) this.seekBar().nativeElement.value = String(seconds);
     const canvas = this.canvas().nativeElement;
-    const widthPx = canvas.clientWidth;
-    const heightPx = canvas.clientHeight;
     const pixelRatio = fitCanvas(canvas, widthPx, heightPx);
     const context = canvas.getContext('2d');
     if (!context) return;
@@ -285,6 +300,12 @@ export class Player {
     const scale = widthPx / report.geometry.W;
     this.drawReview(context, report, frame, scale, this.style());
     this.drawCutoff(context, frame, scale);
+  }
+
+  /** The canvas's size on screen now, in CSS pixels. */
+  private measureCanvas(): CanvasSize {
+    const canvas = this.canvas().nativeElement;
+    return { widthPx: canvas.clientWidth, heightPx: canvas.clientHeight };
   }
 
   /**
