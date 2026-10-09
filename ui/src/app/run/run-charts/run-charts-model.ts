@@ -10,7 +10,7 @@
 import { ClickReport, Direction, Flick } from '../../api';
 import { DIRECTION_ARROWS, formatMs, formatPercent } from '../../format';
 import { PARTS } from '../report/budget';
-import { Fitts, fitFitts } from '../fastest-path/order-solver';
+import { fitFitts, FittsLine } from '../fastest-path/order-solver';
 import { median } from '../median';
 import { speeds } from '../speed';
 
@@ -854,7 +854,7 @@ export function landings(report: ClickReport): LandingModel {
  * flick's time against its distance at the start; null with fewer than 3 flicks or a single
  * distance. `radius` is the target's, in degrees.
  */
-export function fitFlickTimes(flicks: Flick[], radius: number): Fitts | null {
+export function fitFlickTimes(flicks: Flick[], radius: number): FittsLine | null {
   const widthDeg = 2 * radius;
   const timed = flicks.filter((kill): kill is TimedFlick => timedFlick(kill) && kill.D0 > 0);
   const count = timed.length;

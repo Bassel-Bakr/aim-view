@@ -79,7 +79,7 @@ describe('analysePaths', () => {
       ];
       return fingerprint(JSON.stringify(outcome));
     });
-    expect(digests).toEqual(['4a84d98e', '41431d62']);
+    expect(digests).toEqual(['dd647761', 'ace073f5']);
   });
 });
 

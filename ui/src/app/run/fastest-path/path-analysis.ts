@@ -8,7 +8,7 @@
 
 import { ClickReport, Flick, Issue, TrackPoint, Tracks } from '../../api';
 import { formatMs, formatPercent } from '../../format';
-import { fitFitts, OrderSolver } from './order-solver';
+import { fitFitts, OrderSolver, sizesOf } from './order-solver';
 
 /** How a kill's pick of the next target went. cost: seconds lost against the fastest pick. */
 export interface KillPick {
@@ -168,7 +168,8 @@ function killPick(flick: Flick, id: number, inputs: PickInputs): KillPick | null
     return { cost: 0, best: false, choices: 0, spawned: true };
   }
   // the target just killed can linger a frame under the crosshair, and new targets were not options
-  const choices = (tracks.frames[flick.start_frame + PICK_FRAME]?.t ?? []).filter(
+  const pickFrame = tracks.frames[flick.start_frame + PICK_FRAME];
+  const choices = (pickFrame?.t ?? []).filter(
     (target: TrackPoint) =>
       target[0] === id ||
       (Math.hypot(target[1], target[2]) > report.summary.radius &&
@@ -176,11 +177,11 @@ function killPick(flick: Flick, id: number, inputs: PickInputs): KillPick | null
   );
   if (!choices.some((target) => target[0] === id)) return null;
   if (choices.length === 1) return { cost: 0, best: true, choices: 1, spawned: false };
-  const solution = solver.solve(choices);
+  const solution = solver.solve(choices, sizesOf(pickFrame));
   const j = solution ? solution.targets.findIndex((target) => target[0] === id) : -1;
   if (!solution || j < 0) return null;
   return {
-    cost: solver.fitts.b * (solution.from[j] - solution.from[solution.bestFirst]),
+    cost: solution.from[j] - solution.from[solution.bestFirst],
     best: j === solution.bestFirst,
     choices: choices.length,
     spawned: false,

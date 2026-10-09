@@ -17,7 +17,7 @@ import {
   TrackSummary,
 } from '../../api';
 import { formatMs } from '../../format';
-import { FastestOrder } from '../fastest-path/order-solver';
+import { FastestOrder, sizesOf, TargetSizes } from '../fastest-path/order-solver';
 import { NEW_MS, newCut, PathAnalysis } from '../fastest-path/path-analysis';
 import { boxes, flickAt, nearest, Point, TargetBox, TargetShapeKind, toPx } from '../track';
 
@@ -367,7 +367,8 @@ export function drawPaths(
   const trackFrame = tracks.frames[frame];
   if (!trackFrame || frame > analysis.lastKill || frame < analysis.firstStart) return;
   const candidates = pathTargets(report, trackFrame, frame, analysis);
-  const best = analysis.solver.fastestOrder(candidates);
+  const sizes = sizesOf(trackFrame);
+  const best = analysis.solver.fastestOrder(candidates, sizes);
   if (!best) return;
   const yours = yourOrder(candidates, analysis, frame);
   const showMine = show.mine && yours.length > 0;
@@ -384,7 +385,10 @@ export function drawPaths(
       text: `Fastest path through ${targets}${left}: about ${formatMs(best.seconds)}`,
     });
   }
-  if (showMine) rows.push(yourRow(style, analysis, yours, best, show.fastest ? 'them' : targets));
+  if (showMine) {
+    const paths: PathPair = { yours, best, sizes };
+    rows.push(yourRow(style, analysis, paths, show.fastest ? 'them' : targets));
+  }
   if (rows.length) drawLegend(context, style, rows);
 }
 
@@ -418,17 +422,29 @@ function yourOrder(candidates: TrackPoint[], analysis: PathAnalysis, frame: numb
     .sort((a, b) => killFrame(a, 0) - killFrame(b, 0));
 }
 
+/** Your path and the fastest through the same frame, with the frame's target sizes. */
+interface PathPair {
+  /** The targets you killed from this frame on, in your order. */
+  yours: TrackPoint[];
+  /** The fastest order through every target on screen. */
+  best: FastestOrder;
+  /** The frame's targets' box sizes, by track id. */
+  sizes: TargetSizes;
+}
+
 /** Your path's legend line: its predicted time, and how much slower than the fastest it is. */
 function yourRow(
   style: OverlayStyle,
   analysis: PathAnalysis,
-  yours: TrackPoint[],
-  best: FastestOrder,
+  paths: PathPair,
   what: string,
 ): LegendRow {
+  const { yours, best, sizes } = paths;
   const allOfThem = yours.length === best.order.length;
-  const mine = analysis.solver.seconds(yours.length, analysis.solver.pathUnits(yours));
-  const fastest = allOfThem ? best.seconds : (analysis.solver.fastestOrder(yours)?.seconds ?? mine);
+  const mine = analysis.solver.pathSeconds(yours, sizes);
+  const fastest = allOfThem
+    ? best.seconds
+    : (analysis.solver.fastestOrder(yours, sizes)?.seconds ?? mine);
   const slowerMs = Math.round(1000 * (mine - fastest));
   const through = allOfThem
     ? `Your path through ${what}`

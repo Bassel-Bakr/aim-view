@@ -28,10 +28,12 @@
   --overlay-label-text: var(--white);
   --overlay-line-width: 1;
   --overlay-line-width-strong: 2;
-  --overlay-fastest: var(--on-target);
+  --overlay-fastest: var(
+    --green-deep
+  ); // darker than the on-target teal, so the path reads over a light wall
   --overlay-mine: var(--off-target);
   --overlay-order-font: var(--font-weight-strong) var(--font-size-4xs) var(--font-family);
-  --overlay-path-width: 1.8;
+  --overlay-path-width: 2.4;
   --overlay-legend-bg: oklch(from var(--black) l c h / 0.5);
 }
 
