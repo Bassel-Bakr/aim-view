@@ -326,11 +326,6 @@ fn share(measures: &[&Measure], pass: impl Fn(&Measure) -> bool) -> f64 {
     measures.iter().filter(|measure| pass(measure)).count() as f64 / measures.len() as f64
 }
 
-/// The median of the values, or None when there are none.
-fn median_if_any(values: &[f64]) -> Option<f64> {
-    med(values.iter().map(|&value| Some(value)))
-}
-
 /// A flick's index of difficulty in Fitts' law: log2(1 + D / W), its distance over the target's width (degrees).
 fn difficulty(distance_deg: f64, width_deg: f64) -> f64 {
     (1.0 + distance_deg / width_deg).log2()
@@ -481,8 +476,8 @@ fn pace(ttks_s: &[f64]) -> Option<Pace> {
     let kills = ttks_s.len();
     let third = kills / 3;
     (kills >= MIN_KILLS_FOR_PACE).then(|| Pace {
-        pace_first: median_if_any(&ttks_s[..third]),
-        pace_last: median_if_any(&ttks_s[kills - third..]),
+        pace_first: med(ttks_s[..third].iter().copied().map(Some)),
+        pace_last: med(ttks_s[kills - third..].iter().copied().map(Some)),
     })
 }
 
@@ -516,7 +511,7 @@ pub fn summarize(
         radius: radius_deg,
         measured,
         info,
-        median_interval: median_if_any(&ttks_s),
+        median_interval: med(ttks_s.iter().copied().map(Some)),
         spread: (measured >= MIN_KILLS_FOR_SPREAD).then(|| pstdev(&ttks_s) / mean(&ttks_s)),
         react: med(measures.iter().map(|measure| measure.react)),
         flick: med(measures.iter().map(|measure| measure.flick)),

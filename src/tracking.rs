@@ -18,7 +18,7 @@ use crate::matching::KillSource;
 use crate::optional_fields::OptionalFields;
 use crate::python::{hypot, round};
 use crate::scenario::{Hitbox, HitboxKind};
-use crate::statistics::median;
+use crate::statistics::{med, median};
 use crate::stats_file::StatsFile;
 use crate::summary::DIRECTIONS;
 use crate::track::{TrackFrame, Tracks};
@@ -168,11 +168,6 @@ fn component(vector: (f64, f64), axis: usize) -> f64 {
 /// The direction sector (0 = right, counterclockwise in 45-degree steps) of a motion.
 fn sector(motion: (f64, f64)) -> usize {
     ((degrees(motion.1.atan2(motion.0)).rem_euclid(360.0) / 45.0).round_ties_even() as usize) % 8
-}
-
-/// The median of the values, or None when there are none.
-fn median_of(values: &[f64]) -> Option<f64> {
-    (!values.is_empty()).then(|| median(values))
 }
 
 /// How many of the values are true.
@@ -443,11 +438,11 @@ fn offsets_from_center_line(motion: &MotionFrames, count: usize) -> CenterLineOf
 /// The target's and the mouse's median speeds and the crosshair's median lag along the motion (degrees, and ms).
 fn read_speeds(out: &mut Motion, motion: &MotionFrames, along: &[f64]) {
     let over_moving = |value: &dyn Fn(usize) -> f64| motion.moving.iter().map(|&i| value(i)).collect::<Vec<f64>>();
-    out.target_speed = median_of(&over_moving(&|i| motion.speed[i]));
+    out.target_speed = med(over_moving(&|i| motion.speed[i]).into_iter().map(Some));
     let mouse_speed = over_moving(&|i| motion.mouse[i].0.hypot(motion.mouse[i].1));
-    out.mouse_speed = median_of(&mouse_speed.into_iter().filter(|speed| !speed.is_nan()).collect::<Vec<_>>());
-    out.lag = median_of(&over_moving(&|i| along[i]));
-    out.lag_ms = median_of(&over_moving(&|i| along[i] / motion.speed[i])).map(|lag| lag * 1000.0);
+    out.mouse_speed = med(mouse_speed.into_iter().filter(|speed| !speed.is_nan()).map(Some));
+    out.lag = med(over_moving(&|i| along[i]).into_iter().map(Some));
+    out.lag_ms = med(over_moving(&|i| along[i] / motion.speed[i]).into_iter().map(Some)).map(|lag| lag * 1000.0);
 }
 
 /// Where the crosshair was when off the target (`off`, measured frames): ahead of it, behind it, or to its side.
@@ -478,7 +473,7 @@ fn read_overshoots(out: &mut Motion, moving: &[usize], along: &[f64], radius: &[
         let farthest = |(a, b): (usize, usize)| {
             (a..b).filter(|&i| !along[i].is_nan()).map(|i| along[i] - radius[i]).fold(f64::NEG_INFINITY, f64::max)
         };
-        out.overshoot_dist = median_of(&episodes.iter().map(|&episode| farthest(episode)).collect::<Vec<f64>>());
+        out.overshoot_dist = med(episodes.iter().map(|&episode| Some(farthest(episode))));
     }
 }
 
@@ -692,7 +687,7 @@ pub fn track_motion(
         .filter(|target| target.distance <= NEAR_RADII * target.radius.max(MIN_RADIUS_DEG))
         .collect();
     let read = (start..end).filter(|&i| camera.get(i).is_some_and(Option::is_some)).count();
-    let error = |part: fn(&Nearest) -> f64| median_of(&near.iter().map(part).collect::<Vec<_>>());
+    let error = |part: fn(&Nearest) -> f64| med(near.iter().map(|nearest| Some(part(nearest))));
     let moving = &motion.moving;
     let mut out = Motion::unread(
         read as f64 / span_frames.max(1) as f64,
@@ -723,9 +718,9 @@ pub fn track_motion(
     let (swings, corrections) = swings_and_corrections(moving, &steady, &along, &radius);
     let far: Vec<f64> = overshoots.iter().copied().filter(|&past| past > JITTER_DEG).collect();
     out.reversals = changes.len();
-    out.reaction = median_of(&reactions);
+    out.reaction = med(reactions.iter().copied().map(Some));
     out.reversal_overshoot = (!overshoots.is_empty()).then(|| far.len() as f64 / overshoots.len() as f64);
-    out.reversal_overshoot_dist = median_of(&far);
+    out.reversal_overshoot_dist = med(far.iter().copied().map(Some));
     out.swings = Some(swings as f64 / (count_true(&steady) as f64 / fps).max(1e-9));
     let in_turn = turn_windows(&changes, turn_frames, count);
     *out.counts = Some(MotionCounts {
@@ -1315,10 +1310,10 @@ pub fn track_summary(tracks: &Tracks, run: &RunFacts) -> TrackSummary {
     let (tracked, on_count, lost) = (count_true(&tracking), count_true(&on), losses.iter().sum::<usize>());
     let tracked_frames = tracked.max(1) as f64;
     summary.on_target = Some(on_count as f64 / tracked_frames);
-    summary.error = median_of(&errors);
+    summary.error = med(errors.iter().copied().map(Some));
     summary.lost = Some(losses.len() as f64 / (tracked as f64 / fps).max(1e-9));
     let loss_frames: Vec<f64> = losses.iter().map(|&frames| frames as f64).collect();
-    summary.back = median_of(&loss_frames).map(|frames| frames / fps);
+    summary.back = med(loss_frames.iter().copied().map(Some)).map(|frames| frames / fps);
     summary.longest_off = losses.iter().max().map(|&frames| frames as f64 / fps);
     (summary.start, summary.end) = (Some(first), Some(end));
     *summary.shares = Some(RunShares {
