@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::{Answer, Failure, Library};
 use crate::config::Ffmpeg;
-use crate::store::{Item, folder_size};
+use crate::store::{Item, StoreUsage, folder_size};
 
 /// A part's id for one model's reviews: this, then the model's name ("" the old reviews).
 const REVIEW_PREFIX: &str = "review:";
@@ -35,6 +35,11 @@ fn part(id: &str, kind: &str, bytes: u64, removable: bool) -> Value {
 }
 
 impl Library {
+    /// The store as the data panel needs it: the space its parts take, and their removal.
+    fn usage(&self) -> &dyn StoreUsage {
+        self.store()
+    }
+
     /// The models models.json lists.
     fn listed_models(&self) -> Vec<String> {
         let info = self.models_info().unwrap_or(Value::Null);
@@ -72,19 +77,19 @@ impl Library {
     /// how many recordings they cover and whether models.json still lists the model; KovaaK's files say how many of
     /// each kind are kept; folders say how many files they hold.
     pub fn storage(&self) -> Answer<Value> {
-        let store = self.store();
+        let usage = self.usage();
         let listed = self.listed_models();
         let mut parts = Vec::new();
-        for size in store.review_sizes() {
+        for size in usage.review_sizes() {
             let mut entry = part(&format!("{REVIEW_PREFIX}{}", size.model), "reviews", size.bytes, true);
             entry["model"] = json!(size.model);
             entry["recordings"] = json!(size.recordings);
             entry["listed"] = json!(listed.contains(&size.model));
             parts.push(entry);
         }
-        parts.push(part("marks", "marks", store.marks_size(), false));
-        parts.push(part("cutoff", "cutoff", store.cutoff_size(), false));
-        if let Some(kovaak) = store.kovaak() {
+        parts.push(part("marks", "marks", usage.marks_size(), false));
+        parts.push(part("cutoff", "cutoff", usage.cutoff_size(), false));
+        if let Some(kovaak) = self.store().kovaak() {
             let (stats, scenarios, bytes) = kovaak.kovaak_size()?;
             let mut entry = part("kovaak", "kovaak", bytes, true);
             entry["stats"] = json!(stats);
@@ -104,7 +109,7 @@ impl Library {
         if let Some(folder) = self.ffmpeg_folder().filter(|folder| crate::disk::is_dir(folder)) {
             parts.push(part("ffmpeg", "ffmpeg", folder_size(&folder).0, true));
         }
-        let database = store.file_size();
+        let database = usage.file_size();
         let outside: u64 = parts
             .iter()
             .filter(|entry| ["uploads", "mouse", "old_files", "ffmpeg"].contains(&entry["kind"].as_str().unwrap_or("")))
@@ -121,7 +126,7 @@ impl Library {
     pub fn remove_storage(&self, id: &str) -> Answer<Value> {
         let failed = |error: std::io::Error| Failure::from(format!("{id}: {error}"));
         if let Some(model) = id.strip_prefix(REVIEW_PREFIX) {
-            self.store().remove_reviews(model).map_err(failed)?;
+            self.usage().remove_reviews(model).map_err(failed)?;
         } else {
             match id {
                 "uploads" => {
@@ -154,7 +159,7 @@ impl Library {
                 _ => return Err(Failure::bad(format!("{id} cannot be removed here"))),
             }
         }
-        self.store().compact().map_err(failed)?;
+        self.usage().compact().map_err(failed)?;
         self.storage()
     }
 }

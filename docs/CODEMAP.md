@@ -1310,7 +1310,7 @@ files in the data folder (`Files`, laid out as config.rs's layout says) or one S
 library formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes it
 is given and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes them) and
 the crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same bytes, and what is
-kept for each recording.
+kept for each recording; the space it takes, behind a narrower interface (`StoreUsage`).
 
 - `IdList` (enum): A list of recording ids the user marked.
 - `Mark` (enum): What is kept for a recording beside its reviews. Methods: `file_name`.
@@ -1319,6 +1319,8 @@ kept for each recording.
 - `ReviewBy` (enum): Which of a recording's reviews: a model's, or the one python/retired/server.py kept before reviews
   were kept per model.
 - `Item` (enum): One thing the library keeps. Methods: `file_name`.
+- `StoreUsage` (trait): The space a store's parts take and their removal, for the data panel (library/usage.rs): all a
+  caller needs that only counts or frees space.
 - `Store` (trait): Where the library keeps what it keeps (see the module's comment).
 - `ReviewSize` (struct): One model's reviews: the model ("" the old reviews, from before reviews were kept per model),
   how many recordings it reviewed, and the bytes its reviews keep (compressed in the database).

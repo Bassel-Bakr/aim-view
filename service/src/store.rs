@@ -3,7 +3,7 @@
 //! library formats each thing (JSON as python/retired/server.py wrote it, .npz as NumPy does); a store keeps the bytes
 //! it is given and gives the same bytes back. The videos (uploads), the mouse logs (the desktop app's logger writes
 //! them) and the crop-check folders stay files outside it. In: the library's items and their bytes. Out: the same
-//! bytes, and what is kept for each recording.
+//! bytes, and what is kept for each recording; the space it takes, behind a narrower interface (`StoreUsage`).
 
 use std::collections::{BTreeSet, HashSet};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -143,8 +143,29 @@ impl Part {
     }
 }
 
+/// The space a store's parts take and their removal, for the data panel (library/usage.rs): all a caller needs that
+/// only counts or frees space.
+pub trait StoreUsage: Send + Sync {
+    /// Each model's reviews (the old review's model is ""), with how many recordings and bytes they keep.
+    fn review_sizes(&self) -> Vec<ReviewSize>;
+    /// Forgets every review `model` made ("" the old reviews); answers how many recordings had one.
+    fn remove_reviews(&self, model: &str) -> io::Result<usize>;
+    /// The bytes the recordings' marks and areas keep.
+    fn marks_size(&self) -> u64;
+    /// The bytes the cut-off labels keep (their rows and crops).
+    fn cutoff_size(&self) -> u64;
+    /// The whole store's size when it is one file (the database), else None.
+    fn file_size(&self) -> Option<u64> {
+        None
+    }
+    /// Gives back the space that removals freed (the database's VACUUM); files need nothing.
+    fn compact(&self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Where the library keeps what it keeps (see the module's comment).
-pub trait Store: Send + Sync {
+pub trait Store: StoreUsage {
     /// The bytes kept for `item`; None when nothing is.
     fn read(&self, item: Item<'_>) -> io::Result<Option<Vec<u8>>>;
     /// Whether something is kept for `item`.
@@ -176,22 +197,6 @@ pub trait Store: Send + Sync {
     /// it needs); None everywhere else.
     fn kovaak(&self) -> Option<&dyn Kovaak> {
         None
-    }
-    /// Each model's reviews (the old review's model is ""), with how many recordings and bytes they keep.
-    fn review_sizes(&self) -> Vec<ReviewSize>;
-    /// Forgets every review `model` made ("" the old reviews); answers how many recordings had one.
-    fn remove_reviews(&self, model: &str) -> io::Result<usize>;
-    /// The bytes the recordings' marks and areas keep.
-    fn marks_size(&self) -> u64;
-    /// The bytes the cut-off labels keep (their rows and crops).
-    fn cutoff_size(&self) -> u64;
-    /// The whole store's size when it is one file (the database), else None.
-    fn file_size(&self) -> Option<u64> {
-        None
-    }
-    /// Gives back the space that removals freed (the database's VACUUM); files need nothing.
-    fn compact(&self) -> io::Result<()> {
-        Ok(())
     }
 }
 
@@ -396,6 +401,70 @@ fn make_parent(path: &Path) -> io::Result<()> {
     }
 }
 
+impl StoreUsage for Files {
+    /// Each recording folder's old review (its own part files) and each of its model folders.
+    fn review_sizes(&self) -> Vec<ReviewSize> {
+        let mut by_model: std::collections::BTreeMap<String, ReviewSize> = std::collections::BTreeMap::new();
+        let mut add = |model: &str, bytes: u64| {
+            let size = by_model.entry(model.to_string()).or_insert_with(|| ReviewSize {
+                model: model.to_string(),
+                recordings: 0,
+                bytes: 0,
+            });
+            size.recordings += 1;
+            size.bytes += bytes;
+        };
+        for entry in crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten() {
+            let dir = entry.path();
+            if !entry.is_dir() {
+                continue;
+            }
+            if crate::disk::is_file(dir.join(Part::Tracks.file_name())) {
+                add("", PARTS.iter().map(|part| file_len(&dir.join(part.file_name()))).sum());
+            }
+            for model in crate::disk::read_dir(dir.join(MODELS)).into_iter().flatten().flatten() {
+                let folder = model.path();
+                if crate::disk::is_file(folder.join(Part::Tracks.file_name())) {
+                    add(&model.file_name().to_string_lossy(), folder_size(&folder).0);
+                }
+            }
+        }
+        by_model.into_values().collect()
+    }
+
+    /// Deletes the model's folder in each recording folder; the old reviews' part files for "".
+    fn remove_reviews(&self, model: &str) -> io::Result<usize> {
+        let mut removed = 0;
+        for entry in crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten() {
+            let dir = entry.path();
+            if model.is_empty() {
+                let parts: Vec<PathBuf> = PARTS.iter().map(|part| dir.join(part.file_name())).collect();
+                if parts.iter().any(crate::disk::is_file) {
+                    removed += 1;
+                }
+                for part in parts.iter().filter(|part| crate::disk::is_file(part)) {
+                    crate::disk::remove_file(part)?;
+                }
+            } else if crate::disk::is_dir(dir.join(MODELS).join(model)) {
+                crate::disk::remove_dir_all(dir.join(MODELS).join(model))?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    /// The mark files in each recording folder.
+    fn marks_size(&self) -> u64 {
+        let folders = crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten();
+        folders.map(|entry| MARKS.iter().map(|mark| file_len(&entry.path().join(mark.file_name()))).sum::<u64>()).sum()
+    }
+
+    /// The cut-off folder.
+    fn cutoff_size(&self) -> u64 {
+        folder_size(&self.folders.cutoff).0
+    }
+}
+
 impl Store for Files {
     /// The item's file; a missing file is None, any other error an error.
     fn read(&self, item: Item<'_>) -> io::Result<Option<Vec<u8>>> {
@@ -479,68 +548,6 @@ impl Store for Files {
     fn kept(&self) -> HashSet<String> {
         let entries = crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten();
         entries.map(|entry| entry.file_name().to_string_lossy().into_owned()).collect()
-    }
-
-    /// Each recording folder's old review (its own part files) and each of its model folders.
-    fn review_sizes(&self) -> Vec<ReviewSize> {
-        let mut by_model: std::collections::BTreeMap<String, ReviewSize> = std::collections::BTreeMap::new();
-        let mut add = |model: &str, bytes: u64| {
-            let size = by_model.entry(model.to_string()).or_insert_with(|| ReviewSize {
-                model: model.to_string(),
-                recordings: 0,
-                bytes: 0,
-            });
-            size.recordings += 1;
-            size.bytes += bytes;
-        };
-        for entry in crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten() {
-            let dir = entry.path();
-            if !entry.is_dir() {
-                continue;
-            }
-            if crate::disk::is_file(dir.join(Part::Tracks.file_name())) {
-                add("", PARTS.iter().map(|part| file_len(&dir.join(part.file_name()))).sum());
-            }
-            for model in crate::disk::read_dir(dir.join(MODELS)).into_iter().flatten().flatten() {
-                let folder = model.path();
-                if crate::disk::is_file(folder.join(Part::Tracks.file_name())) {
-                    add(&model.file_name().to_string_lossy(), folder_size(&folder).0);
-                }
-            }
-        }
-        by_model.into_values().collect()
-    }
-
-    /// Deletes the model's folder in each recording folder; the old reviews' part files for "".
-    fn remove_reviews(&self, model: &str) -> io::Result<usize> {
-        let mut removed = 0;
-        for entry in crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten() {
-            let dir = entry.path();
-            if model.is_empty() {
-                let parts: Vec<PathBuf> = PARTS.iter().map(|part| dir.join(part.file_name())).collect();
-                if parts.iter().any(crate::disk::is_file) {
-                    removed += 1;
-                }
-                for part in parts.iter().filter(|part| crate::disk::is_file(part)) {
-                    crate::disk::remove_file(part)?;
-                }
-            } else if crate::disk::is_dir(dir.join(MODELS).join(model)) {
-                crate::disk::remove_dir_all(dir.join(MODELS).join(model))?;
-                removed += 1;
-            }
-        }
-        Ok(removed)
-    }
-
-    /// The mark files in each recording folder.
-    fn marks_size(&self) -> u64 {
-        let folders = crate::disk::read_dir(&self.folders.recordings).into_iter().flatten().flatten();
-        folders.map(|entry| MARKS.iter().map(|mark| file_len(&entry.path().join(mark.file_name()))).sum::<u64>()).sum()
-    }
-
-    /// The cut-off folder.
-    fn cutoff_size(&self) -> u64 {
-        folder_size(&self.folders.cutoff).0
     }
 
     /// Reads areas.json and exclude.json from each recording folder that has both.

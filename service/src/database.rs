@@ -17,7 +17,7 @@ use crate::library::slug;
 use crate::sql::{Sql, SqlValue};
 use crate::store::{
     DETECTOR_KEY, Files, IdList, Item, Kovaak, MARKS, MODELS, Mark, OLD_TRACKS_TAIL_BYTES, PARTS, Part, ReviewBy,
-    ReviewSize, ScenarioRow, StatsRow, StatsRun, Store,
+    ReviewSize, ScenarioRow, StatsRow, StatsRun, Store, StoreUsage,
 };
 
 /// The database's file in the data folder.
@@ -352,6 +352,52 @@ fn import(sql: &mut dyn Sql, folders: &Folders) -> io::Result<()> {
     Ok(())
 }
 
+impl StoreUsage for Database {
+    /// The `review` table by model.
+    fn review_sizes(&self) -> Vec<ReviewSize> {
+        let statement = "SELECT model, COUNT(DISTINCT recording), SUM(length(bytes)) FROM review GROUP BY model";
+        let rows = self.sql().query(statement, &[]).unwrap_or_default();
+        rows.into_iter()
+            .map(|row| ReviewSize {
+                model: text_of(row[0].clone()),
+                recordings: usize::try_from(count_of(&row[1])).unwrap_or(0),
+                bytes: count_of(&row[2]),
+            })
+            .collect()
+    }
+
+    /// Deletes the model's rows.
+    fn remove_reviews(&self, model: &str) -> io::Result<usize> {
+        let mut sql = self.sql();
+        let counted = sql.query("SELECT COUNT(DISTINCT recording) FROM review WHERE model = ?1", &[text(model)])?;
+        sql.execute("DELETE FROM review WHERE model = ?1", &[text(model)])?;
+        Ok(counted.first().map_or(0, |row| usize::try_from(count_of(&row[0])).unwrap_or(0)))
+    }
+
+    /// The `mark` table's bytes.
+    fn marks_size(&self) -> u64 {
+        self.sum("SELECT SUM(length(bytes)) FROM mark", &[])
+    }
+
+    /// The `cutoff_crop` table's bytes and the rows' item.
+    fn cutoff_size(&self) -> u64 {
+        let rows = [text(Item::CutoffRows.file_name())];
+        self.sum("SELECT SUM(length(bytes)) FROM cutoff_crop", &[])
+            + self.sum("SELECT SUM(length(bytes)) FROM library WHERE name = ?1", &rows)
+    }
+
+    /// Its pages' bytes.
+    fn file_size(&self) -> Option<u64> {
+        let pages = self.sum("PRAGMA page_count", &[]);
+        Some(pages * self.sum("PRAGMA page_size", &[]))
+    }
+
+    /// VACUUM: the database file is written again without its free pages.
+    fn compact(&self) -> io::Result<()> {
+        self.sql().batch("VACUUM")
+    }
+}
+
 impl Store for Database {
     /// The item's row, as it was given.
     fn read(&self, item: Item<'_>) -> io::Result<Option<Vec<u8>>> {
@@ -454,50 +500,6 @@ impl Store for Database {
         }
         out.sort_by_cached_key(|(recording, ..)| listing_key(recording));
         out
-    }
-
-    /// The `review` table by model.
-    fn review_sizes(&self) -> Vec<ReviewSize> {
-        let statement = "SELECT model, COUNT(DISTINCT recording), SUM(length(bytes)) FROM review GROUP BY model";
-        let rows = self.sql().query(statement, &[]).unwrap_or_default();
-        rows.into_iter()
-            .map(|row| ReviewSize {
-                model: text_of(row[0].clone()),
-                recordings: usize::try_from(count_of(&row[1])).unwrap_or(0),
-                bytes: count_of(&row[2]),
-            })
-            .collect()
-    }
-
-    /// Deletes the model's rows.
-    fn remove_reviews(&self, model: &str) -> io::Result<usize> {
-        let mut sql = self.sql();
-        let counted = sql.query("SELECT COUNT(DISTINCT recording) FROM review WHERE model = ?1", &[text(model)])?;
-        sql.execute("DELETE FROM review WHERE model = ?1", &[text(model)])?;
-        Ok(counted.first().map_or(0, |row| usize::try_from(count_of(&row[0])).unwrap_or(0)))
-    }
-
-    /// The `mark` table's bytes.
-    fn marks_size(&self) -> u64 {
-        self.sum("SELECT SUM(length(bytes)) FROM mark", &[])
-    }
-
-    /// The `cutoff_crop` table's bytes and the rows' item.
-    fn cutoff_size(&self) -> u64 {
-        let rows = [text(Item::CutoffRows.file_name())];
-        self.sum("SELECT SUM(length(bytes)) FROM cutoff_crop", &[])
-            + self.sum("SELECT SUM(length(bytes)) FROM library WHERE name = ?1", &rows)
-    }
-
-    /// Its pages' bytes.
-    fn file_size(&self) -> Option<u64> {
-        let pages = self.sum("PRAGMA page_count", &[]);
-        Some(pages * self.sum("PRAGMA page_size", &[]))
-    }
-
-    /// VACUUM: the database file is written again without its free pages.
-    fn compact(&self) -> io::Result<()> {
-        self.sql().batch("VACUUM")
     }
 
     /// The browser build keeps KovaaK's files here; natively the library reads their folders.
