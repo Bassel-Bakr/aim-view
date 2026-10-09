@@ -8,7 +8,7 @@
     {"key": "tracking", "name": "Tracking", "what": "time on the bot minus the stats file's accuracy: mean, and mean size (nearer 0 is better)"}
   ],
   "checked_on": "Recordings no model trained on, against their stats files (eval_moving.py).",
-  "default": "large_v13e4",
+  "default": "large_v16e4",
   "models": {
     "full_v3": {
       "params": 80765, "kb": 324.4,
@@ -51,6 +51,14 @@
       "weak": "Switching runs: 3 flicks fewer than large_v11 (within the gate's limit), precision 0.915 against 0.919.",
       "checks": {"static": [854, 849], "moving": [1200, 1181], "tracking": [-0.018, 0.048]},
       "accepted": "2026-10-06: python/model/reports/accept_large_v13e4.json (the app's native review)"
+    },
+    "large_v16e4": {
+      "params": 148709, "kb": 587.1,
+      "trained": "large_v13e4 fine-tuned for 4 epochs with crops the user checked on the phone: 721 from an automatic label batch over 150 recordings (2026-10-08) and 120 of overlapping targets, each one boxed (ovals for stretched spheres). The epoch-4 checkpoint of large_v16.",
+      "best": "Splits overlapping targets (Bounce 180 Sparky Jumbo 107 of 107 kills, large_v15e4 106); more flicks measured on dynamic (790 against 788) and switching runs (397 against 393); tracking's mean gap nearer 0 (-0.015 against -0.018); the video alone's precision 0.973 against 0.972.",
+      "weak": "The video alone's recall a little lower (0.956 against 0.959; dynamic 0.975 against 0.980, within the gate's limit); tracking's mean gap size 0.050 against 0.048; the crosshair boxed in 3.4% of one recording's turns against 2.8%.",
+      "checks": {"static": [854, 849], "moving": [1200, 1187], "tracking": [-0.015, 0.05]},
+      "accepted": "2026-10-09: python/model/reports/accept_large_v16e4.json (the app's native review)"
     },
     "hand": {
       "label": "Hand-written",

@@ -685,7 +685,40 @@ full_v3's boxes run big). The pixels alone are no labeller: extra boxes on small
 robots, whose many colors no one color covers (the teacher labels those). So an automatic batch can split in two: the
 agreed boxes, checked by a sample, and everything else, checked whole.
 
+## large_v16: the user's checked label batch and overlapping targets (2026-10-09)
+
+large_v13e4 fine-tuned for 4 epochs (python/model/REPRODUCE.md, the large_v15 and large_v16 rows) with two sets the
+user checked on the phone: 721 crops of the 2026-10-08 automatic label batch (`build_label_batch.py`: pixel rules and
+the model agreeing, or the user fixing them; `chk_batch1`) and 120 crops of overlapping targets each boxed alone
+(`build_merged_pairs.py`, `chk_pairs_`; 15 drawn as ovals, the new shape for spheres perspective stretches). large_v15e4,
+the first set alone, failed the gate by one kill: on Bounce 180 Sparky Jumbo it boxed two overlapping jumbo spheres as
+one. With the overlapping pairs, large_v16e4 passes every check, the first fine-tune of large_v13e4 to do so:
+
+| Check | large_v16e4 | large_v13e4 | Allowed |
+| --- | --- | --- | --- |
+| Contract | meets it (crosshair 3.38% of 849.91's turns against 2.83%) | meets it | every check |
+| Static, dynamic, switching kills | 854, 796, 404 | 854, 796, 404 | 0 |
+| Static, dynamic, switching flicks | 849, 790, 397 | 849, 788, 393 | 4.6, 6.2, 6.8 |
+| Tracking gap: mean size, mean | 0.0499, -0.0148 | 0.0475, -0.0184 | 0.0187, 0.0326 |
+| Report (4 static runs) kills, flicks (496) | 496, 494 | 496, 493 | 0, 3.6 |
+| Video alone, all: recall, precision | 0.9560, 0.9729 | 0.9591, 0.9718 | 0.0058, 0.0048 |
+| Video alone, dynamic: recall, precision | 0.9749, 0.9939 | 0.9799, 0.9929 | 0.0065, 0.0039 |
+| Gate | PASS | | |
+
+Validation F1 by epoch 0.9491, 0.9520, 0.9515, 0.9503; the last epoch is exported, as for large_v13e4 (the validation
+crops have none of the new sets' cases). The user made it the default the same day.
+
 ## Current best model
+
+**large_v16e4** (2026-10-09, "large_v16" above), threshold 0.3, with large_v13e4's `at_crosshair` rule for tracking
+runs. 148,709 parameters; 587.1 KB as fp32 ONNX. large_v13e4 was the best before it.
+
+- To embed (KovOBS, the browser, any language): `python/model/exports/detector_large_v16e4_embed.onnx`. Raw RGB bytes
+  and the fixed map in, the 100 best boxes out.
+- With the plain float input (any ONNX runtime, the HTTP server): `detector_large_v16e4_fp32.onnx`.
+- The checkpoint: `test_out/vod_model/runs/large_v16e4/best.pt` (large_v16's last epoch).
+
+The model before it:
 
 **large_v13e4** (2026-10-06, "large_v12 and large_v13" above), threshold 0.3, and on tracking runs weaker boxes at the
 crosshair (its settings' `at_crosshair`: tracking's gap to the stats files 0.062 to 0.048). 148,709 parameters; 587.1

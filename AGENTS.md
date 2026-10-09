@@ -2,7 +2,7 @@
 
 Aim View reviews aim trainer recordings. The review core is Rust (`src/`). The review service (`service/`) answers the
 review API; the desktop app and the Rust server serve it, and Python's scripts reach it through `aimview-tool`. The UI
-is Angular (`ui/`). `python/model/` trains the target detector. The default detector is large_v13e4 (`infer.BEST`,
+is Angular (`ui/`). `python/model/` trains the target detector. The default detector is large_v16e4 (`infer.BEST`,
 models.json's default).
 
 The old Python review retired on 2026-10-04 (`python/retired/review.py`). The parity tests compare with its frozen

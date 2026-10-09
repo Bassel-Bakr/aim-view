@@ -4,7 +4,8 @@ What the app does today, how each part was checked against Python or the stats f
 out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; read the part you need.
 
 
-- The detector is large_v13e4 (`infer.BEST`, models.json's default since 2026-10-06): the large model (148,709
+- The detector is large_v16e4 (`infer.BEST`, models.json's default since 2026-10-09; large_v13e4 before it): large_v13e4
+  fine-tuned with crops the user checked on the phone (an automatic label batch and overlapping targets). large_v13e4 is the large model (148,709
   parameters), trained on every scenario kind, on robots boxed whole, never boxing a health bar (of any color, with
   or without its text), then on the kills its first version got wrong against the stats files, tiles labelled from
   the stats files' kills with no one drawing, and robot crops checked by Claude; large_v11 was the default before it.
