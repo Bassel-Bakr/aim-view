@@ -20,6 +20,11 @@
     "ffmpeg_windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
     "ytdlp_releases": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
   },
+  "build_cache": {
+    "about": "How big Cargo's build folder (target/) may grow. Cargo never deletes an old build output, so after a commit, at most once every every_hours, scripts/sweep.ts runs cargo sweep, which deletes the least recently used outputs until the folder is under max_gb.",
+    "max_gb": 20,
+    "every_hours": 24
+  },
   "steam": null,
   "steam_found": {
     "about": "Where Steam's folder is looked for when steam is null: on Windows the registry value Steam keeps it in, elsewhere this folder under the home folder.",

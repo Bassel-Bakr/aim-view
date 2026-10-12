@@ -52,6 +52,7 @@ bun run dev:server                      # the UI in server mode (needs the serve
 bun run dev:server:lan                  # the same, open to the local network
 bun run build                           # every mode's build into ui/dist/ (build:<mode> for one; --quick: quick WebAssembly, for this computer)
 bun run costs                           # docs/COSTS.md's measured table again, from test_out/costs.jsonl
+bun run sweep                           # target/ trimmed to build_cache.max_gb now (cargo-sweep; the post-commit hook does it daily)
 bun run app                             # the desktop app (Tauri 2, desktop/)
 bun run build:app                       # its installer, in target/release/bundle/nsis/
 bun run test:ui                         # the UI's tests

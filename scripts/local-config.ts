@@ -20,6 +20,11 @@ function settings(): Settings {
   return { ...read('aimview.defaults.json'), ...(existsSync(local) ? read('aimview.json') : {}) };
 }
 
+/** A setting by its top-level key, as the JSON holds it (a number, a string, an object), or undefined when unset. */
+export function setting(key: string): unknown {
+  return settings()[key];
+}
+
 /** A folder the settings name (data, models, ui, ffmpeg, vods), as an absolute path; it fails when it is not set. */
 export function folder(key: string): string {
   const path = settings()[key];

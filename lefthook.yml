@@ -34,3 +34,9 @@ commit-msg:
   jobs:
     - name: conventional-commits
       run: bun scripts/commit-message.ts {1}
+
+# Cargo's build folder trimmed to the settings' build_cache.max_gb, at most once a day; any other commit skips it at once
+post-commit:
+  jobs:
+    - name: cargo-sweep
+      run: bun scripts/sweep.ts
