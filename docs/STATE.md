@@ -56,7 +56,9 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   a MOV keeps it only when written with `use_metadata_tags`; MPEG-TS and AVI drop it. The service writes the file out
   once into the data folder's embedded_stats/ under KovaaK's name, so the report, the mouse measures, the export and
   aimview-tool's `stats_file` take it as any stats file, and lists the videos with no tag in untagged.jsonl, so each
-  is read once. The list reads a video's tag only when nothing else gives it a stats file. The page's remux into MP4
+  is read once. The list reads a video's tag only when nothing else gives it a stats file. Where the desktop app has
+  no ffmpeg yet, the first tag to read starts its download in the background (a review waits for it; the list and
+  the report do not), and the tag is read when next asked. The page's remux into MP4
   (modes/web-files/remux.ts) keeps every text tag, as mdta keys. Checked on two Gridshot 3x3 30s recordings
   (2026-10-16): the tag's bytes and the name equal KovaaK's file's, read by ffprobe and by Mediabunny from the MP4 and
   from MKV and WebM copies, and after the page's remux of the MKV copy.

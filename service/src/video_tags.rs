@@ -15,10 +15,28 @@ pub fn tag(video: &Path, key: &str) -> io::Result<Option<String>> {
     Ok(tags(video)?.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(key)).map(|(_, value)| value))
 }
 
-/// The video's container-level tags, from ffprobe.
+/// The video's container-level tags, from ffprobe. With no ffprobe to run yet (the desktop app downloads ffmpeg), its
+/// download starts and this asking fails: the tags are read when asked again.
 #[cfg(feature = "native")]
 fn tags(video: &Path) -> io::Result<HashMap<String, String>> {
-    crate::video::tags(video)
+    let answer = crate::video::tags(video);
+    if answer.as_ref().is_err_and(|error| error.kind() == io::ErrorKind::NotFound) {
+        fetch_ffmpeg();
+    }
+    answer
+}
+
+/// Starts ffmpeg's download in the background, once a process (ffmpeg.rs `ensure`: only when it is to be downloaded
+/// and the PATH has none), so the recordings list and the report never wait for it as a review does.
+#[cfg(feature = "native")]
+fn fetch_ffmpeg() {
+    /// Set once the download has started.
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        std::thread::spawn(|| {
+            let _ = crate::ffmpeg::ensure(|_, _| {});
+        });
+    });
 }
 
 /// The video's container-level tags, from the page's Mediabunny.
