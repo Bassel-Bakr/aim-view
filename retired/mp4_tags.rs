@@ -1,11 +1,10 @@
-//! A video's metadata tags as ffmpeg writes them into an MP4 or a MOV with `-movflags use_metadata_tags`: the `mdta`
-//! keys of a `meta` box in moov/udta, or in moov. KovOBS keeps the run's KovaaK's stats file there (library/stats.rs).
+//! An MP4's or a MOV's metadata tags as ffmpeg writes them with `-movflags use_metadata_tags`: the `mdta` keys of a
+//! `meta` box in moov/udta, or in moov.
 //!
 //! In: the video, read a box header at a time through disk.rs's `RangeReader` (a few small reads, then the boxes that
-//! can hold the tags), never its frames. Out: one tag's value, as its bytes.
+//! can hold the tags), never its frames. Out: one tag's value, as its bytes, for video_tags.rs.
 
 use std::io;
-use std::path::Path;
 
 use crate::disk::RangeReader;
 
@@ -90,15 +89,16 @@ fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_be_bytes(bytes.get(at..at + COUNT_BYTES)?.try_into().ok()?))
 }
 
-/// The 1-based index the body of a `keys` box gives the `mdta` key `key`: after its version, flags and entry count,
-/// each entry is its size, its namespace and its name.
+/// The 1-based index the body of a `keys` box gives the `mdta` key `key` (any case): after its version, flags and
+/// entry count, each entry is its size, its namespace and its name.
 fn key_index(keys: &[u8], key: &str) -> Option<u32> {
     let count = u32_at(keys, VERSION_FLAGS_BYTES)?;
     let mut at = VERSION_FLAGS_BYTES + COUNT_BYTES;
     for index in 1..=count.min(MAX_BOXES as u32) {
         let size = u32_at(keys, at)? as usize;
         let entry = keys.get(at..at.checked_add(size)?)?;
-        if entry.get(4..8) == Some(b"mdta") && entry.get(8..) == Some(key.as_bytes()) {
+        let named = entry.get(8..).is_some_and(|name| name.eq_ignore_ascii_case(key.as_bytes()));
+        if entry.get(4..8) == Some(b"mdta") && named {
             return Some(index);
         }
         at += size.max(HEADER_BYTES as usize);
@@ -124,11 +124,10 @@ fn tag_in_meta(meta: &[u8], key: &str) -> Option<Vec<u8>> {
     Some(body_of(item_body, &data)?.get(DATA_HEAD_BYTES..)?.to_vec())
 }
 
-/// The value of the `mdta` tag `key` in the video at `path`; None when it has no such tag, is not an MP4 or a MOV, or
-/// its boxes do not read. Reads the top level's box headers up to moov, moov's box headers, then its udta and meta
-/// boxes whole.
-pub fn mdta_tag(path: &Path, key: &str) -> io::Result<Option<Vec<u8>>> {
-    let mut reader = RangeReader::open(path)?;
+/// The value of the `mdta` tag `key` (any case) in the MP4 or MOV `reader` reads; None when it has no such tag or its
+/// boxes do not read. Reads the top level's box headers up to moov, moov's box headers, then its udta and meta boxes
+/// whole.
+pub(super) fn mdta_tag(reader: &mut RangeReader, key: &str) -> io::Result<Option<Vec<u8>>> {
     let size_bytes = reader.size_bytes()?;
     let top = walk(0, size_bytes, Some(b"moov"), |at, len| reader.read_range(at, len))?;
     let Some(moov) = top.into_iter().find(|found| &found.kind == b"moov") else { return Ok(None) };
@@ -170,6 +169,8 @@ pub(crate) fn tagged_mp4(tags: &[(&str, &[u8])]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::video_tags::tag as mdta_tag;
+    use std::path::Path;
 
     /// A `meta` box's body with ffmpeg's `mdta` tags: the handler, the keys and the values; `iso`: with a version and
     /// flags first, as an MP4's.
@@ -218,6 +219,7 @@ mod tests {
         let mp4 = video("a.mp4", &[ftyp.clone(), mdat.clone(), mp4_box(b"moov", &[trak.clone(), udta].concat())]);
         assert_eq!(mdta_tag(&mp4, "kovobs_kovaaks_stats").unwrap().as_deref(), Some(csv));
         assert_eq!(mdta_tag(&mp4, "encoder").unwrap().as_deref(), Some(&b"Lavf"[..]));
+        assert_eq!(mdta_tag(&mp4, "KOVOBS_KOVAAKS_STATS").unwrap().as_deref(), Some(csv), "any case");
         assert_eq!(mdta_tag(&mp4, "other").unwrap(), None);
 
         let meta = mp4_box(b"meta", &meta_body(tags, false));

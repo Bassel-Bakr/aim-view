@@ -1,8 +1,10 @@
 //! A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as Python's review decoded
 //! them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core
-//! converts them to the same bytes. ffprobe gives the frames' times, the key frames and the colors. In: a video's path.
-//! Out: what the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder (finder.rs).
+//! converts them to the same bytes. ffprobe gives the frames' times, the key frames and the colors, and the container's
+//! tags. In: a video's path. Out: what the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area
+//! finder (finder.rs), and its tags (video_tags.rs).
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -76,6 +78,22 @@ struct ProbeStream {
     color_range: Option<String>,
 }
 
+/// ffprobe's JSON answer for the container's tags.
+#[derive(Deserialize)]
+struct TagsProbe {
+    /// The container's facts; empty when ffprobe gives none.
+    #[serde(default)]
+    format: TagsFormat,
+}
+
+/// The container's tags ffprobe gives.
+#[derive(Default, Deserialize)]
+struct TagsFormat {
+    /// Each tag's text by its key, as the file writes it.
+    #[serde(default)]
+    tags: HashMap<String, String>,
+}
+
 /// One packet ffprobe lists: one frame.
 #[derive(Deserialize)]
 struct ProbePacket {
@@ -96,6 +114,22 @@ fn tool(name: &str) -> Command {
         command.creation_flags(CREATE_NO_WINDOW);
     }
     command
+}
+
+/// The video's container-level tags (ffprobe's format tags), by key as the file writes it; none when ffprobe cannot
+/// read the video. An error when ffprobe cannot run, or answers with what is not its JSON.
+pub fn tags(video: &Path) -> std::io::Result<HashMap<String, String>> {
+    let output = tool("ffprobe")
+        .args(["-v", "error", "-show_entries", "format_tags", "-of", "json"])
+        .arg(video)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        return Ok(HashMap::new());
+    }
+    let probe: TagsProbe = serde_json::from_slice(&output.stdout).map_err(std::io::Error::other)?;
+    Ok(probe.format.tags)
 }
 
 /// The frame times from 0 on and the key frames' times, each in order, from the packets, and the earliest packet's

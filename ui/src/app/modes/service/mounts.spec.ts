@@ -12,16 +12,7 @@ const REMOVE_DIR_ALL = 5;
 const RENAME = 6;
 const LIST = 7;
 const METADATA = 8;
-const READ_RANGE = 9;
-
-/** A range read's argument: the start and the length, each a little-endian u64. */
-function range(start: number, length: number): Uint8Array {
-  const arg = new Uint8Array(16);
-  const view = new DataView(arg.buffer);
-  view.setBigUint64(0, BigInt(start), true);
-  view.setBigUint64(8, BigInt(length), true);
-  return arg;
-}
+const VIDEO_TAGS = 9;
 
 /** A write's place in the file. */
 interface WriteAt {
@@ -223,13 +214,19 @@ describe('Mounts over a folder handle', () => {
   });
 });
 
-describe('Mounts reading a range of a file', () => {
-  it('reads the range, fewer bytes at the end, and nothing for a missing file', async () => {
-    const mounts = dataMounts();
-    expect((await mounts.host(WRITE, '/data/v.mp4', encode('0123456789'))).code).toBe(0);
-    expect(decode(await mounts.host(READ_RANGE, '/data/v.mp4', range(2, 3)))).toBe('234');
-    expect(decode(await mounts.host(READ_RANGE, '/data/v.mp4', range(8, 16)))).toBe('89');
-    expect((await mounts.host(READ_RANGE, '/data/none.mp4', range(0, 4))).code).toBe(1);
+describe('Mounts reading the tags of a video', () => {
+  it('answers the tags Mediabunny reads from the file, as JSON, and not found for no file', async () => {
+    const read: string[] = [];
+    const mounts = new Mounts(async (file) => {
+      read.push(await file.text());
+      return { KOVOBS_KOVAAKS_STATS: 'Kill #,Timestamp' };
+    });
+    mounts.set('data', new DirMount(handle(new FakeDirHandle()), true));
+    expect((await mounts.host(WRITE, '/data/v.mkv', encode('video'))).code).toBe(0);
+    const tags = await mounts.host(VIDEO_TAGS, '/data/v.mkv', encode(''));
+    expect(JSON.parse(decode(tags))).toEqual({ KOVOBS_KOVAAKS_STATS: 'Kill #,Timestamp' });
+    expect(read).toEqual(['video']);
+    expect((await mounts.host(VIDEO_TAGS, '/data/none.mkv', encode(''))).code).toBe(1);
   });
 });
 

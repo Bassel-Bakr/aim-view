@@ -20,20 +20,21 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | --- | --- | --- | --- | --- | --- |
 | accept | model large_v16e4 | 1455.3 s | 1455.3 s | 1 | 2026-10-09, ec76e1d+ |
 | aimview-tool recordings | - | 1 s | 10.3 s | 2 | 2026-10-16, a2099ab+ |
+| aimview-tool recordings | tags ffprobe | 1 s | 50.8 s | 2 | 2026-10-16, 0f69e37+ |
 | aimview-tool recordings | untagged kept | 0.9 s | 1.1 s | 2 | 2026-10-16, a2099ab+ |
 | assets | profile release, modes browser | 0.3 s | 68.7 s | 2 | 2026-10-08, 4303844+ |
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 0.2 s | 36.0 s | 7 | 2026-10-09, ec76e1d+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 53 s | 24.2 s | 26 | 2026-10-16, a2099ab+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 0.5 s | 20.7 s | 28 | 2026-10-16, 526ee01+ |
 | assets | profile wasm-dev, modes server | 12.4 s | 11.0 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 36.6 s | 16.4 s | 31 | 2026-10-16, a2099ab+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 0.4 s | 13.7 s | 33 | 2026-10-16, 526ee01+ |
 | assets: core wasm (cargo) | profile release | 0.2 s | 35.9 s | 7 | 2026-10-09, ec76e1d |
 | assets: core wasm (cargo) | profile wasm-dev | 12.2 s | 10.9 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O0 | 16.1 s | 7.7 s | 13 | 2026-10-16, a2099ab+ |
+| assets: wasm-opt (Asyncify) | level -O0 | 16.7 s | 12.1 s | 14 | 2026-10-16, 526ee01+ |
 | assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 64.7 s | 62.5 s | 2 | 2026-10-08, 4303844+ |
 | bench | model large_v16e4 | 10.2 s | 10.2 s | 1 | 2026-10-09, 63e0edd |
@@ -46,7 +47,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 5.4 s | 5.5 s | 12 | 2026-10-09, ec76e1d+ |
 | build: lint | - | 2.6 s | 4.4 s | 9 | 2026-10-09, ec76e1d+ |
-| cargo test quick workspace | - | 19.5 s | 19.5 s | 3 | 2026-10-16, a2099ab+ |
+| cargo test quick workspace | - | 79.6 s | 32.4 s | 4 | 2026-10-16, 0f69e37+ |
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | export | model large_v16e4 | 82.4 s | 82.4 s | 1 | 2026-10-09, ec76e1d+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
@@ -92,7 +93,7 @@ times that step.
 | `wasm-opt --asyncify` on the browser's service (inside `bun run assets`) | Binaryen's Asyncify, so the service's file calls can wait on the page | `-O2` (release) 67 s, `-O1` (dev) 37 s, every run until 2026-10-07 (60.3 s measured since); now skipped when its input is unchanged | edc88e7 | scripts/ui-assets.ts |
 | Browser mode: choosing KovaaK's stats folder the first time | each of the 72,127 stats files (401 MB) read once and its run sent to the service in batches (kovaak-batch.ts), kept in the database | 6.1 s to send and keep, once the files were in the page (reading them from the folder not included); choosing it again 0.8 s, nothing sent; the database 14.5 MB (8.3 MB of it the stats files' rows) against 401 MB of packs before; /api/kovaak_files 0.35 s, a scenario's history (117 runs) 0.6 s | 2026-10-08, d12d258 | the built-in browser (Chromium), files served from the stats folder |
 | `bun run build` before scripts/build.ts | the assets with `--release` three times (one per mode), each wiping ui/generated/ and running `wasm-opt -O2` again, then the three Angular builds one after another | about 306 s after a Rust change (the first assets 162 s, two more `wasm-opt` runs, the Angular builds 20 s); about 205 s with nothing changed | 2026-10-07, 78c5844+ (worked out from the measured steps) | package.json before scripts/build.ts |
-| `aimview-tool recordings`, reading KovOBS's tag | every recording's stats file (1,744 recordings), each untagged video read for the `kovobs_kovaaks_stats` tag (library/stats.rs) | before the untagged list (the measured row "-"): 19.6 s on a cold disk, 1 s warm, every start; with it ("untagged kept"): each video read once, then 0.9 s, the same 1,744 stats files | 2026-10-16, a2099ab+ | test_out/vod_embedded_stats/untagged.jsonl |
+| `aimview-tool recordings`, reading KovOBS's tag | every recording's stats file (1,744 recordings), each untagged video read for the `kovobs_kovaaks_stats` tag (library/stats.rs) | with ffprobe ("tags ffprobe"): 100.6 s the first time (about 58 ms a video, 1,738 videos read once into the untagged list), then 1 s, the same 1,744 stats files. Before, with an MP4 reader of its own (retired/mp4_tags.rs): 19.6 s cold and 1 s warm on every start without the list ("-"), 0.9 s with it ("untagged kept") | 2026-10-16, 0f69e37+ | test_out/vod_embedded_stats/untagged.jsonl |
 | `bun run build` now | the assets once (one cargo run for the core and the service, `wasm-opt` only when the service changed), the three Angular builds at once | 5.1 s with nothing changed; 63.3 s after a Rust change that leaves the service's module as it was; about 60 s more when `wasm-opt` has to run | 2026-10-07, 78c5844+ | the measured table above |
 | `bun run build:server`, `build:desktop` now | the core alone (no service, no `wasm-opt`), one Angular build | 39.9 s after a Rust change (server); the browser-only files (onnxruntime 40 MB, the service, the models) no longer go in: ui/dist/server 51 to 5.2 MB, ui/dist/desktop 68 to 5.2 MB | 2026-10-07, 78c5844+ | the measured table above |
 | `cargo test --release` (a build) | the Rust tests with the release profile | about 40 s a build; `--profile quick` about 3 s | 78863f2 | AGENTS.md, Commands |

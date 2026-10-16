@@ -51,7 +51,6 @@ pub use imp::*;
 #[cfg(feature = "native")]
 mod imp {
     use super::*;
-    use std::io::{Read, Seek, SeekFrom};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     pub use std::fs::File;
@@ -107,29 +106,6 @@ mod imp {
     /// The whole file's bytes.
     pub fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
         std::fs::read(path)
-    }
-
-    /// A file read a range at a time (a video's boxes, mp4_tags.rs), its handle kept open between reads.
-    pub struct RangeReader(std::fs::File);
-
-    impl RangeReader {
-        /// Opens the file.
-        pub fn open(path: impl AsRef<Path>) -> io::Result<RangeReader> {
-            std::fs::File::open(path).map(RangeReader)
-        }
-
-        /// The file's size in bytes.
-        pub fn size_bytes(&self) -> io::Result<u64> {
-            Ok(self.0.metadata()?.len())
-        }
-
-        /// Up to `len` bytes from byte `start` on: fewer at the file's end.
-        pub fn read_range(&mut self, start: u64, len: u64) -> io::Result<Vec<u8>> {
-            self.0.seek(SeekFrom::Start(start))?;
-            let mut bytes = Vec::new();
-            (&mut self.0).take(len).read_to_end(&mut bytes)?;
-            Ok(bytes)
-        }
     }
 
     /// The whole file as text; an error when it is not UTF-8.
@@ -394,9 +370,9 @@ mod imp {
         ReadDir = 7,
         /// The path's size, time of change and kind as JSON.
         Metadata = 8,
-        /// Up to a length of the file's bytes from a start: `arg` is the start and the length, each a little-endian
-        /// u64; fewer bytes at the file's end.
-        ReadRange = 9,
+        /// The video's container-level tags as JSON ({key: text}), read by the page's Mediabunny; {} for a file it
+        /// cannot read as a video.
+        VideoTags = 9,
     }
 
     /// The bytes before a result block's own: its code and its length, each a little-endian u32.
@@ -557,33 +533,10 @@ mod imp {
         call(Op::Read, path.as_ref(), &[])
     }
 
-    /// A file read a range at a time (a video's boxes, mp4_tags.rs): each read a call to the page, which reads only
-    /// that range of the file.
-    pub struct RangeReader {
-        /// The file's path.
-        path: PathBuf,
-        /// Its size in bytes, when it was opened.
-        size_bytes: u64,
-    }
-
-    impl RangeReader {
-        /// Opens the file: its size, from the page.
-        pub fn open(path: impl AsRef<Path>) -> io::Result<RangeReader> {
-            let path = path.as_ref().to_path_buf();
-            let size_bytes = metadata(&path)?.len();
-            Ok(RangeReader { path, size_bytes })
-        }
-
-        /// The file's size in bytes.
-        pub fn size_bytes(&self) -> io::Result<u64> {
-            Ok(self.size_bytes)
-        }
-
-        /// Up to `len` bytes from byte `start` on: fewer at the file's end.
-        pub fn read_range(&mut self, start: u64, len: u64) -> io::Result<Vec<u8>> {
-            let arg = [start.to_le_bytes(), len.to_le_bytes()].concat();
-            call(Op::ReadRange, &self.path, &arg)
-        }
+    /// A video's container-level tags as JSON ({key: text}), which the page reads with Mediabunny (video_tags.rs);
+    /// {} for a file it cannot read as a video.
+    pub fn video_tags(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+        call(Op::VideoTags, path.as_ref(), &[])
     }
 
     /// The whole file as text; an error when it is not UTF-8.

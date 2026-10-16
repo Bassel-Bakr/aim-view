@@ -34,7 +34,6 @@ pub mod gpu_frames;
 pub mod labels;
 pub mod library;
 pub mod mouse;
-pub mod mp4_tags;
 pub mod npz;
 pub mod pyjson;
 pub mod report;
@@ -44,6 +43,7 @@ pub mod sql;
 pub mod store;
 #[cfg(feature = "native")]
 pub mod video;
+pub mod video_tags;
 #[cfg(feature = "native")]
 pub mod ytdlp;
 

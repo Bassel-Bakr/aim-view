@@ -1,7 +1,7 @@
 /**
  * Remuxes a video into MP4 in the page, with Mediabunny. In: a video file the browser may not play
- * (MKV, MOV, WebM). Out: the same streams in an MP4 Blob; video-files.ts `toMp4` loads this file
- * only when a video needs it.
+ * (MKV, MOV, WebM). Out: the same streams and tags in an MP4 Blob; video-files.ts `toMp4` loads
+ * this file only when a video needs it.
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   BlobSource,
   Conversion,
   Input,
+  MetadataTags,
   Mp4OutputFormat,
   Output,
   StreamTarget,
@@ -55,6 +56,20 @@ export class BlobSink {
   }
 }
 
+/** A raw tag whose value is text: its key and its value. */
+type TextTag = [key: string, value: string];
+
+/**
+ * The input's tags for the MP4, with every raw tag whose value is text (KovOBS's stats file among
+ * them): Mediabunny drops the raw tags between two formats unless it is given new ones.
+ */
+function keptTags(tags: MetadataTags): MetadataTags {
+  const text = Object.entries(tags.raw ?? {}).filter(
+    (tag): tag is TextTag => typeof tag[1] === 'string',
+  );
+  return { ...tags, raw: Object.fromEntries(text) };
+}
+
 /**
  * A video remuxed into MP4 in the browser: its streams are copied, not encoded again (a stream MP4
  * cannot hold is encoded, with the browser's own encoder). progress gets the share done, 0 to 1.
@@ -64,10 +79,12 @@ export async function remuxToMp4(file: Blob, progress: (share: number) => void):
   const sink = new BlobSink();
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
   const output = new Output({
-    format: new Mp4OutputFormat(),
+    // mdta keys (ffmpeg's use_metadata_tags) keep every tag the input has, KovOBS's stats file among
+    // them; the default (iTunes' mdir) keeps only four-letter keys
+    format: new Mp4OutputFormat({ metadataFormat: 'mdta' }),
     target: new StreamTarget(sink.stream, { chunked: true }),
   });
-  const conversion = await Conversion.init({ input, output, showWarnings: false });
+  const conversion = await Conversion.init({ input, output, showWarnings: false, tags: keptTags });
   if (!conversion.isValid) {
     const why = conversion.discardedTracks.map((track) => track.reason.replaceAll('_', ' '));
     throw new Error(`no track it can keep (${why.join(', ')})`);

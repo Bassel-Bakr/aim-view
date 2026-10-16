@@ -49,13 +49,17 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   adds the video as an upload.
   Server mode: files added are sent to the server, and the stats file panel lists KovaaK's stats files (`/api/stats`).
   A recording's stats file is the user's pick, else the one KovOBS keeps in the video, else one uploaded beside it,
-  else KovaaK's by name and time (service/src/library/stats.rs). KovOBS keeps the whole file in the MP4's
-  `kovobs_kovaaks_stats` tag. The service reads it in every mode without ffprobe (service/src/mp4_tags.rs: box
-  headers up to moov, then its udta; in the browser each read is a range of the file, host_fs op 9). It writes the
-  file out once into the data folder's embedded_stats/ under KovaaK's name, so the report, the mouse measures, the
-  export and aimview-tool's `stats_file` take it as any stats file. The list reads a video's tag only when nothing
-  else gives it a stats file. Checked on two Gridshot 3x3 30s recordings (2026-10-16): the tag's bytes and the name
-  equal KovaaK's file's.
+  else KovaaK's by name and time (service/src/library/stats.rs). KovOBS keeps the whole file in the video's
+  `kovobs_kovaaks_stats` tag. The service reads a video's container tags with the demuxers the app has, whatever the
+  container (service/src/video_tags.rs): ffprobe natively, Mediabunny in the browser (the page answers host_fs op 9,
+  modes/service/video-tags.ts). The key is matched in any case: ffmpeg upper-cases it in an MKV or a WebM. An MP4 or
+  a MOV keeps it only when written with `use_metadata_tags`; MPEG-TS and AVI drop it. The service writes the file out
+  once into the data folder's embedded_stats/ under KovaaK's name, so the report, the mouse measures, the export and
+  aimview-tool's `stats_file` take it as any stats file, and lists the videos with no tag in untagged.jsonl, so each
+  is read once. The list reads a video's tag only when nothing else gives it a stats file. The page's remux into MP4
+  (modes/web-files/remux.ts) keeps every text tag, as mdta keys. Checked on two Gridshot 3x3 30s recordings
+  (2026-10-16): the tag's bytes and the name equal KovaaK's file's, read by ffprobe and by Mediabunny from the MP4 and
+  from MKV and WebM copies, and after the page's remux of the MKV copy.
 - The review in the browser (ui/src/app/modes/wasm/, the Rust core in src/). The track step runs in a worker
   (review.worker.ts): decode (Mediabunny and the browser's decoder, its software one where it has one: the same YUV
   as ffmpeg once the edit list's pre-roll, the frames before time 0, is skipped), ffmpeg's exact `scale=1280:720:flags=area` to RGB and YUV

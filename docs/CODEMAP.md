@@ -170,8 +170,6 @@ rust-analyzer's call hierarchy.
 - `service/src/mouse.rs`: A recording's measures from the raw mouse logs (python/mouse_log.py's, or the desktop app's
   logger's, in the layout's mouse folder): the newest log that covers the recording's run, read by the core
   (src/mouse.rs, as python/mouse_read.py reads it).
-- `service/src/mp4_tags.rs`: A video's metadata tags as ffmpeg writes them into an MP4 or a MOV with `-movflags
-  use_metadata_tags`: the `mdta` keys of a `meta` box in moov/udta, or in moov.
 - `service/src/npz.rs`: NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays,
   deflated): the cut-off's detector labels (faint.rs) and the area finder's maps (finder.rs), so Python's tools read
   what the app writes and the app reads what Python wrote.
@@ -198,6 +196,9 @@ rust-analyzer's call hierarchy.
 - `service/src/video.rs`: A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as
   Python's review decoded them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a
   pipe, so the core converts them to the same bytes.
+- `service/src/video_tags.rs`: A video's container-level metadata tags, whatever its container (MP4, MOV, MKV, WebM,
+  FLV...), from the demuxers the app already has: ffprobe natively (video.rs), and in the browser build the page's
+  Mediabunny (disk.rs's `video_tags`).
 - `service/src/ytdlp.rs`: yt-dlp, for recordings added from a link (library/links.rs): found as ffmpeg is (ffmpeg.rs),
   the PATH's when it runs, else the official release from GitHub, downloaded once into the tools folder beside ffmpeg's.
 - `server/src/access.rs`: Who may use the server.
@@ -1235,13 +1236,6 @@ answers.
 - `Library` methods: `mouse_measures`.
 - Functions: `measures_in`.
 
-## service/src/mp4_tags.rs
-
-A video's metadata tags as ffmpeg writes them into an MP4 or a MOV with `-movflags use_metadata_tags`: the `mdta` keys
-of a `meta` box in moov/udta, or in moov. KovOBS keeps the run's KovaaK's stats file there (library/stats.rs).
-
-- Functions: `mdta_tag`.
-
 ## service/src/npz.rs
 
 NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays, deflated): the cut-off's
@@ -1361,8 +1355,9 @@ kept for each recording; the space it takes, behind a narrower interface (`Store
 
 A recording's frames from ffmpeg (ffmpeg.rs: the PATH's, a folder's or a downloaded one), as Python's review decoded
 them (python/retired/review.py: `_frames`): the video's own YUV 4:2:0 at its size, through a pipe, so the core converts
-them to the same bytes. ffprobe gives the frames' times, the key frames and the colors. In: a video's path. Out: what
-the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder (finder.rs).
+them to the same bytes. ffprobe gives the frames' times, the key frames and the colors, and the container's tags. In: a
+video's path. Out: what the video is (`VideoInfo`) and its frames, for the review (review.rs) and the area finder
+(finder.rs), and its tags (video_tags.rs).
 
 - `VideoInfo` (struct): What a recording is: its frames' size, rate and colors, every frame's time (from 0 on, in order:
   the edit list's pre-roll before 0 is not shown), the key frames' times, its duration as ffprobe gives it, and its
@@ -1370,7 +1365,16 @@ the video is (`VideoInfo`) and its frames, for the review (review.rs) and the ar
   seconds.
 - `Frames` (struct): A recording's frames from an ffmpeg process, one at a time; the process ends when this is dropped.
   Methods: `open`, `next_into`.
-- Functions: `probe`.
+- Functions: `tags`, `probe`.
+
+## service/src/video_tags.rs
+
+A video's container-level metadata tags, whatever its container (MP4, MOV, MKV, WebM, FLV...), from the demuxers the app
+already has: ffprobe natively (video.rs), and in the browser build the page's Mediabunny (disk.rs's `video_tags`). A
+tag's key is matched ignoring case: ffmpeg writes a Matroska file's keys in upper case. KovOBS keeps the run's KovaaK's
+stats file in one (library/stats.rs).
+
+- Functions: `tag`.
 
 ## service/src/ytdlp.rs
 

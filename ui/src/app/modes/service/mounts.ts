@@ -3,10 +3,11 @@
  * The review service's file system in the browser, in its worker. In: the service's host_fs calls
  * (service-module.ts) and the page's own file tasks (service.worker.ts). Out: files and folders
  * read from and written to the browser's private file system (/data, /kovaak), the VODs folder the
- * user opened (/vods) and the models over HTTP (/models).
+ * user opened (/vods) and the models over HTTP (/models), and a video's tags (video-tags.ts).
  */
 import { ChosenFile, CopyDone, DirEntry } from './service-messages';
 import { FsResult } from './service-module';
+import { videoTags } from './video-tags';
 
 /** A host_fs call's code (the contract's): it worked. */
 const OK = 0;
@@ -35,10 +36,10 @@ const OP_READ_DIR = 7;
 /** The op that gives a path's metadata. */
 const OP_METADATA = 8;
 /**
- * The op that reads a range of a file (a video's boxes): the argument is the start and the length,
- * each a little-endian u64; fewer bytes at the file's end.
+ * The op that gives a video's container-level tags as JSON ({key: text}), read with Mediabunny; {}
+ * for a file it cannot read as a video.
  */
-const OP_READ_RANGE = 9;
+const OP_VIDEO_TAGS = 9;
 /** File times are kept in ms; the service's metadata gives seconds. */
 const MS_PER_SECOND = 1000;
 /** The HTTP status of a model file the server does not have. */
@@ -54,6 +55,9 @@ const COPIED = 'copied.json';
 const COPY_STEP = 100;
 /** A copy keeps its index every this many turns, so a page closed half way keeps what it copied. */
 const INDEX_EVERY = 50;
+
+/** Reads a video's container-level tags whose values are text, by key ({} when it cannot). */
+export type TagReader = (file: Blob) => Promise<Record<string, string>>;
 
 /** The mounts the service's paths start with. */
 export type MountName = 'data' | 'kovaak' | 'vods' | 'models';
@@ -753,6 +757,9 @@ export class Mounts {
   /** Each mount's file system, by its name. */
   private readonly table = new Map<MountName, MountFs>();
 
+  /** Reads a video's tags with readTags (Mediabunny's reader; the tests give a stand-in). */
+  constructor(private readonly readTags: TagReader = videoTags) {}
+
   /** Mounts a file system at /name (null: nothing there). */
   set(name: MountName, fs: MountFs | null): void {
     if (fs) this.table.set(name, fs);
@@ -815,12 +822,9 @@ export class Mounts {
         }
         case OP_METADATA:
           return ok(new TextEncoder().encode(JSON.stringify(await place.fs.stat(place.names))));
-        case OP_READ_RANGE: {
-          const range = new DataView(arg.buffer, arg.byteOffset, arg.byteLength);
-          const start = Number(range.getBigUint64(0, true));
-          const end = start + Number(range.getBigUint64(8, true));
-          const file = await place.fs.file(place.names);
-          return ok(new Uint8Array(await file.slice(start, end).arrayBuffer()));
+        case OP_VIDEO_TAGS: {
+          const tags = await this.readTags(await place.fs.file(place.names));
+          return ok(new TextEncoder().encode(JSON.stringify(tags)));
         }
         default:
           throw new FsError(OTHER, `no file system call ${op}`);

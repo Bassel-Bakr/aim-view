@@ -4,7 +4,7 @@
 //! recording's.
 //!
 //! In: KovaaK's stats folder (listed again once a minute; a file's run read from its last few kB), the recordings' tags
-//! (mp4_tags.rs), the stats files uploaded for a recording, and the page's choice. Out: each recording's stats file for
+//! (video_tags.rs), the stats files uploaded for a recording, and the page's choice. Out: each recording's stats file for
 //! its report and the list (one kept in the video is written out into the embedded stats folder first), the stats files
 //! to pair a recording with (/api/stats), and a scenario's past runs (/api/history).
 
@@ -41,12 +41,11 @@ const FOOTER_BYTES: u64 = 4096;
 const KOVAAK_SOURCE: &str = "kovaak";
 /// Where a picked stats file is kept: the uploads' stats folder.
 pub(super) const UPLOAD_SOURCE: &str = "upload";
-/// The MP4 tag KovOBS keeps the run's stats file in: the whole file, as KovaaK wrote it.
+/// The video tag KovOBS keeps the run's stats file in, in any container that keeps tags (its key in any case): the
+/// whole file, as KovaaK wrote it.
 const EMBEDDED_TAG: &str = "kovobs_kovaaks_stats";
-/// The videos' extensions (lower case) that can hold `EMBEDDED_TAG`: MP4's and MOV's (an MKV, OBS's own, cannot).
-const TAGGED_EXTENSIONS: [&str; 3] = ["mp4", "mov", "m4v"];
 /// The file in the embedded stats folder that lists the videos read with no stats file in them, a JSON line each
-/// (`Untagged`, a later line wins): a video is read once, not on every start (a cold disk takes about 10 ms a video, and
+/// (`Untagged`, a later line wins): a video is read once, not on every start (ffprobe takes about 50 ms a video, and
 /// aimview-tool's `recordings` asks for every one).
 const UNTAGGED_FILE: &str = "untagged.jsonl";
 /// The most threads that read stats files at once natively.
@@ -444,10 +443,6 @@ impl Library {
     /// first time it is needed, under the name KovaaK gave it (the scenario and time stamp of the video's name, which
     /// KovOBS takes from the stats file's). None when the video's name is not KovOBS's or the video holds no such tag.
     fn embedded_stats(&self, video: &Path) -> Option<PathBuf> {
-        let extension = video.extension()?.to_string_lossy().to_lowercase();
-        if !TAGGED_EXTENSIONS.contains(&extension.as_str()) {
-            return None;
-        }
         let (scenario, _, stamp) = parse_video(video)?;
         let path = self.folders.embedded_stats.join(stats_name(&scenario, &stamp));
         if crate::disk::is_file(&path) {
@@ -458,8 +453,8 @@ impl Library {
         if self.untagged_seen(video, seen) {
             return None;
         }
-        // a video that cannot be read now is read again next time; one read with no tag is kept as untagged
-        let Some(csv) = crate::mp4_tags::mdta_tag(video, EMBEDDED_TAG).ok()? else {
+        // a video whose demuxer cannot be reached now is read again next time; one read with no tag is kept as untagged
+        let Some(csv) = crate::video_tags::tag(video, EMBEDDED_TAG).ok()? else {
             self.keep_untagged(video, seen);
             return None;
         };
@@ -592,10 +587,19 @@ pub(super) fn stats_packs<'a>(mut files: Vec<(&'a str, &'a [u8])>) -> Vec<Vec<(&
 mod tests {
     use super::*;
     use crate::config::{Config, Layout};
-    use crate::mp4_tags::tagged_mp4;
+    use crate::video_tags::tests::tagged_video;
 
-    /// A recording's stats file is the user's choice, else the one kept in the video (written out once under KovaaK's
-    /// name, and taken over one uploaded beside it), else the one beside it; a video with no such tag gives none.
+    /// A one-frame video's bytes, made by ffmpeg in `dir` as `name` (its extension names the container) with `tags`.
+    fn video_bytes(dir: &Path, name: &str, tags: &[(&str, &str)]) -> Vec<u8> {
+        let path = dir.join("made").join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        tagged_video(&path, tags);
+        std::fs::read(path).unwrap()
+    }
+
+    /// A recording's stats file is the user's choice, else the one kept in the video, an MP4 or a Matroska file
+    /// (written out once under KovaaK's name, and taken over one uploaded beside it), else the one beside it; a video
+    /// with no such tag gives none.
     #[test]
     fn the_stats_file_kept_in_the_video_comes_after_the_users_choice() {
         let dir = std::env::temp_dir().join(format!("aimview-embedded-stats-{}", std::process::id()));
@@ -603,18 +607,18 @@ mod tests {
         let mut config = Config::new(dir.clone(), Layout::App, dir.join("models"));
         config.stats = dir.join("kovaak_stats");
         let library = Library::open(config).unwrap();
-        let upload = |name: &str, tags: &[(&str, &[u8])]| {
-            let saved = library.upload(name, None, &tagged_mp4(tags)).unwrap();
+        let upload = |name: &str, tags: &[(&str, &str)]| {
+            let saved = library.upload(name, None, &video_bytes(&dir, name, tags)).unwrap();
             let id = format!("uploads/{}", saved["saved"].as_str().unwrap());
             let video = library.resolve(&id).unwrap();
             (id, video)
         };
-        let csv: &[u8] = b"Kill #,Timestamp\r\n1,17:43:05.387\r\nScore:,60120\r\n";
+        let csv = "Kill #,Timestamp\r\n1,17:43:05.387\r\nScore:,60120\r\n";
         let (id, video) = upload("Gridshot 3x3 30s - 60120 - 2026.10.16-17.43.35.mp4", &[(EMBEDDED_TAG, csv)]);
         std::fs::write(video.with_extension("csv"), b"Score:,1\n").unwrap();
         let file = library.stats_of(&id, &video).unwrap();
         assert_eq!(file.file_name().unwrap(), "Gridshot 3x3 30s - Challenge - 2026.10.16-17.43.35 Stats.csv");
-        assert_eq!(std::fs::read(&file).unwrap(), csv);
+        assert_eq!(std::fs::read(&file).unwrap(), csv.as_bytes());
         let info = library.stats_info(&id, None).unwrap();
         assert_eq!(
             (info["how"].as_str(), info["file"].as_str()),
@@ -625,8 +629,11 @@ mod tests {
         assert!(!library.has_stats(library.pairing(&id), &id, &video));
         library.set_stats(&id, &json!({ "auto": true })).unwrap();
         assert_eq!(library.stats_of(&id, &video), Some(file));
+        let (mkv_id, mkv_video) = upload("Gridshot 3x3 30s - 2 - 2026.10.16-17.45.00.mkv", &[(EMBEDDED_TAG, csv)]);
+        let mkv_file = library.stats_of(&mkv_id, &mkv_video).unwrap();
+        assert_eq!(std::fs::read(&mkv_file).unwrap(), csv.as_bytes(), "a Matroska file's tag, its key in upper case");
 
-        let (plain_id, plain_video) = upload("Gridshot 3x3 30s - 1 - 2026.10.16-17.44.00.mp4", &[("encoder", b"Lavf")]);
+        let (plain_id, plain_video) = upload("Gridshot 3x3 30s - 1 - 2026.10.16-17.44.00.mp4", &[("comment", "x")]);
         assert_eq!(library.stats_of(&plain_id, &plain_video), None);
         assert!(!library.has_stats(None, &plain_id, &plain_video));
         std::fs::write(plain_video.with_extension("csv"), b"Score:,1\n").unwrap();
@@ -647,9 +654,11 @@ mod tests {
             Library::open(config).unwrap()
         };
         let library = open();
-        // the same size as the tagged video written over it below: 7 + 20 bytes of key and value each
-        let saved =
-            library.upload("Gridshot - 1 - 2026.10.16-17.44.00.mp4", None, &tagged_mp4(&[("encoder", &[b'x'; 20])]));
+        // the same size as each other: keys and values of the same lengths, encoded bit-exact
+        let untagged = video_bytes(&dir, "untagged.mp4", &[("kovobs_kovaaks_other", "Score:x")]);
+        let tagged = video_bytes(&dir, "tagged.mp4", &[(EMBEDDED_TAG, "Score:,")]);
+        assert_eq!(untagged.len(), tagged.len());
+        let saved = library.upload("Gridshot - 1 - 2026.10.16-17.44.00.mp4", None, &untagged);
         let id = format!("uploads/{}", saved.unwrap()["saved"].as_str().unwrap());
         let video = library.resolve(&id).unwrap();
         assert_eq!(library.stats_of(&id, &video), None);
@@ -659,7 +668,7 @@ mod tests {
         let modified = std::fs::metadata(&video).unwrap().modified().unwrap();
         let set_modified =
             |time| std::fs::File::options().write(true).open(&video).unwrap().set_modified(time).unwrap();
-        std::fs::write(&video, tagged_mp4(&[(EMBEDDED_TAG, b"Score:,")])).unwrap();
+        std::fs::write(&video, tagged).unwrap();
         set_modified(modified);
         let library = open();
         assert_eq!(library.stats_of(&id, &video), None, "the same size and time: not read again");
