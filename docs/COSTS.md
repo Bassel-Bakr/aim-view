@@ -26,10 +26,10 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
 | assets | profile release, modes server | 0.2 s | 36.0 s | 7 | 2026-10-09, ec76e1d+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 0.5 s | 20.7 s | 28 | 2026-10-16, 526ee01+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 0.8 s | 4.3 s | 30 | 2026-10-16, cf2569b+ |
 | assets | profile wasm-dev, modes server | 12.4 s | 11.0 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 0.4 s | 13.7 s | 33 | 2026-10-16, 526ee01+ |
+| assets: core and service wasm (cargo) | profile wasm-dev | 0.7 s | 4.2 s | 35 | 2026-10-16, cf2569b+ |
 | assets: core wasm (cargo) | profile release | 0.2 s | 35.9 s | 7 | 2026-10-09, ec76e1d |
 | assets: core wasm (cargo) | profile wasm-dev | 12.2 s | 10.9 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |

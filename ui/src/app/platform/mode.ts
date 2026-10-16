@@ -4,7 +4,7 @@
  */
 
 import { HttpFeature, HttpFeatureKind } from '@angular/common/http';
-import { InjectionToken, Provider } from '@angular/core';
+import { EnvironmentProviders, InjectionToken, Provider } from '@angular/core';
 
 /** The three ways the app runs: everything in the browser, with the review server, or as the desktop app. */
 export type ModeName = 'browser' | 'server' | 'desktop';
@@ -19,8 +19,8 @@ export const MODE_NAME = new InjectionToken<ModeName>('MODE_NAME');
 export interface Mode {
   /** Which mode it is. */
   name: ModeName;
-  /** Its class for each contract in platform/. */
-  providers: Provider[];
+  /** Its class for each contract in platform/, and what it starts with the app (the desktop's window theme). */
+  providers: (Provider | EnvironmentProviders)[];
   /** The HttpClient features it needs (the browser mode's interceptor, for one). */
   http: HttpFeature<HttpFeatureKind>[];
 }

@@ -32,9 +32,12 @@ pub fn run() {
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("api", |ctx, request, responder| {
-            let lib = ctx.app_handle().state::<Arc<Library>>().inner().clone();
+            let app = ctx.app_handle().clone();
+            let lib = app.state::<Arc<Library>>().inner().clone();
             // each request in a thread of its own: a listing or a report must not hold up the window
-            std::thread::spawn(move || responder.respond(protocol::handle(&lib, &request)));
+            std::thread::spawn(move || {
+                responder.respond(protocol::handle(&lib, &request, &|theme| app.set_theme(theme)));
+            });
         })
         .run(tauri::generate_context!())
         .expect("Aim View could not start");

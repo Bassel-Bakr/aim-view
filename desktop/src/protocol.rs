@@ -1,15 +1,17 @@
 //! The review server's API inside the app, over a custom protocol (`api`, at http://api.localhost in the window): no
 //! network port, so nothing outside the app reaches it. The window's server-mode services send /api/... and /video
 //! there (ui/src/app/modes/tauri/). The service answers (aimview_service::api); the routes that need the desktop are
-//! answered here: the folder dialog (/api/folder) and the mouse logger's switch (/api/mouse/logger).
+//! answered here: the folder dialog (/api/folder), the mouse logger's switch (/api/mouse/logger) and the window's
+//! theme (/api/window/theme: its title bar in the page's theme).
 //!
 //! In: the window's requests (lib.rs hands each one over on a thread of its own). Out: the responses, with the headers
 //! that let the window's page read them.
 
 use std::sync::Arc;
 
-use aimview_service::{Answer, ApiRequest, ApiResponse, Library, api};
+use aimview_service::{Answer, ApiRequest, ApiResponse, Failure, Library, api};
 use serde_json::{Value, json};
+use tauri::Theme;
 use tauri::http::{Method, Request, Response, StatusCode};
 
 use crate::mouse;
@@ -39,8 +41,8 @@ fn json_response(answer: Answer<Value>) -> ApiResponse {
     ApiResponse { status, headers, body: serde_json::to_vec(&body).unwrap_or_default() }
 }
 
-/// Answers one request.
-pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+/// Answers one request; `set_theme` gives the window a theme (None: Windows' own).
+pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>, set_theme: &dyn Fn(Option<Theme>)) -> Response<Vec<u8>> {
     if req.method() == Method::OPTIONS {
         let headers = vec![("Content-Type".to_string(), "text/plain".to_string())];
         return respond(ApiResponse { status: StatusCode::NO_CONTENT.as_u16(), headers, body: Vec::new() });
@@ -54,6 +56,7 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         (true, "/api/folder") => Some(pick_folder(lib)),
         (false, "/api/mouse/logger") => Some(Ok(mouse::logger_state())),
         (true, "/api/mouse/logger") => Some(mouse::set_logger(on)),
+        (true, "/api/window/theme") => Some(set_window_theme(url.as_ref(), set_theme)),
         _ => None,
     };
     respond(match desktop {
@@ -70,6 +73,21 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>) -> Response<Vec<u8>> {
             },
         ),
     })
+}
+
+/// The window's title bar and borders in the theme the query's `theme` names: light, dark, or system (Windows' own
+/// setting, which Windows follows unless told, whatever the page shows); a 400 for another.
+fn set_window_theme(url: Option<&tauri::Url>, set_theme: &dyn Fn(Option<Theme>)) -> Answer<Value> {
+    let named =
+        url.and_then(|url| url.query_pairs().find(|(key, _)| key == "theme").map(|(_, value)| value.into_owned()));
+    let theme = match named.as_deref() {
+        Some("light") => Some(Theme::Light),
+        Some("dark") => Some(Theme::Dark),
+        Some("system") => None,
+        other => return Err(Failure::bad(format!("no window theme {}", other.unwrap_or("named")))),
+    };
+    set_theme(theme);
+    Ok(json!({ "theme": named }))
 }
 
 /// The VODs folder, chosen in the system's folder dialog; null when the user cancels.
@@ -90,11 +108,11 @@ mod tests {
     fn ask(lib: &Arc<Library>, method: &str, path: &str) -> Response<Vec<u8>> {
         let uri = format!("http://api.localhost{path}");
         let req = Request::builder().method(method).uri(uri).body(Vec::new()).unwrap();
-        handle(lib, &req)
+        handle(lib, &req, &|_| {})
     }
 
     /// A preflight, the service's routes and the mouse logger's state all answer with the window's CORS headers; a
-    /// missing video is 404.
+    /// missing video is 404; the window's theme is set from its name, and another name is 400.
     #[test]
     fn the_window_gets_the_services_answers() {
         let data = std::env::temp_dir().join(format!("aimview-protocol-{}", std::process::id()));
@@ -116,6 +134,15 @@ mod tests {
         assert_eq!(state.status(), StatusCode::OK);
         let state: Value = serde_json::from_slice(state.body()).unwrap();
         assert_eq!(state["on"], false);
+        let themes = std::sync::Mutex::new(Vec::new());
+        let set_theme = |theme| themes.lock().unwrap().push(theme);
+        let theme = |name: &str| {
+            let uri = format!("http://api.localhost/api/window/theme?theme={name}");
+            handle(&lib, &Request::builder().method("POST").uri(uri).body(Vec::new()).unwrap(), &set_theme).status()
+        };
+        assert_eq!([theme("dark"), theme("system"), theme("light")], [StatusCode::OK; 3]);
+        assert_eq!(theme("blue"), StatusCode::BAD_REQUEST);
+        assert_eq!(*themes.lock().unwrap(), [Some(Theme::Dark), None, Some(Theme::Light)]);
         // the library keeps its database in the data folder; closed first, so Windows lets its file go
         drop(lib);
         std::fs::remove_dir_all(&data).unwrap();

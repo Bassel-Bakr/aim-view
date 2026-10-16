@@ -1483,7 +1483,8 @@ background while the user plays. Each recording's measures from the log that cov
 The review server's API inside the app, over a custom protocol (`api`, at http://api.localhost in the window): no
 network port, so nothing outside the app reaches it. The window's server-mode services send /api/... and /video there
 (ui/src/app/modes/tauri/). The service answers (aimview_service::api); the routes that need the desktop are answered
-here: the folder dialog (/api/folder) and the mouse logger's switch (/api/mouse/logger).
+here: the folder dialog (/api/folder), the mouse logger's switch (/api/mouse/logger) and the window's theme
+(/api/window/theme: its title bar in the page's theme).
 
 - Functions: `handle`.
 

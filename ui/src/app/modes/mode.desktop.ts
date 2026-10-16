@@ -1,10 +1,12 @@
 /**
  * Desktop mode: the Tauri 2 app (desktop/). In: nothing at load. Out: `MODE`, which picks a service
  * for each platform/ contract, mostly the server mode's, with the app's own folder dialog and mouse
- * logger (tauri/). The `desktop` build configuration swaps mode.ts for this file.
+ * logger (tauri/), and the window's title bar in the page's theme. The `desktop` build
+ * configuration swaps mode.ts for this file.
  */
 
 import { withInterceptors, withXhr } from '@angular/common/http';
+import { inject, provideEnvironmentInitializer } from '@angular/core';
 import { AreaLabels } from '../platform/area-labels';
 import { CropSets } from '../platform/crop-sets';
 import { FaintCutoffs } from '../platform/faint-cutoffs';
@@ -31,6 +33,7 @@ import { ServerStatsFiles } from './http/server-stats-files';
 import { desktopApi } from './tauri/desktop-api';
 import { DesktopMouseLogs } from './tauri/desktop-mouse-logs';
 import { DesktopRecordings } from './tauri/desktop-recordings';
+import { DesktopWindowTheme } from './tauri/desktop-window-theme';
 
 /**
  * The desktop app (Tauri 2, desktop/): the review server's services, answered by the app itself
@@ -55,5 +58,6 @@ export const MODE: Mode = {
     { provide: AreaLabels, useExisting: ServerAreaLabels },
     { provide: FaintCutoffs, useExisting: ServerFaintCutoffs },
     { provide: CropSets, useExisting: ServerCropSets },
+    provideEnvironmentInitializer(() => inject(DesktopWindowTheme)),
   ],
 };
