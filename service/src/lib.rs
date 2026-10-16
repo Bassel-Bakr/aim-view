@@ -34,6 +34,7 @@ pub mod gpu_frames;
 pub mod labels;
 pub mod library;
 pub mod mouse;
+pub mod mp4_tags;
 pub mod npz;
 pub mod pyjson;
 pub mod report;

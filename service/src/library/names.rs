@@ -59,6 +59,11 @@ pub fn parse_stats_name(name: &str) -> Option<(String, String)> {
     stamp_seconds(stamp).map(|_| (scenario.to_string(), stamp.to_string()))
 }
 
+/// The name KovaaK gives a scenario's stats file written at `stamp` (`parse_stats_name` reads it back).
+pub(crate) fn stats_name(scenario: &str, stamp: &str) -> String {
+    format!("{scenario} - Challenge - {stamp} Stats.csv")
+}
+
 /// A file-name time stamp (yyyy.mm.dd-hh.mm.ss, local time) as seconds from 2000-01-01, for differences only. Some
 /// KovOBS recordings from June 2026 are named with the year 0026: read as 2026.
 pub fn stamp_seconds(stamp: &str) -> Option<f64> {
@@ -163,6 +168,10 @@ mod tests {
         assert_eq!(
             parse_stats_name("1wall 2targets xsmall - valorant - Challenge - 2026.10.01-16.23.04 Stats.csv"),
             Some(("1wall 2targets xsmall - valorant".into(), "2026.10.01-16.23.04".into()))
+        );
+        assert_eq!(
+            stats_name("1wall 2targets xsmall - valorant", "2026.10.01-16.23.04"),
+            "1wall 2targets xsmall - valorant - Challenge - 2026.10.01-16.23.04 Stats.csv"
         );
         assert_eq!(stamp_seconds("2000.01.01-00.00.10"), Some(10.0));
         assert_eq!(stamp_seconds("2000.03.01-00.00.00"), Some(60.0 * 86_400.0));

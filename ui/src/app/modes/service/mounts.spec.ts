@@ -12,6 +12,16 @@ const REMOVE_DIR_ALL = 5;
 const RENAME = 6;
 const LIST = 7;
 const METADATA = 8;
+const READ_RANGE = 9;
+
+/** A range read's argument: the start and the length, each a little-endian u64. */
+function range(start: number, length: number): Uint8Array {
+  const arg = new Uint8Array(16);
+  const view = new DataView(arg.buffer);
+  view.setBigUint64(0, BigInt(start), true);
+  view.setBigUint64(8, BigInt(length), true);
+  return arg;
+}
 
 /** A write's place in the file. */
 interface WriteAt {
@@ -182,8 +192,8 @@ describe('Mounts over a folder handle', () => {
     expect((await mounts.host(READ, 'data/x', encode(''))).code).toBe(3);
     expect((await mounts.host(READ, '/data/../x', encode(''))).code).toBe(3);
     expect((await mounts.host(READ, '/nowhere/x', encode(''))).code).toBe(1);
-    const unknown = await mounts.host(9, '/data/x', encode(''));
-    expect([unknown.code, decode(unknown)]).toEqual([3, 'no file system call 9']);
+    const unknown = await mounts.host(10, '/data/x', encode(''));
+    expect([unknown.code, decode(unknown)]).toEqual([3, 'no file system call 10']);
     await expect(mounts.file('/data/none.txt')).rejects.toMatchObject({ code: 1 });
   });
 
@@ -210,6 +220,16 @@ describe('Mounts over a folder handle', () => {
     mounts.set('vods', new DirMount(handle(new FakeDirHandle()), false));
     expect((await mounts.host(RENAME, '/data/moved', encode('/vods/x'))).code).toBe(3);
     expect(decode(await mounts.host(WRITE, '/vods/x.txt', encode('no')))).toBe('read-only');
+  });
+});
+
+describe('Mounts reading a range of a file', () => {
+  it('reads the range, fewer bytes at the end, and nothing for a missing file', async () => {
+    const mounts = dataMounts();
+    expect((await mounts.host(WRITE, '/data/v.mp4', encode('0123456789'))).code).toBe(0);
+    expect(decode(await mounts.host(READ_RANGE, '/data/v.mp4', range(2, 3)))).toBe('234');
+    expect(decode(await mounts.host(READ_RANGE, '/data/v.mp4', range(8, 16)))).toBe('89');
+    expect((await mounts.host(READ_RANGE, '/data/none.mp4', range(0, 4))).code).toBe(1);
   });
 });
 

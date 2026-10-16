@@ -42,10 +42,11 @@ pub struct Config {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {
     /// The desktop app's: the library's files in the data folder, each recording's folder in reviews/, and uploads/,
-    /// cutoff/ and mouse/.
+    /// embedded_stats/, cutoff/ and mouse/.
     App,
     /// python/retired/server.py's, with test_out/ as the data folder: the library's files and each recording's folder
-    /// in vod_app/, and vod_uploads/, vod_model/hand/cutoff/ (detector training reads the labels there) and mouse/.
+    /// in vod_app/, and vod_uploads/, vod_embedded_stats/, vod_model/hand/cutoff/ (detector training reads the labels
+    /// there) and mouse/.
     Python,
 }
 
@@ -89,6 +90,9 @@ pub struct Folders {
     pub recordings: PathBuf,
     /// Videos added from the user's computer, and stats files in stats/.
     pub uploads: PathBuf,
+    /// The stats files kept in the recordings (KovOBS's tag, library/stats.rs), each written out the first time it is
+    /// needed, under the name KovaaK gave it.
+    pub embedded_stats: PathBuf,
     /// The detector labels of submitted cut-offs (train/ and checked.jsonl).
     pub cutoff: PathBuf,
     /// The raw mouse logs.
@@ -108,6 +112,7 @@ impl Layout {
                 files: data.to_path_buf(),
                 recordings: data.join("reviews"),
                 uploads: data.join("uploads"),
+                embedded_stats: data.join("embedded_stats"),
                 cutoff: data.join("cutoff"),
                 mouse: data.join("mouse"),
                 crops: data.join("crops"),
@@ -117,6 +122,7 @@ impl Layout {
                 files: data.join("vod_app"),
                 recordings: data.join("vod_app"),
                 uploads: data.join("vod_uploads"),
+                embedded_stats: data.join("vod_embedded_stats"),
                 cutoff: data.join("vod_model").join("hand").join("cutoff"),
                 mouse: data.join("mouse"),
                 crops: data.join("vod_model"),

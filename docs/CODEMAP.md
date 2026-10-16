@@ -163,12 +163,15 @@ rust-analyzer's call hierarchy.
   once on each device (`batch`, by device name).
 - `service/src/library/stats.rs`: KovaaK's stats files and each recording's pairing with one (python/retired/server.py:
   stats_index, stats_for, stats_of, stats_info, set_stats): the user's choice (stats.json in the recording's folder),
-  else one uploaded beside it, else the stats file of the same scenario whose time is nearest the recording's.
+  else the one KovOBS kept in the video, else one uploaded beside it, else the stats file of the same scenario whose
+  time is nearest the recording's.
 - `service/src/library/usage.rs`: What the library keeps and how much space each part takes, for the data panel
   (docs/storage-design.md, "Space and cleanup"), and removing a part the user can do without.
 - `service/src/mouse.rs`: A recording's measures from the raw mouse logs (python/mouse_log.py's, or the desktop app's
   logger's, in the layout's mouse folder): the newest log that covers the recording's run, read by the core
   (src/mouse.rs, as python/mouse_read.py reads it).
+- `service/src/mp4_tags.rs`: A video's metadata tags as ffmpeg writes them into an MP4 or a MOV with `-movflags
+  use_metadata_tags`: the `mdta` keys of a `meta` box in moov/udta, or in moov.
 - `service/src/npz.rs`: NumPy's .npz files as python/ writes them with `np.savez_compressed` (a zip of .npy arrays,
   deflated): the cut-off's detector labels (faint.rs) and the area finder's maps (finder.rs), so Python's tools read
   what the app writes and the app reads what Python wrote.
@@ -1208,8 +1211,8 @@ and the model, device and frames at once new reviews use (reviews.rs).
 ## service/src/library/stats.rs
 
 KovaaK's stats files and each recording's pairing with one (python/retired/server.py: stats_index, stats_for, stats_of,
-stats_info, set_stats): the user's choice (stats.json in the recording's folder), else one uploaded beside it, else the
-stats file of the same scenario whose time is nearest the recording's.
+stats_info, set_stats): the user's choice (stats.json in the recording's folder), else the one KovOBS kept in the video,
+else one uploaded beside it, else the stats file of the same scenario whose time is nearest the recording's.
 
 - `Library` methods: `stats_folder`, `stats_for`, `history`, `stats_path`, `stats_info`, `set_stats`.
 
@@ -1231,6 +1234,13 @@ answers.
 
 - `Library` methods: `mouse_measures`.
 - Functions: `measures_in`.
+
+## service/src/mp4_tags.rs
+
+A video's metadata tags as ffmpeg writes them into an MP4 or a MOV with `-movflags use_metadata_tags`: the `mdta` keys
+of a `meta` box in moov/udta, or in moov. KovOBS keeps the run's KovaaK's stats file there (library/stats.rs).
+
+- Functions: `mdta_tag`.
 
 ## service/src/npz.rs
 

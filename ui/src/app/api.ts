@@ -417,7 +417,8 @@ export interface LinkAdded {
  * (none), the chosen file is missing (gone), it was uploaded with the VOD (beside), it was found by its name and time
  * (found), or there is none (missing).
  */
-export type StatsHow = 'picked' | 'upload' | 'none' | 'gone' | 'beside' | 'found' | 'missing';
+export type StatsHow =
+  'picked' | 'upload' | 'none' | 'gone' | 'embedded' | 'beside' | 'found' | 'missing';
 
 /** Where a chosen stats file is: KovaaK's stats folder, or uploaded from the page. */
 export type StatsSource = 'kovaak' | 'upload';

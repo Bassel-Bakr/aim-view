@@ -1,10 +1,12 @@
 //! KovaaK's stats files and each recording's pairing with one (python/retired/server.py: stats_index, stats_for,
-//! stats_of, stats_info, set_stats): the user's choice (stats.json in the recording's folder), else one uploaded beside
-//! it, else the stats file of the same scenario whose time is nearest the recording's.
+//! stats_of, stats_info, set_stats): the user's choice (stats.json in the recording's folder), else the one KovOBS kept
+//! in the video, else one uploaded beside it, else the stats file of the same scenario whose time is nearest the
+//! recording's.
 //!
-//! In: KovaaK's stats folder (listed again once a minute; a file's run read from its last few kB), the stats files
-//! uploaded for a recording, and the page's choice. Out: each recording's stats file for its report and the list, the
-//! stats files to pair a recording with (/api/stats), and a scenario's past runs (/api/history).
+//! In: KovaaK's stats folder (listed again once a minute; a file's run read from its last few kB), the recordings' tags
+//! (mp4_tags.rs), the stats files uploaded for a recording, and the page's choice. Out: each recording's stats file for
+//! its report and the list (one kept in the video is written out into the embedded stats folder first), the stats files
+//! to pair a recording with (/api/stats), and a scenario's past runs (/api/history).
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
@@ -16,7 +18,7 @@ use aimview::stats_file::StatsFile;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::names::{local_stamp, parse_stats_name, parse_video, stamp_seconds};
+use super::names::{local_stamp, parse_stats_name, parse_video, stamp_seconds, stats_name};
 use super::recordings::{STATS_UPLOADS, is_upload};
 use super::reviews::Job;
 use super::{Answer, Failure, Library, keep_json, modified, read_kept};
@@ -39,6 +41,14 @@ const FOOTER_BYTES: u64 = 4096;
 const KOVAAK_SOURCE: &str = "kovaak";
 /// Where a picked stats file is kept: the uploads' stats folder.
 pub(super) const UPLOAD_SOURCE: &str = "upload";
+/// The MP4 tag KovOBS keeps the run's stats file in: the whole file, as KovaaK wrote it.
+const EMBEDDED_TAG: &str = "kovobs_kovaaks_stats";
+/// The videos' extensions (lower case) that can hold `EMBEDDED_TAG`: MP4's and MOV's (an MKV, OBS's own, cannot).
+const TAGGED_EXTENSIONS: [&str; 3] = ["mp4", "mov", "m4v"];
+/// The file in the embedded stats folder that lists the videos read with no stats file in them, a JSON line each
+/// (`Untagged`, a later line wins): a video is read once, not on every start (a cold disk takes about 10 ms a video, and
+/// aimview-tool's `recordings` asks for every one).
+const UNTAGGED_FILE: &str = "untagged.jsonl";
 /// The most threads that read stats files at once natively.
 #[cfg(feature = "native")]
 const MAX_READ_THREADS: usize = 16;
@@ -91,6 +101,20 @@ pub(super) struct StatsIndex {
     listed: Option<Instant>,
     /// The runs read for `history`, by file name.
     runs: HashMap<String, ReadRun>,
+    /// The videos read with no stats file in them, by path: their size and time of change then (a changed video is
+    /// read again). None until `UNTAGGED_FILE` is read.
+    untagged: Option<HashMap<PathBuf, (u64, f64)>>,
+}
+
+/// A video read with no stats file in it, a line of `UNTAGGED_FILE`.
+#[derive(Serialize, Deserialize)]
+struct Untagged {
+    /// The video's path.
+    video: PathBuf,
+    /// Its size in bytes when it was read.
+    size: u64,
+    /// Its time of change then, in seconds since 1970.
+    modified: f64,
 }
 
 /// A number from a stats file's "Key:,value" line.
@@ -195,14 +219,16 @@ fn scenario_and_end(video: &Path) -> (String, f64) {
 }
 
 /// How a recording came to its stats file `file` (stats_info's `how`): the user's pick (none, gone, upload or
-/// picked), else missing, beside (an upload's, by its name) or found (by name and time).
-fn pairing_how(pick: Option<&Pick>, file: Option<&Path>, id: &str, video: &Path) -> &'static str {
+/// picked), else missing, embedded (kept in the video; `embedded`: the file is in the embedded stats folder), beside
+/// (an upload's, by its name) or found (by name and time).
+fn pairing_how(pick: Option<&Pick>, file: Option<&Path>, embedded: bool, id: &str, video: &Path) -> &'static str {
     match pick {
         Some(pick) if pick.file.is_none() => "none",
         Some(_) if file.is_none() => "gone",
         Some(pick) if pick.source == UPLOAD_SOURCE => "upload",
         Some(_) => "picked",
         None if file.is_none() => "missing",
+        None if embedded => "embedded",
         None if is_upload(id) && file.is_some_and(|file| file.parent() == video.parent()) => "beside",
         None => "found",
     }
@@ -379,8 +405,8 @@ impl Library {
         }
     }
 
-    /// The recording's stats file: the user's choice (None when it is gone), else one uploaded beside it (same name,
-    /// .csv), else by name and time.
+    /// The recording's stats file: the user's choice (None when it is gone), else the one KovOBS kept in the video,
+    /// else one uploaded beside it (same name, .csv), else by name and time.
     pub(crate) fn stats_of(&self, id: &str, video: &Path) -> Option<PathBuf> {
         self.stats_with(self.pairing(id), id, video)
     }
@@ -392,12 +418,79 @@ impl Library {
             let picked = pick.file.and_then(|file| self.stats_file(&file, &pick.source).ok());
             return picked.filter(|path| self.stats_exists(path));
         }
+        self.embedded_stats(video).or_else(|| self.stats_outside(id, video))
+    }
+
+    /// Whether `stats_with` gives the recording a stats file, the video read for its tag only when no other place
+    /// gives one: the recordings list asks for every recording.
+    pub(super) fn has_stats(&self, pick: Option<Pick>, id: &str, video: &Path) -> bool {
+        if pick.is_some() {
+            return self.stats_with(pick, id, video).is_some();
+        }
+        self.stats_outside(id, video).is_some() || self.embedded_stats(video).is_some()
+    }
+
+    /// A recording's stats file outside the video: one uploaded beside it (same name, .csv), else by name and time.
+    fn stats_outside(&self, id: &str, video: &Path) -> Option<PathBuf> {
         let beside = video.with_extension("csv");
         if is_upload(id) && crate::disk::is_file(&beside) {
             return Some(beside);
         }
         let (scenario, _, stamp) = parse_video(video)?;
         self.stats_for(&scenario, &stamp)
+    }
+
+    /// The stats file KovOBS kept in the recording (`EMBEDDED_TAG`), written out into the embedded stats folder the
+    /// first time it is needed, under the name KovaaK gave it (the scenario and time stamp of the video's name, which
+    /// KovOBS takes from the stats file's). None when the video's name is not KovOBS's or the video holds no such tag.
+    fn embedded_stats(&self, video: &Path) -> Option<PathBuf> {
+        let extension = video.extension()?.to_string_lossy().to_lowercase();
+        if !TAGGED_EXTENSIONS.contains(&extension.as_str()) {
+            return None;
+        }
+        let (scenario, _, stamp) = parse_video(video)?;
+        let path = self.folders.embedded_stats.join(stats_name(&scenario, &stamp));
+        if crate::disk::is_file(&path) {
+            return Some(path);
+        }
+        let metadata = crate::disk::metadata(video).ok()?;
+        let seen = (metadata.len(), metadata.modified().unwrap_or(0.0));
+        if self.untagged_seen(video, seen) {
+            return None;
+        }
+        // a video that cannot be read now is read again next time; one read with no tag is kept as untagged
+        let Some(csv) = crate::mp4_tags::mdta_tag(video, EMBEDDED_TAG).ok()? else {
+            self.keep_untagged(video, seen);
+            return None;
+        };
+        crate::disk::create_dir_all(&self.folders.embedded_stats).ok()?;
+        crate::disk::write(&path, csv).ok()?;
+        Some(path)
+    }
+
+    /// Whether the video was read before with no stats file in it, at this size and time of change (`seen`).
+    /// `UNTAGGED_FILE` is read the first time.
+    fn untagged_seen(&self, video: &Path, seen: (u64, f64)) -> bool {
+        let mut index = self.stats.lock().unwrap_or_else(PoisonError::into_inner);
+        let untagged = index.untagged.get_or_insert_with(|| {
+            let text = crate::disk::read_to_string(self.folders.embedded_stats.join(UNTAGGED_FILE)).unwrap_or_default();
+            let lines = text.lines().filter_map(|line| serde_json::from_str::<Untagged>(line).ok());
+            lines.map(|line| (line.video, (line.size, line.modified))).collect()
+        });
+        untagged.get(video) == Some(&seen)
+    }
+
+    /// Keeps that the video, at this size and time of change (`seen`), holds no stats file: in memory, and as a line
+    /// of `UNTAGGED_FILE` (not kept there when it cannot be written: the video is then read again next start).
+    fn keep_untagged(&self, video: &Path, seen: (u64, f64)) {
+        let mut index = self.stats.lock().unwrap_or_else(PoisonError::into_inner);
+        index.untagged.get_or_insert_with(HashMap::new).insert(video.to_path_buf(), seen);
+        let line = Untagged { video: video.to_path_buf(), size: seen.0, modified: seen.1 };
+        if let Ok(mut text) = serde_json::to_string(&line) {
+            text.push('\n');
+            let _ = crate::disk::create_dir_all(&self.folders.embedded_stats);
+            let _ = crate::disk::append(self.folders.embedded_stats.join(UNTAGGED_FILE), text.as_bytes());
+        }
     }
 
     /// The recording's stats file (see `stats_of`); None when it has none or the recording is not there.
@@ -411,7 +504,8 @@ impl Library {
     pub fn stats_info(&self, id: &str, query: Option<&str>) -> Answer<Value> {
         let video = self.resolve(id)?;
         let (pick, file) = (self.pairing(id), self.stats_of(id, &video));
-        let how = pairing_how(pick.as_ref(), file.as_deref(), id, &video);
+        let embedded = file.as_deref().and_then(Path::parent) == Some(self.folders.embedded_stats.as_path());
+        let how = pairing_how(pick.as_ref(), file.as_deref(), embedded, id, &video);
         let (scenario, end_s) = scenario_and_end(&video);
         let text = query.unwrap_or(&scenario).trim().to_lowercase();
         let candidates = self.candidates(&text, query.is_some(), end_s);
@@ -497,6 +591,83 @@ pub(super) fn stats_packs<'a>(mut files: Vec<(&'a str, &'a [u8])>) -> Vec<Vec<(&
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, Layout};
+    use crate::mp4_tags::tagged_mp4;
+
+    /// A recording's stats file is the user's choice, else the one kept in the video (written out once under KovaaK's
+    /// name, and taken over one uploaded beside it), else the one beside it; a video with no such tag gives none.
+    #[test]
+    fn the_stats_file_kept_in_the_video_comes_after_the_users_choice() {
+        let dir = std::env::temp_dir().join(format!("aimview-embedded-stats-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut config = Config::new(dir.clone(), Layout::App, dir.join("models"));
+        config.stats = dir.join("kovaak_stats");
+        let library = Library::open(config).unwrap();
+        let upload = |name: &str, tags: &[(&str, &[u8])]| {
+            let saved = library.upload(name, None, &tagged_mp4(tags)).unwrap();
+            let id = format!("uploads/{}", saved["saved"].as_str().unwrap());
+            let video = library.resolve(&id).unwrap();
+            (id, video)
+        };
+        let csv: &[u8] = b"Kill #,Timestamp\r\n1,17:43:05.387\r\nScore:,60120\r\n";
+        let (id, video) = upload("Gridshot 3x3 30s - 60120 - 2026.10.16-17.43.35.mp4", &[(EMBEDDED_TAG, csv)]);
+        std::fs::write(video.with_extension("csv"), b"Score:,1\n").unwrap();
+        let file = library.stats_of(&id, &video).unwrap();
+        assert_eq!(file.file_name().unwrap(), "Gridshot 3x3 30s - Challenge - 2026.10.16-17.43.35 Stats.csv");
+        assert_eq!(std::fs::read(&file).unwrap(), csv);
+        let info = library.stats_info(&id, None).unwrap();
+        assert_eq!(
+            (info["how"].as_str(), info["file"].as_str()),
+            (Some("embedded"), file.file_name().unwrap().to_str())
+        );
+        library.set_stats(&id, &json!({ "file": null })).unwrap();
+        assert_eq!(library.stats_of(&id, &video), None, "choosing no stats file wins over the tag");
+        assert!(!library.has_stats(library.pairing(&id), &id, &video));
+        library.set_stats(&id, &json!({ "auto": true })).unwrap();
+        assert_eq!(library.stats_of(&id, &video), Some(file));
+
+        let (plain_id, plain_video) = upload("Gridshot 3x3 30s - 1 - 2026.10.16-17.44.00.mp4", &[("encoder", b"Lavf")]);
+        assert_eq!(library.stats_of(&plain_id, &plain_video), None);
+        assert!(!library.has_stats(None, &plain_id, &plain_video));
+        std::fs::write(plain_video.with_extension("csv"), b"Score:,1\n").unwrap();
+        assert_eq!(library.stats_of(&plain_id, &plain_video), Some(plain_video.with_extension("csv")));
+        assert!(library.has_stats(None, &plain_id, &plain_video));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A video read with no stats file in it is kept as untagged, and a library opened later does not read it again
+    /// while its size and time of change stay; changed, it is read again.
+    #[test]
+    fn an_untagged_video_is_read_once() {
+        let dir = std::env::temp_dir().join(format!("aimview-untagged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let open = || {
+            let mut config = Config::new(dir.clone(), Layout::App, dir.join("models"));
+            config.stats = dir.join("kovaak_stats");
+            Library::open(config).unwrap()
+        };
+        let library = open();
+        // the same size as the tagged video written over it below: 7 + 20 bytes of key and value each
+        let saved =
+            library.upload("Gridshot - 1 - 2026.10.16-17.44.00.mp4", None, &tagged_mp4(&[("encoder", &[b'x'; 20])]));
+        let id = format!("uploads/{}", saved.unwrap()["saved"].as_str().unwrap());
+        let video = library.resolve(&id).unwrap();
+        assert_eq!(library.stats_of(&id, &video), None);
+        let kept = std::fs::read_to_string(dir.join("embedded_stats").join(UNTAGGED_FILE)).unwrap();
+        assert_eq!(kept.lines().count(), 1);
+
+        let modified = std::fs::metadata(&video).unwrap().modified().unwrap();
+        let set_modified =
+            |time| std::fs::File::options().write(true).open(&video).unwrap().set_modified(time).unwrap();
+        std::fs::write(&video, tagged_mp4(&[(EMBEDDED_TAG, b"Score:,")])).unwrap();
+        set_modified(modified);
+        let library = open();
+        assert_eq!(library.stats_of(&id, &video), None, "the same size and time: not read again");
+        set_modified(modified + std::time::Duration::from_secs(10));
+        let found = library.stats_of(&id, &video).unwrap();
+        assert_eq!(std::fs::read(found).unwrap(), b"Score:,");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// A run's score, kills and accuracy come from the file's end, or the whole file when the end has no score; a file
     /// with no score gives no run.

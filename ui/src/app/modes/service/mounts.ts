@@ -34,6 +34,11 @@ const OP_RENAME = 6;
 const OP_READ_DIR = 7;
 /** The op that gives a path's metadata. */
 const OP_METADATA = 8;
+/**
+ * The op that reads a range of a file (a video's boxes): the argument is the start and the length,
+ * each a little-endian u64; fewer bytes at the file's end.
+ */
+const OP_READ_RANGE = 9;
 /** File times are kept in ms; the service's metadata gives seconds. */
 const MS_PER_SECOND = 1000;
 /** The HTTP status of a model file the server does not have. */
@@ -810,6 +815,13 @@ export class Mounts {
         }
         case OP_METADATA:
           return ok(new TextEncoder().encode(JSON.stringify(await place.fs.stat(place.names))));
+        case OP_READ_RANGE: {
+          const range = new DataView(arg.buffer, arg.byteOffset, arg.byteLength);
+          const start = Number(range.getBigUint64(0, true));
+          const end = start + Number(range.getBigUint64(8, true));
+          const file = await place.fs.file(place.names);
+          return ok(new Uint8Array(await file.slice(start, end).arrayBuffer()));
+        }
         default:
           throw new FsError(OTHER, `no file system call ${op}`);
       }

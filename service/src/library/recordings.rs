@@ -420,7 +420,7 @@ impl Library {
             "score": score, "stamp": stamp,
             "mtime": metadata.and_then(|data| data.modified()).unwrap_or(0.0),
             "size": metadata.map_or(0, |data| data.len()),
-            "stats": self.stats_with(pick, &id, &entry.path()).is_some(),
+            "stats": self.has_stats(pick, &id, &entry.path()),
             "analysed": has_folder && self.reviewed(&id), "not_aim": not_aim.contains(&id),
         }))
     }
@@ -446,7 +446,7 @@ impl Library {
             "id": id, "scenario": scenario, "kind": kind, "kind_pick": kind_pick, "hitbox_pick": self.hitbox_pick(&id),
             "score": score, "stamp": stamp,
             "mtime": modified(path), "size": crate::disk::metadata(path).map_or(0, |data| data.len()),
-            "stats": self.stats_of(&id, path).is_some(), "uploaded": true, "analysed": self.reviewed(&id),
+            "stats": self.has_stats(self.pairing(&id), &id, path), "uploaded": true, "analysed": self.reviewed(&id),
             "not_aim": not_aim.contains(&id),
         })
     }

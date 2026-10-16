@@ -25,6 +25,7 @@ const HOW: Record<StatsHow, string> = {
   upload: 'chosen by you from this computer',
   none: 'you chose none',
   gone: 'your pick, but the file is gone',
+  embedded: 'kept in the recording by KovOBS',
   beside: 'uploaded with the recording',
   found: 'found by its name and time',
   missing: 'none found by its name and time',
