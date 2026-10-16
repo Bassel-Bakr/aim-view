@@ -1,0 +1,8 @@
+# What `bun run app` (tauri dev, which watches the whole repository for the Rust crates) does not restart the app for:
+# the page (ng serve reloads it), the Python tools, the scripts, the docs and the data. A Rust change still restarts it.
+ui/
+python/
+scripts/
+docs/
+test_out/
+*.md

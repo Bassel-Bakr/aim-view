@@ -5,6 +5,8 @@
 //! resource folders) and the window's requests. Out: the window, the library's files in the data folder, ffmpeg in
 //! the local data folder, and the mouse logs.
 
+#[cfg(all(debug_assertions, windows))]
+mod dev_window;
 pub mod mouse;
 pub mod protocol;
 
@@ -29,6 +31,10 @@ pub fn run() {
                 ..Config::new(data, Layout::App, app.path().resource_dir()?.join("models"))
             };
             app.manage(Library::open(config)?);
+            #[cfg(all(debug_assertions, windows))]
+            if let Some(window) = app.get_webview_window("main") {
+                dev_window::show_minimized(&window);
+            }
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("api", |ctx, request, responder| {

@@ -16,7 +16,7 @@
     "test:ui": "bun scripts/costs.ts run test:ui -- bun run --cwd ui test --watch=false",
     "lint:ui": "bun scripts/costs.ts run lint:ui -- bun run --cwd ui lint",
     "format": "bun run --cwd ui format",
-    "app": "cd desktop && cargo tauri dev",
+    "app": "cd desktop && cargo tauri dev --config tauri.dev.json",
     "build:app": "cd desktop && bun ../scripts/costs.ts run build:app -- cargo tauri build",
     "costs": "bun scripts/costs.ts",
     "sweep": "bun scripts/costs.ts run sweep -- bun scripts/sweep.ts --now",

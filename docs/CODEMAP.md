@@ -210,6 +210,9 @@ rust-analyzer's call hierarchy.
   files.
 - `server/src/main.rs`: Aim View's review server: the UI's server-mode build and the review server's API
   (python/retired/server.py's, served by the aimview-service crate as the desktop app serves it) over plain HTTP.
+- `desktop/src/dev_window.rs`: A development build's window kept out of the way: `bun run app` creates it hidden
+  (tauri.dev.json) and this shows it minimized without activating it, so a start, or a restart after a change, only adds
+  it to the taskbar and never covers or takes the focus from what is in front (a game).
 - `desktop/src/lib.rs`: Aim View's desktop app: the Angular app (ui/, its desktop build) in a Tauri 2 window.
 - `desktop/src/main.rs`: Aim View's desktop app: the executable, which starts the app (lib.rs `run`).
 - `desktop/src/mouse.rs`: The raw mouse logger (python/mouse_log.py, ported) and the app's side of it: an on/off switch
@@ -1449,6 +1452,15 @@ itself runs in the background, polled with /api/job).
 
 Aim View's review server: the UI's server-mode build and the review server's API (python/retired/server.py's, served by
 the aimview-service crate as the desktop app serves it) over plain HTTP.
+
+## desktop/src/dev_window.rs
+
+A development build's window kept out of the way: `bun run app` creates it hidden (tauri.dev.json) and this shows it
+minimized without activating it, so a start, or a restart after a change, only adds it to the taskbar and never covers
+or takes the focus from what is in front (a game). A release build's window opens focused and in front, as usual (lib.rs
+calls this in debug builds only). In: the main window. Out: the window, minimized in the taskbar.
+
+- Functions: `show_minimized`.
 
 ## desktop/src/lib.rs
 
