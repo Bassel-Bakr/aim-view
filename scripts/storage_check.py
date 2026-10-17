@@ -6,7 +6,7 @@ runs agree when their answers and files are the same. Nothing runs on the GPU: t
 no review, so no review is made again.
 
 Folders come from aimview.defaults.json and aimview.json (python/local_config.py); the desktop app's data folder is
-its identifier (desktop/tauri.conf.json) in the roaming app data. The runs go in test_out/storage_check/<name>/.
+AimView in the roaming app data (desktop/src/lib.rs: FOLDER_NAME). The runs go in test_out/storage_check/<name>/.
 
 The backends check compares the two stores of one build instead (step 2): test_out's app data is copied twice into
 the app's layout, one copy kept as files (--files) and one in the data folder's database, which imports the files on
@@ -38,8 +38,8 @@ DATA = local_config.required(local_config.folder("data"), "data folder")
 VODS = local_config.required(local_config.folder("vods"), "recordings' folder (vods)")
 STATS = local_config.required(local_config.kovaak("stats"), "KovaaK's stats folder (Steam's)")
 MODELS = local_config.required(local_config.folder("models"), "models folder")
-DESKTOP = Path(os.environ.get("APPDATA", Path.home())) / json.loads(
-    (REPO / "desktop" / "tauri.conf.json").read_text(encoding="utf-8"))["identifier"]
+# the desktop app's data folder (desktop/src/lib.rs: FOLDER_NAME, in the roaming app data)
+DESKTOP = Path(os.environ.get("APPDATA", Path.home())) / "AimView"
 CHECKS = DATA / "storage_check"
 # Python's layout in the data folder: the parts the service keeps or reads (config.rs: Layout::Python)
 PYTHON_PARTS = ("vod_app", "vod_uploads", "mouse", "vod_model/hand/cutoff")

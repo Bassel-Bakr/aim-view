@@ -52,6 +52,7 @@ version = "0.1.0"
 dependencies = [
  "aimview",
  "aimview-service",
+ "dirs",
  "rfd",
  "serde_json",
  "tauri",

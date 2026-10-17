@@ -16,8 +16,16 @@
   File "${MAINBINARYSRCPATH}\..\vc-runtime\vcruntime140_1.dll"
 !macroend
 
-; the uninstaller has already removed the app's own files and tried to remove its folder
+; the uninstaller has already removed the app's own files and tried to remove its folder. Its "delete the app data"
+; box removes the folders the identifier names; the app keeps its data in AimView (src/lib.rs: FOLDER_NAME), so those
+; go too when the box is ticked (never on an update, which uninstalls first).
 !macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $DeleteAppDataCheckboxState = 1
+  ${AndIf} $UpdateMode <> 1
+    SetShellVarContext current
+    RmDir /r "$APPDATA\AimView"
+    RmDir /r "$LOCALAPPDATA\AimView"
+  ${EndIf}
   Delete "$INSTDIR\DirectML.dll"
   Delete "$INSTDIR\msvcp140.dll"
   Delete "$INSTDIR\msvcp140_1.dll"
