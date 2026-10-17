@@ -24,35 +24,35 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | aimview-tool recordings | untagged kept | 0.9 s | 1.1 s | 2 | 2026-10-16, a2099ab+ |
 | assets | profile release, modes browser | 0.3 s | 68.7 s | 2 | 2026-10-08, 4303844+ |
 | assets | profile release, modes browser,server,desktop | 57.2 s | 57.2 s | 3 | 2026-10-07, 78c5844+ |
-| assets | profile release, modes server | 0.2 s | 36.0 s | 7 | 2026-10-09, ec76e1d+ |
+| assets | profile release, modes server | 53 s | 38.5 s | 8 | 2026-10-16, 9365a01+ |
 | assets | profile wasm-dev, modes browser | 7.3 s | 49.8 s | 5 | 2026-10-08, f61190c+ |
-| assets | profile wasm-dev, modes browser,server,desktop | 0.4 s | 0.7 s | 33 | 2026-10-16, 431f38b+ |
+| assets | profile wasm-dev, modes browser,server,desktop | 16.2 s | 0.7 s | 34 | 2026-10-17, 9365a01+ |
 | assets | profile wasm-dev, modes server | 12.4 s | 11.0 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core and service wasm (cargo) | profile release | 0.2 s | 28.7 s | 4 | 2026-10-08, 4303844+ |
-| assets: core and service wasm (cargo) | profile wasm-dev | 0.3 s | 0.5 s | 38 | 2026-10-16, 431f38b+ |
-| assets: core wasm (cargo) | profile release | 0.2 s | 35.9 s | 7 | 2026-10-09, ec76e1d |
+| assets: core and service wasm (cargo) | profile wasm-dev | 7.5 s | 0.5 s | 39 | 2026-10-17, 9365a01+ |
+| assets: core wasm (cargo) | profile release | 52.9 s | 38.5 s | 8 | 2026-10-16, 9365a01+ |
 | assets: core wasm (cargo) | profile wasm-dev | 12.2 s | 10.9 s | 5 | 2026-10-09, 3cf8d5a+ |
 | assets: core wasm (cargo, built alone) | profile release | 36.1 s | 36.1 s | 1 | 2026-10-07, 78c5844+ |
 | assets: service wasm (cargo, built alone) | profile release | 65.5 s | 65.5 s | 1 | 2026-10-07, 78c5844+ |
-| assets: wasm-opt (Asyncify) | level -O0 | 16.7 s | 12.1 s | 14 | 2026-10-16, 526ee01+ |
+| assets: wasm-opt (Asyncify) | level -O0 | 8.5 s | 8.5 s | 15 | 2026-10-17, 9365a01+ |
 | assets: wasm-opt (Asyncify) | level -O1 | 44.3 s | 44.3 s | 8 | 2026-10-08, f61190c+ |
 | assets: wasm-opt (Asyncify) | level -O2 | 64.7 s | 62.5 s | 2 | 2026-10-08, 4303844+ |
 | bench | model large_v16e4 | 10.2 s | 10.2 s | 1 | 2026-10-09, 63e0edd |
 | build | modes browser | 143.3 s | 143.3 s | 1 | 2026-10-08, 4303844+ |
 | build | modes browser,server,desktop, angular at once | 63.3 s | 34.2 s | 2 | 2026-10-07, 78c5844+ |
 | build | modes browser,server,desktop, angular one at a time | 182.7 s | 182.7 s | 1 | 2026-10-07, 78c5844+ |
-| build | modes server | 8.1 s | 42.3 s | 6 | 2026-10-09, ec76e1d+ |
+| build | modes server | 60 s | 44.5 s | 7 | 2026-10-16, 9365a01+ |
 | build | modes server, assets quick | 35.5 s | 35.5 s | 3 | 2026-10-09, 1eb73ed+ |
 | build: Angular (production) | mode browser | 6.2 s | 6.1 s | 4 | 2026-10-08, 4303844+ |
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
-| build: Angular (production) | mode server | 5.4 s | 5.5 s | 12 | 2026-10-09, ec76e1d+ |
-| build: lint | - | 2.6 s | 4.4 s | 9 | 2026-10-09, ec76e1d+ |
-| cargo test quick workspace | - | 79.6 s | 32.4 s | 4 | 2026-10-16, 0f69e37+ |
+| build: Angular (production) | mode server | 6.9 s | 6.5 s | 13 | 2026-10-16, 9365a01+ |
+| build: lint | - | 8.9 s | 4.7 s | 10 | 2026-10-16, 9365a01+ |
+| cargo test quick workspace | - | 38.5 s | 38.5 s | 5 | 2026-10-17, 9365a01+ |
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | export | model large_v16e4 | 82.4 s | 82.4 s | 1 | 2026-10-09, ec76e1d+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
 | label_score | - | 21.9 s | 25.1 s | 2 | 2026-10-08, edafedc+ |
-| lint:ui | - | 20.2 s | 4.5 s | 60 | 2026-10-16, a2099ab+ |
+| lint:ui | - | 7.4 s | 4.5 s | 61 | 2026-10-17, 9365a01+ |
 | merged_pairs | binaries prebuilt | 1747.8 s | 1747.8 s | 1 | 2026-10-09, ac62697+ |
 | merged_pairs | binaries prebuilt, reviews cached | 1163.9 s | 1163.9 s | 1 | 2026-10-09, 3c9d214+ |
 | review-av1 | profile local | 19.2 s | 19.1 s | 2 | 2026-10-08, 433f4a8+ |
@@ -72,7 +72,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | server-build | profile release, linker rust-lld, change edit | 76.7 s | 76.7 s | 1 | 2026-10-08, 433f4a8+ |
 | storage-backends | build quick | 159.7 s | 168.5 s | 2 | 2026-10-07, 75e908f+ |
 | sweep | - | 8.4 s | 8.4 s | 1 | 2026-10-12, 1d6e9f1+ |
-| test:ui | - | 10.2 s | 9.5 s | 51 | 2026-10-16, a2099ab+ |
+| test:ui | - | 12 s | 9.5 s | 52 | 2026-10-17, 9365a01+ |
 | tokens | - | 0.5 s | 0.4 s | 8 | 2026-10-09, 8fe2b6c+ |
 | train | model large_v15 | 197.8 s | 197.8 s | 1 | 2026-10-09, 38ba8e9 |
 | train | model large_v16 | 211.6 s | 211.6 s | 1 | 2026-10-09, ec76e1d+ |

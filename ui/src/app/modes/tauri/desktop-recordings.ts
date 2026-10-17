@@ -1,15 +1,32 @@
 /**
  * The desktop app's `RecordingSource`. In: the app's library over its API (the VODs folder the user
- * picks in the system's dialog). Out: the recordings list, the folder action and each video's
- * address on the app's protocol, for the recordings page and the run page.
+ * picks in the system's dialog) and the files the user adds, sent in parts. Out: the recordings list,
+ * the folder action and each video's address on the app's protocol, for the recordings page and the
+ * run page.
  */
 
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { Uploaded } from '../../api';
 import { FolderAction } from '../../platform/recording-source';
-import { ServerRecordings } from '../http/server-recordings';
+import { ServerRecordings, UploadParams } from '../http/server-recordings';
 import { DESKTOP_API } from './desktop-api';
+
+/**
+ * The bytes of one upload request. The app's window hands each request to the app whole, at about 25
+ * times its size in memory (1.2 GB in the app and 2.1 GB in WebView2 for 132 MB), so a video goes in
+ * parts this size.
+ */
+const PART_BYTES = 8 * 1024 * 1024;
+
+/** The service's answer to a part before the last: the upload's name for the next parts. */
+interface UploadedPart {
+  /** The name the next parts send as upload=. */
+  upload: string;
+  /** The bytes received so far. */
+  received: number;
+}
 
 /**
  * The desktop app's recordings: the review server's services, answered by the app itself
@@ -40,6 +57,30 @@ export class DesktopRecordings extends ServerRecordings {
   /** The recording's video on the app's protocol, which streams it from disk. */
   protected override streamUrl(id: string): string {
     return `${DESKTOP_API}/video?id=${encodeURIComponent(id)}`;
+  }
+
+  /**
+   * Sends a file to /api/upload in parts of PART_BYTES (size=, at=, then upload=), which the service
+   * joins; a file of one part goes whole. The top bar follows the parts sent. Gives the last part's
+   * answer: the recording's id.
+   */
+  protected override async send(
+    body: Blob,
+    params: UploadParams,
+    label: string,
+  ): Promise<Uploaded> {
+    if (body.size <= PART_BYTES) return super.send(body, params, label);
+    const named: UploadParams = { ...params, size: String(body.size) };
+    for (let at = 0; ; at += PART_BYTES) {
+      this.show(label, at / body.size);
+      const part = body.slice(at, at + PART_BYTES);
+      const query = { ...named, at: String(at) };
+      const answer = await firstValueFrom(
+        this.client.post<Uploaded | UploadedPart>('/api/upload', part, { params: query }),
+      );
+      if (at + part.size >= body.size) return answer as Uploaded;
+      named['upload'] = (answer as UploadedPart).upload;
+    }
   }
 
   /**

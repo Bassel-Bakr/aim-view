@@ -248,7 +248,7 @@ export class ServerRecordings implements RecordingSource {
    * Sends one file to /api/upload; the top bar follows its progress (this mode's HttpClient reports
    * it). Gives the server's answer: the recording's id.
    */
-  private send(body: Blob, params: UploadParams, label: string): Promise<Uploaded> {
+  protected send(body: Blob, params: UploadParams, label: string): Promise<Uploaded> {
     return lastValueFrom(
       this.http
         .post<Uploaded>('/api/upload', body, { params, reportProgress: true, observe: 'events' })
@@ -264,7 +264,7 @@ export class ServerRecordings implements RecordingSource {
   }
 
   /** Shows what is being sent, in whole percents (each change redraws the top bar). */
-  private show(label: string, share: number | null): void {
+  protected show(label: string, share: number | null): void {
     const rounded = share === null ? null : Math.floor(100 * share) / 100;
     const now = this.sending();
     if (now?.label !== label || now.share !== rounded) this.sending.set({ label, share: rounded });

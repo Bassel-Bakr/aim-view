@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
-use crate::library::{Answer, Failure, Library};
+use crate::library::{Answer, Failure, Library, UploadPart};
 
 /// The most of a video one ranged response holds: the player asks again for the rest.
 #[cfg(feature = "native")]
@@ -107,6 +107,12 @@ impl<'a> Route<'a> {
     /// Whether the query says `key=1`.
     fn flag(&self, key: &str) -> bool {
         self.query(key).as_deref() == Some("1")
+    }
+
+    /// A size or an offset in bytes from the query, by its key; a 400 when it is missing or not a number.
+    fn bytes(&self, key: &str) -> Answer<u64> {
+        let value = self.query(key).ok_or_else(|| Failure::bad(format!("{key}= is missing")))?;
+        value.parse().map_err(|_| Failure::bad(format!("{key}= is not a number of bytes: {value}")))
     }
 
     /// The recording the request is about (id=).
@@ -304,6 +310,18 @@ fn post_answer(library: &Arc<Library>, route: &Route) -> Answer<Value> {
 /// /api/upload: a file added (name=), for a recording (id=, a stats file) or as a recording of its own.
 fn upload(library: &Library, route: &Route) -> Answer<Value> {
     let (name, recording) = (route.query("name").unwrap_or_default(), route.query("id"));
+    if route.query("size").is_some() {
+        let part = UploadPart { upload: route.query("upload"), at: route.bytes("at")?, size: route.bytes("size")? };
+        // the HTTP server spools every upload's body; a part is small, so it is read back
+        let spooled = match route.request.upload {
+            Some(file) => Some(crate::disk::read(file).inspect(|_| {
+                let _ = crate::disk::remove_file(file);
+            })?),
+            None => None,
+        };
+        let body = spooled.as_deref().unwrap_or(route.request.body);
+        return library.upload_part(&name, recording.as_deref(), &part, body);
+    }
     match route.request.upload {
         Some(file) => library.upload_file(&name, recording.as_deref(), file),
         None => library.upload(&name, recording.as_deref(), route.request.body),

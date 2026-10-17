@@ -95,6 +95,22 @@ fn left_by_another(owner_and_number: Option<&str>, process_id: u32) -> bool {
         .is_some_and(|owner| owner != process_id && !crate::disk::process_running(owner))
 }
 
+/// Where one part of an upload sent in parts goes (/api/upload with size=).
+pub(crate) struct UploadPart {
+    /// The name the first part answered (its spool's "<process id>-<number>"); None for the first part.
+    pub upload: Option<String>,
+    /// The part's first byte in the whole file.
+    pub at: u64,
+    /// The whole file's size in bytes.
+    pub size: u64,
+}
+
+/// A spool's name as an upload sent in parts names it: "<process id>-<number>" (see `SPOOL_PREFIX`).
+fn spool_name(spool: &Path) -> String {
+    let name = spool.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+    name.strip_prefix(SPOOL_PREFIX).and_then(|rest| rest.strip_suffix(SPOOL_SUFFIX)).unwrap_or_default().to_string()
+}
+
 /// The scenario files in `dir`, added to `files`.
 fn push_scenario_files(dir: &Path, files: &mut Vec<PathBuf>) {
     for entry in crate::disk::read_dir(dir).into_iter().flatten().flatten() {
@@ -489,9 +505,62 @@ impl Library {
         Ok(self.uploads().join(format!("{SPOOL_PREFIX}{}-{number}{SPOOL_SUFFIX}", crate::disk::process_id())))
     }
 
-    /// An upload's checks and its place in the uploads, where `body` is saved.
+    /// One part of an upload sent in parts (the desktop app's window hands its protocol each request whole, so a
+    /// video goes in parts that fit in memory). The part is added to the upload's spool; the last one makes the spool
+    /// an upload, as `upload_file` does, and gives its answer. Each earlier part answers the name the next parts send
+    /// as upload= and the bytes received. A part out of order or past the size is a 400.
+    pub(crate) fn upload_part(&self, name: &str, id: Option<&str>, part: &UploadPart, body: &[u8]) -> Answer<Value> {
+        let extension = lower_extension(Path::new(name));
+        if extension != "csv" && !VIDEO_TYPES.contains(&extension.as_str()) {
+            return Err(Failure::bad(format!("not a video or a stats .csv: {name}")));
+        }
+        let spool = match (&part.upload, part.at) {
+            (Some(upload), _) => self.named_spool(upload)?,
+            (None, 0) => self.spool()?,
+            (None, _) => return Err(Failure::bad("a part after the first needs upload=<the name the first got>")),
+        };
+        let received = crate::disk::metadata(&spool).map_or(0, |metadata| metadata.len());
+        let end = part.at + body.len() as u64;
+        if body.is_empty() || received != part.at || end > part.size {
+            return Err(Failure::bad(format!(
+                "a part of {} bytes at {} does not follow the {received} bytes received of {}",
+                body.len(),
+                part.at,
+                part.size
+            )));
+        }
+        crate::disk::append(&spool, body)?;
+        if end < part.size {
+            let upload = spool_name(&spool);
+            return Ok(json!({ "upload": upload, "received": end }));
+        }
+        let answer = self.upload_file(name, id, &spool);
+        if answer.is_err() {
+            let _ = crate::disk::remove_file(&spool);
+        }
+        answer
+    }
+
+    /// The spool an upload sent in parts writes to, from the name its first part answered ("<process id>-<number>");
+    /// a 400 for any other name, so a part never writes outside the uploads folder.
+    fn named_spool(&self, upload: &str) -> Answer<PathBuf> {
+        let numbers = upload
+            .split_once('-')
+            .filter(|(owner, number)| owner.parse::<u32>().is_ok() && number.parse::<u64>().is_ok());
+        match numbers {
+            Some(_) => Ok(self.uploads().join(format!("{SPOOL_PREFIX}{upload}{SPOOL_SUFFIX}"))),
+            None => Err(Failure::bad(format!("no upload named {upload}"))),
+        }
+    }
+
+    /// An upload's checks and its place in the uploads, where `body` is saved. An empty body is a 400: a body that
+    /// never arrived (the desktop window drops some) must not become an empty video.
     fn add_upload(&self, name: &str, id: Option<&str>, body: &Body) -> Answer<Value> {
         let name = Path::new(name).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        if body.len() == 0 {
+            body.discard();
+            return Err(Failure::bad(format!("{name} arrived empty")));
+        }
         let extension = lower_extension(Path::new(&name));
         let (destination, id) = if extension == "csv" {
             let id = id.ok_or_else(|| Failure::bad("a stats file needs id=<the recording's id>"))?;
@@ -709,6 +778,34 @@ mod tests {
         assert!(library.set_hitbox(&id, &serde_json::json!({ "hitbox": "cone" })).is_err(), "not a shape");
         library.set_hitbox(&id, &serde_json::json!({ "hitbox": null })).unwrap();
         assert_eq!(chosen(&library), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An upload sent in parts is the whole file once its last part arrives, and only then; a part out of order, past
+    /// the size or for an upload name not the service's is refused. An empty upload is refused and saves nothing.
+    #[test]
+    fn an_upload_in_parts_is_the_whole_file() {
+        use super::UploadPart;
+        let dir = std::env::temp_dir().join(format!("aimview-parts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let library = Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
+        let part = |upload: Option<&str>, at: u64| UploadPart { upload: upload.map(String::from), at, size: 10 };
+        let first = library.upload_part("run.mp4", None, &part(None, 0), b"0123").unwrap();
+        let upload = first["upload"].as_str().unwrap().to_string();
+        assert_eq!(first["received"], 4);
+        assert!(library.upload_part("run.mp4", None, &part(Some(&upload), 0), b"0123").is_err(), "out of order");
+        assert!(library.upload_part("run.mp4", None, &part(Some(&upload), 4), b"4567890").is_err(), "past the size");
+        assert!(library.upload_part("run.mp4", None, &part(Some("../x"), 4), b"4567").is_err(), "not a spool");
+        assert!(library.upload_part("run.mp4", None, &part(None, 4), b"4567").is_err(), "a later part needs its name");
+        let second = library.upload_part("run.mp4", None, &part(Some(&upload), 4), b"4567").unwrap();
+        assert_eq!(second, serde_json::json!({ "upload": upload, "received": 8 }));
+        assert!(names_in(&library.uploads()).iter().all(|name| name.starts_with(".incoming-")), "not yet a video");
+        let last = library.upload_part("run.mp4", None, &part(Some(&upload), 8), b"89").unwrap();
+        assert_eq!(last, serde_json::json!({ "id": "uploads/run.mp4", "saved": "run.mp4" }));
+        assert_eq!(std::fs::read(library.uploads().join("run.mp4")).unwrap(), b"0123456789");
+        assert_eq!(names_in(&library.uploads()), ["run.mp4"], "the spool became the video");
+        assert!(library.upload("empty.mp4", None, b"").is_err());
+        assert_eq!(names_in(&library.uploads()), ["run.mp4"], "nothing saved for an empty upload");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
