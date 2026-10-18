@@ -44,7 +44,7 @@ use aimview::tracker::TrackPart;
 
 pub use aimview::session::{AreaBox, TimeWindow, Tracks};
 
-use crate::config::Device;
+use crate::config::{DetectorBatch, Device};
 #[cfg(feature = "native")]
 use crate::detector::{Detector, MAP_HEIGHT, MAP_WIDTH, model_settings};
 #[cfg(feature = "native")]
@@ -75,8 +75,8 @@ pub struct Request {
     pub model: PathBuf,
     /// The device the detector runs on.
     pub device: Device,
-    /// The frames the detector takes at once.
-    pub batch: usize,
+    /// The frames the detector takes at once, on a GPU and on the CPU.
+    pub batch: DetectorBatch,
     /// The scenario's target count: how many boxes `keep` takes a frame (0: not known).
     pub cap: usize,
     /// The runs to split the recording into, each decoded and tracked at once (`parts_at_once`).
@@ -538,11 +538,11 @@ struct Handoff<T, Spare = Vec<u8>> {
 fn review_run(context: &RunContext, run: usize) -> Result<RunPart, String> {
     let RunContext { req, review, keys, info, .. } = *context;
     let planned = &review.runs()[run];
-    let batch = req.batch.max(1);
     let from = (planned.first > 0).then_some(planned.from);
     let mut frames = FrameSource::open(req, info, from, Some(planned.reads()), review.hud_rows())?;
-    let detector = Detector::new(&req.model, batch, &keys.fixed, req.device)?;
-    let device = detector.device;
+    let detector = Detector::new(&req.model, req.batch, &keys.fixed, req.device)?;
+    // the batch of the device the detector loaded on (the CPU's when Auto fell back to it)
+    let (device, batch) = (detector.device, detector.batch());
     (context.on_device)(device);
     let tracking = Mutex::new(review.tracking(run));
     let (to_detector, batches) = mpsc::sync_channel::<Batch>(BATCHES_WAITING);

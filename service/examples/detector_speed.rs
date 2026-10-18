@@ -9,8 +9,8 @@ use std::thread;
 use std::time::Instant;
 
 use aimview::convert::{DST_H, DST_W};
-use aimview_service::Device;
 use aimview_service::detector::Detector;
+use aimview_service::{DetectorBatch, Device};
 
 /// The frames a call when none is given.
 const DEFAULT_BATCH: usize = 4;
@@ -40,7 +40,7 @@ fn noise(bytes: usize) -> Vec<u8> {
 /// its timed calls took (loading and the warm-up left out).
 fn run_session(model: &Path, batch: usize, frames: usize, device: Device) -> Result<(&'static str, f64), String> {
     let fixed = vec![0u8; DST_W * DST_H];
-    let mut detector = Detector::new(model, batch, &fixed, device)?;
+    let mut detector = Detector::new(model, DetectorBatch::same(batch), &fixed, device)?;
     let rgb = noise(batch * DST_W * DST_H * RGB_CHANNELS);
     for _ in 0..WARM_UP_CALLS {
         detector.run(&rgb, |_| ())?;

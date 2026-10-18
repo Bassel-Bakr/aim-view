@@ -47,7 +47,7 @@ Cold means after a change that the step has to redo (a Rust change for a cargo b
 | build: Angular (production) | mode desktop | 6 s | 4.6 s | 3 | 2026-10-07, 78c5844+ |
 | build: Angular (production) | mode server | 6.9 s | 6.5 s | 13 | 2026-10-16, 9365a01+ |
 | build: lint | - | 8.9 s | 4.7 s | 10 | 2026-10-16, 9365a01+ |
-| cargo test quick workspace | - | 23.4 s | 38.5 s | 6 | 2026-10-18, 2464ff1+ |
+| cargo test quick workspace | - | 26.5 s | 26.5 s | 7 | 2026-10-18, 52d428f+ |
 | export | model large_v15e4 | 24.1 s | 24.1 s | 1 | 2026-10-09, 38ba8e9+ |
 | export | model large_v16e4 | 82.4 s | 82.4 s | 1 | 2026-10-09, ec76e1d+ |
 | label_batch | - | 4535.7 s | 4535.7 s | 1 | 2026-10-08, a1144b8 |
@@ -105,7 +105,8 @@ times that step.
 | Linux: `cargo tauri build --no-bundle` (in desktop/) | the desktop app with its UI built in (`bun run build:desktop` first) | 1 min 56 s; 2 min 5 s with the UI | 2026-10-18, 6d6a9d3+ | this session |
 | Linux: `cargo tauri build --bundles deb,appimage --features webgpu` | the .deb (24.9 MB) and the AppImage | 143 s to the .deb; the AppImage fails on Arch (linuxdeploy's GTK plugin), so the release builds it on Ubuntu | 2026-10-18, 6d6a9d3+ | this session |
 | Linux: `bash scripts/package-server-linux.sh <version>` | the server's tarball (22 MB) | a few seconds | 2026-10-18, 6d6a9d3+ | this session |
-| `aimview-tool review` of a 66 s 2560 x 1440 AV1 recording (ww3t Voltaic 30% Larger) | the whole video, the default model | Windows, DirectML and the GPU's frames: 16 s. On the CPU with ffmpeg's frames: Linux 240 s, Windows 244 s (with the Linux review beside it); the same report. Linux, WebGPU on Mesa's software Vulkan (lavapipe): 355 s for 10 s of the video, so lavapipe is hidden from the detector | 2026-10-18, ede1c6e+ | this session |
+| `aimview-tool review` of a 66 s 2560 x 1440 AV1 recording (ww3t Voltaic 30% Larger, 8,046 frames at 120 fps) | the whole video, the default model | Windows, DirectML and the GPU's frames: 16 s. Windows, the CPU and ffmpeg's frames: 190 s at 4 frames a call, 124 s at 1 (now the CPU's default), the same files byte for byte. Linux under WSL2: 240 s at 4, 232 s at 1 (the same files): WSL runs the CPU's work 1.7 to 2 times slower than Windows (the detector 18 against 11 ms a frame, ffmpeg's decoding 21.6 against 11.1 s), and the whole pipeline keeps 16 threads busy. Linux, WebGPU on Mesa's software Vulkan (lavapipe): 355 s for 10 s of the video, so lavapipe is hidden from the detector | 2026-10-18, 52d428f+ | this session |
+| `examples/detector_speed` large_v16e4 on the CPU (Ryzen 7 9800X3D) | the detector alone, frames of noise | Windows: 20.6 ms a frame at 4 frames a call, 10.9 at 1; DirectML 1.5 ms at 4. Linux under WSL2: 27.5 at 4, 18.2 at 1, 15.6 with two sessions at 1; 8 threads with spinning is the fastest of 4, 8, 16 threads with and without | 2026-10-18, 52d428f+ | this session |
 
 ### The detector, by model and configuration
 

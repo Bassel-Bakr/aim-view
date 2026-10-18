@@ -16,7 +16,7 @@ use aimview_service::areas::kovobs_areas;
 use aimview_service::library::parse_name;
 use aimview_service::report::ReportInputs;
 use aimview_service::review::{AreaBox, Request, TimeWindow, parts_at_once, review};
-use aimview_service::{Config, Device, Failure, Ffmpeg, Layout, Library};
+use aimview_service::{Config, DetectorBatch, Device, Failure, Ffmpeg, Layout, Library};
 use serde_json::{Value, json};
 
 /// The help text: the commands and their options, with each option's default in brackets.
@@ -64,7 +64,7 @@ Review options:
                           recording's in the app, else KovOBS's layout]
   --runs N                the parts of the video reviewed at once [with 8 threads or more: 4 with GPU frames,
                           else 2; else 1]
-  --batch N               the frames the detector takes at once [4]
+  --batch N               the frames the detector takes at once [4 on a GPU, 1 on the CPU]
   --gpu-share SHARE       the share of the time the detector runs, 0.05 to 1, resting the rest so a game beside it
                           keeps the GPU; the results do not change [1]
   --window START END      only this part of the video tracked, in seconds
@@ -75,8 +75,6 @@ Review options:
 
 /// The exit code for a command line that cannot be read (the usage is printed).
 const USAGE_EXIT: u8 = 2;
-/// The frames the detector takes at once when --batch is not given.
-const DEFAULT_BATCH: usize = 4;
 /// How often a terminal's progress line is written again within a stage.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -518,7 +516,7 @@ fn review_video(library: &Library, line: &Line) -> Result<Value, Failure> {
         video,
         model,
         device: library.config().device,
-        batch: line.number("batch")?.unwrap_or(DEFAULT_BATCH),
+        batch: line.number("batch")?.map_or_else(DetectorBatch::default, DetectorBatch::same),
         cap: cap.unwrap_or(0),
         runs: line.number("runs")?.unwrap_or(parts_at_once(threads, library.config().gpu_frames)),
         window,

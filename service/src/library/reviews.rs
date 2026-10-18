@@ -244,7 +244,7 @@ impl Library {
             video,
             model: self.model_file(model),
             device: self.device(),
-            batch: self.batch(self.device()),
+            batch: self.batches(self.device()),
             cap,
             runs,
             window,

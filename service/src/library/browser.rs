@@ -98,11 +98,12 @@ struct PageProgress {
 }
 
 /// What the page is to review, kept in its job (`Job::review`) until it reports progress: `review::Request`, the video
-/// as its mounted path, the model by name, the device by its name ("webgpu" or "wasm"), the scenario's kind (null: not
-/// known); not the runs (the page splits the recording itself).
+/// as its mounted path, the model by name, the device by its name ("webgpu" or "wasm") with its batch (the batch's
+/// `gpu`: neither is the native CPU, which alone takes `cpu`), the scenario's kind (null: not known); not the runs
+/// (the page splits the recording itself).
 pub(super) fn review_json(request: &Request, model: &str) -> Value {
     json!({
-        "video": request.video, "model": model, "device": request.device.name(), "batch": request.batch,
+        "video": request.video, "model": model, "device": request.device.name(), "batch": request.batch.gpu,
         "cap": request.cap, "window": request.window, "areas": request.areas, "kind": request.kind,
     })
 }

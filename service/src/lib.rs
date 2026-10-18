@@ -48,5 +48,5 @@ pub mod video_tags;
 pub mod ytdlp;
 
 pub use api::{ApiRequest, ApiResponse, handle};
-pub use config::{Config, Device, Ffmpeg, Folders, Layout};
+pub use config::{Config, DetectorBatch, Device, Ffmpeg, Folders, Layout};
 pub use library::{Answer, Failure, Library};

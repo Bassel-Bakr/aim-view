@@ -1002,6 +1002,9 @@ from its own folders; the review server from its settings (server/src/config.rs)
 - `Config` (struct): A library's settings. Methods: `new`, `folders`.
 - `Layout` (enum): Where a library keeps its files in the data folder. Methods: `folders`.
 - `Device` (enum): The detector's device. Methods: `from_name`, `built`, `name`.
+- `DetectorBatch` (struct): The frames the detector takes in one call, on a GPU and on the CPU: a review knows its
+  device only once the detector has loaded (`Auto` falls back to the CPU), and the best batch differs between them.
+  Methods: `same`.
 - `Ffmpeg` (enum): Where ffmpeg and ffprobe come from.
 - `Folders` (struct): The folders a layout puts the library's files in.
 
@@ -1055,7 +1058,7 @@ settings file beside it (`model_settings`). In: the review's frames (review.rs).
 which the core's tracking takes.
 
 - `Detector` (struct): The detector model loaded in ONNX Runtime, with the fixed map ready for every call. Methods:
-  `new`, `run`.
+  `new`, `batch`, `run`.
 - `Maps` (struct): One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x
   MAP_WIDTH), where ONNX Runtime left them. Methods: `of_frame`.
 - Functions: `hide_unusable_vulkan_drivers`, `model_settings`.
@@ -1214,8 +1217,8 @@ python/retired/server.py kept only `model`). And the models to pick from (models
 folder). In: /api/model, /api/device, /api/batch and the app's folder dialog. Out: settings.json, /api/models' answer,
 and the model, device and frames at once new reviews use (reviews.rs).
 
-- `Library` methods: `vods`, `set_vods`, `model`, `device`, `batch`, `use_device`, `use_batch`, `default_model`,
-  `model_file`, `models`, `pick`.
+- `Library` methods: `vods`, `set_vods`, `model`, `device`, `batch`, `batches`, `use_device`, `use_batch`,
+  `default_model`, `model_file`, `models`, `pick`.
 - Constants: `BEST`, `BATCHES`.
 
 ## service/src/library/stats.rs

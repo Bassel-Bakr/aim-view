@@ -70,6 +70,36 @@ pub enum Device {
     Wasm,
 }
 
+/// The frames the detector takes in one call, on a GPU and on the CPU: a review knows its device only once the detector
+/// has loaded (`Auto` falls back to the CPU), and the best batch differs between them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DetectorBatch {
+    /// On a GPU.
+    pub gpu: usize,
+    /// On the CPU.
+    pub cpu: usize,
+}
+
+impl DetectorBatch {
+    /// On a GPU until the user picks: av1 was fastest with 4 frames a call on DirectML.
+    pub const GPU_DEFAULT: usize = 4;
+    /// On the CPU until the user picks: one frame a call, 18 ms a frame for large_v16e4 against 28 ms in fours on Linux
+    /// and 11 against 21 on Windows (a Ryzen 7 9800X3D), the same review byte for byte.
+    pub const CPU_DEFAULT: usize = 1;
+
+    /// The same frames a call on any device (a command line's --batch).
+    pub fn same(frames: usize) -> DetectorBatch {
+        DetectorBatch { gpu: frames, cpu: frames }
+    }
+}
+
+impl Default for DetectorBatch {
+    /// GPU_DEFAULT on a GPU, CPU_DEFAULT on the CPU.
+    fn default() -> DetectorBatch {
+        DetectorBatch { gpu: DetectorBatch::GPU_DEFAULT, cpu: DetectorBatch::CPU_DEFAULT }
+    }
+}
+
 /// Where ffmpeg and ffprobe come from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ffmpeg {

@@ -10,15 +10,13 @@ use std::path::PathBuf;
 use serde_json::{Map, Value, json};
 
 use super::{Answer, Failure, Library, keep_json, read_json, read_kept};
-use crate::config::Device;
+use crate::config::{DetectorBatch, Device};
 use crate::store::{Item, Store};
 
 /// The model new reviews use until the user picks one when models.json names no default (its "default": infer.BEST).
 pub const BEST: &str = "full_v3";
 /// The frames the detector can take at once (the browser offers the same).
 pub const BATCHES: [usize; 4] = [1, 2, 4, 8];
-/// The frames at once until the user picks (av1: 4 was the fastest on the GPU).
-const DEFAULT_BATCH: usize = 4;
 
 /// settings.json's keys and values.
 #[derive(Clone, Default)]
@@ -68,11 +66,20 @@ impl Library {
         picked.filter(|device| Device::built().contains(device)).unwrap_or(self.config.device)
     }
 
-    /// The frames new reviews give the detector at once on `device`: the user's pick for it, else DEFAULT_BATCH.
+    /// The frames new reviews give the detector at once on `device`: the user's pick for it, else the default for a
+    /// GPU or the CPU (DetectorBatch).
     pub fn batch(&self, device: Device) -> usize {
         let settings = self.settings();
         let picked = settings.0.get("batch").and_then(|batches| batches.get(device.name())).and_then(Value::as_u64);
-        picked.map(|frames| frames as usize).filter(|frames| BATCHES.contains(frames)).unwrap_or(DEFAULT_BATCH)
+        let default =
+            if device.name() == Device::Cpu.name() { DetectorBatch::CPU_DEFAULT } else { DetectorBatch::GPU_DEFAULT };
+        picked.map(|frames| frames as usize).filter(|frames| BATCHES.contains(frames)).unwrap_or(default)
+    }
+
+    /// The frames new reviews give the detector at once: on `device`'s GPU, and on the CPU should the detector run
+    /// there (`Auto` when the GPU cannot start it).
+    pub fn batches(&self, device: Device) -> DetectorBatch {
+        DetectorBatch { gpu: self.batch(device), cpu: self.batch(Device::Cpu) }
     }
 
     /// The device new reviews use, kept for the next start.
@@ -167,7 +174,9 @@ mod tests {
         let open = || Library::open(Config::new(dir.clone(), Layout::App, dir.join("models"))).unwrap();
         let lib = open();
         let gpu = Device::built()[0];
-        assert_eq!(lib.batch(lib.device()), 4);
+        // 4 frames a call on a GPU and 1 on the CPU until the user picks
+        assert_eq!(lib.batch(lib.device()), if lib.device().name() == "cpu" { 1 } else { 4 });
+        assert_eq!(lib.batches(lib.device()).cpu, 1);
         lib.use_device(gpu.name()).unwrap();
         lib.use_batch("8").unwrap();
         lib.use_device("cpu").unwrap();

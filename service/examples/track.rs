@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use aimview::hud::HudReading;
+use aimview_service::DetectorBatch;
 use aimview_service::report::ReportInputs;
 use aimview_service::review::{Request, TimeWindow, review};
 
@@ -42,8 +43,6 @@ const AREAS_ARG: usize = 10;
 const DEFAULT_CAP: usize = 0;
 /// The runs when none are given.
 const DEFAULT_RUNS: usize = 2;
-/// The frames in each detector call when none are given.
-const DEFAULT_BATCH: usize = 4;
 
 /// The review request the command line gives (`--parts` already taken out of it).
 fn request(args: &[String], parts: Option<PathBuf>) -> Request {
@@ -56,7 +55,10 @@ fn request(args: &[String], parts: Option<PathBuf>) -> Request {
         device: aimview_service::Device::Auto,
         cap: count(CAP_ARG, DEFAULT_CAP),
         runs: count(RUNS_ARG, DEFAULT_RUNS),
-        batch: count(BATCH_ARG, DEFAULT_BATCH),
+        batch: args
+            .get(BATCH_ARG)
+            .and_then(|arg| arg.parse().ok())
+            .map_or_else(DetectorBatch::default, DetectorBatch::same),
         window,
         // the areas to leave out: an exclude.json ([[x0, y0, x1, y1, kind], ...]), else KovOBS's layout
         areas: args.get(AREAS_ARG).map_or_else(aimview_service::areas::kovobs_areas, |file| {

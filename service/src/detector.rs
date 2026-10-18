@@ -17,7 +17,7 @@ use ort::session::Session;
 use ort::session::builder::SessionBuilder;
 use ort::value::{Tensor, TensorRef};
 
-use crate::config::Device;
+use crate::config::{DetectorBatch, Device};
 
 /// The detector's maps are this many times smaller than the frame each way.
 const MAP_SCALE: usize = 4;
@@ -146,17 +146,18 @@ fn on_cpu(model: &Path, batch: usize) -> ort::Result<Session> {
 }
 
 impl Detector {
-    /// The model at `model`, taking `batch` frames a call, with the fixed map (DST_W x DST_H) for each of them, on
-    /// `device`. `Auto` tries DirectML on Windows, else CUDA and WebGPU (those built in), then the CPU; an error when
-    /// the device asked for (or the CPU, last) cannot load it.
-    pub fn new(model: &Path, batch: usize, fixed: &[u8], device: Device) -> Result<Detector, String> {
-        let directml = || on_gpu(model, batch, DirectMLExecutionProvider::default().build());
-        let cuda = || on_gpu(model, batch, CUDAExecutionProvider::default().build());
+    /// The model at `model`, with the fixed map (DST_W x DST_H) for each frame of a call, on `device`: `batches.gpu`
+    /// frames a call on a GPU, `batches.cpu` on the CPU (at least 1). `Auto` tries DirectML on Windows, else CUDA and
+    /// WebGPU (those built in), then the CPU; an error when the device asked for (or the CPU, last) cannot load it.
+    pub fn new(model: &Path, batches: DetectorBatch, fixed: &[u8], device: Device) -> Result<Detector, String> {
+        let (gpu_batch, cpu_batch) = (batches.gpu.max(1), batches.cpu.max(1));
+        let directml = || on_gpu(model, gpu_batch, DirectMLExecutionProvider::default().build());
+        let cuda = || on_gpu(model, gpu_batch, CUDAExecutionProvider::default().build());
         let webgpu = || {
             skip_webgpu_teardown();
-            on_gpu(model, batch, WebGPUExecutionProvider::default().build())
+            on_gpu(model, gpu_batch, WebGPUExecutionProvider::default().build())
         };
-        let cpu = || on_cpu(model, batch);
+        let cpu = || on_cpu(model, cpu_batch);
         let failed =
             |on: &str, error: ort::Error| format!("the detector could not load {} on {on}: {error}", model.display());
         let (session, device) = match device {
@@ -179,9 +180,15 @@ impl Detector {
                 }
             }
         };
+        let batch = if device == "CPU" { cpu_batch } else { gpu_batch };
         let all = fixed.repeat(batch);
         let fixed = Tensor::from_array(([batch, DST_H, DST_W], all)).map_err(|error| error.to_string())?;
         Ok(Detector { session, fixed, batch, device })
+    }
+
+    /// The frames each call takes: the GPU's batch or the CPU's, as the device it loaded on.
+    pub fn batch(&self) -> usize {
+        self.batch
     }
 
     /// One call on a whole batch of RGB frames (batch x DST_H x DST_W x 3 bytes): its maps handed to `read` where ONNX
