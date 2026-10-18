@@ -222,7 +222,9 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   release builds the server's tarball, a .deb and an AppImage on Ubuntu 22.04 (scripts/package-server-linux.sh,
   release.yml); the tarball and the .deb were checked here (rpath, files, dependencies). Open: WebGPU on a real AMD
   or NVIDIA GPU (WSL's Vulkan is Dozen, which Dawn refuses), the AppImage and the release's Linux job (their first
-  run), the folder dialog by hand, and CUDA. The GPU's frames (gpu_frames.rs) and the raw mouse logger are Windows
+  run), the folder dialog by hand. The Linux release ships WebGPU alone, which also runs NVIDIA's cards through
+  their Vulkan driver; whether a CUDA build (a second package, or both ONNX Runtimes loaded at start) is worth its
+  weight waits for WebGPU's speed on a real NVIDIA card. One build cannot have both features (detector.rs). The GPU's frames (gpu_frames.rs) and the raw mouse logger are Windows
   only, so Linux decodes through ffmpeg.
 - The Angular app does everything the old page did, the player's full screen (F, Escape) included; the old page
   retired to `python/retired/app/` (2026-10-04), and the Rust server no longer serves it. Server mode stays (a stronger

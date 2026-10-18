@@ -27,7 +27,8 @@ default = ["native"]
 native = ["dep:ort", "dep:ffmpeg-sidecar", "dep:libc", "dep:windows", "dep:rusqlite"]
 # the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
 cuda = ["native", "ort/cuda"]
-# the detector on any GPU with Vulkan (Linux: AMD, NVIDIA, Intel), through ONNX Runtime's WebGPU build (Dawn)
+# the detector on any GPU with Vulkan (Linux: AMD, NVIDIA, Intel), through ONNX Runtime's WebGPU build (Dawn); not
+# together with cuda (detector.rs: ONNX Runtime's downloads have one or the other)
 webgpu = ["native", "ort/webgpu"]
 # the track example counts every allocation by where it was made (dhat), into dhat-heap.json: docs/HOT_PATHS.md
 dhat-heap = ["dep:dhat"]

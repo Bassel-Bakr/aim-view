@@ -19,6 +19,11 @@ use ort::value::{Tensor, TensorRef};
 
 use crate::config::{DetectorBatch, Device};
 
+// ONNX Runtime's prebuilt libraries (the ort crate's downloads) come with CUDA or with WebGPU, never both, and with both
+// features ort quietly takes the CPU-only one: a build with both stops here
+#[cfg(all(feature = "cuda", feature = "webgpu"))]
+compile_error!("the cuda and webgpu features cannot be built together: ONNX Runtime's downloads have one or the other");
+
 /// The detector's maps are this many times smaller than the frame each way.
 const MAP_SCALE: usize = 4;
 /// A map's width in cells (`gw` in the core's session.rs).
