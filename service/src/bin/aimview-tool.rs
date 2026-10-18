@@ -48,7 +48,7 @@ Library options:
   --vods FOLDER           the recordings; --vods= for the folder chosen in the app [aimview.json's vods]
   --stats FOLDER          KovaaK's stats folder [FPSAimTrainer\stats in Steam's folder]
   --scenarios FOLDER...   the scenario folders [KovaaK's and the workshop's]
-  --device auto|directml|cuda|cpu   where the detector runs [auto]
+  --device auto|directml|cuda|webgpu|cpu   where the detector runs [auto]
   --gpu-frames on|off     decode and convert on the GPU where the video allows it (Windows, 2560 x 1440 AV1 or
                           H.264 MP4s) [on]
   --ffmpeg FOLDER|path    where ffmpeg and ffprobe are [path: the PATH's]
@@ -261,8 +261,9 @@ fn config(line: &Line) -> Result<Config, Failure> {
         "auto" => Device::Auto,
         "directml" => Device::DirectMl,
         "cuda" => Device::Cuda,
+        "webgpu" => Device::WebGpu,
         "cpu" => Device::Cpu,
-        other => return Err(Failure::bad(format!("--device: auto, directml, cuda or cpu, not {other}"))),
+        other => return Err(Failure::bad(format!("--device: auto, directml, cuda, webgpu or cpu, not {other}"))),
     };
     config.gpu_frames = match line.one("gpu-frames").unwrap_or("on") {
         "on" => true,
@@ -589,6 +590,7 @@ fn answer(command: &str, line: &Line) -> Result<Value, Failure> {
 /// Reads the command line, answers the command and prints the answer: exit code 0, 1 on a failure, 2 when the line
 /// cannot be read.
 fn main() -> ExitCode {
+    aimview_service::detector::hide_unusable_vulkan_drivers();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let usage = |error: &str| {
         eprintln!("aimview-tool: {error}\n\n{USAGE}");

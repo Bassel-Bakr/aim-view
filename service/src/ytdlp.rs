@@ -196,14 +196,16 @@ pub fn tools_folder(ffmpeg: &Ffmpeg, data: &Path) -> PathBuf {
 
 /// A command without a console window of its own.
 fn command(program: &Path) -> Command {
-    let mut command = Command::new(program);
+    let command = Command::new(program);
     #[cfg(windows)]
-    {
+    let command = {
         use std::os::windows::process::CommandExt;
         /// Windows' process flag for no console window.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut command = command;
         command.creation_flags(CREATE_NO_WINDOW);
-    }
+        command
+    };
     command
 }
 

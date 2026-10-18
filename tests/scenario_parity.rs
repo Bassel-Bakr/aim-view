@@ -4,13 +4,12 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
 
 use aimview::scenario::{Facts, facts};
 use serde_json::Value;
 
 mod common;
-use common::parity_root;
+use common::{fixture_path, parity_root};
 
 /// How many differing scenarios the test prints before it fails.
 const SHOWN_SCENARIOS: usize = 5;
@@ -26,8 +25,8 @@ fn scenario_facts_match_python() {
     let fixture: Value = serde_json::from_str(&text).unwrap();
     let mut got: BTreeMap<String, Facts> = BTreeMap::new();
     for scenario_path in fixture["paths"].as_array().unwrap() {
-        let scenario_path = Path::new(scenario_path.as_str().unwrap());
-        let bytes = fs::read(scenario_path).unwrap();
+        let scenario_path = fixture_path(scenario_path.as_str().unwrap());
+        let bytes = fs::read(&scenario_path).unwrap();
         let name = scenario_path.file_stem().unwrap().to_string_lossy().to_lowercase();
         got.insert(name, facts(&String::from_utf8_lossy(&bytes)));
     }

@@ -105,14 +105,16 @@ struct ProbePacket {
 
 /// A command for one of ffmpeg's programs, without a console window of its own.
 fn tool(name: &str) -> Command {
-    let mut command = Command::new(crate::ffmpeg::program(name));
+    let command = Command::new(crate::ffmpeg::program(name));
     #[cfg(windows)]
-    {
+    let command = {
         use std::os::windows::process::CommandExt;
         /// Windows' process flag for no console window.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut command = command;
         command.creation_flags(CREATE_NO_WINDOW);
-    }
+        command
+    };
     command
 }
 

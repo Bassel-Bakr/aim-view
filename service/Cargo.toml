@@ -27,6 +27,8 @@ default = ["native"]
 native = ["dep:ort", "dep:ffmpeg-sidecar", "dep:libc", "dep:windows", "dep:rusqlite"]
 # the detector on an NVIDIA GPU (Linux), through ONNX Runtime's CUDA build
 cuda = ["native", "ort/cuda"]
+# the detector on any GPU with Vulkan (Linux: AMD, NVIDIA, Intel), through ONNX Runtime's WebGPU build (Dawn)
+webgpu = ["native", "ort/webgpu"]
 # the track example counts every allocation by where it was made (dhat), into dhat-heap.json: docs/HOT_PATHS.md
 dhat-heap = ["dep:dhat"]
 # `bun run types`: the TypeScript types of the JSON the UI reads, made from these structs and the core's (ts-rs)
@@ -34,7 +36,7 @@ ts = ["dep:ts-rs", "aimview/ts"]
 
 [dependencies]
 aimview = { path = ".." }
-# ONNX Runtime: on the CPU everywhere, DirectML on Windows (any GPU), CUDA with the `cuda` feature
+# ONNX Runtime: on the CPU everywhere, DirectML on Windows (any GPU), CUDA or WebGPU with their features
 ort = { version = "=2.0.0-rc.10", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

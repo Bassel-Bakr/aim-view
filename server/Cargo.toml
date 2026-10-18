@@ -12,6 +12,8 @@ path = "src/main.rs"
 [features]
 # the detector on an NVIDIA GPU with CUDA (Linux): --device cuda
 cuda = ["aimview-service/cuda"]
+# the detector on any GPU with Vulkan (Linux: AMD, NVIDIA, Intel), through WebGPU: --device webgpu
+webgpu = ["aimview-service/webgpu"]
 
 [dependencies]
 aimview = { path = ".." }

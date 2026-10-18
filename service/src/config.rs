@@ -53,8 +53,8 @@ pub enum Layout {
 /// The detector's device.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
-    /// The GPU when there is one (DirectML on Windows, CUDA with the `cuda` feature), else the CPU; in the browser
-    /// build WebGPU.
+    /// The GPU when there is one (DirectML on Windows; elsewhere CUDA, then WebGPU, with their features), else the
+    /// CPU; in the browser build WebGPU.
     Auto,
     /// DirectML: any GPU on Windows.
     DirectMl,
@@ -62,8 +62,8 @@ pub enum Device {
     Cuda,
     /// The CPU, through ONNX Runtime's own provider.
     Cpu,
-    /// The browser build's: the GPU through WebGPU.
-    #[cfg(not(feature = "native"))]
+    /// The GPU through WebGPU: the page's in the browser build, else ONNX Runtime's (needs the `webgpu` feature; any
+    /// GPU with Vulkan on Linux).
     WebGpu,
     /// The browser build's: the CPU through WebAssembly.
     #[cfg(not(feature = "native"))]
@@ -133,13 +133,12 @@ impl Layout {
 }
 
 impl Device {
-    /// A device by its name ("directml", "cuda", "cpu"; in the browser build "webgpu", "wasm"); none for another name.
+    /// A device by its name ("directml", "cuda", "webgpu", "cpu"; in the browser build "wasm"); none for another name.
     pub fn from_name(name: &str) -> Option<Device> {
         match name {
             "directml" => Some(Device::DirectMl),
             "cuda" => Some(Device::Cuda),
             "cpu" => Some(Device::Cpu),
-            #[cfg(not(feature = "native"))]
             "webgpu" => Some(Device::WebGpu),
             #[cfg(not(feature = "native"))]
             "wasm" => Some(Device::Wasm),
@@ -154,8 +153,8 @@ impl Device {
         vec![Device::WebGpu, Device::Wasm]
     }
 
-    /// The devices this build can run the detector on: the GPU it has a provider for (DirectML on Windows, CUDA with
-    /// the `cuda` feature), and the CPU.
+    /// The devices this build can run the detector on: the GPU it has a provider for (DirectML on Windows, CUDA and
+    /// WebGPU with their features), and the CPU.
     #[cfg(feature = "native")]
     pub fn built() -> Vec<Device> {
         let mut out = Vec::new();
@@ -164,6 +163,9 @@ impl Device {
         }
         if cfg!(feature = "cuda") {
             out.push(Device::Cuda);
+        }
+        if cfg!(feature = "webgpu") {
+            out.push(Device::WebGpu);
         }
         out.push(Device::Cpu);
         out
@@ -188,9 +190,11 @@ impl Device {
         match self {
             Device::Auto if cfg!(windows) => "directml",
             Device::Auto if cfg!(feature = "cuda") => "cuda",
+            Device::Auto if cfg!(feature = "webgpu") => "webgpu",
             Device::Auto | Device::Cpu => "cpu",
             Device::DirectMl => "directml",
             Device::Cuda => "cuda",
+            Device::WebGpu => "webgpu",
         }
     }
 }

@@ -32,13 +32,17 @@ pub enum Switch {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Device {
-    /// The GPU when there is one (DirectML on Windows, CUDA in a build with the `cuda` feature), else the CPU
+    /// The GPU when there is one (DirectML on Windows; elsewhere CUDA or WebGPU, in a build with its feature), else
+    /// the CPU
     Auto,
     /// Any GPU on Windows
     #[value(name = "directml")]
     DirectMl,
     /// An NVIDIA GPU (a build with the `cuda` feature)
     Cuda,
+    /// Any GPU with Vulkan (a build with the `webgpu` feature)
+    #[value(name = "webgpu")]
+    WebGpu,
     /// The CPU
     Cpu,
 }
@@ -352,24 +356,26 @@ mod tests {
     /// The file's settings are taken, its relative paths from its folder, and what it leaves out stays the default.
     #[test]
     fn the_file_gives_settings_and_its_relative_paths_start_at_its_folder() {
-        let file = parse_file(
+        // an absolute path is this system's own: a drive's on Windows, from the root elsewhere
+        let vods = if cfg!(windows) { r"E:\OBS\KovOBS" } else { "/mnt/e/OBS/KovOBS" }; // hardcoded-ok: test path
+        let file = parse_file(&format!(
             r#"
             host = "0.0.0.0"
             port = 9000
             data = "aim-data"
-            vods = 'E:\OBS\KovOBS'
+            vods = '{vods}'
             scenarios = ["a", "sub/b"]
             device = "directml"
             token = "abc-123"
             ffmpeg = "tools"
-            "#,
-        )
+            "#
+        ))
         .unwrap();
         let base = std::path::absolute("base").unwrap();
         let settings = resolve(Flags::default(), file, &base, Settings::defaults()).unwrap();
         assert_eq!((settings.host.as_str(), settings.port), ("0.0.0.0", 9000));
         assert_eq!(settings.data, base.join("aim-data"));
-        assert_eq!(settings.vods, Some(PathBuf::from(r"E:\OBS\KovOBS")));
+        assert_eq!(settings.vods, Some(PathBuf::from(vods)));
         assert_eq!(settings.scenarios, vec![base.join("a"), base.join("sub/b")]);
         assert_eq!(settings.device, Device::DirectMl);
         assert_eq!(settings.token.as_deref(), Some("abc-123"));

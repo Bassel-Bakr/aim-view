@@ -117,8 +117,9 @@ rust-analyzer's call hierarchy.
 - `service/src/database.rs`: The store as one SQLite database in the data folder (docs/storage-design.md): what
   store.rs's `Files` keeps as files, kept as rows instead, the same bytes in and out, so every answer is the same.
 - `service/src/detector.rs`: The detector model on this computer, on the device the configuration says (config.rs:
-  `Device`): ONNX Runtime with DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature) or on the
-  CPU; `Auto` tries the GPU first and falls back to the CPU.
+  `Device`): ONNX Runtime with DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature), with
+  WebGPU (any GPU with Vulkan, with the `webgpu` feature) or on the CPU; `Auto` tries the GPU first and falls back to
+  the CPU.
 - `service/src/disk.rs`: The file system and the clock, for the whole service: every file the library reads or writes
   goes through here.
 - `service/src/faint.rs`: The faint-target cut-off (python/retired/server.py: faint, set_faint, submit_faint,
@@ -217,8 +218,8 @@ rust-analyzer's call hierarchy.
 - `desktop/src/main.rs`: Aim View's desktop app: the executable, which starts the app (lib.rs `run`).
 - `desktop/src/mouse.rs`: The raw mouse logger (python/mouse_log.py, ported) and the app's side of it: an on/off switch
   that logs in the background while the user plays.
-- `desktop/src/protocol.rs`: The review server's API inside the app, over a custom protocol (`api`, at
-  http://api.localhost in the window): no network port, so nothing outside the app reaches it.
+- `desktop/src/protocol.rs`: The review server's API inside the app, over a custom protocol (`api`: http://api.localhost
+  in the window on Windows, api://localhost on Linux): no network port, so nothing outside the app reaches it.
 - `browser-service/src/lib.rs`: The review service (aimview-service, without its `native` feature) as WebAssembly:
   browser mode runs it in a worker, so the browser answers the same API as the review server and the desktop app.
 - `tests/camera_parity.rs`: The camera's readings (src/camera.rs) against Python's camera_motion on the same gray
@@ -1043,16 +1044,17 @@ bytes, and on first opening the data folder's files. Out: the same bytes, and wh
 ## service/src/detector.rs
 
 The detector model on this computer, on the device the configuration says (config.rs: `Device`): ONNX Runtime with
-DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature) or on the CPU; `Auto` tries the GPU first
-and falls back to the CPU. It takes the _u8in export (python/model/export.py): a batch of 720p RGB frames and the fixed
-map, as bytes. The model's settings come from its settings file beside it (`model_settings`). In: the review's frames
-(review.rs). Out: each frame's score and reg maps, which the core's tracking takes.
+DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature), with WebGPU (any GPU with Vulkan, with
+the `webgpu` feature) or on the CPU; `Auto` tries the GPU first and falls back to the CPU. It takes the _u8in export
+(python/model/export.py): a batch of 720p RGB frames and the fixed map, as bytes. The model's settings come from its
+settings file beside it (`model_settings`). In: the review's frames (review.rs). Out: each frame's score and reg maps,
+which the core's tracking takes.
 
 - `Detector` (struct): The detector model loaded in ONNX Runtime, with the fixed map ready for every call. Methods:
   `new`, `run`.
 - `Maps` (struct): One call's maps: score (batch x 1 x MAP_HEIGHT x MAP_WIDTH) and reg (batch x REG_MAPS x MAP_HEIGHT x
   MAP_WIDTH), where ONNX Runtime left them. Methods: `of_frame`.
-- Functions: `model_settings`.
+- Functions: `hide_unusable_vulkan_drivers`, `model_settings`.
 - Constants: `MAP_WIDTH`, `MAP_HEIGHT`.
 
 ## service/src/disk.rs
@@ -1467,9 +1469,9 @@ calls this in debug builds only). In: the main window. Out: the window, minimize
 Aim View's desktop app: the Angular app (ui/, its desktop build) in a Tauri 2 window. The window's server-mode services
 talk to the app itself (protocol.rs: the review server's API over the `api` protocol), which the review service answers
 (service/: the library in the app's data folder, and the review run natively). The app adds the folder dialog and the
-raw mouse logger (mouse.rs). In: Tauri's folders for the app (its data, local data and resource folders) and the
-window's requests. Out: the window, the library's files in the data folder, ffmpeg in the local data folder, and the
-mouse logs.
+raw mouse logger (mouse.rs). In: the app's folders (AimView in the user's roaming and local app data, moved there from
+the folders the app's identifier named) and its resource folder, and the window's requests. Out: the window, the
+library's files in the data folder, ffmpeg and the window's own data in the local data folder, and the mouse logs.
 
 - Functions: `run`.
 
@@ -1492,11 +1494,11 @@ background while the user plays. Each recording's measures from the log that cov
 
 ## desktop/src/protocol.rs
 
-The review server's API inside the app, over a custom protocol (`api`, at http://api.localhost in the window): no
-network port, so nothing outside the app reaches it. The window's server-mode services send /api/... and /video there
-(ui/src/app/modes/tauri/). The service answers (aimview_service::api); the routes that need the desktop are answered
-here: the folder dialog (/api/folder), the mouse logger's switch (/api/mouse/logger) and the window's theme
-(/api/window/theme: its title bar in the page's theme).
+The review server's API inside the app, over a custom protocol (`api`: http://api.localhost in the window on Windows,
+api://localhost on Linux): no network port, so nothing outside the app reaches it. The window's server-mode services
+send /api/... and /video there (ui/src/app/modes/tauri/). The service answers (aimview_service::api); the routes that
+need the desktop are answered here: the folder dialog (/api/folder), the mouse logger's switch (/api/mouse/logger) and
+the window's theme (/api/window/theme: its title bar in the page's theme).
 
 - Functions: `handle`.
 
@@ -1541,8 +1543,8 @@ everything that is not a number equal, numbers within a relative tolerance.
 - `TrackingInputs` (struct): A tracking run's inputs as python/retired/tests/fixtures.py --review kept them in
   test_out/parity/<case>/review/: its tracks, the camera's readings and the countdown (from teal.json's counts).
   Methods: `read`, `review`.
-- Functions: `compare`, `rename_key`, `without_tracking_checks`, `read`, `read_lossy`, `parity_root`, `fixture_dirs`,
-  `excluded_areas`, `showing_frames`, `fixed_map`, `scenario_key`.
+- Functions: `compare`, `rename_key`, `without_tracking_checks`, `read`, `read_lossy`, `fixture_path`, `parity_root`,
+  `fixture_dirs`, `excluded_areas`, `showing_frames`, `fixed_map`, `scenario_key`.
 - Constants: `FRAME_PIXELS`.
 
 ## tests/compare.rs

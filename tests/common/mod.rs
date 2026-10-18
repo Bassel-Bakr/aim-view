@@ -25,6 +25,8 @@ const SHOWN_DIFFERENCES: usize = 30;
 pub const FRAME_PIXELS: usize = W * H;
 /// The least countdown-teal pixels in a frame for KovaaK's countdown bar to count as showing (teal.json).
 const COUNTDOWN_TEAL_PIXELS: u32 = 40;
+/// Where WSL puts Windows' drives (its default), for the fixtures' Windows paths off Windows.
+const WSL_DRIVES: &str = "/mnt";
 
 /// Where two JSON values differ (paths), and how many numbers were equal only within the tolerance.
 #[derive(Default)]
@@ -123,6 +125,19 @@ pub fn read(path: &Path) -> Value {
 /// A file's text, with bytes that are not UTF-8 replaced (KovaaK's stats files, scenario files).
 pub fn read_lossy(path: &Path) -> String {
     String::from_utf8_lossy(&fs::read(path).unwrap()).into_owned()
+}
+
+/// A file a fixture names, as this computer reaches it. The fixtures were made on Windows and name its files ("C:\\..."):
+/// off Windows a drive's files are taken from WSL_DRIVES/<its letter>, as WSL has them; other paths stay as named.
+pub fn fixture_path(named: &str) -> PathBuf {
+    let bytes = named.as_bytes();
+    let drive = match bytes {
+        [letter, b':', b'\\' | b'/', ..] if !cfg!(windows) && letter.is_ascii_alphabetic() => {
+            letter.to_ascii_lowercase()
+        }
+        _ => return PathBuf::from(named),
+    };
+    PathBuf::from(format!("{WSL_DRIVES}/{}/{}", drive as char, named[3..].replace('\\', "/")))
 }
 
 /// test_out/parity, the frozen fixtures.
@@ -226,7 +241,7 @@ impl TrackingInputs {
     pub fn review(&self, want: &Value, facts: &Value, faint: Option<FaintSetting>) -> Value {
         let video = want["video"].as_str().unwrap();
         let stats = want["stats"].as_str().unwrap();
-        let stats_text = read_lossy(Path::new(stats));
+        let stats_text = read_lossy(&fixture_path(stats));
         let limit = facts["facts"][scenario_key(video).as_str()]["limit"].as_f64();
         let readings = VideoReadings { camera: &self.camera, countdown: &self.countdown };
         let kills = KillTimes::Stats { name: stats, text: &stats_text };

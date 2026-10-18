@@ -13,6 +13,27 @@ use common::{excluded_areas, fixture_dirs, read, showing_frames};
 
 /// How many differing frames a fixture prints before it fails.
 const SHOWN_FRAMES: usize = 3;
+/// How far a target's numbers may differ off Windows, relative to the larger: the fixtures come from Windows, whose math
+/// library rounds the trigonometry's last bit unlike glibc's, so on Linux a position or a size can differ in its last
+/// bit (1e-16). On Windows they must be equal to the bit.
+const OTHER_LIBM_TOLERANCE: f64 = 1e-12;
+
+/// Whether two numbers are equal: to the bit on Windows, within OTHER_LIBM_TOLERANCE elsewhere.
+fn same_number(a: f64, b: f64) -> bool {
+    a == b || (!cfg!(windows) && (a - b).abs() <= OTHER_LIBM_TOLERANCE * a.abs().max(b.abs()))
+}
+
+/// Whether two frames kept the same targets: the same count, order and areas, every number equal (`same_number`).
+fn same_spots(got: &[Spot], want: &[Spot]) -> bool {
+    let same_model = |a: &Option<ModelBox>, b: &Option<ModelBox>| match (a, b) {
+        (Some(a), Some(b)) => same_number(a.w, b.w) && same_number(a.h, b.h) && same_number(a.score, b.score),
+        (a, b) => a == b,
+    };
+    got.len() == want.len()
+        && got.iter().zip(want).all(|(a, b)| {
+            a.area == b.area && same_number(a.x, b.x) && same_number(a.y, b.y) && same_model(&a.model, &b.model)
+        })
+}
 
 /// A JSON array of numbers as floats.
 fn numbers(row: &Value) -> Vec<f64> {
@@ -56,7 +77,7 @@ fn check_fixture(dir: &Path) {
     let mut wrong = 0;
     for (i, (spots, want_frame)) in got.iter().zip(want).enumerate() {
         let expected = kept_spots(want_frame);
-        if *spots != expected {
+        if !same_spots(spots, &expected) {
             if wrong < SHOWN_FRAMES {
                 eprintln!("{} frame {i}:\n  rust   {spots:?}\n  python {expected:?}", dir.display());
             }

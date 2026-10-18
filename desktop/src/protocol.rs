@@ -1,6 +1,6 @@
-//! The review server's API inside the app, over a custom protocol (`api`, at http://api.localhost in the window): no
-//! network port, so nothing outside the app reaches it. The window's server-mode services send /api/... and /video
-//! there (ui/src/app/modes/tauri/). The service answers (aimview_service::api); the routes that need the desktop are
+//! The review server's API inside the app, over a custom protocol (`api`: http://api.localhost in the window on
+//! Windows, api://localhost on Linux): no network port, so nothing outside the app reaches it. The window's
+//! server-mode services send /api/... and /video there (ui/src/app/modes/tauri/). The service answers (aimview_service::api); the routes that need the desktop are
 //! answered here: the folder dialog (/api/folder), the mouse logger's switch (/api/mouse/logger) and the window's
 //! theme (/api/window/theme: its title bar in the page's theme).
 //!
@@ -47,7 +47,7 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>, set_theme: &dyn Fn(Opt
         let headers = vec![("Content-Type".to_string(), "text/plain".to_string())];
         return respond(ApiResponse { status: StatusCode::NO_CONTENT.as_u16(), headers, body: Vec::new() });
     }
-    // the path and query only (the window gives the whole URL, http://api.localhost/...)
+    // the path and query only (the window gives the whole URL: http://api.localhost/... or api://localhost/...)
     let at = req.uri().path_and_query().map_or("/", |path_and_query| path_and_query.as_str());
     let url = tauri::Url::parse(&format!("http://api.localhost{at}")).ok();
     let path = url.as_ref().map(|url| url.path().to_string()).unwrap_or_default();

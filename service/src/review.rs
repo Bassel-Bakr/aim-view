@@ -478,6 +478,9 @@ impl FrameSource {
         count: Option<usize>,
         plane_rows: usize,
     ) -> Result<FrameSource, String> {
+        // only the GPU's frames (Windows) leave rows out
+        #[cfg(not(windows))]
+        let _ = plane_rows;
         #[cfg(windows)]
         if req.gpu_frames && crate::gpu_frames::usable(&req.video, info) {
             let frames = crate::gpu_frames::GpuFrames::open(&req.video, info, from, count, plane_rows)?;

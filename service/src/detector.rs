@@ -1,6 +1,6 @@
 //! The detector model on this computer, on the device the configuration says (config.rs: `Device`): ONNX Runtime with
-//! DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature) or on the CPU; `Auto` tries the GPU
-//! first and falls back to the CPU. It takes the _u8in export (python/model/export.py): a batch of 720p RGB frames and
+//! DirectML (any Windows GPU), with CUDA (an NVIDIA GPU, with the `cuda` feature), with WebGPU (any GPU with Vulkan,
+//! with the `webgpu` feature) or on the CPU; `Auto` tries the GPU first and falls back to the CPU. It takes the _u8in export (python/model/export.py): a batch of 720p RGB frames and
 //! the fixed map, as bytes. The model's settings come from its settings file beside it (`model_settings`). In: the
 //! review's frames (review.rs). Out: each frame's score and reg maps, which the core's tracking takes.
 
@@ -11,6 +11,7 @@ use aimview::convert::{DST_H, DST_W};
 use aimview::model::{DEFAULT_THRESHOLD, ModelSettings, settings_file};
 use ort::execution_providers::{
     CPUExecutionProvider, CUDAExecutionProvider, DirectMLExecutionProvider, ExecutionProviderDispatch,
+    WebGPUExecutionProvider,
 };
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
@@ -32,6 +33,54 @@ const RGB_CHANNELS: usize = 3;
 const DEFAULT_CPU_THREADS: usize = 4;
 /// The most CPU threads the detector takes.
 const MAX_CPU_THREADS: usize = 8;
+/// The Vulkan loader's setting that hides drivers, by filters on their manifest files' names.
+#[cfg(target_os = "linux")]
+const VULKAN_DRIVERS_HIDDEN: &str = "VK_LOADER_DRIVERS_DISABLE";
+/// The Vulkan drivers WebGPU must not run the detector on: Mesa's software one (lavapipe: the GPU drawn on the CPU,
+/// 10 times slower than ONNX Runtime's own CPU code) and WSL's Dozen (Vulkan over Direct3D 12: Dawn refuses it, and it
+/// crashes when the process exits).
+#[cfg(target_os = "linux")]
+const UNUSABLE_VULKAN_DRIVERS: &str = "*lvp*,*dzn*";
+
+/// Hides UNUSABLE_VULKAN_DRIVERS from this process's Vulkan loader, so WebGPU finds a real GPU or none (`Auto` then
+/// runs the detector on the CPU); a value the user set stays. Linux only. Call it first in `main`, before any other
+/// thread starts: changing the environment while another thread reads it is undefined behavior.
+pub fn hide_unusable_vulkan_drivers() {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(VULKAN_DRIVERS_HIDDEN).is_none() {
+        // SAFETY: called before any other thread exists (see above)
+        unsafe { std::env::set_var(VULKAN_DRIVERS_HIDDEN, UNUSABLE_VULKAN_DRIVERS) };
+    }
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    /// glibc's: `function` runs when the process exits, with the exit status, before the handlers registered earlier.
+    fn on_exit(function: extern "C" fn(i32, *mut std::ffi::c_void), arg: *mut std::ffi::c_void) -> i32;
+}
+
+/// Ends the process at once with its exit status, skipping the exit handlers registered before it.
+#[cfg(target_os = "linux")]
+extern "C" fn leave_at_once(status: i32, _arg: *mut std::ffi::c_void) {
+    // SAFETY: _exit only ends the process; Rust's own output is flushed before the exit handlers run
+    unsafe { libc::_exit(status) }
+}
+
+/// Before WebGPU first loads: the process's exit skips the static destructors registered so far, where ONNX Runtime
+/// 1.22's WebGPU provider releases Dawn's instance twice and crashes the exit (a segfault after every review, even one
+/// whose WebGPU did not start). The exit status stays. Once per process; Linux only (glibc's `on_exit`).
+fn skip_webgpu_teardown() {
+    #[cfg(target_os = "linux")]
+    {
+        /// Whether the handler is registered.
+        static REGISTERED: std::sync::Once = std::sync::Once::new();
+        REGISTERED.call_once(|| {
+            // SAFETY: on_exit only records the handler, which only ends the process; when it cannot (no room), the
+            // exit crashes as before, after every file is written
+            let _ = unsafe { on_exit(leave_at_once, std::ptr::null_mut()) };
+        });
+    }
+}
 
 /// The detector model loaded in ONNX Runtime, with the fixed map ready for every call.
 pub struct Detector {
@@ -73,6 +122,9 @@ fn sized(builder: SessionBuilder, batch: usize) -> ort::Result<SessionBuilder> {
 
 /// The model on a GPU, through `provider`.
 fn on_gpu(model: &Path, batch: usize, provider: ExecutionProviderDispatch) -> ort::Result<Session> {
+    // ONNX Runtime's environment first (ort makes it only when a session is committed): the WebGPU provider logs
+    // through its logger as it is added, and fails without one
+    ort::environment::get_environment()?;
     Session::builder()
         .and_then(|builder| builder.with_execution_providers([provider.error_on_failure()]))
         // a GPU runs one node at a time, with no memory pattern (DirectML needs it so)
@@ -95,23 +147,31 @@ fn on_cpu(model: &Path, batch: usize) -> ort::Result<Session> {
 
 impl Detector {
     /// The model at `model`, taking `batch` frames a call, with the fixed map (DST_W x DST_H) for each of them, on
-    /// `device`. `Auto` tries DirectML on Windows, else CUDA, then the CPU; an error when the device asked for (or the
-    /// CPU, last) cannot load it.
+    /// `device`. `Auto` tries DirectML on Windows, else CUDA and WebGPU (those built in), then the CPU; an error when
+    /// the device asked for (or the CPU, last) cannot load it.
     pub fn new(model: &Path, batch: usize, fixed: &[u8], device: Device) -> Result<Detector, String> {
         let directml = || on_gpu(model, batch, DirectMLExecutionProvider::default().build());
         let cuda = || on_gpu(model, batch, CUDAExecutionProvider::default().build());
+        let webgpu = || {
+            skip_webgpu_teardown();
+            on_gpu(model, batch, WebGPUExecutionProvider::default().build())
+        };
         let cpu = || on_cpu(model, batch);
         let failed =
             |on: &str, error: ort::Error| format!("the detector could not load {} on {on}: {error}", model.display());
         let (session, device) = match device {
             Device::DirectMl => (directml().map_err(|error| failed("DirectML", error))?, "DirectML"),
             Device::Cuda => (cuda().map_err(|error| failed("CUDA", error))?, "CUDA"),
+            Device::WebGpu => (webgpu().map_err(|error| failed("WebGPU", error))?, "WebGPU"),
             Device::Cpu => (cpu().map_err(|error| failed("the CPU", error))?, "CPU"),
             Device::Auto => {
+                let on_webgpu = || webgpu().map(|session| (session, "WebGPU"));
                 let gpu = if cfg!(windows) {
                     directml().map(|session| (session, "DirectML"))
+                } else if cfg!(feature = "cuda") {
+                    cuda().map(|session| (session, "CUDA")).or_else(|_| on_webgpu())
                 } else {
-                    cuda().map(|session| (session, "CUDA"))
+                    on_webgpu()
                 };
                 match gpu {
                     Ok(found) => found,

@@ -38,6 +38,7 @@ const EXIT_INTERRUPTED: i32 = 130;
 /// Reads the settings, serves on a Tokio runtime until Ctrl+C, and exits with 0, 1 on an error, or 2 when the
 /// settings cannot be read.
 fn main() -> ExitCode {
+    aimview_service::detector::hide_unusable_vulkan_drivers();
     let (settings, file) = match config::load(config::Flags::parse()) {
         Ok(loaded) => loaded,
         Err(message) => {

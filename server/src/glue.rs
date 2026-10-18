@@ -57,6 +57,7 @@ fn config(settings: &Settings) -> Config {
             Device::Auto => aimview_service::Device::Auto,
             Device::DirectMl => aimview_service::Device::DirectMl,
             Device::Cuda => aimview_service::Device::Cuda,
+            Device::WebGpu => aimview_service::Device::WebGpu,
             Device::Cpu => aimview_service::Device::Cpu,
         },
         ytdlp: None,
@@ -77,8 +78,14 @@ pub fn open(settings: &Settings) -> Result<Arc<dyn Api>, String> {
             "--device cuda needs a build with the cuda feature (cargo build -p aimview-server --features cuda)".into(),
         );
     }
+    if matches!(settings.device, Device::WebGpu) && !cfg!(feature = "webgpu") {
+        return Err(
+            "--device webgpu needs a build with the webgpu feature (cargo build -p aimview-server --features webgpu)"
+                .into(),
+        );
+    }
     if matches!(settings.device, Device::DirectMl) && !cfg!(windows) {
-        return Err("--device directml is for Windows: use cuda or cpu".into());
+        return Err("--device directml is for Windows: use webgpu, cuda or cpu".into());
     }
     let library = Library::open(config(settings))?;
     println!("{}", ffmpeg_line(&library.config().ffmpeg));

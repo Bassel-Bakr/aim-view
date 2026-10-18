@@ -6,5 +6,6 @@
 
 /// Starts the app.
 fn main() {
+    aimview_service::detector::hide_unusable_vulkan_drivers();
     aimview_desktop::run();
 }
