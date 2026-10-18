@@ -10,6 +10,8 @@
 mod dev_window;
 pub mod mouse;
 pub mod protocol;
+#[cfg(target_os = "linux")]
+mod video_server;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,6 +19,7 @@ use std::sync::Arc;
 use aimview_service::{Config, Ffmpeg, Layout, Library};
 use tauri::Manager;
 use tauri::utils::config::{AppDirectoriesOverride, AppDirectoryOverrides};
+use tauri_plugin_dialog::DialogExt;
 
 /// The name of the app's folders in the user's roaming and local app data, in place of its identifier (Tauri's
 /// default), which names them for code rather than for people.
@@ -31,8 +34,24 @@ pub fn run() {
     let mut context = tauri::generate_context!();
     let identifier = context.config().identifier.clone();
     context.config_mut().app.app_directories_override = app_folders(&identifier);
-    tauri::Builder::default()
-        .setup(|app| {
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // Linux: the videos over HTTP on this computer (video_server.rs), its address in the page before it loads
+    #[cfg(target_os = "linux")]
+    let (builder, mut videos) = match video_server::VideoServer::bind() {
+        Ok(server) => match server.base() {
+            Ok(base) => (builder.plugin(video_base_plugin(&base)), Some(server)),
+            Err(error) => {
+                eprintln!("no video server, so no video plays: {error}");
+                (builder, None)
+            }
+        },
+        Err(error) => {
+            eprintln!("no video server, so no video plays: {error}");
+            (builder, None)
+        }
+    };
+    builder
+        .setup(move |app| {
             let data = app.path().app_data_dir()?;
             mouse::set_folder(data.join("mouse"));
             // the VODs folder the user chooses in the app (settings.json), KovaaK's where Steam keeps them
@@ -40,7 +59,12 @@ pub fn run() {
                 ffmpeg: Ffmpeg::Download(app.path().app_local_data_dir()?.join("ffmpeg")),
                 ..Config::new(data, Layout::App, app.path().resource_dir()?.join("models"))
             };
-            app.manage(Library::open(config)?);
+            let lib = Library::open(config)?;
+            #[cfg(target_os = "linux")]
+            if let Some(server) = videos.take() {
+                server.serve(lib.clone());
+            }
+            app.manage(lib);
             #[cfg(all(debug_assertions, windows))]
             if let Some(window) = app.get_webview_window("main") {
                 dev_window::show_minimized(&window);
@@ -52,11 +76,24 @@ pub fn run() {
             let lib = app.state::<Arc<Library>>().inner().clone();
             // each request in a thread of its own: a listing or a report must not hold up the window
             std::thread::spawn(move || {
-                responder.respond(protocol::handle(&lib, &request, &|theme| app.set_theme(theme)));
+                let pick_folder = |title: &str| {
+                    let folder = app.dialog().file().set_title(title).blocking_pick_folder()?;
+                    folder.into_path().ok()
+                };
+                let window = protocol::Window { set_theme: &|theme| app.set_theme(theme), pick_folder: &pick_folder };
+                responder.respond(protocol::handle(&lib, &request, &window));
             });
         })
         .run(context)
         .expect("Aim View could not start");
+}
+
+/// A plugin that only puts the video server's address in the page before it loads (`window.aimviewVideoBase`, which
+/// ui/src/app/modes/tauri/desktop-recordings.ts reads).
+#[cfg(target_os = "linux")]
+fn video_base_plugin<R: tauri::Runtime>(base: &str) -> tauri::plugin::TauriPlugin<R> {
+    let script = format!("window.aimviewVideoBase = {};", serde_json::Value::from(base));
+    tauri::plugin::Builder::new("video-base").js_init_script(script).build()
 }
 
 /// The app's folders: FOLDER_NAME in the user's roaming app data (the library, the mouse logs) and in the local app

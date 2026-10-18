@@ -4,21 +4,29 @@
  */
 
 import { HttpInterceptorFn } from '@angular/common/http';
+import { from, switchMap } from 'rxjs';
 
 /**
  * Where the desktop app answers the review server's API (service/, through
- * desktop/src/protocol.rs): its own protocol, in the app itself, with no network port.
+ * desktop/src/protocol.rs): its own protocol, in the app itself, with no network port. Windows'
+ * webview (WebView2) reaches an app's protocol as http://<name>.localhost, Linux's (WebKitGTK) as
+ * <name>://localhost.
  */
-export const DESKTOP_API = 'http://api.localhost';
+export const DESKTOP_API = navigator.userAgent.includes('Windows')
+  ? 'http://api.localhost'
+  : 'api://localhost';
 
 /**
- * Sends the server-mode services' requests (/api/...) to the app. A file the user picked goes as a
- * slice of itself: the window sends a picked file whole as a reference to it on disk, which never
- * reaches the app's protocol (it would get an empty body), while a slice goes as its bytes.
+ * Sends the server-mode services' requests (/api/...) to the app. A Blob body (a file the user
+ * picked, a part of one, a batch made in the page) goes as its bytes, read into memory first:
+ * neither webview hands an app's protocol a Blob's body whole (WebView2 drops a picked file sent
+ * whole, WebKitGTK every Blob), while bytes always arrive. Big files go in parts
+ * (DesktopRecordings), so what is read here stays small.
  */
 export const desktopApi: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith('/api/')) return next(req);
-  const body =
-    req.body instanceof File ? req.body.slice(0, req.body.size, req.body.type) : req.body;
-  return next(req.clone({ url: DESKTOP_API + req.url, body }));
+  const url = DESKTOP_API + req.url;
+  const body = req.body;
+  if (!(body instanceof Blob)) return next(req.clone({ url }));
+  return from(body.arrayBuffer()).pipe(switchMap((bytes) => next(req.clone({ url, body: bytes }))));
 };

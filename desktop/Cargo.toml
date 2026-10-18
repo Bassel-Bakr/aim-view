@@ -14,8 +14,8 @@ aimview = { path = ".." }
 # the review server's API and the native review (the library in the app's data folder)
 aimview-service = { path = "../service" }
 serde_json = "1"
-# the system's folder dialog (the VODs folder)
-rfd = "0.15"
+# the system's folder dialog (the VODs folder), shown on the window's main thread as GTK needs on Linux
+tauri-plugin-dialog = "2"
 # the user's app data folders, where the app's own folders go (lib.rs)
 dirs = "7"
 

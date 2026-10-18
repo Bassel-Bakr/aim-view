@@ -18,9 +18,13 @@
 //! Windows 11 throttles raw input to background programs to about 125 Hz, unless the user turns that off
 //! (HKCU\Control Panel\Mouse, RawMouseThrottleEnabled = 0, then sign out and in): python/README.md, "Raw mouse log".
 
+#[cfg(windows)]
 use std::collections::HashMap;
+#[cfg(windows)]
 use std::fs::File;
-use std::io::{self, Read, Write};
+#[cfg(windows)]
+use std::io::Write;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -59,6 +63,7 @@ const THROTTLED_BUSIEST_HZ: f64 = 300.0;
 /// The argument that makes the app's executable the logger.
 const CHILD_ARG: &str = "--mouse-log";
 /// The logger process's exit code when it logged.
+#[cfg(windows)]
 const EXIT_LOGGED: i32 = 0;
 /// The logger process's exit code when it failed.
 const EXIT_FAILED: i32 = 1;
@@ -69,6 +74,7 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// How often a stopping logger is checked.
 const STOP_POLL: Duration = Duration::from_millis(20);
 /// Digits between the commas of a large number.
+#[cfg_attr(not(windows), allow(dead_code, reason = "only the Windows logger's summary and the tests write numbers"))]
 const DIGITS_PER_GROUP: usize = 3;
 
 // ---- Windows ----
@@ -667,6 +673,7 @@ fn log_until(logger: &mut Logger, file: &mut File, stop: &AtomicBool, end_qpc: O
 }
 
 /// A number rounded to a whole, with commas between thousands.
+#[cfg_attr(not(windows), allow(dead_code, reason = "only the Windows logger's summary and the tests write numbers"))]
 fn thousands(value: f64) -> String {
     let rounded = format!("{value:.0}");
     let (sign, digits) = rounded.strip_prefix('-').map_or(("", rounded.as_str()), |digits| ("-", digits));

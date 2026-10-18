@@ -7,6 +7,7 @@
 //! In: the window's requests (lib.rs hands each one over on a thread of its own). Out: the responses, with the headers
 //! that let the window's page read them.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use aimview_service::{Answer, ApiRequest, ApiResponse, Failure, Library, api};
@@ -15,6 +16,17 @@ use tauri::Theme;
 use tauri::http::{Method, Request, Response, StatusCode};
 
 use crate::mouse;
+
+/// What the routes that act on the window do there: lib.rs gives the app's, the tests their own.
+pub struct Window<'a> {
+    /// Gives the window a theme (None: the system's own).
+    pub set_theme: &'a dyn Fn(Option<Theme>),
+    /// Shows the system's folder dialog titled with the text and waits for it: the folder chosen, or None.
+    pub pick_folder: &'a dyn Fn(&str) -> Option<PathBuf>,
+}
+
+/// The folder dialog's title.
+const FOLDER_DIALOG_TITLE: &str = "The folder OBS records into (one folder per scenario)";
 
 /// A response to the window (another origin than the page): readable there under its cross-origin isolation.
 fn respond(answer: ApiResponse) -> Response<Vec<u8>> {
@@ -41,8 +53,8 @@ fn json_response(answer: Answer<Value>) -> ApiResponse {
     ApiResponse { status, headers, body: serde_json::to_vec(&body).unwrap_or_default() }
 }
 
-/// Answers one request; `set_theme` gives the window a theme (None: Windows' own).
-pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>, set_theme: &dyn Fn(Option<Theme>)) -> Response<Vec<u8>> {
+/// Answers one request; the routes that act on the window go through `window`.
+pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>, window: &Window) -> Response<Vec<u8>> {
     if req.method() == Method::OPTIONS {
         let headers = vec![("Content-Type".to_string(), "text/plain".to_string())];
         return respond(ApiResponse { status: StatusCode::NO_CONTENT.as_u16(), headers, body: Vec::new() });
@@ -53,10 +65,10 @@ pub fn handle(lib: &Arc<Library>, req: &Request<Vec<u8>>, set_theme: &dyn Fn(Opt
     let path = url.as_ref().map(|url| url.path().to_string()).unwrap_or_default();
     let on = url.as_ref().is_some_and(|url| url.query_pairs().any(|(key, value)| key == "on" && value == "1"));
     let desktop = match (req.method() == Method::POST, path.as_str()) {
-        (true, "/api/folder") => Some(pick_folder(lib)),
+        (true, "/api/folder") => Some(pick_folder(lib, window.pick_folder)),
         (false, "/api/mouse/logger") => Some(Ok(mouse::logger_state())),
         (true, "/api/mouse/logger") => Some(mouse::set_logger(on)),
-        (true, "/api/window/theme") => Some(set_window_theme(url.as_ref(), set_theme)),
+        (true, "/api/window/theme") => Some(set_window_theme(url.as_ref(), window.set_theme)),
         _ => None,
     };
     respond(match desktop {
@@ -90,9 +102,9 @@ fn set_window_theme(url: Option<&tauri::Url>, set_theme: &dyn Fn(Option<Theme>))
     Ok(json!({ "theme": named }))
 }
 
-/// The VODs folder, chosen in the system's folder dialog; null when the user cancels.
-fn pick_folder(lib: &Library) -> Answer<Value> {
-    match rfd::FileDialog::new().set_title("The folder OBS records into (one folder per scenario)").pick_folder() {
+/// The VODs folder, chosen in the system's folder dialog (`pick`); null when the user cancels.
+fn pick_folder(lib: &Library, pick: &dyn Fn(&str) -> Option<PathBuf>) -> Answer<Value> {
+    match pick(FOLDER_DIALOG_TITLE) {
         Some(folder) => lib.set_vods(folder),
         None => Ok(Value::Null),
     }
@@ -108,7 +120,7 @@ mod tests {
     fn ask(lib: &Arc<Library>, method: &str, path: &str) -> Response<Vec<u8>> {
         let uri = format!("http://api.localhost{path}");
         let req = Request::builder().method(method).uri(uri).body(Vec::new()).unwrap();
-        handle(lib, &req, &|_| {})
+        handle(lib, &req, &Window { set_theme: &|_| {}, pick_folder: &|_| None })
     }
 
     /// A preflight, the service's routes and the mouse logger's state all answer with the window's CORS headers; a
@@ -138,7 +150,8 @@ mod tests {
         let set_theme = |theme| themes.lock().unwrap().push(theme);
         let theme = |name: &str| {
             let uri = format!("http://api.localhost/api/window/theme?theme={name}");
-            handle(&lib, &Request::builder().method("POST").uri(uri).body(Vec::new()).unwrap(), &set_theme).status()
+            let req = Request::builder().method("POST").uri(uri).body(Vec::new()).unwrap();
+            handle(&lib, &req, &Window { set_theme: &set_theme, pick_folder: &|_| None }).status()
         };
         assert_eq!([theme("dark"), theme("system"), theme("light")], [StatusCode::OK; 3]);
         assert_eq!(theme("blue"), StatusCode::BAD_REQUEST);

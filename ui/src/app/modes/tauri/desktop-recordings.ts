@@ -14,11 +14,20 @@ import { ServerRecordings, UploadParams } from '../http/server-recordings';
 import { DESKTOP_API } from './desktop-api';
 
 /**
- * The bytes of one upload request. The app's window hands each request to the app whole, at about 25
- * times its size in memory (1.2 GB in the app and 2.1 GB in WebView2 for 132 MB), so a video goes in
- * parts this size.
+ * The bytes of one upload request. The app's window hands each request to the app whole (on Windows
+ * at about 25 times its size in memory: 1.2 GB in the app and 2.1 GB in WebView2 for 132 MB), and
+ * each part is read into memory to be sent (desktop-api.ts), so a video goes in parts this size.
  */
 const PART_BYTES = 8 * 1024 * 1024;
+
+/**
+ * The page's window as the Linux app leaves it: the address of the app's video server
+ * (desktop/src/video_server.rs), since WebKitGTK plays no video from the app's own protocol.
+ */
+interface DesktopWindow extends Window {
+  /** "http://127.0.0.1:<port>/<token>", to which /video?id=... is added; unset on Windows. */
+  aimviewVideoBase?: string;
+}
 
 /** The service's answer to a part before the last: the upload's name for the next parts. */
 interface UploadedPart {
@@ -54,9 +63,13 @@ export class DesktopRecordings extends ServerRecordings {
     files: null,
   }));
 
-  /** The recording's video on the app's protocol, which streams it from disk. */
+  /**
+   * The recording's video, streamed from disk by the app: on its protocol, or on Linux from its video
+   * server.
+   */
   protected override streamUrl(id: string): string {
-    return `${DESKTOP_API}/video?id=${encodeURIComponent(id)}`;
+    const base = (window as DesktopWindow).aimviewVideoBase ?? DESKTOP_API;
+    return `${base}/video?id=${encodeURIComponent(id)}`;
   }
 
   /**
