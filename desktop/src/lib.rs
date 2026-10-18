@@ -8,6 +8,8 @@
 
 #[cfg(all(debug_assertions, windows))]
 mod dev_window;
+#[cfg(target_os = "linux")]
+pub mod media;
 pub mod mouse;
 pub mod protocol;
 #[cfg(target_os = "linux")]

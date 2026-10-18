@@ -216,6 +216,8 @@ rust-analyzer's call hierarchy.
   it to the taskbar and never covers or takes the focus from what is in front (a game).
 - `desktop/src/lib.rs`: Aim View's desktop app: the Angular app (ui/, its desktop build) in a Tauri 2 window.
 - `desktop/src/main.rs`: Aim View's desktop app: the executable, which starts the app (lib.rs `run`).
+- `desktop/src/media.rs`: How the window's player decodes videos on Linux: WebKitGTK plays them through GStreamer, which
+  picks the decoder of the highest rank.
 - `desktop/src/mouse.rs`: The raw mouse logger (python/mouse_log.py, ported) and the app's side of it: an on/off switch
   that logs in the background while the user plays.
 - `desktop/src/protocol.rs`: The review server's API inside the app, over a custom protocol (`api`: http://api.localhost
@@ -1486,6 +1488,17 @@ library's files in the data folder, ffmpeg and the window's own data in the loca
 
 Aim View's desktop app: the executable, which starts the app (lib.rs `run`). In: nothing. Out: the app's window, or the
 mouse logger's process (lib.rs, mouse.rs).
+
+## desktop/src/media.rs
+
+How the window's player decodes videos on Linux: WebKitGTK plays them through GStreamer, which picks the decoder of the
+highest rank. The recordings are mostly 2560 x 1440 AV1 at 120 fps, which libaom (Ubuntu's only AV1 decoder in software)
+decodes slower than real time, so the GPU's decoders go first (VA-API for AMD and Intel, which Ubuntu 22.04's GStreamer
+leaves unranked; NVIDIA's comes next as it is), then dav1d (the AppImage carries it), then the rest. Inside the AppImage
+its own libva looks for the system's drivers where Ubuntu keeps them, so it is told where other distributions do.
+Settings the user made stay.
+
+- Functions: `prefer_fast_decoders`.
 
 ## desktop/src/mouse.rs
 

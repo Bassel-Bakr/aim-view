@@ -81,9 +81,11 @@ The releases have a server (`aim-view-server-<version>-linux.tar.gz`: unpack it,
 distribution). Both run the detector on the GPU through Vulkan, so the GPU needs a Vulkan driver: Mesa's RADV for
 AMD, NVIDIA's own driver, Mesa's ANV for Intel. Without one the detector runs on the CPU.
 
-The desktop app plays videos with GStreamer. The `.deb` installs the plugins it needs (good, bad and libav: H.264 and
-AV1); the AppImage carries its own. On an NVIDIA GPU, if the window stays blank, start the app with
-`WEBKIT_DISABLE_DMABUF_RENDERER=1`. The raw mouse logger is Windows only.
+The desktop app plays videos with GStreamer, and it takes the GPU's decoder first (VA-API on AMD and Intel, NVDEC on
+NVIDIA), then dav1d for AV1. The AppImage carries its own GStreamer with all of these. The `.deb` uses the system's
+(it installs the good, bad and libav plugins); Ubuntu has no dav1d plugin, so there AV1 needs the GPU's decoder, or
+plays through libaom, slower than real time at 2560 x 1440 and 120 fps. On an NVIDIA GPU, if the window stays blank,
+start the app with `WEBKIT_DISABLE_DMABUF_RENDERER=1`. The raw mouse logger is Windows only.
 
 KovaaK's runs through Proton and keeps its files in the game's folder, as on Windows. The app finds Steam in
 `~/.steam/steam`, `~/.local/share/Steam` or Flatpak's `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`; set

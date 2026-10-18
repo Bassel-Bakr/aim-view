@@ -218,7 +218,10 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   api://localhost; Blob bodies go as bytes (WebKitGTK hands the protocol an empty body for any Blob); a 132 MB upload
   arrives byte for byte; videos play from a server on 127.0.0.1 (desktop/src/video_server.rs: a token in every
   address, whole ranges, since WebKitGTK plays nothing from an app's protocol and takes a 4 MB answer for the whole
-  file), H.264 and 2560 x 1440 AV1 (0.75 times real time in WSL). The folder dialog is Tauri's dialog plugin. The
+  file), H.264 and 2560 x 1440 AV1 (0.75 times real time in WSL). GStreamer takes the GPU's decoders first (desktop/src/
+  media.rs: VA-API ranked above NVIDIA's, dav1d below both, libaom last), and the AppImage carries dav1d's plugin,
+  which Ubuntu does not ship (release.yml builds libdav1d 1.5 and gst-plugins-rs's plugin): libaom took 70 s for 66 s
+  of such a video in WSL, dav1d 19.5 s. The folder dialog is Tauri's dialog plugin. The
   release builds the server's tarball, a .deb and an AppImage on Ubuntu 22.04 (scripts/package-server-linux.sh,
   release.yml); the tarball and the .deb were checked here (rpath, files, dependencies). Open: WebGPU on a real AMD
   or NVIDIA GPU (WSL's Vulkan is Dozen, which Dawn refuses), the AppImage and the release's Linux job (their first

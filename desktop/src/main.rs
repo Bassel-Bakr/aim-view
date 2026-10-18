@@ -7,5 +7,7 @@
 /// Starts the app.
 fn main() {
     aimview_service::detector::hide_unusable_vulkan_drivers();
+    #[cfg(target_os = "linux")]
+    aimview_desktop::media::prefer_fast_decoders();
     aimview_desktop::run();
 }
