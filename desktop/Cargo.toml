@@ -5,6 +5,12 @@ edition = "2024"
 description = "Aim View's desktop app (Tauri 2): the Angular app in a window, with the review core built natively"
 publish = false
 
+[features]
+# the detector on any GPU with Vulkan (Linux: AMD, NVIDIA, Intel), through WebGPU; the Linux packages are built so
+webgpu = ["aimview-service/webgpu"]
+# the detector on an NVIDIA GPU through CUDA (Linux, with CUDA 12 and cuDNN 9 installed)
+cuda = ["aimview-service/cuda"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

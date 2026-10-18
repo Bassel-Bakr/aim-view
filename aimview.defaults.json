@@ -27,10 +27,10 @@
   },
   "steam": null,
   "steam_found": {
-    "about": "Where Steam's folder is looked for when steam is null: on Windows the registry value Steam keeps it in, elsewhere this folder under the home folder.",
+    "about": "Where Steam's folder is looked for when steam is null: on Windows the registry value Steam keeps it in, elsewhere the first of these folders under the home folder that exists (Steam's link, its own folder, Flatpak's Steam).",
     "registry_key": "HKCU\\Software\\Valve\\Steam",
     "registry_value": "SteamPath",
-    "under_home": ".steam/steam"
+    "under_home": [".steam/steam", ".local/share/Steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam"]
   },
   "kovaak": {
     "about": "KovaaK's folders: game and workshop under Steam's folder, the others under the game's.",

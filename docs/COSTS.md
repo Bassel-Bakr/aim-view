@@ -100,6 +100,12 @@ times that step.
 | `cargo bench` (a build) | the criterion benches, release profile with LTO | about 2 min to build | fd03a47 | docs/BENCH.md |
 | `cargo clippy --workspace --all-targets` | the Rust lints | 0.5 s with nothing changed | 2026-10-07, b7e39e9+ | this session |
 | `python scripts/storage_check.py <name> <exe>` | copies test_out's app data and the desktop app's data, asks the API, hashes every file | about 3 min a run, 40 s of it waiting for a cut-off's labels; two runs and a compare about 6 min | 2026-10-07, 55460ce+ | this session (04:36 to 04:42) |
+| Linux (CachyOS under WSL2, 16 threads): `cargo build --release -p aimview-server` | the server natively on Linux | 96 s cold (2 min 5 s with `bun install --cwd ui` and `bun run build:server` before it); with `--features webgpu` 88 s after a service change | 2026-10-18, 2464ff1+ and ede1c6e+ | this session |
+| Linux: `cargo test --profile quick --workspace` | every Rust test, the parity fixtures copied into the WSL clone (819 MB, 7 s) | 84 s; 119 s after a change to the service | 2026-10-18, ede1c6e+ | this session |
+| Linux: `cargo tauri build --no-bundle` (in desktop/) | the desktop app with its UI built in (`bun run build:desktop` first) | 1 min 56 s; 2 min 5 s with the UI | 2026-10-18, 6d6a9d3+ | this session |
+| Linux: `cargo tauri build --bundles deb,appimage --features webgpu` | the .deb (24.9 MB) and the AppImage | 143 s to the .deb; the AppImage fails on Arch (linuxdeploy's GTK plugin), so the release builds it on Ubuntu | 2026-10-18, 6d6a9d3+ | this session |
+| Linux: `bash scripts/package-server-linux.sh <version>` | the server's tarball (22 MB) | a few seconds | 2026-10-18, 6d6a9d3+ | this session |
+| `aimview-tool review` of a 66 s 2560 x 1440 AV1 recording (ww3t Voltaic 30% Larger) | the whole video, the default model | Windows, DirectML and the GPU's frames: 16 s. On the CPU with ffmpeg's frames: Linux 240 s, Windows 244 s (with the Linux review beside it); the same report. Linux, WebGPU on Mesa's software Vulkan (lavapipe): 355 s for 10 s of the video, so lavapipe is hidden from the detector | 2026-10-18, ede1c6e+ | this session |
 
 ### The detector, by model and configuration
 

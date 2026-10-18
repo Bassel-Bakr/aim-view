@@ -36,7 +36,7 @@ With no settings, the server takes the repo's settings: `aimview.defaults.json` 
 | KovaaK's stats files | `--stats` | `kovaak.stats` in KovaaK's folder (`kovaak.game`, in Steam's) |
 | Scenario folders | `--scenarios` (several) | `kovaak.scenarios` in KovaaK's folder and `kovaak.workshop` in Steam's |
 | Models | `--models` | `models`: the repo's `python/model/exports` (`models.json` is found in the folder above) |
-| Device | `--device` | `auto`; also `directml`, `cuda`, `cpu` |
+| Device | `--device` | `auto`; also `directml`, `webgpu`, `cuda`, `cpu` |
 | GPU frames | `--gpu-frames` | `on`: decoded and converted on the GPU where the video allows it (Windows, 2560 x 1440 AV1 or H.264 MP4s; the same reviews with a third to a half of the CPU); `off` for ffmpeg's software decode (TOML: `gpu_frames = false`) |
 | ffmpeg | `--ffmpeg` | the PATH's, else `ffmpeg` (the repo's `test_out/ffmpeg`); `path` for the PATH's only |
 | UI build | `--ui` | `ui`: the repo's `ui/dist/server/browser` |
@@ -100,9 +100,14 @@ with `bun run server`. The UI's Server for links setting holds its address (`htt
 
 `--device` picks where the detector runs:
 
-- `auto`: the GPU when there is one (DirectML on Windows, CUDA in a Linux build with the `cuda` feature), else the CPU.
+- `auto`: the GPU when there is one (DirectML on Windows; on Linux CUDA or WebGPU, in a build with its feature), else
+  the CPU.
 - `directml`: any GPU on Windows.
-- `cuda`: an NVIDIA GPU. Build with `cargo build -p aimview-server --release --features cuda`.
+- `webgpu`: any GPU with a Vulkan driver on Linux (AMD, NVIDIA, Intel), as the Linux release is built. Build with
+  `cargo build -p aimview-server --release --features webgpu`; ONNX Runtime's `libwebgpu_dawn.so` goes beside the
+  server. Mesa's software Vulkan (lavapipe) is never used: it is slower than the CPU.
+- `cuda`: an NVIDIA GPU. Build with `cargo build -p aimview-server --release --features cuda` (needs CUDA 12 and
+  cuDNN 9 installed).
 - `cpu`: the CPU.
 
 The server logs the model and the device when it starts.

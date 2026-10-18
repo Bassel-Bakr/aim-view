@@ -33,11 +33,12 @@ All three use the same review code (Rust) and the same page (Angular):
    (without WebGPU the detector runs on the CPU, several times slower).
 2. **With the review server.** The server reviews the recordings, and the page shows the results. Use this when
    another machine has the faster GPU.
-3. **As a desktop app** (Windows, Tauri 2). It opens your recordings where they are and can log your mouse in the
-   background.
+3. **As a desktop app** (Windows and Linux, Tauri 2). It opens your recordings where they are. On Windows it can also
+   log your mouse in the background.
 
-The detector runs with ONNX Runtime: DirectML on Windows (any GPU), CUDA on Linux with an NVIDIA GPU (the `cuda`
-feature), or the CPU.
+The detector runs with ONNX Runtime: DirectML on Windows (any GPU), WebGPU on Linux (any GPU with Vulkan: AMD, NVIDIA
+or Intel; the `webgpu` feature, which the Linux releases have), CUDA on Linux with an NVIDIA GPU (the `cuda` feature),
+or the CPU. Without a usable GPU it falls back to the CPU.
 
 ## Getting started
 
@@ -71,6 +72,34 @@ The desktop app (needs `cargo install tauri-cli`):
 ```bash
 bun run app        # run it
 bun run build:app  # its installer, in target/release/bundle/nsis/
+```
+
+### On Linux
+
+The releases have a server (`aim-view-server-<version>-linux.tar.gz`: unpack it, set `vods` in
+`aimview-server.toml`, run `./start-server.sh`) and the desktop app as a `.deb` (Ubuntu, Debian) and an AppImage (any
+distribution). Both run the detector on the GPU through Vulkan, so the GPU needs a Vulkan driver: Mesa's RADV for
+AMD, NVIDIA's own driver, Mesa's ANV for Intel. Without one the detector runs on the CPU.
+
+The desktop app plays videos with GStreamer. The `.deb` installs the plugins it needs (good, bad and libav: H.264 and
+AV1); the AppImage carries its own. On an NVIDIA GPU, if the window stays blank, start the app with
+`WEBKIT_DISABLE_DMABUF_RENDERER=1`. The raw mouse logger is Windows only.
+
+KovaaK's runs through Proton and keeps its files in the game's folder, as on Windows. The app finds Steam in
+`~/.steam/steam`, `~/.local/share/Steam` or Flatpak's `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`; set
+`steam` in `aimview.json` (or the server's settings) if it is somewhere else.
+
+To build on Linux you also need Tauri's libraries. On Ubuntu:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev
+```
+
+On Arch: `webkit2gtk-4.1 libsoup3 librsvg base-devel clang`. Then build with the GPU detector:
+
+```bash
+cargo build --release -p aimview-server --features webgpu
+cd desktop && cargo tauri build --bundles deb,appimage --features webgpu
 ```
 
 ## The detector

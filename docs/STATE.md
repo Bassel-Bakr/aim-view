@@ -206,6 +206,24 @@ out of AGENTS.md on 2026-10-07 so it no longer loads into every agent session; r
   own) and the VC++ runtime ONNX Runtime loads (msvcp140, msvcp140_1, vcruntime140, vcruntime140_1; desktop/build.rs
   copies them from the newest Visual Studio). ONNX Runtime is linked into the exe. Checked: installed silently into
   a folder, the app reviewed a recording on DirectML with every one of these DLLs loaded from that folder.
+- Linux (2026-10-18, CachyOS under WSL2 on this computer; WebKitGTK 2.54): the service, the server, aimview-tool and
+  the desktop app build and work. Every Rust test passes there (212 and the code map): the parity tests read their
+  fixtures' Windows paths through WSL's drives, and off Windows keep_parity lets a number differ in its last bit
+  (1e-12; glibc rounds the trigonometry unlike Windows, the targets are the same). A CPU review of a 66 s AV1
+  recording gives Windows' report, readings and kills byte for byte (240 s; Windows on DirectML: 16 s). The detector
+  runs on WebGPU (the `webgpu` feature, ONNX Runtime's Dawn build): any GPU with Vulkan, AMD and NVIDIA alike, else
+  the CPU. On Mesa's software Vulkan it gave the CPU's report on 10 s of video; Mesa's software Vulkan (lavapipe) and
+  WSL's Dozen are hidden from it (VK_LOADER_DRIVERS_DISABLE, detector.rs), and the exit skips ONNX Runtime 1.22's
+  WebGPU teardown, which crashes. The desktop app, driven through tauri-driver: the page reaches the app's protocol at
+  api://localhost; Blob bodies go as bytes (WebKitGTK hands the protocol an empty body for any Blob); a 132 MB upload
+  arrives byte for byte; videos play from a server on 127.0.0.1 (desktop/src/video_server.rs: a token in every
+  address, whole ranges, since WebKitGTK plays nothing from an app's protocol and takes a 4 MB answer for the whole
+  file), H.264 and 2560 x 1440 AV1 (0.75 times real time in WSL). The folder dialog is Tauri's dialog plugin. The
+  release builds the server's tarball, a .deb and an AppImage on Ubuntu 22.04 (scripts/package-server-linux.sh,
+  release.yml); the tarball and the .deb were checked here (rpath, files, dependencies). Open: WebGPU on a real AMD
+  or NVIDIA GPU (WSL's Vulkan is Dozen, which Dawn refuses), the AppImage and the release's Linux job (their first
+  run), the folder dialog by hand, and CUDA. The GPU's frames (gpu_frames.rs) and the raw mouse logger are Windows
+  only, so Linux decodes through ffmpeg.
 - The Angular app does everything the old page did, the player's full screen (F, Escape) included; the old page
   retired to `python/retired/app/` (2026-10-04), and the Rust server no longer serves it. Server mode stays (a stronger
   machine can run the reviews). Training (`python/model/`) stays in Python; eval_vods.py and eval_moving.py review

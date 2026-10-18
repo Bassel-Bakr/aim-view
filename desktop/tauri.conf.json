@@ -52,6 +52,24 @@
     },
     "resources": {
       "../ui/generated/models/": "models/"
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/aim-view/libwebgpu_dawn.so": "../target/release/libwebgpu_dawn.so"
+        },
+        "depends": [
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-libav"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true,
+        "files": {
+          "/usr/lib/aim-view/libwebgpu_dawn.so": "../target/release/libwebgpu_dawn.so"
+        }
+      }
     }
   }
 }

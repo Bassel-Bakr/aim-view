@@ -2,3 +2,8 @@
 # (test_out/browser_check/same-result.html), and the loops that can use it run on four or more values at once.
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "target-feature=+simd128"]
+
+# On Linux the executables find ONNX Runtime's WebGPU library (libwebgpu_dawn.so, a build with the webgpu feature) beside
+# them (target/<profile>/, the server's folder, the AppImage's) or in the deb's /usr/lib/aim-view
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,-rpath,$ORIGIN:$ORIGIN/../lib/aim-view"]

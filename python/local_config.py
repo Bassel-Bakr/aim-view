@@ -57,8 +57,10 @@ def steam():
                 return Path(winreg.QueryValueEx(opened, found["registry_value"])[0])
         except OSError:
             return None
-    home = Path(os.path.expanduser("~")) / found["under_home"]
-    return home if home.is_dir() else None
+    # a list of folders to try in turn, or one folder (older settings files)
+    tries = found["under_home"] if isinstance(found["under_home"], list) else [found["under_home"]]
+    homes = (Path(os.path.expanduser("~")) / folder for folder in tries)
+    return next((home for home in homes if home.is_dir()), None)
 
 
 def kovaak(name):

@@ -78,7 +78,7 @@ impl LocalConfig {
             return registry_folder(key, name);
         }
         let home = std::env::var_os("HOME").map(PathBuf::from)?;
-        Some(home.join(found["under_home"].as_str()?)).filter(|folder| folder.is_dir())
+        first_folder(&home, &found["under_home"])
     }
 
     /// One of KovaaK's folders (game, workshop, stats, scenarios, crosshairs): game and workshop under Steam's, the
@@ -97,6 +97,13 @@ impl LocalConfig {
     pub fn kovaak_scenarios(&self) -> Vec<PathBuf> {
         ["scenarios", "workshop"].iter().filter_map(|name| self.kovaak(name)).collect()
     }
+}
+
+/// The first of `under_home`'s folders (a list, or one folder as older settings files have it) that is a folder
+/// under `home`.
+fn first_folder(home: &Path, under_home: &Value) -> Option<PathBuf> {
+    let tries = under_home.as_array().map_or_else(|| vec![under_home], |folders| folders.iter().collect());
+    tries.into_iter().filter_map(Value::as_str).map(|folder| home.join(native(folder))).find(|folder| folder.is_dir())
 }
 
 /// A folder a registry value holds (`reg query`, so no Windows library is needed here).
@@ -131,6 +138,21 @@ mod tests {
         assert_eq!(config.kovaak("stats"), Some(root.join(game).join("stats")));
         std::fs::remove_dir_all(root).unwrap();
         assert_eq!(LocalConfig::at(Path::new("no such folder")).folder("vods"), None);
+    }
+
+    /// Steam's folder under the home folder is the first of the list that is there; one folder as a string still works.
+    #[test]
+    fn steam_is_the_first_folder_found_under_home() {
+        let home = std::env::temp_dir().join(format!("aimview-home-{}", std::process::id()));
+        std::fs::create_dir_all(home.join(".local/share/Steam")).unwrap();
+        let tries = serde_json::json!([".steam/steam", ".local/share/Steam", ".var/app/steam"]);
+        assert_eq!(first_folder(&home, &tries), Some(home.join(native(".local/share/Steam"))));
+        assert_eq!(
+            first_folder(&home, &serde_json::json!(".local/share/Steam")),
+            Some(home.join(native(".local/share/Steam")))
+        );
+        assert_eq!(first_folder(&home, &serde_json::json!([".steam/steam"])), None);
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     /// A text setting is found by its pointer; a missing one, or one that is not text, is None.

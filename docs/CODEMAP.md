@@ -220,6 +220,10 @@ rust-analyzer's call hierarchy.
   that logs in the background while the user plays.
 - `desktop/src/protocol.rs`: The review server's API inside the app, over a custom protocol (`api`: http://api.localhost
   in the window on Windows, api://localhost on Linux): no network port, so nothing outside the app reaches it.
+- `desktop/src/video_server.rs`: The recordings' videos over HTTP on this computer only (127.0.0.1, at a port the system
+  picks), for the window on Linux: WebKitGTK plays no video from an app's own protocol (error 4, where `fetch` works),
+  so the page asks for /video here instead (ui/src/app/modes/tauri/desktop-recordings.ts, through
+  `window.aimviewVideoBase`).
 - `browser-service/src/lib.rs`: The review service (aimview-service, without its `native` feature) as WebAssembly:
   browser mode runs it in a worker, so the browser answers the same API as the review server and the desktop app.
 - `tests/camera_parity.rs`: The camera's readings (src/camera.rs) against Python's camera_motion on the same gray
@@ -1500,7 +1504,20 @@ send /api/... and /video there (ui/src/app/modes/tauri/). The service answers (a
 need the desktop are answered here: the folder dialog (/api/folder), the mouse logger's switch (/api/mouse/logger) and
 the window's theme (/api/window/theme: its title bar in the page's theme).
 
+- `Window` (struct): What the routes that act on the window do there: lib.rs gives the app's, the tests their own.
 - Functions: `handle`.
+
+## desktop/src/video_server.rs
+
+The recordings' videos over HTTP on this computer only (127.0.0.1, at a port the system picks), for the window on Linux:
+WebKitGTK plays no video from an app's own protocol (error 4, where `fetch` works), so the page asks for /video here
+instead (ui/src/app/modes/tauri/desktop-recordings.ts, through `window.aimviewVideoBase`). Every address starts with a
+token made at each start, so no other page on this computer can guess one. A request gets all the bytes it asks for, to
+the file's end for an open range: WebKit's player takes a shorter answer (the service's 4 MB parts) as the whole file,
+and never reaches an index at its end (OBS writes it last).
+
+- `VideoServer` (struct): The server's socket and token, bound before the window opens (its address goes into the page)
+  and answering once the library is open (`serve`). Methods: `bind`, `base`, `serve`.
 
 ## browser-service/src/lib.rs
 

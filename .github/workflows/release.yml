@@ -7,6 +7,9 @@
 #  - aim-view-server-<version>.zip: aimview-server for Windows (DirectML), its server-mode UI, the models, the VC++
 #    runtime, aimview-server.toml (its paths start at its folder) and start-server.cmd
 #  - aim-view-desktop-<version>-setup.exe: the desktop app's installer (Tauri, NSIS)
+#  - aim-view-server-<version>-linux.tar.gz: aimview-server for Linux (WebGPU: any GPU with Vulkan, else the CPU),
+#    ONNX Runtime's WebGPU library, its server-mode UI, the models, aimview-server.toml and start-server.sh
+#  - aim-view-desktop-<version>-amd64.deb and -x86_64.AppImage: the desktop app for Linux (WebGPU too)
 # A newer push cancels a run still going, so a burst of commits makes one release.
 name: Release
 
@@ -16,6 +19,7 @@ on:
     paths:
       - src/**
       - service/**
+      - scripts/package-server-linux.sh
       - server/**
       - desktop/**
       - browser-service/**
@@ -170,8 +174,59 @@ jobs:
           path: aim-view-desktop-*-setup.exe
           if-no-files-found: error
 
+  # the Linux server and the desktop app's packages in one job, so the native Rust they share compiles once; built with
+  # the webgpu feature, so the detector runs on any GPU with Vulkan (AMD, NVIDIA, Intel), else on the CPU. Ubuntu 22.04,
+  # so the packages run on distributions as old as it
+  linux:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-22.04
+    env:
+      # linuxdeploy, the AppImage's bundler, is an AppImage itself: extracted and run, so no FUSE is needed
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux
+      - uses: oven-sh/setup-bun@v2
+      # Tauri's libraries (WebKitGTK, GTK), and GStreamer's plugins, which the AppImage carries for its player
+      - name: Install the system's libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev             patchelf libssl-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad             gstreamer1.0-libav
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: bun scripts/stamp-version.ts ${{ needs.version.outputs.version }}
+      - run: bun run build:server
+      - run: cargo build --release -p aimview-server --features webgpu
+      - run: bash scripts/package-server-linux.sh ${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-linux
+          path: aim-view-server-*-linux.tar.gz
+          if-no-files-found: error
+      - run: bunx @tauri-apps/cli@^2 build --bundles deb,appimage --features webgpu
+        working-directory: desktop
+      # named as the others are (Tauri names them after the product: "Aim View_<version>_amd64.deb")
+      - name: Name the packages
+        run: |
+          cp target/release/bundle/deb/*.deb "aim-view-desktop-${{ needs.version.outputs.version }}-amd64.deb"
+          cp target/release/bundle/appimage/*.AppImage             "aim-view-desktop-${{ needs.version.outputs.version }}-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            aim-view-desktop-*.deb
+            aim-view-desktop-*.AppImage
+          if-no-files-found: error
+
   release:
-    needs: [version, browser, windows]
+    needs: [version, browser, windows, linux]
     if: needs.version.outputs.version != '' && (github.event_name == 'push' || inputs.publish)
     runs-on: ubuntu-latest
     steps:
